@@ -70,3 +70,14 @@ jobs:
       - id: deploy
         if: steps.gate.outputs.run == 'true'
         uses: actions/deploy-pages@v4
+
+      # Runs after the site is published, so a mismatch never blocks the update.
+      # Failing here marks the run with a red X, and GitHub emails you about it.
+      - name: Scoring check
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          if [ -s data/scoring-check.txt ]; then
+            cat data/scoring-check.txt
+            exit 1
+          fi
+          echo "Every weekly score matches Sleeper's official standings."
