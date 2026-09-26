@@ -101,13 +101,16 @@ export function buildRecords(DATA) {
   // R: records one manager can hold many times (a season, a game) keep the top 10.
   // A: one row per manager, so every manager is listed, zeros included. Rows
   //    marked pending (didn't qualify yet) are listed last, unranked.
-  const R = (title, rows, { note, asc = false, keepZero = false, all = false } = {}) => {
+  // kind: 'mark' = a single performance (game, season, streak) that is broken by
+  // beating it; 'total' = a running career total that everyone adds to, where
+  // only a change of leader is news.
+  const R = (title, rows, { note, asc = false, keepZero = false, all = false, kind = 'mark' } = {}) => {
     const pending = all ? rows.filter(r => r.pending) : [];
     rows = rows.filter(r => !r.pending && Number.isFinite(r.value) && (all || keepZero || r.value !== 0));
     rows.sort((a, b) => (asc ? a.value - b.value : b.value - a.value));
     rows.forEach((r, i) => { r.rank = i && rows[i - 1].value === r.value ? rows[i - 1].rank : i + 1; });
     const kept = all ? rows : rows.slice(0, 10);
-    return { title, note, rows: [...kept, ...pending.map(r => ({ ...r, rank: '–' }))] };
+    return { title, note, asc, kind, rows: [...kept, ...pending.map(r => ({ ...r, rank: '–' }))] };
   };
   const A = (title, rows, opts = {}) => R(title, rows, { ...opts, all: true });
 
@@ -241,5 +244,95 @@ export function buildRecords(DATA) {
     }), { note: 'Most regular-season weeks with 400+ points.' }),
   ];
 
+  const runningTotals = new Set(['Most consecutive playoff trips', 'Longest active title drought', '400-point club']);
+  for (const r of byCategory.careers) r.kind = 'total';
+  for (const r of byCategory.streaks) if (runningTotals.has(r.title)) r.kind = 'total';
+
   return byCategory;
+}
+
+// ---------- Record history ----------
+// Replays the league one week at a time, rebuilding the Record Book as it
+// stood after each week, and notes every time a record changes hands.
+
+// The league as it stood after week w of season s.
+function asOf(DATA, s, w, lastWeek) {
+  return {
+    ...DATA,
+    games: DATA.games.filter(g => g.s < s || (g.s === s && g.w <= w)),
+    seasons: DATA.seasons.filter(x => x.season <= s).map(x => {
+      if (x.season < s) return x;
+      const finished = x.status === 'complete' && w >= lastWeek[x.season];
+      return {
+        ...x,
+        status: finished ? 'complete' : 'in_season',
+        weeksPlayed: Math.min(x.weeksPlayed, w),
+        champion: finished ? x.champion : null,
+        runnerUp: finished ? x.runnerUp : null,
+      };
+    }),
+  };
+}
+
+const holderKey = x => x.whoText ?? x.who;
+const leadersOf = r => (r?.rows ?? []).filter(x => x.rank === 1);
+
+// Did this record change hands between two snapshots?
+function change(before, now) {
+  const top = leadersOf(now);
+  const prev = leadersOf(before);
+  if (!top.length || !prev.length) return null;
+  if (!now.asc && (top[0].value === 0 || prev[0].value === 0)) return null; // nobody on the board yet
+  const newcomers = top.filter(x => !prev.some(y => holderKey(y) === holderKey(x)));
+  const kept = top.some(x => prev.some(y => holderKey(y) === holderKey(x)));
+
+  if (now.kind === 'total') {
+    if (!newcomers.length) return null;
+    return { type: kept ? 'tied' : 'new-leader', holders: newcomers, prev };
+  }
+  const better = now.asc ? top[0].value < prev[0].value : top[0].value > prev[0].value;
+  // A season still being played or a streak still running grows its own mark
+  // every week; only the week it took the record is news. Pulling ahead of a
+  // co-holder still counts as breaking it.
+  const ongoing = prev.some(y => /in progress|active/.test(y.ctx ?? ''));
+  const passedSomeone = prev.some(y => !top.some(x => holderKey(x) === holderKey(y)));
+  if (better && !newcomers.length && ongoing && !passedSomeone) return null;
+  if (better) return { type: 'broken', holders: top, prev };
+  if (top[0].value === prev[0].value && newcomers.length) return { type: 'tied', holders: newcomers, prev };
+  return null;
+}
+
+export const CHANGE_LABELS = { broken: 'Record broken', tied: 'Record tied', 'new-leader': 'New leader' };
+
+// Every record change, oldest first: { cat, title, s, w, index, type, holders, prev }.
+// `recent` is true for changes in the last few weeks of games played.
+export function recordHistory(DATA, { recentWeeks = 3 } = {}) {
+  const lastWeek = {};
+  for (const g of DATA.games) lastWeek[g.s] = Math.max(lastWeek[g.s] ?? 0, g.w);
+  const points = [...new Set(DATA.games.map(g => `${g.s}|${g.w}`))]
+    .map(k => { const [s, w] = k.split('|'); return { s, w: Number(w) }; })
+    .sort((a, b) => a.s.localeCompare(b.s) || a.w - b.w);
+
+  const events = [];
+  let prev = null;
+  points.forEach((p, i) => {
+    const snap = i === points.length - 1 ? DATA : asOf(DATA, p.s, p.w, lastWeek);
+    const recs = buildRecords(snap);
+    if (prev) {
+      for (const [cat, list] of Object.entries(recs)) {
+        for (const r of list) {
+          const c = change(prev[cat]?.find(x => x.title === r.title), r);
+          if (c) events.push({ ...c, cat, title: r.title, s: p.s, w: p.w, index: i });
+        }
+      }
+    }
+    prev = recs;
+  });
+  const cutoff = points.length - recentWeeks;
+  // Keep only what the page shows, so the saved file stays small.
+  const slim = x => ({ who: x.who, whoText: x.whoText, display: x.display, ctx: x.ctx });
+  return events.map(e => ({
+    cat: e.cat, title: e.title, s: e.s, w: e.w, type: e.type, recent: e.index >= cutoff,
+    holders: e.holders.map(slim), prev: e.prev.map(slim),
+  }));
 }

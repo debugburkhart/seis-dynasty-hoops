@@ -320,6 +320,41 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
 .rv { font: 800 14px/1 var(--display); font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
 .rec-note { margin: 10px 2px 0; font-size: 11px; color: var(--muted); font-style: italic; }
 
+/* Record changes */
+.rec-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rec-fresh { border-color: rgba(217,165,63,.55); box-shadow: 0 0 0 3px rgba(244,194,79,.14); }
+.rb-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px 3px 6px; border-radius: 99px;
+  background: var(--gold); color: var(--pine-900);
+  font: 800 9px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
+}
+.rb-badge .ic { width: 11px; height: 11px; stroke-width: 2; }
+.rb-badge.rb-tied, .rb-pill.rb-tied { background: #e7efe9; color: var(--pine-700); }
+.rb-badge.rb-new-leader, .rb-pill.rb-new-leader { background: var(--pine-700); color: #fff; }
+
+.rb-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 4px; }
+.rb-item {
+  display: block; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px;
+  background: #fbfaf6; text-decoration: none; color: inherit;
+}
+.rb-item:hover { border-color: rgba(217,165,63,.6); }
+.rb-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rb-pill {
+  padding: 3px 8px; border-radius: 99px; background: var(--gold); color: var(--pine-900);
+  font: 800 9px/1 var(--display); letter-spacing: .08em; text-transform: uppercase;
+}
+.rb-when { font-size: 11px; color: var(--muted); }
+.rb-title { margin-top: 8px; font: 900 14px/1.2 var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.rb-title small { display: block; margin-top: 2px; font: 700 9.5px/1 var(--font); letter-spacing: .1em; color: var(--brass); }
+.rb-who { margin-top: 6px; font-size: 13px; overflow-wrap: anywhere; }
+.rb-who .amp { color: var(--brass); }
+.rb-val { font: 900 15px/1 var(--display); color: var(--pine-600); margin-left: 4px; white-space: nowrap; }
+.rb-now { font-size: 11px; font-weight: 700; color: var(--brass); margin-left: 4px; white-space: nowrap; }
+.rb-prev { margin-top: 3px; font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; }
+.rb-prev .amp { color: inherit; }
+@media (max-width: 760px) { .rb-list { grid-template-columns: 1fr; } }
+
 /* ---------- Mobile ---------- */
 
 @media (max-width: 860px) {

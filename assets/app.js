@@ -1,5 +1,5 @@
 import { LEAGUE_ID } from './config.js';
-import { CATEGORIES, buildRecords } from './records.js';
+import { CATEGORIES, CHANGE_LABELS, buildRecords, recordHistory } from './records.js';
 
 // ---------- Navigation ----------
 
@@ -407,8 +407,72 @@ function renderRivalry(main, params) {
 // ---------- Record Book ----------
 
 let RECORDS;
+let EVENTS;
 
-function recordCard(r) {
+// The latest change to a record, if it happened recently and the new holder
+// still holds it.
+function recentChange(cat, r) {
+  const e = EVENTS.findLast(x => x.cat === cat && x.title === r.title);
+  if (!e?.recent) return null;
+  const leaders = r.rows.filter(x => x.rank === 1).map(x => x.whoText ?? x.who);
+  return e.holders.some(h => leaders.includes(h.whoText ?? h.who)) ? e : null;
+}
+
+const holderNames = list => list.map(h => esc(h.whoText ?? name(h.who))).join(' <span class="amp">&amp;</span> ');
+
+function badge(e) {
+  return `<span class="rb-badge rb-${e.type}">${icon('flame')}${CHANGE_LABELS[e.type]} · ${e.s} Wk ${e.w}</span>`;
+}
+
+// If the holder has kept growing the record since (a season or streak that
+// kept going), show where it stands now.
+function nowValue(e) {
+  const r = RECORDS[e.cat]?.find(x => x.title === e.title);
+  const top = r?.rows.find(x => x.rank === 1);
+  if (!top || String(top.display) === String(e.holders[0].display)) return '';
+  const same = e.holders.some(h => (h.whoText ?? h.who) === (top.whoText ?? top.who));
+  return same ? ` <span class="rb-now">now ${esc(top.display)}</span>` : ` <span class="rb-now">since passed</span>`;
+}
+
+function previously(e) {
+  const others = e.prev.filter(p => !e.holders.some(h => (h.whoText ?? h.who) === (p.whoText ?? p.who)));
+  return others.length
+    ? `Previously ${holderNames(others)} · ${esc(e.prev[0].display)}`
+    : `Beat their own record of ${esc(e.prev[0].display)}`;
+}
+
+function recentlyBroken() {
+  // Latest change per record, newest first.
+  const seen = new Set();
+  const latest = [];
+  for (let i = EVENTS.length - 1; i >= 0 && latest.length < 8; i--) {
+    const e = EVENTS[i];
+    const k = `${e.cat}/${e.title}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    latest.push(e);
+  }
+  if (!latest.length) return '';
+  const catTitle = id => CATEGORIES.find(c => c.id === id)?.title ?? id;
+  return `
+    <section class="card">
+      <div class="card-head"><h2>Recently broken</h2><span class="card-sub">The latest records to change hands</span></div>
+      <div class="rb-list">
+        ${latest.map(e => `
+          <a class="rb-item" href="#/records/${e.cat}">
+            <div class="rb-top">
+              <span class="rb-pill rb-${e.type}">${CHANGE_LABELS[e.type]}</span>
+              <span class="rb-when">${e.s} · Wk ${e.w}</span>
+            </div>
+            <div class="rb-title">${esc(e.title)} <small>${esc(catTitle(e.cat))}</small></div>
+            <div class="rb-who"><b>${holderNames(e.holders)}</b> <span class="rb-val">${esc(e.holders[0].display)}</span>${nowValue(e)}</div>
+            <div class="rb-prev">${previously(e)}</div>
+          </a>`).join('')}
+      </div>
+    </section>`;
+}
+
+function recordCard(r, cat) {
   if (!r.rows.length) {
     return `<article class="rec"><div class="rec-title">${esc(r.title)}</div><p class="empty">No one qualifies yet.</p></article>`;
   }
@@ -418,9 +482,10 @@ function recordCard(r) {
   const top = leaders[0];
   const holder = x => esc(x.whoText ?? name(x.who));
   const av = avatarUrl(DATA.owners[top.who]?.avatar);
+  const fresh = recentChange(cat, r);
   return `
-    <article class="rec">
-      <div class="rec-title">${esc(r.title)}</div>
+    <article class="rec${fresh ? ' rec-fresh' : ''}">
+      <div class="rec-title">${esc(r.title)}${fresh ? badge(fresh) : ''}</div>
       <div class="rec-lead">
         ${leaders.length === 1 && !top.whoText
           ? (av ? `<img class="rec-av" src="${av}" alt="" loading="lazy">` : `<span class="rec-av avatar-blank">${esc(name(top.who)[0])}</span>`)
@@ -446,6 +511,7 @@ function recordCard(r) {
 
 function renderRecordBook(main, sub) {
   RECORDS ??= buildRecords(DATA);
+  EVENTS ??= DATA.recordEvents ?? recordHistory(DATA);
   const cat = CATEGORIES.find(c => c.id === sub);
 
   if (!cat) {
@@ -469,6 +535,7 @@ function renderRecordBook(main, sub) {
               : `<a class="book-row" href="#/records/${c.id}">${inner}</a>`;
           }).join('')}
         </section>
+        ${recentlyBroken()}
       </div>`;
     return;
   }
@@ -484,7 +551,7 @@ function renderRecordBook(main, sub) {
       <p class="page-desc">${esc(cat.desc)}</p>
       ${cat.soon || !records.length
         ? `<section class="card soon-card"><p>These records are still being built.</p></section>`
-        : `<div class="rec-grid">${records.map(recordCard).join('')}</div>`}
+        : `<div class="rec-grid">${records.map(r => recordCard(r, cat.id)).join('')}</div>`}
     </div>`;
 }
 
