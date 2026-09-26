@@ -1,0 +1,8 @@
+{
+  "name": "seis-dynasty-hoops",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "update": "node scripts/update.mjs"
+  }
+}
