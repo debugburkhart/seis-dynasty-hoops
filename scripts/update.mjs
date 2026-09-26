@@ -5,8 +5,13 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { LEAGUE_ID } from '../assets/config.js';
 import { buildLeagueData } from '../assets/build-data.js';
+import { recordHistory } from '../assets/records.js';
 
 const data = await buildLeagueData(LEAGUE_ID);
+
+// Replaying every week to find record changes takes a couple of seconds,
+// so it's done here once a night instead of in every visitor's browser.
+data.recordEvents = recordHistory(data);
 
 await mkdir('data/snapshots', { recursive: true });
 await writeFile('data/league.json', JSON.stringify(data));
