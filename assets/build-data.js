@@ -2,6 +2,8 @@
 // Used by the nightly GitHub Action (scripts/update.mjs) and, if data/league.json
 // is missing, by the browser as a live fallback.
 
+import { CORRECTIONS } from './corrections.js';
+
 const API = 'https://api.sleeper.com/v1';
 
 const round1 = n => Math.round((Number(n) || 0) * 10) / 10;
@@ -79,8 +81,10 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
       const w = i + 1;
       pts[w] = {};
       const pairs = {};
+      const fix = CORRECTIONS.find(c => c.season === season && c.week === w)?.scores ?? {};
       for (const m of rows) {
-        pts[w][m.roster_id] = round1(m.custom_points ?? m.points);
+        const fixed = fix[owners[ownerOf[m.roster_id]]?.name];
+        pts[w][m.roster_id] = round1(fixed ?? m.custom_points ?? m.points);
         if (m.matchup_id != null) (pairs[m.matchup_id] ??= []).push(m);
       }
       if (w >= playoffStart) return; // playoff games come from the bracket below
