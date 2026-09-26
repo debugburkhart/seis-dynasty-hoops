@@ -26,9 +26,27 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   const state = await get('/state/nba');
   const currentWeek = Math.max(state.week || 0, state.leg || 0);
 
+  // Walk forward to the newest season. When the league renews, Sleeper creates
+  // a new league whose previous_league_id points back at this one, so look
+  // through the managers' leagues for next season to find it.
+  let newest = leagueId;
+  for (;;) {
+    const lg = await get(`/league/${newest}`);
+    const nextSeason = Number(lg.season) + 1;
+    const users = await get(`/league/${newest}/users`, []);
+    let renewed = null;
+    for (const u of users) {
+      const theirs = await get(`/user/${u.user_id}/leagues/nba/${nextSeason}`, []);
+      renewed = theirs.find(l => l.previous_league_id === newest);
+      if (renewed) break;
+    }
+    if (!renewed) break;
+    newest = renewed.league_id;
+  }
+
   // Walk back through previous seasons, oldest first.
   const chain = [];
-  for (let id = leagueId; id && id !== '0';) {
+  for (let id = newest; id && id !== '0';) {
     const lg = await get(`/league/${id}`);
     chain.unshift(lg);
     id = lg.previous_league_id;
@@ -180,7 +198,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   const latest = chain.at(-1);
   return {
     generatedAt: new Date().toISOString(),
-    leagueId,
+    leagueId: newest,
     name: latest.name,
     currentSeason: latest.season,
     seasons,
