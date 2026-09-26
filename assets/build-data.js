@@ -172,6 +172,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
         l: r.settings?.losses ?? 0,
         t: r.settings?.ties ?? 0,
         pf: round1((r.settings?.fpts ?? 0) + (r.settings?.fpts_decimal ?? 0) / 100),
+        pa: round1((r.settings?.fpts_against ?? 0) + (r.settings?.fpts_against_decimal ?? 0) / 100),
       })),
     });
   }

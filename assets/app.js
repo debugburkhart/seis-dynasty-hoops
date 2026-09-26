@@ -234,6 +234,11 @@ function corner(id, side, wins) {
     </div>`;
 }
 
+// Playoff games tied on points are decided by Sleeper's tiebreaker.
+const result = (m, winner) => (m.ap === m.bp
+  ? `${esc(name(winner))} advanced on tiebreaker`
+  : `${esc(name(winner))} by ${num(Math.abs(m.ap - m.bp))}`);
+
 function meetingRow(m, A, B) {
   const winner = m.win === 'A' ? A : m.win === 'B' ? B : null;
   const tag = m.t === 'P' ? `<span class="tag tag-po">${esc(m.label)}</span>` : m.t === 'X' ? `<span class="tag">${esc(m.label)}</span>` : '';
@@ -245,7 +250,7 @@ function meetingRow(m, A, B) {
         <span class="dash">—</span>
         <span class="${m.win === 'B' ? 'won' : ''}">${num(m.bp)}</span>
       </div>
-      <div class="m-result">${winner ? `${esc(name(winner))} by ${num(Math.abs(m.ap - m.bp))}` : 'Tie'}</div>
+      <div class="m-result">${winner ? result(m, winner) : 'Tie'}</div>
     </div>`;
 }
 
@@ -267,7 +272,7 @@ function signature(title, x, A, B) {
     <div class="sig">
       <div class="sig-title">${title}</div>
       <div class="sig-score">${num(m.ap)} <span class="dash">—</span> ${num(m.bp)}</div>
-      <div class="sig-meta">${esc(name(winner))} by ${num(diff)} · ${m.s} Wk ${m.w}${m.label ? ` · ${esc(m.label)}` : ''}</div>
+      <div class="sig-meta">${result(m, winner)} · ${m.s} Wk ${m.w}${m.label ? ` · ${esc(m.label)}` : ''}</div>
     </div>`;
 }
 
