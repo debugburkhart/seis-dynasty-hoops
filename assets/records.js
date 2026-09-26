@@ -97,36 +97,44 @@ export function buildRecords(DATA) {
   }
   const careers = Object.values(career).filter(k => k.g);
 
-  // A record: rows sorted best-first, ties share a rank, top 5 (plus ties) kept.
-  const R = (title, rows, { note, asc = false, keepZero = false } = {}) => {
-    rows = rows.filter(r => Number.isFinite(r.value) && (keepZero || r.value !== 0));
+  // A record: rows sorted best-first, ties share a rank.
+  // R: records one manager can hold many times (a season, a game) keep the top 10.
+  // A: one row per manager, so every manager is listed, zeros included. Rows
+  //    marked pending (didn't qualify yet) are listed last, unranked.
+  const R = (title, rows, { note, asc = false, keepZero = false, all = false } = {}) => {
+    const pending = all ? rows.filter(r => r.pending) : [];
+    rows = rows.filter(r => !r.pending && Number.isFinite(r.value) && (all || keepZero || r.value !== 0));
     rows.sort((a, b) => (asc ? a.value - b.value : b.value - a.value));
     rows.forEach((r, i) => { r.rank = i && rows[i - 1].value === r.value ? rows[i - 1].rank : i + 1; });
-    return { title, note, rows: rows.filter(r => r.rank <= 5).slice(0, 8) };
+    const kept = all ? rows : rows.slice(0, 10);
+    return { title, note, rows: [...kept, ...pending.map(r => ({ ...r, rank: '–' }))] };
   };
+  const A = (title, rows, opts = {}) => R(title, rows, { ...opts, all: true });
 
   const byCategory = {};
 
   byCategory.careers = [
-    R('Most championships', careers.map(k => ({ who: k.o, value: k.titles.length, display: k.titles.length, ctx: k.titles.join(', ') }))),
-    R('Most finals appearances', careers.map(k => ({ who: k.o, value: k.finals, display: k.finals, ctx: `${k.titles.length} won` }))),
-    R('Most playoff appearances', careers.map(k => ({ who: k.o, value: k.playoffs, display: k.playoffs, ctx: `in ${k.seasons} season${k.seasons === 1 ? '' : 's'}` }))),
-    R('Most playoff wins', careers.map(k => ({ who: k.o, value: k.pw, display: k.pw, ctx: `${rec(k.pw, k.pl, 0)} in the playoffs` })),
+    A('Most championships', careers.map(k => ({ who: k.o, value: k.titles.length, display: k.titles.length, ctx: k.titles.join(', ') }))),
+    A('Most finals appearances', careers.map(k => ({ who: k.o, value: k.finals, display: k.finals, ctx: `${k.titles.length} won` }))),
+    A('Most playoff appearances', careers.map(k => ({ who: k.o, value: k.playoffs, display: k.playoffs, ctx: `in ${k.seasons} season${k.seasons === 1 ? '' : 's'}` }))),
+    A('Most playoff wins', careers.map(k => ({ who: k.o, value: k.pw, display: k.pw, ctx: `${rec(k.pw, k.pl, 0)} in the playoffs` })),
       { note: 'Championship bracket games only.' }),
-    R('Best playoff win %', careers.filter(k => k.pw + k.pl >= 3).map(k => ({ who: k.o, value: k.pw / (k.pw + k.pl), display: pct(k.pw / (k.pw + k.pl)), ctx: rec(k.pw, k.pl, 0) })),
+    A('Best playoff win %', careers.map(k => (k.pw + k.pl >= 3
+      ? { who: k.o, value: k.pw / (k.pw + k.pl), display: pct(k.pw / (k.pw + k.pl)), ctx: rec(k.pw, k.pl, 0) }
+      : { who: k.o, pending: true, display: '—', ctx: k.pw + k.pl ? `${rec(k.pw, k.pl, 0)} · not enough games` : 'no playoff games yet' })),
       { note: 'Minimum 3 championship bracket games.', keepZero: true }),
-    R('Most regular-season wins', careers.map(k => ({ who: k.o, value: k.w, display: k.w, ctx: rec(k.w, k.l, k.t) }))),
-    R('Best regular-season win %', careers.map(k => ({ who: k.o, value: (k.w + k.t / 2) / k.g, display: pct((k.w + k.t / 2) / k.g), ctx: rec(k.w, k.l, k.t) })), { keepZero: true }),
-    R('Most regular-season points', careers.map(k => ({ who: k.o, value: k.pf, display: fmt(k.pf), ctx: `${k.g} games` }))),
-    R('Most points per game', careers.map(k => ({ who: k.o, value: k.pf / k.g, display: fmt(k.pf / k.g), ctx: `${fmt(k.pf)} in ${k.g} games` })),
+    A('Most regular-season wins', careers.map(k => ({ who: k.o, value: k.w, display: k.w, ctx: rec(k.w, k.l, k.t) }))),
+    A('Best regular-season win %', careers.map(k => ({ who: k.o, value: (k.w + k.t / 2) / k.g, display: pct((k.w + k.t / 2) / k.g), ctx: rec(k.w, k.l, k.t) })), { keepZero: true }),
+    A('Most regular-season points', careers.map(k => ({ who: k.o, value: k.pf, display: fmt(k.pf), ctx: `${k.g} games` }))),
+    A('Most points per game', careers.map(k => ({ who: k.o, value: k.pf / k.g, display: fmt(k.pf / k.g), ctx: `${fmt(k.pf)} in ${k.g} games` })),
       { note: 'Regular season.' }),
-    R('Most weekly high scores', careers.map(k => ({ who: k.o, value: k.highs, display: k.highs, ctx: `in ${k.g} weeks` })),
+    A('Most weekly high scores', careers.map(k => ({ who: k.o, value: k.highs, display: k.highs, ctx: `in ${k.g} weeks` })),
       { note: 'Top score in the league that week.' }),
-    R('Most weekly low scores', careers.map(k => ({ who: k.o, value: k.lows, display: k.lows, ctx: `in ${k.g} weeks` })),
+    A('Most weekly low scores', careers.map(k => ({ who: k.o, value: k.lows, display: k.lows, ctx: `in ${k.g} weeks` })),
       { note: 'Bottom score in the league that week.' }),
-    R('Most last-place finishes', careers.map(k => ({ who: k.o, value: k.basement.length, display: k.basement.length, ctx: k.basement.join(', ') })),
+    A('Most last-place finishes', careers.map(k => ({ who: k.o, value: k.basement.length, display: k.basement.length, ctx: k.basement.join(', ') })),
       { note: 'Worst regular-season record in a completed season.' }),
-    R('Most points against', careers.map(k => ({ who: k.o, value: k.pa, display: fmt(k.pa), ctx: `${fmt(k.pa / k.g)} per game` })),
+    A('Most points against', careers.map(k => ({ who: k.o, value: k.pa, display: fmt(k.pa), ctx: `${fmt(k.pa / k.g)} per game` })),
       { note: 'Regular season. Blame the schedule.' }),
   ];
 
@@ -176,7 +184,7 @@ export function buildRecords(DATA) {
   ];
 
   // Streaks: best run per manager over their regular-season games in order (runs carry across seasons).
-  const streak = (test, title, opts) => R(title, careers.map(k => {
+  const streak = (test, title, opts) => A(title, careers.map(k => {
     const mine = reg.filter(x => x.o === k.o);
     let best = { n: 0 };
     let run = null;
@@ -197,7 +205,7 @@ export function buildRecords(DATA) {
     streak(x => x.res === 'W', 'Longest winning streak', { note: 'Regular season, carried across seasons.' }),
     streak(x => x.res === 'L', 'Longest losing streak', { note: 'Regular season, carried across seasons.' }),
     streak(x => x.p > week[`${x.s}-${x.w}`].median, 'Longest above-median streak', { note: 'Consecutive weeks scoring in the top half of the league.' }),
-    R('Most consecutive playoff trips', careers.map(k => {
+    A('Most consecutive playoff trips', careers.map(k => {
       let best = 0;
       let run = 0;
       let span = '';
@@ -212,22 +220,22 @@ export function buildRecords(DATA) {
       }
       return { who: k.o, value: best, display: best, ctx: span };
     })),
-    R('Longest active title drought', careers.filter(k => current.has(k.o)).map(k => {
+    A('Longest active title drought', careers.filter(k => current.has(k.o)).map(k => {
       const mine = completedSeasons.filter(s => s.teams.some(t => t.owner === k.o));
       const last = k.titles.filter(s => complete.has(s)).at(-1);
       const since = mine.filter(s => !last || s.season > last).length;
       return { who: k.o, value: since, display: since, ctx: last ? `last title ${last}` : 'still chasing banner #1' };
     }), { note: 'Completed seasons since their last championship. Current managers.' }),
-    R('Fastest to 25 wins', careers.map(k => {
+    A('Fastest to 25 wins', careers.map(k => {
       const mine = reg.filter(x => x.o === k.o);
       let wins = 0;
       for (let i = 0; i < mine.length; i++) {
         if (mine[i].res === 'W') wins++;
         if (wins === 25) return { who: k.o, value: i + 1, display: i + 1, ctx: `games · reached ${mine[i].s} Wk ${mine[i].w}` };
       }
-      return { who: k.o, value: NaN };
+      return { who: k.o, pending: true, display: '—', ctx: `${wins} wins in ${mine.length} games so far` };
     }), { asc: true, note: 'Fewest regular-season games needed to reach 25 wins.' }),
-    R('400-point club', careers.map(k => {
+    A('400-point club', careers.map(k => {
       const big = reg.filter(x => x.o === k.o && x.p >= 400);
       return { who: k.o, value: big.length, display: big.length, ctx: big.length ? `best ${fmt(Math.max(...big.map(x => x.p)))}` : '' };
     }), { note: 'Most regular-season weeks with 400+ points.' }),
