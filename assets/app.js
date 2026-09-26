@@ -1,4 +1,5 @@
 import { LEAGUE_ID } from './config.js';
+import { CATEGORIES, buildRecords } from './records.js';
 
 // ---------- Navigation ----------
 
@@ -8,7 +9,7 @@ const NAV = [
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['cheat-sheet', 'Cheat Sheet', 'clipboard'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['rivalry']);
+const READY = new Set(['rivalry', 'records']);
 const DEFAULT_PAGE = 'rivalry';
 
 const ICONS = {
@@ -26,6 +27,13 @@ const ICONS = {
   history: '<path d="M3.5 10a6.5 6.5 0 1 0 2-4.7M3 3v3.5h3.5M10 6.5V10l2.5 1.5"/>',
   clipboard: '<path d="M7 4H5v13h10V4h-2M7 3h6v3H7zM7.5 10h5M7.5 13h5"/>',
   cap: '<path d="M2 8l8-4 8 4-8 4zM5 9.5V13c0 1.2 2.2 2.5 5 2.5s5-1.3 5-2.5V9.5M18 8v4"/>',
+  crown: '<path d="M3 7l3.5 3L10 5l3.5 5L17 7l-1.5 8h-11zM5 17.5h10"/>',
+  medal: '<path d="M6 3h8l-2.5 5h-3zM10 8a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9zM10 10.5v4"/>',
+  target: '<circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="4"/><circle cx="10" cy="10" r="1"/>',
+  users: '<circle cx="8" cy="7" r="3"/><path d="M2.5 17a5.5 5.5 0 0 1 11 0M13 4.3a3 3 0 0 1 0 5.4M15 12.3A5.5 5.5 0 0 1 17.5 17"/>',
+  flame: '<path d="M10 2.5c.5 3 4.5 5 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.2 2-4 0 1.5.8 2.5 1.8 2.8C9 8 9.2 5 10 2.5z"/>',
+  arrow: '<path d="M4 10h12M11 5l5 5-5 5"/>',
+  back: '<path d="M16 10H4M9 5l-5 5 5 5"/>',
 };
 const icon = name => `<svg class="ic" viewBox="0 0 20 20" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
@@ -396,18 +404,104 @@ function renderRivalry(main, params) {
   });
 }
 
+// ---------- Record Book ----------
+
+let RECORDS;
+
+function recordCard(r) {
+  if (!r.rows.length) {
+    return `<article class="rec"><div class="rec-title">${esc(r.title)}</div><p class="empty">No one qualifies yet.</p></article>`;
+  }
+  const leaders = r.rows.filter(x => x.rank === 1);
+  // A shared record lists every co-holder below, so each keeps its details.
+  const rest = leaders.length > 1 ? r.rows : r.rows.filter(x => x.rank !== 1);
+  const top = leaders[0];
+  const holder = x => esc(x.whoText ?? name(x.who));
+  const av = avatarUrl(DATA.owners[top.who]?.avatar);
+  return `
+    <article class="rec">
+      <div class="rec-title">${esc(r.title)}</div>
+      <div class="rec-lead">
+        ${leaders.length === 1 && !top.whoText
+          ? (av ? `<img class="rec-av" src="${av}" alt="" loading="lazy">` : `<span class="rec-av avatar-blank">${esc(name(top.who)[0])}</span>`)
+          : ''}
+        <div class="rec-holder">
+          <div class="rec-name">${leaders.length > 3 ? `${leaders.length}-way tie` : leaders.map(holder).join(' <span class="amp">&amp;</span> ')}</div>
+          <div class="rec-ctx">${leaders.length === 1 ? esc(top.ctx) : 'Shared record'}</div>
+        </div>
+        <div class="rec-value">${esc(top.display)}</div>
+      </div>
+      ${rest.length ? `
+        <ol class="rec-rest">
+          ${rest.map(x => `
+            <li${x.rank === 1 ? ' class="co"' : ''}>
+              <span class="rk">${x.rank}</span>
+              <span class="rn">${holder(x)}<small>${esc(x.ctx)}</small></span>
+              <span class="rv">${esc(x.display)}</span>
+            </li>`).join('')}
+        </ol>` : ''}
+      ${r.note ? `<p class="rec-note">${esc(r.note)}</p>` : ''}
+    </article>`;
+}
+
+function renderRecordBook(main, sub) {
+  RECORDS ??= buildRecords(DATA);
+  const cat = CATEGORIES.find(c => c.id === sub);
+
+  if (!cat) {
+    main.innerHTML = `
+      <div class="page">
+        <div class="page-head">
+          <div class="page-icon">${icon('book')}</div>
+          <div><div class="eyebrow">${esc(DATA.name)}</div><h1>Record Book</h1></div>
+        </div>
+        <section class="card book">
+          ${CATEGORIES.map(c => {
+            const n = RECORDS[c.id]?.length;
+            const inner = `
+              <span class="book-icon">${icon(c.icon)}</span>
+              <span class="book-title">${esc(c.title)}</span>
+              <span class="book-desc">${esc(c.desc)}</span>
+              <span class="book-count">${c.soon ? '<span class="soon-pill">Soon</span>' : `<b>${n}</b> records`}</span>
+              <span class="book-arrow">${c.soon ? '' : icon('arrow')}</span>`;
+            return c.soon
+              ? `<div class="book-row is-soon">${inner}</div>`
+              : `<a class="book-row" href="#/records/${c.id}">${inner}</a>`;
+          }).join('')}
+        </section>
+      </div>`;
+    return;
+  }
+
+  const records = RECORDS[cat.id] || [];
+  main.innerHTML = `
+    <div class="page page-wide">
+      <a class="back" href="#/records">${icon('back')} Record Book</a>
+      <div class="page-head">
+        <div class="page-icon">${icon(cat.icon)}</div>
+        <div><div class="eyebrow">Record Book</div><h1>${esc(cat.title)}</h1></div>
+      </div>
+      <p class="page-desc">${esc(cat.desc)}</p>
+      ${cat.soon || !records.length
+        ? `<section class="card soon-card"><p>These records are still being built.</p></section>`
+        : `<div class="rec-grid">${records.map(recordCard).join('')}</div>`}
+    </div>`;
+}
+
 // ---------- Boot ----------
 
 function route() {
   const [path, qs] = location.hash.replace(/^#\/?/, '').split('?');
-  return { page: path || DEFAULT_PAGE, params: new URLSearchParams(qs || '') };
+  const [page, sub] = (path || DEFAULT_PAGE).split('/');
+  return { page, sub, params: new URLSearchParams(qs || '') };
 }
 
 function render() {
-  const { page, params } = route();
+  const { page, sub, params } = route();
   renderSidebar(page);
   const main = $('#main');
   if (page === 'rivalry') renderRivalry(main, params);
+  else if (page === 'records') renderRecordBook(main, sub);
   else renderSoon(main, page);
   document.body.classList.remove('nav-open');
   window.scrollTo(0, 0);
