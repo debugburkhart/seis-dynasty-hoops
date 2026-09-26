@@ -41,7 +41,9 @@ for (const s of data.seasons) {
   for (const t of s.teams) {
     const mine = reg.filter(g => g.a === t.owner || g.b === t.owner);
     const side = g => (g.a === t.owner ? 'a' : 'b');
-    const wins = mine.filter(g => g.win === side(g)).length;
+    // Sleeper's official wins include league-median wins in seasons that have them.
+    const medianWins = (data.medianGames ?? []).filter(m => m.s === s.season && m.o === t.owner && m.res === 'W').length;
+    const wins = mine.filter(g => g.win === side(g)).length + medianWins;
     const pf = mine.reduce((x, g) => x + (side(g) === 'a' ? g.ap : g.bp), 0);
     const pa = mine.reduce((x, g) => x + (side(g) === 'a' ? g.bp : g.ap), 0);
     gap[t.owner] = { wins: t.w - wins, pf: r1(t.pf - pf), pa: r1(t.pa - pa) };
