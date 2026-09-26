@@ -20,15 +20,47 @@ await writeFile(`data/snapshots/${today}.json`, JSON.stringify({ date: today, se
 
 console.log(`Saved ${data.seasons.length} seasons, ${data.games.length} games, snapshot ${today}.`);
 
-// Cross-check weekly results against Sleeper's official standings. A mismatch
-// usually means a stat correction Sleeper didn't apply to the weekly matchup.
+// ---------- Scoring check ----------
+// Sleeper's official standings (wins, points for, points against) are compared
+// with the weekly matchup scores. A gap means a weekly score in the API is wrong.
+// Because a wrong score also shows up in the opponent's points against, the two
+// gaps together point to the few games to look up in the Sleeper app.
+
+const name = id => data.owners[id]?.name ?? id;
+const r1 = n => Math.round(n * 10) / 10;
+const problems = [];
+
 for (const s of data.seasons) {
+  const reg = data.games.filter(g => g.s === s.season && g.t === 'R');
+  const gap = {};
   for (const t of s.teams) {
-    const mine = data.games.filter(g => g.s === s.season && g.t === 'R' && (g.a === t.owner || g.b === t.owner));
-    const wins = mine.filter(g => (g.a === t.owner && g.win === 'a') || (g.b === t.owner && g.win === 'b')).length;
-    const pf = mine.reduce((sum, g) => sum + (g.a === t.owner ? g.ap : g.bp), 0);
-    if (wins !== t.w || Math.abs(pf - t.pf) > 0.5) {
-      console.log(`::warning::${s.season} ${data.owners[t.owner].name}: official ${t.w} wins / ${t.pf} pts, weekly matchups add up to ${wins} wins / ${Math.round(pf * 10) / 10} pts`);
-    }
+    const mine = reg.filter(g => g.a === t.owner || g.b === t.owner);
+    const side = g => (g.a === t.owner ? 'a' : 'b');
+    const wins = mine.filter(g => g.win === side(g)).length;
+    const pf = mine.reduce((x, g) => x + (side(g) === 'a' ? g.ap : g.bp), 0);
+    const pa = mine.reduce((x, g) => x + (side(g) === 'a' ? g.bp : g.ap), 0);
+    gap[t.owner] = { wins: t.w - wins, pf: r1(t.pf - pf), pa: r1(t.pa - pa) };
   }
+  for (const t of s.teams) {
+    const g0 = gap[t.owner];
+    if (!g0.wins && Math.abs(g0.pf) < 0.5) continue;
+    const lines = [`${s.season} ${name(t.owner)}: official ${t.w} wins / ${t.pf} pts, but weekly scores give ${t.w - g0.wins} wins / ${r1(t.pf - g0.pf)} pts (off by ${g0.pf > 0 ? '+' : ''}${g0.pf}).`];
+    const suspects = reg.filter(g => {
+      const opp = g.a === t.owner ? g.b : g.b === t.owner ? g.a : null;
+      return opp && Math.abs(gap[opp].pa) >= 0.5;
+    });
+    const list = suspects.length ? suspects : reg.filter(g => g.a === t.owner || g.b === t.owner);
+    lines.push(`   Check ${name(t.owner)}'s score in ${suspects.length ? 'these games' : 'every game this season'}:`);
+    for (const g of list) lines.push(`     Week ${g.w}: ${name(g.a)} ${g.ap} - ${g.bp} ${name(g.b)}`);
+    problems.push(lines.join('\n'));
+  }
+}
+
+if (problems.length) {
+  const msg = `Sleeper's weekly scores don't match its official standings:\n\n${problems.join('\n\n')}\n\nLook these up in the Sleeper app and add the right scores to assets/corrections.js.`;
+  console.log(`::warning::${msg.replace(/\n/g, '%0A')}`);
+  await writeFile('data/scoring-check.txt', msg);
+} else {
+  console.log('Scoring check passed: every weekly score matches Sleeper\'s official standings.');
+  await writeFile('data/scoring-check.txt', '');
 }
