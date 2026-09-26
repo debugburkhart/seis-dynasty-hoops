@@ -35,10 +35,11 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   for (const lg of chain) {
     const season = lg.season;
     const st = lg.settings || {};
-    const [users, rosters, bracket] = await Promise.all([
+    const [users, rosters, bracket, losersBracket] = await Promise.all([
       get(`/league/${lg.league_id}/users`, []),
       get(`/league/${lg.league_id}/rosters`, []),
       get(`/league/${lg.league_id}/winners_bracket`, []),
+      get(`/league/${lg.league_id}/losers_bracket`, []),
     ]);
 
     // Owners are tracked by Sleeper user ID so they carry across seasons.
@@ -123,6 +124,27 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
         champion = ownerOf[g.w];
         runnerUp = ownerOf[g.l];
       }
+    }
+
+    // Losers bracket (last-place game). Counts toward head-to-head, not playoff record.
+    // Sleeper's bracket "winner" here can mean the loser advancing, so points decide it.
+    for (const g of losersBracket) {
+      if (typeof g.t1 !== 'number' || typeof g.t2 !== 'number') continue;
+      const start = roundStart(g.r);
+      const end = start + roundLen(g.r) - 1;
+      if (end > lastWeek) continue;
+      let ap = 0;
+      let bp = 0;
+      for (let w = start; w <= end; w++) {
+        ap += pts[w]?.[g.t1] ?? 0;
+        bp += pts[w]?.[g.t2] ?? 0;
+      }
+      if (!ap && !bp) continue;
+      games.push({
+        s: season, w: start, t: 'X', label: g.p === 1 ? 'Last place game' : 'Consolation',
+        a: ownerOf[g.t1], b: ownerOf[g.t2], ap: round1(ap), bp: round1(bp),
+        win: ap > bp ? 'a' : bp > ap ? 'b' : g.w === g.t1 ? 'a' : 'b',
+      });
     }
 
     seasons.push({
