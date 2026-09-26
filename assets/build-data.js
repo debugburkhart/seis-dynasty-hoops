@@ -2,14 +2,18 @@
 // Used by the nightly GitHub Action (scripts/update.mjs) and, if data/league.json
 // is missing, by the browser as a live fallback.
 
-const API = 'https://api.sleeper.app/v1';
+const API = 'https://api.sleeper.com/v1';
 
 const round1 = n => Math.round((Number(n) || 0) * 10) / 10;
 const ordinal = n => n + ({ 1: 'st', 2: 'nd', 3: 'rd' }[n] || 'th');
 
 export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis)) {
+  // Sleeper's cache can serve stale matchup scores for weeks after the fact
+  // (2025 week 17 came back 290-315 instead of the real 355-352), so every
+  // request carries a unique value to force a fresh copy.
+  const bust = Date.now();
   const get = async (path, fallback) => {
-    const res = await fetchImpl(API + path);
+    const res = await fetchImpl(`${API}${path}?t=${bust}`);
     if (!res.ok) {
       if (fallback !== undefined) return fallback;
       throw new Error(`Sleeper returned ${res.status} for ${path}`);
