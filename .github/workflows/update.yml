@@ -1,0 +1,72 @@
+name: Daily league update
+
+on:
+  schedule:
+    # GitHub schedules run in UTC. Two entries cover 2:00 AM Central in both
+    # daylight time (07:00 UTC) and standard time (08:00 UTC); the "gate" step
+    # below skips whichever one isn't 2 AM right now.
+    - cron: '0 7 * * *'
+    - cron: '0 8 * * *'
+  workflow_dispatch: # adds the "Run workflow" button on the Actions tab
+  push:
+    branches: [main] # redeploy whenever you upload changes
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Only run at 2 AM Central
+        id: gate
+        run: |
+          RUN=true
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            OFFSET=$(TZ=America/Chicago date +%z)   # -0500 in summer, -0600 in winter
+            if [ "${{ github.event.schedule }}" = "0 7 * * *" ] && [ "$OFFSET" != "-0500" ]; then RUN=false; fi
+            if [ "${{ github.event.schedule }}" = "0 8 * * *" ] && [ "$OFFSET" != "-0600" ]; then RUN=false; fi
+          fi
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: 22
+
+      - name: Pull league data from Sleeper
+        if: steps.gate.outputs.run == 'true'
+        run: node scripts/update.mjs
+
+      - name: Save data to the repo
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          git diff --cached --quiet || git commit -m "Daily league update $(TZ=America/Chicago date +%F)"
+          git push
+
+      - uses: actions/configure-pages@v5
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.gate.outputs.run == 'true'
+        with:
+          path: .
+
+      - id: deploy
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/deploy-pages@v4
