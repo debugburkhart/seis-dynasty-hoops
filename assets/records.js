@@ -39,6 +39,15 @@ export function buildRecords(DATA) {
   const reg = lines.filter(x => x.t === 'R');
   const vs = x => `${x.s} Wk ${x.w} vs ${name(x.opp)}${x.label ? ` · ${x.label}` : ''}`;
 
+  // League-median games (seasons that have them). Like Sleeper, they count in
+  // win-loss records; scoring records use the head-to-head games only.
+  const medians = (DATA.medianGames ?? []).map(m => ({ o: m.o, p: m.p, res: m.res, s: m.s, w: m.w, t: 'M' }));
+  const medianNote = medians.length
+    ? `Includes league-median games (${[...new Set(medians.map(m => m.s))].join(', ')}), as Sleeper counts them.`
+    : undefined;
+  // Every regular-season result in order: each week's head-to-head game, then its median game.
+  const results = [...reg, ...medians].sort((a, b) => chrono(a, b) || (a.t === 'M') - (b.t === 'M'));
+
   // Every regular-season week: high, low, median, and all scores for all-play.
   const weeks = {};
   for (const x of reg) (weeks[`${x.s}-${x.w}`] ??= []).push(x.p);
@@ -53,31 +62,42 @@ export function buildRecords(DATA) {
   const ts = {};
   for (const x of reg) {
     const wk = week[`${x.s}-${x.w}`];
-    const a = (ts[`${x.s}|${x.o}`] ??= { s: x.s, o: x.o, g: 0, w: 0, l: 0, t: 0, pf: 0, pa: 0, highs: 0, lows: 0, apW: 0, apG: 0, above: 0 });
+    const a = (ts[`${x.s}|${x.o}`] ??= { s: x.s, o: x.o, g: 0, hw: 0, hl: 0, ht: 0, mw: 0, ml: 0, mt: 0, pf: 0, pa: 0, highs: 0, lows: 0, apW: 0, apG: 0, above: 0 });
     a.g++;
     a.pf += x.p;
     a.pa += x.op;
-    a[x.res === 'W' ? 'w' : x.res === 'L' ? 'l' : 't']++;
+    a[x.res === 'W' ? 'hw' : x.res === 'L' ? 'hl' : 'ht']++;
     if (x.p === wk.max) a.highs++;
     if (x.p === wk.min) a.lows++;
     if (x.p > wk.median) a.above++;
     a.apW += wk.ps.filter(p => p < x.p).length + (wk.ps.filter(p => p === x.p).length - 1) / 2;
     a.apG += wk.ps.length - 1;
   }
-  const seasons = Object.values(ts).map(a => ({
-    ...a,
-    ppg: a.pf / a.g,
-    apPct: a.apW / a.apG,
-    luck: a.w + a.t / 2 - (a.apW / a.apG) * a.g,
-  }));
+  for (const x of medians) {
+    const a = ts[`${x.s}|${x.o}`];
+    if (a) a[x.res === 'W' ? 'mw' : x.res === 'L' ? 'ml' : 'mt']++;
+  }
+  const seasons = Object.values(ts).map(a => {
+    const w = a.hw + a.mw;
+    const l = a.hl + a.ml;
+    const t = a.ht + a.mt;
+    return {
+      ...a, w, l, t,
+      dec: w + l + t, // decisions: head-to-head games plus median games
+      ppg: a.pf / a.g,
+      apPct: a.apW / a.apG,
+      // Luck only applies to head-to-head games; the median game has no schedule luck.
+      luck: a.hw + a.ht / 2 - (a.apW / a.apG) * a.g,
+    };
+  });
   const done = seasons.filter(a => complete.has(a.s));
 
   // Career totals.
   const career = {};
-  const c = o => (career[o] ??= { o, seasons: 0, titles: [], finals: 0, playoffs: 0, pw: 0, pl: 0, w: 0, l: 0, t: 0, g: 0, pf: 0, pa: 0, highs: 0, lows: 0, basement: [] });
+  const c = o => (career[o] ??= { o, seasons: 0, titles: [], finals: 0, playoffs: 0, pw: 0, pl: 0, w: 0, l: 0, t: 0, dec: 0, g: 0, pf: 0, pa: 0, highs: 0, lows: 0, basement: [] });
   for (const a of seasons) {
     const k = c(a.o);
-    for (const f of ['w', 'l', 't', 'g', 'pf', 'pa', 'highs', 'lows']) k[f] += a[f];
+    for (const f of ['w', 'l', 't', 'dec', 'g', 'pf', 'pa', 'highs', 'lows']) k[f] += a[f];
   }
   // Teams that made the playoffs: the bracket field (byes included), or for
   // data saved before that was recorded, everyone who played a playoff game.
@@ -99,39 +119,52 @@ export function buildRecords(DATA) {
     if (x.res === 'W') c(x.o).pw++;
     else c(x.o).pl++;
   }
-  const careers = Object.values(career).filter(k => k.g);
+  // Everyone who managed a team in these seasons (even with no games in the
+  // current filter, e.g. playoff-only views).
+  const careers = Object.values(career).filter(k => k.seasons || k.g);
 
   // A record: rows sorted best-first, ties share a rank.
-  // R: records one manager can hold many times (a season, a game) keep the top 10.
+  // R: records one manager can hold many times (a season, a game). Every row is
+  //    kept; the page shows the top 10 (after any manager filter).
   // A: one row per manager, so every manager is listed, zeros included. Rows
   //    marked pending (didn't qualify yet) are listed last, unranked.
   // kind: 'mark' = a single performance (game, season, streak) that is broken by
-  // beating it; 'total' = a running career total that everyone adds to, where
-  // only a change of leader is news.
-  const R = (title, rows, { note, asc = false, keepZero = false, all = false, kind = 'mark' } = {}) => {
+  //    beating it; 'total' = a running career total that everyone adds to, where
+  //    only a change of leader is news.
+  // stage: which games the record is about ('regular', 'playoffs' or 'all'),
+  //    used by the Stage filter. allTime: only meaningful across every season.
+  const R = (title, rows, { note, asc = false, keepZero = false, all = false, kind = 'mark', stage = 'regular', allTime = false } = {}) => {
     const pending = all ? rows.filter(r => r.pending) : [];
     rows = rows.filter(r => !r.pending && Number.isFinite(r.value) && (all || keepZero || r.value !== 0));
     rows.sort((a, b) => (asc ? a.value - b.value : b.value - a.value));
     rows.forEach((r, i) => { r.rank = i && rows[i - 1].value === r.value ? rows[i - 1].rank : i + 1; });
-    const kept = all ? rows : rows.slice(0, 10);
-    return { title, note, asc, kind, rows: [...kept, ...pending.map(r => ({ ...r, rank: '–' }))] };
+    return {
+      title, note, asc, kind, stage, allTime,
+      limit: all ? null : 10,
+      rows: [...rows, ...pending.map(r => ({ ...r, rank: '–' }))],
+    };
   };
   const A = (title, rows, opts = {}) => R(title, rows, { ...opts, all: true });
 
   const byCategory = {};
 
+  const PO = { stage: 'playoffs' };
+  // A single season has at most 3 playoff games, so one season only needs 1.
+  const oneSeason = DATA.view?.season && DATA.view.season !== 'all';
+  const minPlayoffGames = oneSeason ? 1 : 3;
   byCategory.careers = [
-    A('Most championships', careers.map(k => ({ who: k.o, value: k.titles.length, display: k.titles.length, ctx: k.titles.join(', ') }))),
-    A('Most finals appearances', careers.map(k => ({ who: k.o, value: k.finals, display: k.finals, ctx: `${k.titles.length} won` }))),
-    A('Most playoff appearances', careers.map(k => ({ who: k.o, value: k.playoffs, display: k.playoffs, ctx: `in ${k.seasons} season${k.seasons === 1 ? '' : 's'}` }))),
+    A('Most championships', careers.map(k => ({ who: k.o, value: k.titles.length, display: k.titles.length, ctx: k.titles.join(', ') })), PO),
+    A('Most finals appearances', careers.map(k => ({ who: k.o, value: k.finals, display: k.finals, ctx: `${k.titles.length} won` })), PO),
+    A('Most playoff appearances', careers.map(k => ({ who: k.o, value: k.playoffs, display: k.playoffs, ctx: `in ${k.seasons} season${k.seasons === 1 ? '' : 's'}` })), PO),
     A('Most playoff wins', careers.map(k => ({ who: k.o, value: k.pw, display: k.pw, ctx: `${rec(k.pw, k.pl, 0)} in the playoffs` })),
-      { note: 'Championship bracket games only.' }),
-    A('Best playoff win %', careers.map(k => (k.pw + k.pl >= 3
+      { ...PO, note: 'Championship bracket games only.' }),
+    A('Best playoff win %', careers.map(k => (k.pw + k.pl >= minPlayoffGames
       ? { who: k.o, value: k.pw / (k.pw + k.pl), display: pct(k.pw / (k.pw + k.pl)), ctx: rec(k.pw, k.pl, 0) }
-      : { who: k.o, pending: true, display: '—', ctx: k.pw + k.pl ? `${rec(k.pw, k.pl, 0)} · not enough games` : 'no playoff games yet' })),
-      { note: 'Minimum 3 championship bracket games.', keepZero: true }),
-    A('Most regular-season wins', careers.map(k => ({ who: k.o, value: k.w, display: k.w, ctx: rec(k.w, k.l, k.t) }))),
-    A('Best regular-season win %', careers.map(k => ({ who: k.o, value: (k.w + k.t / 2) / k.g, display: pct((k.w + k.t / 2) / k.g), ctx: rec(k.w, k.l, k.t) })), { keepZero: true }),
+      : { who: k.o, pending: true, display: '—', ctx: k.pw + k.pl ? `${rec(k.pw, k.pl, 0)} · not enough games` : 'no playoff games' })),
+      { ...PO, note: `Minimum ${minPlayoffGames} championship bracket game${minPlayoffGames === 1 ? '' : 's'}.`, keepZero: true }),
+    A('Most regular-season wins', careers.map(k => ({ who: k.o, value: k.w, display: k.w, ctx: rec(k.w, k.l, k.t) })), { note: medianNote }),
+    A('Best regular-season win %', careers.map(k => ({ who: k.o, value: (k.w + k.t / 2) / k.dec, display: pct((k.w + k.t / 2) / k.dec), ctx: rec(k.w, k.l, k.t) })),
+      { keepZero: true, note: medianNote }),
     A('Most regular-season points', careers.map(k => ({ who: k.o, value: k.pf, display: fmt(k.pf), ctx: `${k.g} games` }))),
     A('Most points per game', careers.map(k => ({ who: k.o, value: k.pf / k.g, display: fmt(k.pf / k.g), ctx: `${fmt(k.pf)} in ${k.g} games` })),
       { note: 'Regular season.' }),
@@ -150,9 +183,9 @@ export function buildRecords(DATA) {
   const fullLength = Math.max(0, ...done.map(a => a.g));
   const shortSeasons = [...new Set(done.map(a => a.s))].filter(s => gamesIn(s) < fullLength).map(s => `${s} had ${gamesIn(s)} games`);
   byCategory.seasons = [
-    R('Most wins in a season', seasons.map(a => ({ who: a.o, value: a.w, display: a.w, ctx: sCtx(a) }))),
-    R('Worst record in a season', done.map(a => ({ who: a.o, value: (a.w + a.t / 2) / a.g, display: pct((a.w + a.t / 2) / a.g), ctx: sCtx(a) })),
-      { asc: true, keepZero: true, note: 'Lowest win %. Completed seasons.' }),
+    R('Most wins in a season', seasons.map(a => ({ who: a.o, value: a.w, display: a.w, ctx: sCtx(a) })), { note: medianNote }),
+    R('Worst record in a season', done.map(a => ({ who: a.o, value: (a.w + a.t / 2) / a.dec, display: pct((a.w + a.t / 2) / a.dec), ctx: sCtx(a) })),
+      { asc: true, keepZero: true, note: `Lowest win %. Completed seasons.${medianNote ? ` ${medianNote}` : ''}` }),
     R('Most points in a season', seasons.map(a => ({ who: a.o, value: a.pf, display: fmt(a.pf), ctx: `${sCtx(a)} · ${a.g} games` })),
       { note: shortSeasons.length ? `Season lengths differ (${shortSeasons.join(', ')}), so see points per game too.` : undefined }),
     R('Most points per game in a season', seasons.map(a => ({ who: a.o, value: a.ppg, display: fmt(a.ppg), ctx: sCtx(a) }))),
@@ -177,22 +210,22 @@ export function buildRecords(DATA) {
   const regGames = games.filter(m => m.g.t === 'R');
   const gCtx = m => `${m.g.s} Wk ${m.g.w} · ${fmt(m.win.p)}–${fmt(m.lose.p)}${m.g.label ? ` · ${m.g.label}` : ''}`;
   byCategory.matchups = [
-    R('Highest score', lines.map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: vs(x) })), { note: 'Any game, playoffs included.' }),
+    R('Highest score', lines.map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: vs(x) })), { stage: 'all', note: 'Any game, playoffs included.' }),
     R('Lowest score', reg.map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: vs(x) })), { asc: true, note: 'Regular season.' }),
-    R('Biggest blowout', games.filter(m => !m.tie).map(m => ({ who: m.win.o, value: m.margin, display: `+${fmt(m.margin)}`, ctx: `over ${name(m.lose.o)} · ${gCtx(m)}` }))),
+    R('Biggest blowout', games.filter(m => !m.tie).map(m => ({ who: m.win.o, value: m.margin, display: `+${fmt(m.margin)}`, ctx: `over ${name(m.lose.o)} · ${gCtx(m)}` })), { stage: 'all' }),
     R('Closest win', games.filter(m => !m.tie).map(m => ({ who: m.win.o, value: m.margin, display: `+${fmt(m.margin)}`, ctx: `over ${name(m.lose.o)} · ${gCtx(m)}` })),
-      { asc: true, keepZero: true, note: 'A 0-point margin means a playoff game settled by Sleeper\'s tiebreaker.' }),
-    R('Highest combined score', games.map(m => ({ who: m.win.o, whoText: `${name(m.g.a)} & ${name(m.g.b)}`, value: m.total, display: fmt(m.total), ctx: `${m.g.s} Wk ${m.g.w} · ${fmt(m.g.ap)}–${fmt(m.g.bp)}${m.g.label ? ` · ${m.g.label}` : ''}` }))),
-    R('Lowest combined score', regGames.map(m => ({ who: m.win.o, whoText: `${name(m.g.a)} & ${name(m.g.b)}`, value: m.total, display: fmt(m.total), ctx: `${m.g.s} Wk ${m.g.w} · ${fmt(m.g.ap)}–${fmt(m.g.bp)}` })),
+      { stage: 'all', asc: true, keepZero: true, note: 'A 0-point margin means a playoff game settled by Sleeper\'s tiebreaker.' }),
+    R('Highest combined score', games.map(m => ({ who: m.win.o, also: m.lose.o, whoText: `${name(m.g.a)} & ${name(m.g.b)}`, value: m.total, display: fmt(m.total), ctx: `${m.g.s} Wk ${m.g.w} · ${fmt(m.g.ap)}–${fmt(m.g.bp)}${m.g.label ? ` · ${m.g.label}` : ''}` })), { stage: 'all' }),
+    R('Lowest combined score', regGames.map(m => ({ who: m.win.o, also: m.lose.o, whoText: `${name(m.g.a)} & ${name(m.g.b)}`, value: m.total, display: fmt(m.total), ctx: `${m.g.s} Wk ${m.g.w} · ${fmt(m.g.ap)}–${fmt(m.g.bp)}` })),
       { asc: true, note: 'Regular season.' }),
-    R('Highest score in a loss', lines.filter(x => x.res === 'L').map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: `${vs(x)} · lost ${fmt(x.p)}–${fmt(x.op)}` }))),
-    R('Lowest score in a win', lines.filter(x => x.res === 'W').map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: `${vs(x)} · won ${fmt(x.p)}–${fmt(x.op)}` })), { asc: true }),
-    R('Highest playoff score', lines.filter(x => x.t === 'P').map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: vs(x) })), { note: 'Championship bracket games.' }),
+    R('Highest score in a loss', lines.filter(x => x.res === 'L').map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: `${vs(x)} · lost ${fmt(x.p)}–${fmt(x.op)}` })), { stage: 'all' }),
+    R('Lowest score in a win', lines.filter(x => x.res === 'W').map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: `${vs(x)} · won ${fmt(x.p)}–${fmt(x.op)}` })), { stage: 'all', asc: true }),
+    R('Highest playoff score', lines.filter(x => x.t === 'P').map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: vs(x) })), { ...PO, note: 'Championship bracket games.' }),
   ];
 
   // Streaks: best run per manager over their regular-season games in order (runs carry across seasons).
-  const streak = (test, title, opts) => A(title, careers.map(k => {
-    const mine = reg.filter(x => x.o === k.o);
+  const streak = (test, title, opts, source = reg) => A(title, careers.map(k => {
+    const mine = source.filter(x => x.o === k.o);
     let best = { n: 0 };
     let run = null;
     for (const x of mine) {
@@ -209,8 +242,8 @@ export function buildRecords(DATA) {
   const completedSeasons = DATA.seasons.filter(s => complete.has(s.season));
   const current = new Set(DATA.seasons.at(-1).teams.map(t => t.owner));
   byCategory.streaks = [
-    streak(x => x.res === 'W', 'Longest winning streak', { note: 'Regular season, carried across seasons.' }),
-    streak(x => x.res === 'L', 'Longest losing streak', { note: 'Regular season, carried across seasons.' }),
+    streak(x => x.res === 'W', 'Longest winning streak', { note: `Regular season, carried across seasons.${medianNote ? ` ${medianNote}` : ''}` }, results),
+    streak(x => x.res === 'L', 'Longest losing streak', { note: `Regular season, carried across seasons.${medianNote ? ` ${medianNote}` : ''}` }, results),
     streak(x => x.p > week[`${x.s}-${x.w}`].median, 'Longest above-median streak', { note: 'Consecutive weeks scoring in the top half of the league.' }),
     A('Most consecutive playoff trips', careers.map(k => {
       let best = 0;
@@ -226,22 +259,22 @@ export function buildRecords(DATA) {
         } else { run = 0; from = null; }
       }
       return { who: k.o, value: best, display: best, ctx: span };
-    })),
+    }), { ...PO, allTime: true }),
     A('Longest active title drought', careers.filter(k => current.has(k.o)).map(k => {
       const mine = completedSeasons.filter(s => s.teams.some(t => t.owner === k.o));
       const last = k.titles.filter(s => complete.has(s)).at(-1);
       const since = mine.filter(s => !last || s.season > last).length;
       return { who: k.o, value: since, display: since, ctx: last ? `last title ${last}` : 'still chasing banner #1' };
-    }), { note: 'Completed seasons since their last championship. Current managers.' }),
+    }), { ...PO, allTime: true, note: 'Completed seasons since their last championship. Current managers.' }),
     A('Fastest to 25 wins', careers.map(k => {
-      const mine = reg.filter(x => x.o === k.o);
+      const mine = results.filter(x => x.o === k.o);
       let wins = 0;
       for (let i = 0; i < mine.length; i++) {
         if (mine[i].res === 'W') wins++;
         if (wins === 25) return { who: k.o, value: i + 1, display: i + 1, ctx: `games · reached ${mine[i].s} Wk ${mine[i].w}` };
       }
       return { who: k.o, pending: true, display: '—', ctx: `${wins} wins in ${mine.length} games so far` };
-    }), { asc: true, note: 'Fewest regular-season games needed to reach 25 wins.' }),
+    }), { asc: true, note: `Fewest regular-season games needed to reach 25 wins.${medianNote ? ` ${medianNote}` : ''}` }),
     A('400-point club', careers.map(k => {
       const big = reg.filter(x => x.o === k.o && x.p >= 400);
       return { who: k.o, value: big.length, display: big.length, ctx: big.length ? `best ${fmt(Math.max(...big.map(x => x.p)))}` : '' };
@@ -255,6 +288,36 @@ export function buildRecords(DATA) {
   return byCategory;
 }
 
+// ---------- Filters ----------
+// The league narrowed to one season and/or one stage, for the Record Book's
+// Timeframe and Stage filters. buildRecords() then runs on the narrowed data.
+//   stage 'regular':  regular-season games (and median games) only
+//   stage 'playoffs': championship-bracket games only
+export function viewData(DATA, { season = 'all', stage = 'all' } = {}) {
+  let games = DATA.games;
+  let medianGames = DATA.medianGames ?? [];
+  let seasons = DATA.seasons;
+  if (season !== 'all') {
+    games = games.filter(g => g.s === season);
+    medianGames = medianGames.filter(g => g.s === season);
+    seasons = seasons.filter(s => s.season === season);
+  }
+  if (stage === 'regular') games = games.filter(g => g.t === 'R');
+  if (stage === 'playoffs') {
+    games = games.filter(g => g.t === 'P');
+    medianGames = [];
+  }
+  return { ...DATA, games, medianGames, seasons, view: { season, stage } };
+}
+
+// Which records a filter shows: a record about regular-season games is hidden
+// in the playoffs view and vice versa; all-time-only records need all seasons.
+export function recordVisible(r, { season = 'all', stage = 'all' } = {}) {
+  if (r.allTime && season !== 'all') return false;
+  if (stage === 'all' || r.stage === 'all') return true;
+  return r.stage === stage;
+}
+
 // ---------- Record history ----------
 // Replays the league one week at a time, rebuilding the Record Book as it
 // stood after each week, and notes every time a record changes hands.
@@ -264,6 +327,7 @@ function asOf(DATA, s, w, lastWeek) {
   return {
     ...DATA,
     games: DATA.games.filter(g => g.s < s || (g.s === s && g.w <= w)),
+    medianGames: (DATA.medianGames ?? []).filter(g => g.s < s || (g.s === s && g.w <= w)),
     seasons: DATA.seasons.filter(x => x.season <= s).map(x => {
       if (x.season < s) return x;
       const finished = x.status === 'complete' && w >= lastWeek[x.season];

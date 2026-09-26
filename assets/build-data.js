@@ -55,6 +55,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   const owners = {};
   const seasons = [];
   const games = [];
+  const medianGames = [];
 
   for (const lg of chain) {
     const season = lg.season;
@@ -106,12 +107,25 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
         if (m.matchup_id != null) (pairs[m.matchup_id] ??= []).push(m);
       }
       if (w >= playoffStart) return; // playoff games come from the bracket below
+      const playing = [];
       for (const [x, y] of Object.values(pairs)) {
         if (!y) continue;
         const ap = pts[w][x.roster_id];
         const bp = pts[w][y.roster_id];
         if (!ap && !bp) continue;
         games.push({ s: season, w, t: 'R', a: ownerOf[x.roster_id], b: ownerOf[y.roster_id], ap, bp, win: ap > bp ? 'a' : bp > ap ? 'b' : 'tie' });
+        playing.push(x, y);
+      }
+      // League-median game: every team also plays the week's median score, so a
+      // top-half score is a second win. Sleeper counts these in the standings.
+      if (st.league_average_match && playing.length) {
+        const ps = playing.map(m => pts[w][m.roster_id]).sort((a, b) => a - b);
+        const mid = ps.length / 2;
+        const median = round1(ps.length % 2 ? ps[Math.floor(mid)] : (ps[mid - 1] + ps[mid]) / 2);
+        for (const m of playing) {
+          const p = pts[w][m.roster_id];
+          medianGames.push({ s: season, w, o: ownerOf[m.roster_id], p, median, res: p > median ? 'W' : p < median ? 'L' : 'T' });
+        }
       }
     });
 
@@ -182,6 +196,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
       playoffStart,
       champion,
       runnerUp,
+      medianGame: Boolean(st.league_average_match),
       // Every team in the championship bracket, including first-round byes
       // (a bye team's first game has one side that didn't come from an earlier round).
       // Sleeper shows a projected bracket all season, so only once playoffs start.
@@ -211,5 +226,6 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     seasons,
     owners,
     games,
+    medianGames,
   };
 }

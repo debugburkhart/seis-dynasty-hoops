@@ -1,5 +1,5 @@
 import { LEAGUE_ID } from './config.js';
-import { CATEGORIES, CHANGE_LABELS, buildRecords, recordHistory } from './records.js';
+import { CATEGORIES, CHANGE_LABELS, buildRecords, recordHistory, recordVisible, viewData } from './records.js';
 
 // ---------- Navigation ----------
 
@@ -151,6 +151,11 @@ function career(id) {
       if (won) c.pw++;
       else c.pl++;
     }
+  }
+  // League-median games count in the record, as in Sleeper's standings.
+  for (const m of DATA.medianGames ?? []) {
+    if (m.o !== id) continue;
+    c[m.res === 'W' ? 'w' : m.res === 'L' ? 'l' : 't']++;
   }
   c.winPct = c.w + c.l + c.t ? (c.w + c.t / 2) / (c.w + c.l + c.t) : 0;
   return c;
@@ -472,27 +477,52 @@ function recentlyBroken() {
     </section>`;
 }
 
-function recordCard(r, cat) {
-  if (!r.rows.length) {
-    return `<article class="rec"><div class="rec-title">${esc(r.title)}</div><p class="empty">No one qualifies yet.</p></article>`;
+// Records for a Timeframe + Stage combination, built once and cached.
+const RECORD_VIEWS = {};
+function recordsFor(season, stage) {
+  return (RECORD_VIEWS[`${season}|${stage}`] ??= buildRecords(viewData(DATA, { season, stage })));
+}
+
+// The rows a card shows: only the chosen manager's entries (keeping their
+// league-wide rank), then trimmed to the record's limit.
+function shownRows(r, manager) {
+  let rows = r.rows;
+  if (manager !== 'all') rows = rows.filter(x => x.who === manager || x.also === manager);
+  return r.limit ? rows.slice(0, r.limit) : rows;
+}
+
+function recordCard(r, cat, { manager = 'all', badges = true, stage = 'all', showCat = false } = {}) {
+  const rows = shownRows(r, manager);
+  const head = `${esc(r.title)}${showCat ? ` <small class="rec-cat">${esc(CATEGORIES.find(c => c.id === cat)?.title)}</small>` : ''}`;
+  if (!rows.length) {
+    const why = manager !== 'all' ? `${esc(name(manager))} isn't on this board.` : 'No one qualifies yet.';
+    return `<article class="rec"><div class="rec-title">${head}</div><p class="empty">${why}</p></article>`;
   }
-  const leaders = r.rows.filter(x => x.rank === 1);
+  const topRank = rows[0].rank;
+  if (topRank === '–' && manager === 'all') {
+    return `<article class="rec"><div class="rec-title">${head}</div><p class="empty">No one qualifies yet.</p>${r.note ? `<p class="rec-note">${esc(r.note)}</p>` : ''}</article>`;
+  }
+  const leaders = topRank === '–' ? [rows[0]] : rows.filter(x => x.rank === topRank);
   // A shared record lists every co-holder below, so each keeps its details.
-  const rest = leaders.length > 1 ? r.rows : r.rows.filter(x => x.rank !== 1);
+  const rest = leaders.length > 1 ? rows : rows.filter(x => !leaders.includes(x));
   const top = leaders[0];
   const holder = x => esc(x.whoText ?? name(x.who));
   const av = avatarUrl(DATA.owners[top.who]?.avatar);
-  const fresh = recentChange(cat, r);
+  const fresh = badges && topRank === 1 ? recentChange(cat, r) : null;
+  const rankNote = topRank === 1 ? '' : topRank === '–' ? 'Not ranked yet' : `#${topRank} overall`;
+  const ctx = leaders.length === 1 ? [top.ctx, rankNote].filter(Boolean).join(' · ') : 'Shared record';
+  // A note about "any game" doesn't apply once the Stage filter narrows the games.
+  const note = r.stage === 'all' && stage !== 'all' ? '' : r.note;
   return `
-    <article class="rec${fresh ? ' rec-fresh' : ''}">
-      <div class="rec-title">${esc(r.title)}${fresh ? badge(fresh) : ''}</div>
+    <article class="rec${fresh ? ' rec-fresh' : ''}${topRank !== 1 ? ' rec-sub' : ''}" id="rec-${cat}-${slug(r.title)}">
+      <div class="rec-title"><span>${head}</span>${fresh ? badge(fresh) : ''}</div>
       <div class="rec-lead">
         ${leaders.length === 1 && !top.whoText
           ? (av ? `<img class="rec-av" src="${av}" alt="" loading="lazy">` : `<span class="rec-av avatar-blank">${esc(name(top.who)[0])}</span>`)
           : ''}
         <div class="rec-holder">
           <div class="rec-name">${leaders.length > 3 ? `${leaders.length}-way tie` : leaders.map(holder).join(' <span class="amp">&amp;</span> ')}</div>
-          <div class="rec-ctx">${leaders.length === 1 ? esc(top.ctx) : 'Shared record'}</div>
+          <div class="rec-ctx">${esc(ctx)}</div>
         </div>
         <div class="rec-value">${esc(top.display)}</div>
       </div>
@@ -505,12 +535,110 @@ function recordCard(r, cat) {
               <span class="rv">${esc(x.display)}</span>
             </li>`).join('')}
         </ol>` : ''}
-      ${r.note ? `<p class="rec-note">${esc(r.note)}</p>` : ''}
+      ${note ? `<p class="rec-note">${esc(note)}</p>` : ''}
     </article>`;
 }
 
-function renderRecordBook(main, sub) {
-  RECORDS ??= buildRecords(DATA);
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+// ---------- Record Book filters ----------
+
+const STAGES = [['all', 'All stages'], ['regular', 'Regular season'], ['playoffs', 'Playoffs']];
+
+function filterState(params) {
+  const seasons = DATA.seasons.filter(s => s.weeksPlayed).map(s => s.season);
+  const season = seasons.includes(params.get('season')) ? params.get('season') : 'all';
+  const manager = DATA.owners[params.get('manager')] ? params.get('manager') : 'all';
+  const stage = STAGES.some(([id]) => id === params.get('stage')) ? params.get('stage') : 'all';
+  return { season, manager, stage, q: params.get('q') ?? '' };
+}
+
+function filterHash(cat, f) {
+  const p = new URLSearchParams();
+  if (f.season !== 'all') p.set('season', f.season);
+  if (f.manager !== 'all') p.set('manager', f.manager);
+  if (f.stage !== 'all') p.set('stage', f.stage);
+  if (f.q) p.set('q', f.q);
+  const qs = p.toString();
+  return `#/records/${cat}${qs ? `?${qs}` : ''}`;
+}
+
+function dropdown(key, label, value, options) {
+  const current = options.find(([id]) => id === value)?.[1] ?? '';
+  return `
+    <label class="f">
+      <span class="f-label">${label}</span>
+      <span class="f-val">${esc(current)}</span>
+      <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+      <select data-f="${key}" aria-label="${label}">
+        ${options.map(([id, text, group]) => `<option value="${esc(id)}"${id === value ? ' selected' : ''}${group ? ` data-group="${group}"` : ''}>${esc(text)}</option>`).join('')}
+      </select>
+    </label>`;
+}
+
+function filterBar(cat, f) {
+  const complete = new Set(DATA.seasons.filter(s => s.status === 'complete').map(s => s.season));
+  const seasonOpts = [['all', 'All history'], ...DATA.seasons.filter(s => s.weeksPlayed).map(s => s.season).reverse()
+    .map(s => [s, `${s} season${complete.has(s) ? '' : ' (in progress)'}`])];
+  const { current, former } = ownerOrder();
+  const managerOpts = [['all', 'Everyone'], ...current.map(id => [id, name(id)]), ...former.map(id => [id, `${name(id)} (former)`])];
+  const cats = CATEGORIES.filter(c => !c.soon);
+  return `
+    <div class="rb-toolbar">
+      <a class="back" href="#/records">${icon('back')} All categories</a>
+      <label class="rb-search">
+        <svg class="ic" viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><path d="m13.5 13.5 3.5 3.5"/></svg>
+        <input type="search" id="rb-q" placeholder="Browse every record" value="${esc(f.q)}" autocomplete="off">
+      </label>
+    </div>
+    <section class="filters">
+      <label class="f-cat">
+        <span class="page-icon">${icon(cat.icon)}</span>
+        <span class="f-cat-text"><span class="eyebrow">Record Book</span><span class="f-cat-name">${esc(cat.title)}</span></span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select data-f="cat" aria-label="Category">
+          ${cats.map(c => `<option value="${c.id}"${c.id === cat.id ? ' selected' : ''}>${esc(c.title)}</option>`).join('')}
+        </select>
+      </label>
+      <div class="f-group">
+        ${dropdown('season', 'Timeframe', f.season, seasonOpts)}
+        ${dropdown('manager', 'Manager', f.manager, managerOpts)}
+        ${dropdown('stage', 'Stage', f.stage, STAGES)}
+      </div>
+    </section>`;
+}
+
+function filterSummary(f) {
+  const bits = [];
+  if (f.season !== 'all') bits.push(`the ${f.season} season only`);
+  if (f.stage === 'regular') bits.push('regular-season games only');
+  if (f.stage === 'playoffs') bits.push('championship-bracket games only');
+  if (f.manager !== 'all') bits.push(`${esc(name(f.manager))}'s entries, with their league-wide rank`);
+  if (!bits.length) return '';
+  return `<p class="filter-note">Showing ${bits.join(' · ')}. <a href="${filterHash(route().sub, { season: 'all', manager: 'all', stage: 'all', q: f.q })}">Clear filters</a></p>`;
+}
+
+function recordResults(cat, f) {
+  const recs = recordsFor(f.season, f.stage);
+  const opts = { manager: f.manager, badges: f.season === 'all' && f.stage === 'all', stage: f.stage };
+  const q = f.q.trim().toLowerCase();
+  if (q) {
+    // Search looks through every category, not just this one.
+    const hits = CATEGORIES.filter(c => !c.soon).flatMap(c => (recs[c.id] || [])
+      .filter(r => recordVisible(r, f) && `${r.title} ${c.title}`.toLowerCase().includes(q))
+      .map(r => recordCard(r, c.id, { ...opts, showCat: true })));
+    return hits.length
+      ? `<p class="filter-note">${hits.length} record${hits.length === 1 ? '' : 's'} matching “${esc(f.q)}” across every category.</p><div class="rec-grid">${hits.join('')}</div>`
+      : `<section class="card soon-card"><p>No records match “${esc(f.q)}”.</p></section>`;
+  }
+  const list = (recs[cat.id] || []).filter(r => recordVisible(r, f));
+  return list.length
+    ? `<div class="rec-grid">${list.map(r => recordCard(r, cat.id, opts)).join('')}</div>`
+    : `<section class="card soon-card"><p>None of the ${esc(cat.title)} records apply to this stage.</p></section>`;
+}
+
+function renderRecordBook(main, sub, params) {
+  RECORDS = recordsFor('all', 'all');
   EVENTS ??= DATA.recordEvents ?? recordHistory(DATA);
   const cat = CATEGORIES.find(c => c.id === sub);
 
@@ -540,19 +668,49 @@ function renderRecordBook(main, sub) {
     return;
   }
 
-  const records = RECORDS[cat.id] || [];
+  if (cat.soon) {
+    main.innerHTML = `
+      <div class="page page-wide">
+        <a class="back" href="#/records">${icon('back')} All categories</a>
+        <div class="page-head">
+          <div class="page-icon">${icon(cat.icon)}</div>
+          <div><div class="eyebrow">Record Book</div><h1>${esc(cat.title)}</h1></div>
+        </div>
+        <section class="card soon-card"><p>These records are still being built.</p></section>
+      </div>`;
+    return;
+  }
+
+  const f = filterState(params);
   main.innerHTML = `
     <div class="page page-wide">
-      <a class="back" href="#/records">${icon('back')} Record Book</a>
-      <div class="page-head">
-        <div class="page-icon">${icon(cat.icon)}</div>
-        <div><div class="eyebrow">Record Book</div><h1>${esc(cat.title)}</h1></div>
-      </div>
+      ${filterBar(cat, f)}
       <p class="page-desc">${esc(cat.desc)}</p>
-      ${cat.soon || !records.length
-        ? `<section class="card soon-card"><p>These records are still being built.</p></section>`
-        : `<div class="rec-grid">${records.map(r => recordCard(r, cat.id)).join('')}</div>`}
+      <div id="rb-summary">${filterSummary(f)}</div>
+      <div id="rb-results">${recordResults(cat, f)}</div>
     </div>`;
+
+  main.querySelectorAll('select[data-f]').forEach(sel => sel.addEventListener('change', () => {
+    const next = { ...filterState(route().params) };
+    if (sel.dataset.f === 'cat') {
+      location.hash = filterHash(sel.value, next);
+      return;
+    }
+    next[sel.dataset.f] = sel.value;
+    location.hash = filterHash(cat.id, next);
+  }));
+
+  // Search updates the results in place so the box keeps focus while typing.
+  let timer;
+  $('#rb-q', main).addEventListener('input', e => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const next = { ...filterState(route().params), q: e.target.value };
+      history.replaceState(null, '', filterHash(cat.id, next));
+      $('#rb-summary', main).innerHTML = filterSummary(next);
+      $('#rb-results', main).innerHTML = recordResults(cat, next);
+    }, 150);
+  });
 }
 
 // ---------- Boot ----------
@@ -568,7 +726,7 @@ function render() {
   renderSidebar(page);
   const main = $('#main');
   if (page === 'rivalry') renderRivalry(main, params);
-  else if (page === 'records') renderRecordBook(main, sub);
+  else if (page === 'records') renderRecordBook(main, sub, params);
   else renderSoon(main, page);
   document.body.classList.remove('nav-open');
   window.scrollTo(0, 0);
