@@ -182,6 +182,13 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
       playoffStart,
       champion,
       runnerUp,
+      // Every team in the championship bracket, including first-round byes
+      // (a bye team's first game has one side that didn't come from an earlier round).
+      // Sleeper shows a projected bracket all season, so only once playoffs start.
+      playoffTeams: lastWeek < playoffStart ? [] : [...new Set(bracket
+        .filter(g => g.p == null)
+        .flatMap(g => [g.t1_from ? null : g.t1, g.t2_from ? null : g.t2])
+        .filter(r => typeof r === 'number'))].map(r => ownerOf[r]),
       teams: rosters.map(r => ({
         owner: ownerOf[r.roster_id],
         rosterId: r.roster_id,

@@ -79,13 +79,17 @@ export function buildRecords(DATA) {
     const k = c(a.o);
     for (const f of ['w', 'l', 't', 'g', 'pf', 'pa', 'highs', 'lows']) k[f] += a[f];
   }
+  // Teams that made the playoffs: the bracket field (byes included), or for
+  // data saved before that was recorded, everyone who played a playoff game.
+  const playoffField = s => new Set(s.playoffTeams
+    ?? DATA.games.filter(g => g.s === s.season && g.t === 'P').flatMap(g => [g.a, g.b]));
+
   for (const s of played) {
     for (const t of s.teams) c(t.owner).seasons++;
     if (s.champion) c(s.champion).titles.push(s.season);
     if (s.champion) c(s.champion).finals++;
     if (s.runnerUp) c(s.runnerUp).finals++;
-    const inPlayoffs = new Set(DATA.games.filter(g => g.s === s.season && g.t === 'P').flatMap(g => [g.a, g.b]));
-    for (const o of inPlayoffs) c(o).playoffs++;
+    for (const o of playoffField(s)) c(o).playoffs++;
     if (complete.has(s.season)) {
       const last = [...s.teams].sort((x, y) => x.w + x.t / 2 - (y.w + y.t / 2) || x.pf - y.pf)[0];
       if (last) c(last.owner).basement.push(s.season);
@@ -214,7 +218,7 @@ export function buildRecords(DATA) {
       let span = '';
       let from = null;
       for (const s of completedSeasons) {
-        const inIt = DATA.games.some(g => g.s === s.season && g.t === 'P' && (g.a === k.o || g.b === k.o));
+        const inIt = playoffField(s).has(k.o);
         if (inIt) {
           run++;
           from ??= s.season;
@@ -269,6 +273,7 @@ function asOf(DATA, s, w, lastWeek) {
         weeksPlayed: Math.min(x.weeksPlayed, w),
         champion: finished ? x.champion : null,
         runnerUp: finished ? x.runnerUp : null,
+        playoffTeams: x.playoffTeams && (w >= x.playoffStart ? x.playoffTeams : []),
       };
     }),
   };
