@@ -357,7 +357,7 @@ function renderRivalry(main, params) {
           ${tapeRow('Regular-season record', rec(ca.w, ca.l, ca.t), rec(cb.w, cb.l, cb.t), ca.w, cb.w)}
           ${tapeRow('Playoff record', rec(ca.pw, ca.pl, 0), rec(cb.pw, cb.pl, 0), ca.pw, cb.pw)}
           ${tapeRow('Win %', pct(ca.w, ca.l, ca.t), pct(cb.w, cb.l, cb.t), ca.winPct, cb.winPct)}
-          ${tapeRow('Career points for', num(ca.pf), num(cb.pf), ca.pf, cb.pf)}
+          ${tapeRow('Regular-season points for', num(ca.pf), num(cb.pf), ca.pf, cb.pf)}
           ${tapeRow('Weekly high scores', ca.highs, cb.highs, ca.highs, cb.highs)}
         </div>
       </section>
