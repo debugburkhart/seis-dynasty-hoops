@@ -57,6 +57,20 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   const games = [];
   const medianGames = [];
   const schedule = [];
+  const playerWeeks = []; // { s, w, t, o, pid, p }: locked points per player per team per week
+  const usedPlayers = new Set();
+  const warnings = []; // problems the nightly check should email about
+
+  // Player names, for display and for matching player corrections by name.
+  const allPlayers = await get('/players/nba', {});
+  const plain = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+  const fullName = pid => [allPlayers[pid]?.first_name, allPlayers[pid]?.last_name].filter(Boolean).join(' ');
+  // Prefer a player on that team's roster that week; fall back to the whole league.
+  const findPlayer = (wanted, roster = []) => {
+    const key = plain(wanted);
+    return roster.find(pid => plain(fullName(pid)) === key)
+      ?? Object.keys(allPlayers).find(pid => plain(fullName(pid)) === key);
+  };
 
   for (const lg of chain) {
     const season = lg.season;
@@ -97,15 +111,45 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     );
 
     const pts = {}; // pts[week][rosterId]
+    const locked = {}; // locked[week][rosterId] = [[playerId, points], ...]
+    // Save a team's locked player points for a game (t: 'R', 'P' or 'X'). Playoff
+    // weeks only count for teams actually playing a bracket game that week.
+    const lockIn = (t, rid, start, end) => {
+      for (let w = start; w <= end; w++) {
+        for (const [pid, p] of locked[w]?.[rid] ?? []) {
+          playerWeeks.push({ s: season, w, t, o: ownerOf[rid], pid, p });
+          usedPlayers.add(pid);
+        }
+      }
+    };
     weekly.forEach((rows, i) => {
       const w = i + 1;
       pts[w] = {};
+      locked[w] = {};
       const pairs = {};
       const fix = CORRECTIONS.find(c => c.season === season && c.week === w)?.scores ?? {};
       for (const m of rows) {
         const fixed = fix[owners[ownerOf[m.roster_id]]?.name];
         pts[w][m.roster_id] = round1(fixed ?? m.custom_points ?? m.points);
         if (m.matchup_id != null) (pairs[m.matchup_id] ??= []).push(m);
+        // Locked points: what each starter scored while in the lineup. These add
+        // up to the team's score; bench points never counted and are left out.
+        locked[w][m.roster_id] = (m.starters ?? [])
+          .map((pid, j) => [pid, round1(m.starters_points?.[j] ?? 0)])
+          .filter(([pid, p]) => pid && pid !== '0' && p);
+        // Player-level corrections from assets/corrections.js.
+        const manager = owners[ownerOf[m.roster_id]]?.name;
+        const playerFix = CORRECTIONS.find(c => c.season === season && c.week === w)?.players?.[manager] ?? {};
+        for (const [wanted, p] of Object.entries(playerFix)) {
+          const pid = findPlayer(wanted, m.players ?? []);
+          if (!pid) {
+            warnings.push(`${season} week ${w} ${manager}: corrections.js lists "${wanted}", but no Sleeper player has that name. Check the spelling.`);
+            continue;
+          }
+          const row = locked[w][m.roster_id].find(x => x[0] === pid);
+          if (row) row[1] = p;
+          else locked[w][m.roster_id].push([pid, p]);
+        }
       }
       if (w >= playoffStart) return; // playoff games come from the bracket below
       const playing = [];
@@ -116,6 +160,8 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
         if (!ap && !bp) continue;
         games.push({ s: season, w, t: 'R', a: ownerOf[x.roster_id], b: ownerOf[y.roster_id], ap, bp, win: ap > bp ? 'a' : bp > ap ? 'b' : 'tie' });
         playing.push(x, y);
+        lockIn('R', x.roster_id, w, w);
+        lockIn('R', y.roster_id, w, w);
       }
       // League-median game: every team also plays the week's median score, so a
       // top-half score is a second win. Sleeper counts these in the standings.
@@ -172,11 +218,14 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
         : g.r === maxRound - 1 ? 'Semifinal'
         : g.r === maxRound - 2 ? 'Quarterfinal'
         : `Playoff round ${g.r}`;
+      const t = g.p && g.p !== 1 ? 'X' : 'P';
       games.push({
-        s: season, w: start, t: g.p && g.p !== 1 ? 'X' : 'P', label,
+        s: season, w: start, t, label,
         a: ownerOf[g.t1], b: ownerOf[g.t2], ap: round1(ap), bp: round1(bp),
         win: g.w === g.t1 ? 'a' : 'b',
       });
+      lockIn(t, g.t1, start, end);
+      lockIn(t, g.t2, start, end);
       if (g.p === 1) {
         champion = ownerOf[g.w];
         runnerUp = ownerOf[g.l];
@@ -202,6 +251,8 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
         a: ownerOf[g.t1], b: ownerOf[g.t2], ap: round1(ap), bp: round1(bp),
         win: ap > bp ? 'a' : bp > ap ? 'b' : g.w === g.t1 ? 'a' : 'b',
       });
+      lockIn('X', g.t1, start, end);
+      lockIn('X', g.t2, start, end);
     }
 
     seasons.push({
@@ -234,6 +285,16 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     });
   }
 
+  // Names and positions for every player who has scored locked points here.
+  // Sleeper's full list is ~2.5 MB, so only those players are kept.
+  const players = {};
+  for (const pid of usedPlayers) {
+    const p = allPlayers[pid];
+    players[pid] = p
+      ? { n: [p.first_name, p.last_name].filter(Boolean).join(' ') || pid, pos: p.position ?? p.fantasy_positions?.[0] ?? '' }
+      : { n: `Player ${pid}`, pos: '' };
+  }
+
   const latest = chain.at(-1);
   return {
     generatedAt: new Date().toISOString(),
@@ -245,5 +306,8 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     games,
     medianGames,
     schedule,
+    playerWeeks,
+    players,
+    warnings,
   };
 }

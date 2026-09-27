@@ -488,7 +488,7 @@ function recordsFor(season, stage) {
 // league-wide rank), then trimmed to the record's limit.
 function shownRows(r, manager) {
   let rows = r.rows;
-  if (manager !== 'all') rows = rows.filter(x => x.who === manager || x.also === manager);
+  if (manager !== 'all') rows = rows.filter(x => x.who === manager || x.also === manager || x.whos?.includes(manager));
   return r.limit ? rows.slice(0, r.limit) : rows;
 }
 
@@ -513,14 +513,16 @@ function recordCard(r, cat, { manager = 'all', badges = true, stage = 'all', sho
   const rankNote = topRank === 1 ? '' : topRank === '–' ? 'Not ranked yet' : `#${topRank} overall`;
   const ctx = leaders.length === 1 ? [top.ctx, rankNote].filter(Boolean).join(' · ') : 'Shared record';
   // A note about "any game" doesn't apply once the Stage filter narrows the games.
-  const note = r.stage === 'all' && stage !== 'all' ? '' : r.note;
+  const note = r.scopeNote && stage !== 'all' ? '' : r.note;
   return `
     <article class="rec${fresh ? ' rec-fresh' : ''}${topRank !== 1 ? ' rec-sub' : ''}" id="rec-${cat}-${slug(r.title)}">
       <div class="rec-title"><span>${head}</span>${fresh ? badge(fresh) : ''}</div>
       <div class="rec-lead">
-        ${leaders.length === 1 && !top.whoText
-          ? (av ? `<img class="rec-av" src="${av}" alt="" loading="lazy">` : `<span class="rec-av avatar-blank">${esc(name(top.who)[0])}</span>`)
-          : ''}
+        ${leaders.length === 1 && top.img
+          ? `<img class="rec-av rec-player" src="${esc(top.img)}" alt="" loading="lazy" onerror="this.remove()">`
+          : leaders.length === 1 && !top.whoText
+            ? (av ? `<img class="rec-av" src="${av}" alt="" loading="lazy">` : `<span class="rec-av avatar-blank">${esc(name(top.who)[0])}</span>`)
+            : ''}
         <div class="rec-holder">
           <div class="rec-name">${leaders.length > 3 ? `${leaders.length}-way tie` : leaders.map(holder).join(' <span class="amp">&amp;</span> ')}</div>
           <div class="rec-ctx">${esc(ctx)}</div>

@@ -9,7 +9,7 @@ export const CATEGORIES = [
     desc: 'Single-season highs and lows, plus the all-play numbers that separate the truly great teams from the lucky ones.' },
   { id: 'matchups', title: 'Matchups', icon: 'target',
     desc: 'One-week box scores: the scoring explosions, the no-shows, the blowouts and the games decided at the buzzer.' },
-  { id: 'players', title: 'Players & Lineups', icon: 'users', soon: true,
+  { id: 'players', title: 'Players & Lineups', icon: 'users',
     desc: 'Monster stat lines, position leaders and the managers who set the sharpest lineups night after night.' },
   { id: 'streaks', title: 'Streaks & Milestones', icon: 'flame',
     desc: 'Hot hands, cold spells, playoff runs that kept going and the long wait for a first banner.' },
@@ -133,13 +133,13 @@ export function buildRecords(DATA) {
   //    only a change of leader is news.
   // stage: which games the record is about ('regular', 'playoffs' or 'all'),
   //    used by the Stage filter. allTime: only meaningful across every season.
-  const R = (title, rows, { note, asc = false, keepZero = false, all = false, kind = 'mark', stage = 'regular', allTime = false } = {}) => {
+  const R = (title, rows, { note, asc = false, keepZero = false, all = false, kind = 'mark', stage = 'regular', allTime = false, scopeNote = false } = {}) => {
     const pending = all ? rows.filter(r => r.pending) : [];
     rows = rows.filter(r => !r.pending && Number.isFinite(r.value) && (all || keepZero || r.value !== 0));
     rows.sort((a, b) => (asc ? a.value - b.value : b.value - a.value));
     rows.forEach((r, i) => { r.rank = i && rows[i - 1].value === r.value ? rows[i - 1].rank : i + 1; });
     return {
-      title, note, asc, kind, stage, allTime,
+      title, note, asc, kind, stage, allTime, scopeNote,
       limit: all ? null : 10,
       rows: [...rows, ...pending.map(r => ({ ...r, rank: '–' }))],
     };
@@ -210,7 +210,7 @@ export function buildRecords(DATA) {
   const regGames = games.filter(m => m.g.t === 'R');
   const gCtx = m => `${m.g.s} Wk ${m.g.w} · ${fmt(m.win.p)}–${fmt(m.lose.p)}${m.g.label ? ` · ${m.g.label}` : ''}`;
   byCategory.matchups = [
-    R('Highest score', lines.map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: vs(x) })), { stage: 'all', note: 'Any game, playoffs included.' }),
+    R('Highest score', lines.map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: vs(x) })), { stage: 'all', scopeNote: true, note: 'Any game, playoffs included.' }),
     R('Lowest score', reg.map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: vs(x) })), { asc: true, note: 'Regular season.' }),
     R('Biggest blowout', games.filter(m => !m.tie).map(m => ({ who: m.win.o, value: m.margin, display: `+${fmt(m.margin)}`, ctx: `over ${name(m.lose.o)} · ${gCtx(m)}` })), { stage: 'all' }),
     R('Closest win', games.filter(m => !m.tie).map(m => ({ who: m.win.o, value: m.margin, display: `+${fmt(m.margin)}`, ctx: `over ${name(m.lose.o)} · ${gCtx(m)}` })),
@@ -281,6 +281,59 @@ export function buildRecords(DATA) {
     }), { note: 'Most regular-season weeks with 400+ points.' }),
   ];
 
+  // ---------- Players ----------
+  // Built from locked points only: what a player scored while in a starting
+  // lineup. Bench points never counted, so they're never included.
+  const pl = DATA.players ?? {};
+  const pname = pid => pl[pid]?.n ?? `Player ${pid}`;
+  const img = pid => `https://sleepercdn.com/content/nba/players/thumb/${pid}.jpg`;
+  const forList = by => Object.entries(by).sort((a, b) => b[1] - a[1]).map(([o, p]) => `${name(o)} ${fmt(p)}`).join(', ');
+  const pms = {}; // player + manager + season
+  const pmc = {}; // player + manager, career
+  const psn = {}; // player + season, any manager
+  const pall = {}; // player, all time
+  for (const x of DATA.playerWeeks ?? []) {
+    const a = (pms[`${x.pid}|${x.o}|${x.s}`] ??= { pid: x.pid, o: x.o, s: x.s, p: 0, wks: 0 });
+    a.p += x.p; a.wks++;
+    const b = (pmc[`${x.pid}|${x.o}`] ??= { pid: x.pid, o: x.o, p: 0, wks: 0, seasons: new Set() });
+    b.p += x.p; b.wks++; b.seasons.add(x.s);
+    const s = (psn[`${x.pid}|${x.s}`] ??= { pid: x.pid, s: x.s, p: 0, by: {} });
+    s.p += x.p; s.by[x.o] = (s.by[x.o] ?? 0) + x.p;
+    const d = (pall[x.pid] ??= { pid: x.pid, weeks: new Set(), by: {}, wksBy: {} });
+    d.weeks.add(`${x.s}-${x.w}`); d.by[x.o] = (d.by[x.o] ?? 0) + x.p; d.wksBy[x.o] = (d.wksBy[x.o] ?? 0) + 1;
+  }
+  const topOwner = by => Object.entries(by).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const span = set => { const s = [...set].sort(); return s.length > 1 ? `${s[0]}–${s.at(-1)}` : s[0]; };
+  const LOCKED = 'Locked points only: scored while in a starting lineup.';
+  const P = { stage: 'all', note: LOCKED };
+
+  byCategory.players = [
+    R('Most points for one manager in a season', Object.values(pms).map(a => ({
+      who: a.o, whoText: pname(a.pid), img: img(a.pid), value: a.p, display: fmt(a.p),
+      ctx: `${seasonLabel(a.s)} · for ${name(a.o)} · ${a.wks} week${a.wks === 1 ? '' : 's'}`,
+    })), P),
+    R('Most points for one manager, career', Object.values(pmc).map(b => ({
+      who: b.o, whoText: pname(b.pid), img: img(b.pid), value: b.p, display: fmt(b.p),
+      ctx: `for ${name(b.o)} · ${span(b.seasons)} · ${b.wks} weeks`,
+    })), { ...P, kind: 'total' }),
+    ...['PG', 'SG', 'SF', 'PF', 'C'].map(pos => R(`Best ${pos} season`, Object.values(psn).filter(s => pl[s.pid]?.pos === pos).map(s => ({
+      who: topOwner(s.by), whos: Object.keys(s.by), whoText: pname(s.pid), img: img(s.pid), value: s.p, display: fmt(s.p),
+      ctx: `${seasonLabel(s.s)} · for ${forList(s.by)}`,
+    })), { ...P, note: `Most locked points by a ${pos} in one season, and who rostered him. Positions are Sleeper's primary position.` })),
+    R('Most-used players', Object.values(pall).map(d => ({
+      who: topOwner(d.wksBy), whos: Object.keys(d.by), whoText: pname(d.pid), img: img(d.pid), value: d.weeks.size, display: d.weeks.size,
+      ctx: `weeks in a lineup · ${Object.entries(d.wksBy).sort((a, b) => b[1] - a[1]).map(([o, n]) => `${name(o)} ${n}`).join(', ')}`,
+    })), { ...P, kind: 'total', note: 'Weeks with locked points for any team.' }),
+    R('Most-used by one manager', Object.values(pmc).map(b => ({
+      who: b.o, whoText: pname(b.pid), img: img(b.pid), value: b.wks, display: b.wks,
+      ctx: `weeks in ${name(b.o)}'s lineup · ${span(b.seasons)}`,
+    })), { ...P, kind: 'total' }),
+    R('Scored for the most teams', Object.values(pall).map(d => ({
+      who: topOwner(d.by), whos: Object.keys(d.by), whoText: pname(d.pid), img: img(d.pid), value: Object.keys(d.by).length, display: Object.keys(d.by).length,
+      ctx: `for ${forList(d.by)}`,
+    })), { ...P, kind: 'total', note: 'Different managers he scored locked points for.' }),
+  ];
+
   const runningTotals = new Set(['Most consecutive playoff trips', 'Longest active title drought', '400-point club']);
   for (const r of byCategory.careers) r.kind = 'total';
   for (const r of byCategory.streaks) if (runningTotals.has(r.title)) r.kind = 'total';
@@ -296,18 +349,24 @@ export function buildRecords(DATA) {
 export function viewData(DATA, { season = 'all', stage = 'all' } = {}) {
   let games = DATA.games;
   let medianGames = DATA.medianGames ?? [];
+  let playerWeeks = DATA.playerWeeks ?? [];
   let seasons = DATA.seasons;
   if (season !== 'all') {
     games = games.filter(g => g.s === season);
     medianGames = medianGames.filter(g => g.s === season);
+    playerWeeks = playerWeeks.filter(g => g.s === season);
     seasons = seasons.filter(s => s.season === season);
   }
-  if (stage === 'regular') games = games.filter(g => g.t === 'R');
+  if (stage === 'regular') {
+    games = games.filter(g => g.t === 'R');
+    playerWeeks = playerWeeks.filter(g => g.t === 'R');
+  }
   if (stage === 'playoffs') {
     games = games.filter(g => g.t === 'P');
+    playerWeeks = playerWeeks.filter(g => g.t === 'P');
     medianGames = [];
   }
-  return { ...DATA, games, medianGames, seasons, view: { season, stage } };
+  return { ...DATA, games, medianGames, playerWeeks, seasons, view: { season, stage } };
 }
 
 // Which records a filter shows: a record about regular-season games is hidden
@@ -328,6 +387,7 @@ function asOf(DATA, s, w, lastWeek) {
     ...DATA,
     games: DATA.games.filter(g => g.s < s || (g.s === s && g.w <= w)),
     medianGames: (DATA.medianGames ?? []).filter(g => g.s < s || (g.s === s && g.w <= w)),
+    playerWeeks: (DATA.playerWeeks ?? []).filter(g => g.s < s || (g.s === s && g.w <= w)),
     seasons: DATA.seasons.filter(x => x.season <= s).map(x => {
       if (x.season < s) return x;
       const finished = x.status === 'complete' && w >= lastWeek[x.season];
