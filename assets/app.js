@@ -1,5 +1,6 @@
 import { LEAGUE_ID } from './config.js';
 import { CATEGORIES, CHANGE_LABELS, buildRecords, recordHistory, recordVisible, viewData } from './records.js';
+import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
 
 // ---------- Navigation ----------
 
@@ -9,7 +10,7 @@ const NAV = [
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['cheat-sheet', 'Cheat Sheet', 'clipboard'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['rivalry', 'records']);
+const READY = new Set(['rivalry', 'records', 'power']);
 const DEFAULT_PAGE = 'rivalry';
 
 const ICONS = {
@@ -713,6 +714,117 @@ function renderRecordBook(main, sub, params) {
   });
 }
 
+// ---------- Power Rankings ----------
+
+const initials = s => String(s ?? '').replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+
+function renderPower(main, params) {
+  const seasons = powerSeasons(DATA);
+  const withWeeks = seasons.filter(s => s.weeks.length);
+  if (!withWeeks.length) {
+    main.innerHTML = `<div class="page"><section class="card soon-card"><p>The first edition comes out after week 1.</p></section></div>`;
+    return;
+  }
+  // Default: the latest edition of the latest season with games.
+  const pick = withWeeks.find(s => s.season === params.get('season')) ?? withWeeks.at(-1);
+  const wanted = Number(params.get('week'));
+  const week = pick.weeks.includes(wanted) ? wanted : pick.weeks.at(-1);
+  const ed = powerRankings(DATA, pick.season, week);
+  const upcoming = seasons.filter(s => !s.weeks.length && s.season > withWeeks.at(-1).season);
+  const isFinal = pick.complete && week === pick.weeks.at(-1);
+
+  const seasonSelect = `
+    <label class="ed-select">
+      <span>${esc(pick.season)}</span>
+      <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+      <select data-p="season" aria-label="Season">
+        ${[...withWeeks].reverse().map(s => `<option value="${s.season}"${s.season === pick.season ? ' selected' : ''}>${s.season} season${s.complete ? '' : ' (in progress)'}</option>`).join('')}
+        ${upcoming.map(s => `<option disabled>${s.season} season (starts after week 1)</option>`).join('')}
+      </select>
+    </label>`;
+  const weekSelect = `
+    <label class="ed-select ed-week">
+      <span>After Week ${week}${isFinal ? ' · Final' : ''}</span>
+      <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+      <select data-p="week" aria-label="Week">
+        ${[...pick.weeks].reverse().map(w => `<option value="${w}"${w === week ? ' selected' : ''}>After Week ${w}${pick.complete && w === pick.weeks.at(-1) ? ' (final regular season)' : ''}</option>`).join('')}
+      </select>
+    </label>`;
+
+  const bar = (label, v) => `
+    <div class="pw-part">
+      <div class="pw-part-label">${label}</div>
+      <div class="pw-track"><span style="width:${Math.max(2, v)}%"></span></div>
+      <div class="pw-part-val">${Math.round(v)}</div>
+    </div>`;
+  const move = m => (m == null || m === 0
+    ? '<span class="pw-move pw-flat">–</span>'
+    : m > 0 ? `<span class="pw-move pw-up">↑ ${m}</span>` : `<span class="pw-move pw-down">↓ ${-m}</span>`);
+
+  main.innerHTML = `
+    <div class="page page-wide">
+      <div class="page-head">
+        <div class="page-icon">${icon('gauge')}</div>
+        <div><div class="eyebrow">The table is only part of the story.</div><h1>Power Rankings</h1></div>
+        <div class="archive">
+          <div class="archive-main"><div class="archive-kicker">Season</div><div class="pw-season">${esc(pick.season)}</div></div>
+          <div class="archive-stat"><b>W${week}</b><span>Week</span></div>
+        </div>
+      </div>
+
+      <div class="pw-edition">
+        <span class="pw-ed-label">Edition</span>
+        ${seasonSelect}
+        ${weekSelect}
+        <div class="pw-weights">
+          ${PARTS.map(p => `<span class="pw-weight"><b>${Math.round(p.weight * 100)}%</b> ${esc(p.name)}</span>`).join('')}
+        </div>
+      </div>
+
+      ${ed.weeksPlayed < 4 ? `<p class="filter-note">Early read · Scores stay close to 50 while results are limited. One big week is a signal, not a season verdict.</p>` : ''}
+
+      <ol class="pw-list">
+        ${ed.rows.map(r => `
+          <li class="pw-row${r.rank === 1 ? ' pw-top' : ''}">
+            <div class="pw-rank">${r.rank}</div>
+            <div class="pw-team">
+              ${move(r.move)}
+              <span class="pw-badge">${esc(initials(r.team))}</span>
+              <div class="pw-name">
+                <div class="pw-team-name">${esc(r.team)}</div>
+                <div class="pw-owner">${esc(name(r.owner))} · ${rec(r.w, r.l, r.t)}</div>
+              </div>
+            </div>
+            <div class="pw-parts">
+              ${bar('REC', r.rec)}${bar('STR', r.str)}${bar('FORM', r.form)}${bar('ROS', r.ros)}
+            </div>
+            <div class="pw-score">
+              <b>${r.power.toFixed(1)}</b>
+              <span class="pw-score-label">Power</span>
+              <span class="pw-sched">${esc(scheduleLabel(r))}</span>
+            </div>
+          </li>`).join('')}
+      </ol>
+
+      <p class="pw-foot">
+        Power is a relative score out of 100 where 50 is league average, not a win probability.
+        <b>REC</b> is win %${DATA.seasons.find(s => s.season === pick.season)?.medianGame ? ' (league-median games included, as in Sleeper)' : ''}.
+        <b>STR</b> blends points per game against the league with how often a team would have beaten everyone else each week (all-play).
+        <b>FORM</b> is the same scoring measure over the last three weeks.
+        <b>ROS</b> rates the opponents still to play: above 50 means a softer road ahead; it settles at 50 once the regular season is done.
+        Every part starts near 50 and separates as weeks are played, and record needs more weeks than scoring to count fully.
+        Arrows show movement since the previous week's edition.
+      </p>
+    </div>`;
+
+  main.querySelectorAll('select[data-p]').forEach(sel => sel.addEventListener('change', () => {
+    const p = new URLSearchParams();
+    if (sel.dataset.p === 'season') p.set('season', sel.value); // newest week of that season
+    else { p.set('season', pick.season); p.set('week', sel.value); }
+    location.hash = `#/power?${p}`;
+  }));
+}
+
 // ---------- Boot ----------
 
 function route() {
@@ -727,6 +839,7 @@ function render() {
   const main = $('#main');
   if (page === 'rivalry') renderRivalry(main, params);
   else if (page === 'records') renderRecordBook(main, sub, params);
+  else if (page === 'power') renderPower(main, params);
   else renderSoon(main, page);
   document.body.classList.remove('nav-open');
   window.scrollTo(0, 0);

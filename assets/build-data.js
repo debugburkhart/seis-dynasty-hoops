@@ -56,6 +56,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   const seasons = [];
   const games = [];
   const medianGames = [];
+  const schedule = [];
 
   for (const lg of chain) {
     const season = lg.season;
@@ -128,6 +129,22 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
         }
       }
     });
+
+    // The full regular-season schedule, including weeks not played yet, for the
+    // Power Rankings' schedule outlook. Sleeper sets every pairing before the season.
+    if (st.playoff_week_start) {
+      const future = lg.status === 'complete' ? [] : await Promise.all(
+        Array.from({ length: Math.max(0, playoffStart - 1 - lastWeek) }, (_, i) =>
+          get(`/league/${lg.league_id}/matchups/${lastWeek + 1 + i}`, [])),
+      );
+      [...weekly.slice(0, playoffStart - 1), ...future].forEach((rows, i) => {
+        const pairs = {};
+        for (const m of rows) if (m.matchup_id != null) (pairs[m.matchup_id] ??= []).push(m.roster_id);
+        for (const [x, y] of Object.values(pairs)) {
+          if (y != null) schedule.push({ s: season, w: i + 1, a: ownerOf[x], b: ownerOf[y] });
+        }
+      });
+    }
 
     // Playoffs. t: 'P' = championship bracket, 'X' = placement game (3rd, 5th...).
     const maxRound = Math.max(0, ...bracket.map(g => g.r));
@@ -227,5 +244,6 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     owners,
     games,
     medianGames,
+    schedule,
   };
 }
