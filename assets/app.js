@@ -1,6 +1,7 @@
 import { LEAGUE_ID } from './config.js';
 import { CATEGORIES, CHANGE_LABELS, buildRecords, recordHistory, recordVisible, viewData } from './records.js';
 import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
+import { LEGACY, comparisons, legacy, legacyLabel, standings } from './standings.js';
 
 // ---------- Navigation ----------
 
@@ -10,7 +11,7 @@ const NAV = [
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['cheat-sheet', 'Cheat Sheet', 'clipboard'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['rivalry', 'records', 'power']);
+const READY = new Set(['rivalry', 'records', 'power', 'standings']);
 const DEFAULT_PAGE = 'rivalry';
 
 const ICONS = {
@@ -35,6 +36,7 @@ const ICONS = {
   flame: '<path d="M10 2.5c.5 3 4.5 5 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.2 2-4 0 1.5.8 2.5 1.8 2.8C9 8 9.2 5 10 2.5z"/>',
   arrow: '<path d="M4 10h12M11 5l5 5-5 5"/>',
   back: '<path d="M16 10H4M9 5l-5 5 5 5"/>',
+  down: '<path d="M10 3v9M6 8.5l4 4 4-4M4 16.5h12"/>',
 };
 const icon = name => `<svg class="ic" viewBox="0 0 20 20" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
@@ -873,6 +875,205 @@ function renderPower(main, params) {
   }));
 }
 
+// ---------- Standings ----------
+
+const ordinalPlace = n => (n ? `${n}${{ 1: 'st', 2: 'nd', 3: 'rd' }[n] ?? 'th'}` : '—');
+const pct1 = x => `${(x * 100).toFixed(1)}%`;
+
+function standingsTabs(tab) {
+  return `
+    <div class="st-tabs" role="tablist">
+      <a role="tab" class="${tab === 'legacy' ? 'on' : ''}" href="#/standings">Legacy</a>
+      <a role="tab" class="${tab === 'table' ? 'on' : ''}" href="#/standings?tab=table">Standings</a>
+    </div>`;
+}
+
+function takeaways(r, rows) {
+  const n = rows.length;
+  const byMedian = [...rows].sort((a, b) => b.medianPct - a.medianPct).findIndex(x => x.owner === r.owner) + 1;
+  const titles = r.titles.length
+    ? `${r.titles.length} title${r.titles.length === 1 ? '' : 's'} (${r.titles.join(', ')}) ${r.titles.length === 1 ? 'is' : 'are'} worth ${r.parts.titles.toFixed(1)} of the 40 title points.`
+    : r.seconds.length
+      ? `Reached ${r.seconds.length === 1 ? 'the final' : `${r.seconds.length} finals`} (${r.seconds.join(', ')}) but is still chasing a first ring, so 0 of 40 title points.`
+      : 'No finals yet, so the title component is still at 0 of 40.';
+  const field = `Beat the weekly median ${pct1(r.medianPct)} of the time (${rec(r.median.w, r.median.l, r.median.t)}), ${byMedian === 1 ? 'the best in the league' : byMedian === n ? 'the lowest in the league' : `${ordinalPlace(byMedian)} of ${n}`}.`;
+  const playoffs = `Made the playoffs in ${r.made} of ${r.seasons} season${r.seasons === 1 ? '' : 's'}${r.lasts.length ? `, and finished last ${r.lasts.length === 1 ? 'once' : `${r.lasts.length} times`} (${r.lasts.join(', ')})` : ''}.`;
+  return [titles, field, playoffs];
+}
+
+function renderLegacy(main) {
+  const now = legacy(DATA);
+  if (!now.rows.length) {
+    main.innerHTML = `<div class="page">${standingsTabs('legacy')}<section class="card soon-card"><p>Legacy scores start after the first completed season.</p></section></div>`;
+    return;
+  }
+  const prevSeason = now.seasons.at(-2);
+  const before = prevSeason ? Object.fromEntries(legacy(DATA, { through: prevSeason }).rows.map(r => [r.owner, r.score])) : {};
+  const comps = comparisons(now.rows);
+  const n = now.rows.length;
+  const inProgress = DATA.seasons.find(s => s.status !== 'complete' && s.weeksPlayed);
+  const bar = (label, v, max) => `
+    <div class="lg-part">
+      <div class="lg-part-top"><span>${label}</span><b>${v.toFixed(1)}<small> / ${max}</small></b></div>
+      <div class="pw-track"><span style="width:${Math.max(2, (v / max) * 100)}%"></span></div>
+    </div>`;
+  const move = r => {
+    if (!prevSeason) return '';
+    if (before[r.owner] == null) return '<span class="lg-move lg-new">New</span>';
+    const d = Math.round((r.score - before[r.owner]) * 10) / 10;
+    return d === 0 ? '<span class="lg-move">±0</span>' : `<span class="lg-move ${d > 0 ? 'up' : 'down'}">${d > 0 ? '↗' : '↘'} ${d > 0 ? '+' : ''}${d}</span>`;
+  };
+
+  main.innerHTML = `
+    <div class="page page-wide">
+      <div class="page-head">
+        <div class="page-icon">${icon('list')}</div>
+        <div><div class="eyebrow">All-time rankings</div><h1>Standings</h1></div>
+      </div>
+      ${standingsTabs('legacy')}
+      <p class="page-desc">See how every franchise stacks up all-time. ${now.seasons.length} completed season${now.seasons.length === 1 ? '' : 's'} (${now.seasons[0]}–${now.seasons.at(-1)}).</p>
+
+      <section class="card lg-table">
+        <div class="lg-head"><span>Rank</span><span>Manager / career</span><span>Hardware</span><span>The field</span><span>Legacy score</span><span></span></div>
+        ${now.rows.map(r => `
+          <details class="lg-row${r.rank <= 2 ? ' lg-top' : ''}">
+            <summary>
+              <span class="lg-rank">${String(r.rank).padStart(2, '0')}</span>
+              <span class="lg-who">
+                <span class="lg-label">${legacyLabel(r.rank, n)}</span>
+                <span class="lg-name">${esc(name(r.owner))}<small> — ${r.seasons} season${r.seasons === 1 ? '' : 's'}</small></span>
+              </span>
+              <span class="lg-hw">
+                <span title="Championships">${icon('trophy')}<b>${r.titles.length}</b><small>1st</small></span>
+                <span title="Runner-up finishes">${icon('trophy')}<b>${r.seconds.length}</b><small>2nd</small></span>
+                <span title="Last-place finishes">${icon('down')}<b>${r.lasts.length}</b><small>Last</small></span>
+              </span>
+              <span class="lg-field"><b>${Math.round(r.medianPct * 100)}%</b><small>vs median</small></span>
+              <span class="lg-score"><b>${r.score.toFixed(1)}</b>${move(r)}<small>Legacy score</small></span>
+              <span class="lg-open">${icon('arrow')}</span>
+            </summary>
+            <div class="lg-detail">
+              <div class="lg-parts">
+                ${bar('Championships', r.parts.titles, LEGACY.titles)}
+                ${bar('Beating the median', r.parts.median, LEGACY.median)}
+                ${bar('Head-to-head wins', r.parts.wins, LEGACY.wins)}
+                ${bar('Playoff consistency', r.parts.playoffs, LEGACY.playoffs)}
+              </div>
+              <div class="lg-facts">
+                <p class="lg-comp">${esc(comps[r.owner])}</p>
+                <ul>${takeaways(r, now.rows).map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+                <p class="lg-line">Head-to-head ${rec(r.h2h.w, r.h2h.l, r.h2h.t)} · Median ${rec(r.median.w, r.median.l, r.median.t)} · Playoffs ${r.made}/${r.seasons} · Finishes ${r.finish.map(f => `${f.s} ${ordinalPlace(f.place)}`).join(', ')}</p>
+              </div>
+            </div>
+          </details>`).join('')}
+      </section>
+
+      <section class="lg-behind">
+        <div class="lg-behind-head"><h2>Behind the index</h2><span>The formula, in plain English</span></div>
+        <p><b>40 points for championships. 25 for beating the median. 15 for head-to-head wins. 20 for playoff consistency.</b>
+          Titles carry the most weight; the weekly median counts for more than head-to-head wins because it takes schedule luck out: every week, a score in the top half of the league is a win no matter who you drew. This is one transparent definition of legacy, not a claim to remove every kind of luck.</p>
+        <p>Career labels are relative to this league: the top-ranked franchise alone is the GOAT, and the bottom-ranked franchise alone is the cellar dweller. NBA comparisons are assigned once per league, best résumé first. Equal scores break ties by titles, then median record, then name; a tie-break is not a score gap.</p>
+        <div class="lg-cols">
+          <div><h3>Earn the rings</h3><p>Championship points = 40 × (1 − 0.6<sup>titles</sup>). Your first ring adds 16 points, your second adds 9.6, and later rings keep adding credit.</p></div>
+          <div><h3>Prove it over time</h3><p>Median and head-to-head win rates each start with a neutral 10.5–10.5 season, half of a 21-game schedule, before scoring. A short hot streak can't carry the same certainty as years of results.</p></div>
+          <div><h3>Show up in the spring</h3><p>Playoff points = 20 − 20 × (misses + 1) / (seasons + 2). Only completed seasons count, and a first-round bye counts as making the playoffs. With no history yet, you start at neutral credit.</p></div>
+          <div><h3>Read the movement</h3><p>${prevSeason ? `The arrow compares the same formula through ${prevSeason} and through ${now.seasons.at(-1)}. It measures score points, not places. Managers without a season through ${prevSeason} show "New".` : 'Movement arrows appear once there are two completed seasons to compare.'}${inProgress ? ` ${inProgress.season} games are excluded until that season is complete.` : ''}</p></div>
+        </div>
+        <p class="lg-fine">The weekly median is measured from every regular-season week's scores, so seasons before the league-median game (added in 2026) count the same way. Last place means last in the final standings: the loser of the last-place game. Components are rounded to tenths. The three takeaways and the NBA comparison come from the same facts as the score.</p>
+      </section>
+    </div>`;
+}
+
+const RANK_BY = [
+  ['wins', 'Total wins', r => r.w],
+  ['pct', 'Win %', r => r.pct],
+  ['pps', 'Points / season', r => r.pps],
+  ['pf', 'Total points', r => r.pf],
+  ['titles', 'Titles', r => r.titles],
+  ['median', 'Vs median %', r => { const m = r.median; return m.w + m.l + m.t ? (m.w + m.t / 2) / (m.w + m.l + m.t) : 0; }],
+];
+
+function renderStandingsTable(main, params) {
+  const played = DATA.seasons.filter(s => s.weeksPlayed).map(s => s.season);
+  const period = played.includes(params.get('period')) ? params.get('period') : 'all';
+  const stage = ['regular', 'playoffs', 'both'].includes(params.get('stage')) ? params.get('stage') : 'regular';
+  const by = RANK_BY.find(([id]) => id === params.get('by')) ?? RANK_BY[0];
+  const dir = params.get('dir') === 'asc' ? 'asc' : 'desc';
+  const { seasons, rows } = standings(DATA, { period, stage });
+  const val = by[2];
+  rows.sort((a, b) => (dir === 'desc' ? val(b) - val(a) : val(a) - val(b)) || b.pct - a.pct || b.pf - a.pf);
+  const shown = v => (by[0] === 'pct' || by[0] === 'median' ? pct1(v) : by[0] === 'pps' || by[0] === 'pf' ? num(v) : v);
+  const hash = changes => {
+    const p = new URLSearchParams({ tab: 'table', period, stage, by: by[0], dir, ...changes });
+    return `#/standings?${p}`;
+  };
+  const hasMedian = DATA.seasons.some(s => s.medianGame && seasons.includes(s.season));
+  const mRec = m => rec(m.w, m.l, m.t);
+
+  main.innerHTML = `
+    <div class="page page-wide">
+      <div class="page-head">
+        <div class="page-icon">${icon('list')}</div>
+        <div><div class="eyebrow">All-time rankings</div><h1>Standings</h1></div>
+      </div>
+      ${standingsTabs('table')}
+      <p class="page-desc">${period === 'all' ? 'All-time' : `${period} season`} · ${rows.length} managers · ${seasons[0]}${seasons.length > 1 ? `–${seasons.at(-1)}` : ''}</p>
+      <p class="filter-note">${stage === 'playoffs'
+        ? 'Playoff records count championship-bracket games only.'
+        : `Win–loss records ${hasMedian ? 'include league-median games where the league played them, as in Sleeper' : 'are head-to-head games'}${stage === 'both' ? ', plus championship-bracket games' : ''}. The median column compares every weekly score with the league median, in every season.`}</p>
+
+      <div class="st-controls">
+        <label class="st-pick"><span>Time period</span>
+          <select data-s="period"><option value="all">All-time</option>${[...played].reverse().map(s => `<option value="${s}"${s === period ? ' selected' : ''}>${s}</option>`).join('')}</select>
+        </label>
+        <label class="st-pick"><span>Rank managers by</span>
+          <select data-s="by">${RANK_BY.map(([id, label]) => `<option value="${id}"${id === by[0] ? ' selected' : ''}>${label}</option>`).join('')}</select>
+        </label>
+        <a class="st-dir" href="${hash({ dir: dir === 'desc' ? 'asc' : 'desc' })}" title="Reverse order">${dir === 'desc' ? '↓' : '↑'}</a>
+      </div>
+      <div class="st-stage">
+        ${[['regular', 'Regular'], ['playoffs', 'Playoffs'], ['both', 'Both']].map(([id, label]) => `<a class="${id === stage ? 'on' : ''}" href="${hash({ stage: id })}">${label}</a>`).join('')}
+      </div>
+
+      <section class="st-table">
+        <div class="st-head"><span>#</span><span>Manager</span><span>Record</span><span>Win %</span><span>Points / season</span><span>${by[1]} ${dir === 'desc' ? '↓' : '↑'}</span><span></span></div>
+        ${rows.map((r, i) => `
+          <details class="st-row">
+            <summary>
+              <span class="st-rank">${String(i + 1).padStart(2, '0')}</span>
+              <span class="st-man"><span class="st-av">${esc(name(r.owner)[0]?.toUpperCase())}</span><span><b>${esc(name(r.owner))}</b><small>${r.titles} title${r.titles === 1 ? '' : 's'}</small></span></span>
+              <span class="st-rec">${rec(r.w, r.l, r.t)}</span>
+              <span>${r.g ? pct1(r.pct) : '—'}</span>
+              <span>${num(r.pps)}</span>
+              <span class="st-val">${shown(val(r))}</span>
+              <span class="st-open">${icon('arrow')}</span>
+            </summary>
+            <div class="st-detail">
+              <div class="st-sub st-sub-head"><span>Season</span><span>Record</span><span>Points for</span><span>Points against</span><span>Vs median</span><span>Finish</span></div>
+              ${r.bySeason.map(x => `
+                <div class="st-sub">
+                  <span>${x.s}</span>
+                  <span>${x.w + x.l + x.t ? rec(x.w, x.l, x.t) : '—'}</span>
+                  <span>${num(x.pf)}</span>
+                  <span>${num(x.pa)}</span>
+                  <span>${mRec(x.median)}</span>
+                  <span>${x.complete ? (x.champion ? '🏆 Champion' : ordinalPlace(x.place)) : 'In progress'}</span>
+                </div>`).join('')}
+            </div>
+          </details>`).join('')}
+      </section>
+    </div>`;
+
+  main.querySelectorAll('select[data-s]').forEach(sel => sel.addEventListener('change', () => {
+    location.hash = hash({ [sel.dataset.s]: sel.value });
+  }));
+}
+
+function renderStandings(main, params) {
+  if (params.get('tab') === 'table') renderStandingsTable(main, params);
+  else renderLegacy(main);
+}
+
 // ---------- Boot ----------
 
 function route() {
@@ -888,6 +1089,7 @@ function render() {
   if (page === 'rivalry') renderRivalry(main, params);
   else if (page === 'records') renderRecordBook(main, sub, params);
   else if (page === 'power') renderPower(main, params);
+  else if (page === 'standings') renderStandings(main, params);
   else renderSoon(main, page);
   document.body.classList.remove('nav-open');
   window.scrollTo(0, 0);

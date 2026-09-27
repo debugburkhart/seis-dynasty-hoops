@@ -9,7 +9,42 @@ const API = 'https://api.sleeper.com/v1';
 const round1 = n => Math.round((Number(n) || 0) * 10) / 10;
 const ordinal = n => n + ({ 1: 'st', 2: 'nd', 3: 'rd' }[n] || 'th');
 
-export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis)) {
+// corrections.js applied to a frozen season. Frozen seasons were saved with
+// their corrections already in, so this only matters for corrections added later.
+function applyFrozenCorrections(b, season, owners, findPlayer) {
+  const idOf = nameWanted => Object.values(owners).find(o => o.name === nameWanted)?.id;
+  for (const c of CORRECTIONS.filter(x => x.season === season)) {
+    for (const [who, score] of Object.entries(c.scores ?? {})) {
+      const o = idOf(who);
+      for (const g of b.games.filter(g => g.w === c.week && (g.a === o || g.b === o))) {
+        if (g.a === o) g.ap = score; else g.bp = score;
+        if (g.t === 'R') g.win = g.ap > g.bp ? 'a' : g.bp > g.ap ? 'b' : 'tie';
+      }
+    }
+    for (const [who, fixes] of Object.entries(c.players ?? {})) {
+      const o = idOf(who);
+      const week = b.playerWeeks.filter(x => x.w === c.week && x.o === o);
+      const t = b.games.find(g => g.w === c.week && (g.a === o || g.b === o))?.t ?? 'R';
+      for (const [wanted, p] of Object.entries(fixes)) {
+        const pid = findPlayer(wanted, week.map(x => x.pid));
+        if (!pid) continue;
+        const row = week.find(x => x.pid === pid);
+        if (row) row.p = p;
+        else b.playerWeeks.push({ s: season, w: c.week, t, o, pid, p });
+      }
+    }
+  }
+  for (const d of b.drafts) {
+    d.picks = d.picks.filter(p => !DRAFT_CORRECTIONS.some(c => c.ignore && c.season === season && Number(c.pick) === p.no));
+    for (const p of d.picks) {
+      const fix = DRAFT_CORRECTIONS.find(c => !c.ignore && c.season === season && Number(c.pick) === p.no);
+      if (fix) p.pid = findPlayer(fix.player) ?? p.pid;
+    }
+  }
+}
+
+// frozen: { season: saved season } for completed seasons to load instead of downloading.
+export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {} } = {}) {
   // Sleeper's cache can serve stale matchup scores for weeks after the fact
   // (2025 week 17 came back 290-315 instead of the real 355-352), so every
   // request carries a unique value to force a fresh copy.
@@ -77,6 +112,34 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   for (const lg of chain) {
     const season = lg.season;
     const st = lg.settings || {};
+
+    // A completed season with a frozen copy: load it instead of re-downloading,
+    // then apply corrections.js on top (safe to repeat on already-corrected data).
+    const fz = frozen[season];
+    if (fz && lg.status === 'complete') {
+      const users = await get(`/league/${lg.league_id}/users`, []);
+      const userById = Object.fromEntries(users.map(u => [u.user_id, u]));
+      for (const t of fz.seasonInfo.teams) {
+        const u = userById[t.owner];
+        const o = (owners[t.owner] ??= { id: t.owner, name: u?.display_name ?? t.team, avatar: null, teams: {} });
+        if (u) { o.name = u.display_name; o.avatar = u.avatar || null; }
+        o.teams[season] = t.team;
+      }
+      const copy = structuredClone(fz);
+      applyFrozenCorrections(copy, season, owners, findPlayer);
+      games.push(...copy.games);
+      medianGames.push(...copy.medianGames);
+      schedule.push(...copy.schedule);
+      playerWeeks.push(...copy.playerWeeks);
+      transactions.push(...copy.transactions);
+      drafts.push(...copy.drafts);
+      seasons.push({ ...copy.seasonInfo, frozen: true });
+      for (const x of copy.playerWeeks) usedPlayers.add(x.pid);
+      for (const x of copy.transactions) for (const pid of [...Object.keys(x.adds), ...Object.keys(x.drops)]) usedPlayers.add(pid);
+      for (const d of copy.drafts) for (const p of d.picks) usedPlayers.add(p.pid);
+      continue;
+    }
+
     const [users, rosters, bracket, losersBracket] = await Promise.all([
       get(`/league/${lg.league_id}/users`, []),
       get(`/league/${lg.league_id}/rosters`, []),

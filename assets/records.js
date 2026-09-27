@@ -1,4 +1,5 @@
 import { frontOffice } from './frontoffice.js';
+import { finishes } from './standings.js';
 
 // Record Book. Every record is computed from the league data (data/league.json).
 // Unless a record says otherwise it uses regular-season games only, the same
@@ -106,15 +107,19 @@ export function buildRecords(DATA) {
   const playoffField = s => new Set(s.playoffTeams
     ?? DATA.games.filter(g => g.s === s.season && g.t === 'P').flatMap(g => [g.a, g.b]));
 
+  const finalPlaces = finishes(DATA);
   for (const s of played) {
     for (const t of s.teams) c(t.owner).seasons++;
     if (s.champion) c(s.champion).titles.push(s.season);
     if (s.champion) c(s.champion).finals++;
     if (s.runnerUp) c(s.runnerUp).finals++;
     for (const o of playoffField(s)) c(o).playoffs++;
+    // Last in the final standings: the loser of the last-place game (a toilet
+    // bowl), or the worst record if the season had no such game.
     if (complete.has(s.season)) {
-      const last = [...s.teams].sort((x, y) => x.w + x.t / 2 - (y.w + y.t / 2) || x.pf - y.pf)[0];
-      if (last) c(last.owner).basement.push(s.season);
+      const place = finalPlaces[s.season] ?? {};
+      const last = Object.keys(place).find(o => place[o] === s.teams.length);
+      if (last) c(last).basement.push(s.season);
     }
   }
   for (const x of lines.filter(x => x.t === 'P')) {
@@ -175,7 +180,7 @@ export function buildRecords(DATA) {
     A('Most weekly low scores', careers.map(k => ({ who: k.o, value: k.lows, display: k.lows, ctx: `in ${k.g} weeks` })),
       { note: 'Bottom score in the league that week.' }),
     A('Most last-place finishes', careers.map(k => ({ who: k.o, value: k.basement.length, display: k.basement.length, ctx: k.basement.join(', ') })),
-      { note: 'Worst regular-season record in a completed season.' }),
+      { note: 'Last in the final standings: the loser of the last-place game.' }),
     A('Most points against', careers.map(k => ({ who: k.o, value: k.pa, display: fmt(k.pa), ctx: `${fmt(k.pa / k.g)} per game` })),
       { note: 'Regular season. Blame the schedule.' }),
   ];
