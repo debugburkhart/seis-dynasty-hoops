@@ -307,7 +307,15 @@ export function buildRecords(DATA) {
   const LOCKED = 'Locked points only: scored while in a starting lineup.';
   const P = { stage: 'all', note: LOCKED };
 
+  const weekLabel = x => (x.t === 'P' || x.t === 'X') ? ` · ${gameLabel[`${x.s}|${x.w}|${x.o}`] ?? 'Playoffs'}` : '';
+  const gameLabel = {};
+  for (const g of DATA.games) if (g.label) gameLabel[`${g.s}|${g.w}|${g.a}`] = gameLabel[`${g.s}|${g.w}|${g.b}`] = g.label;
+
   byCategory.players = [
+    R('Most points in a week', (DATA.playerWeeks ?? []).map(x => ({
+      who: x.o, whoText: pname(x.pid), img: img(x.pid), value: x.p, display: fmt(x.p),
+      ctx: `${x.s} Wk ${x.w} · for ${name(x.o)}${weekLabel(x)}`,
+    })), P),
     R('Most points for one manager in a season', Object.values(pms).map(a => ({
       who: a.o, whoText: pname(a.pid), img: img(a.pid), value: a.p, display: fmt(a.p),
       ctx: `${seasonLabel(a.s)} · for ${name(a.o)} · ${a.wks} week${a.wks === 1 ? '' : 's'}`,
