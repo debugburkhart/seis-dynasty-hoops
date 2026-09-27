@@ -40,5 +40,10 @@ export const CORRECTIONS = [
 // commissioner added the real player to the same team, the site links them. If
 // the nightly Action emails about a duplicate draft pick, add the real player here:
 //   { season: '2024', pick: 23, player: 'Player Name' }   (pick = overall pick number)
+// Or, if nobody knows who was really drafted, leave the pick out of the draft records:
+//   { season: '2024', pick: 23, ignore: true }
 export const DRAFT_CORRECTIONS = [
+  // jimmycooks2's round 3 pick was recorded as "Ron Holland DUPLICATE"; the real
+  // Ron Holland went to loganzarvell, and who jimmycooks2 meant to take is unknown.
+  { season: '2024', pick: 23, ignore: true },
 ];

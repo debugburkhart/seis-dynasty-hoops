@@ -283,7 +283,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
       drafts.push({
         s: season, id: d.draft_id, ts: detail.start_time ?? d.start_time,
         kind: d.settings?.rounds > 5 ? 'startup' : 'rookie',
-        picks: picks.filter(p => p.player_id).map(p => {
+        picks: picks.filter(p => p.player_id && !DRAFT_CORRECTIONS.some(c => c.ignore && c.season === season && Number(c.pick) === p.pick_no)).map(p => {
           // A pick fixed in corrections.js (e.g. a duplicate player entry) becomes that player.
           const fix = DRAFT_CORRECTIONS.find(c => c.season === season && Number(c.pick) === p.pick_no);
           let pid = p.player_id;
