@@ -234,12 +234,12 @@ function corner(id, side, wins) {
   const team = o.teams[DATA.currentSeason] || Object.values(o.teams).at(-1);
   return `
     <div class="corner ${side}">
-      <div class="corner-label">${side === 'green' ? 'Green' : 'Gold'} corner</div>
+      <div class="corner-label">${side === 'blue' ? 'Blue' : 'Gold'} corner</div>
       <label class="picker">
         ${av ? `<img class="avatar" src="${av}" alt="" loading="lazy">` : `<span class="avatar avatar-blank">${esc(name(id)[0])}</span>`}
         <span class="picker-name">${esc(name(id))}</span>
         <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
-        <select data-side="${side === 'green' ? 'A' : 'B'}" aria-label="${side} corner manager">${ownerOptions(id)}</select>
+        <select data-side="${side === 'blue' ? 'A' : 'B'}" aria-label="${side} corner manager">${ownerOptions(id)}</select>
       </label>
       <div class="choose">Choose owner</div>
       ${team && team !== name(id) ? `<div class="team-sub">${esc(team)}</div>` : ''}
@@ -328,7 +328,7 @@ function renderRivalry(main, params) {
       <section class="fight">
         <div class="fight-top"><span>Official fight card</span><span class="gold-text">All-time series</span></div>
         <div class="corners">
-          ${corner(A, 'green', r.winsA)}
+          ${corner(A, 'blue', r.winsA)}
           <div class="vs-col">
             <div class="vs">VS</div>
             <div class="vs-meta">${r.meetings.length} meeting${r.meetings.length === 1 ? '' : 's'} · ${r.playoffs} playoff</div>
