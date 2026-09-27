@@ -2,7 +2,7 @@
 // Used by the nightly GitHub Action (scripts/update.mjs) and, if data/league.json
 // is missing, by the browser as a live fallback.
 
-import { CORRECTIONS } from './corrections.js';
+import { CORRECTIONS, DRAFT_CORRECTIONS } from './corrections.js';
 
 const API = 'https://api.sleeper.com/v1';
 
@@ -59,6 +59,8 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   const schedule = [];
   const playerWeeks = []; // { s, w, t, o, pid, p }: locked points per player per team per week
   const usedPlayers = new Set();
+  const transactions = []; // { s, w, ts, type, owners, adds: {pid: owner}, drops: {pid: owner}, picks }
+  const drafts = []; // { s, id, ts, kind, picks: [{ round, no, pid, o, orig }] }
   const warnings = []; // problems the nightly check should email about
 
   // Player names, for display and for matching player corrections by name.
@@ -255,6 +257,46 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
       lockIn('X', g.t2, start, end);
     }
 
+    // ---------- Front office: transactions and drafts ----------
+    // Sleeper files transactions by week ("leg"); offseason moves land in week 1
+    // of the new league. Rosters are stored as owners; traded draft picks keep the
+    // original team's roster ID, which is how a pick is matched to who used it.
+    const maxLeg = lg.status === 'complete' ? 26 : Math.max(currentWeek, 1) + 1;
+    const legs = await Promise.all(Array.from({ length: maxLeg + 1 }, (_, w) => get(`/league/${lg.league_id}/transactions/${w}`, [])));
+    const toOwners = map => Object.fromEntries(Object.entries(map ?? {}).map(([pid, rid]) => {
+      usedPlayers.add(pid);
+      return [pid, ownerOf[rid]];
+    }));
+    for (const x of legs.flat()) {
+      if (x?.status !== 'complete') continue;
+      transactions.push({
+        s: season, w: x.leg, ts: x.status_updated ?? x.created, type: x.type,
+        owners: (x.roster_ids ?? []).map(r => ownerOf[r]),
+        adds: toOwners(x.adds), drops: toOwners(x.drops),
+        picks: (x.draft_picks ?? []).map(p => ({ season: p.season, round: p.round, orig: p.roster_id, from: ownerOf[p.previous_owner_id], to: ownerOf[p.owner_id] })),
+      });
+    }
+    for (const d of await get(`/league/${lg.league_id}/drafts`, [])) {
+      if (d.status !== 'complete') continue;
+      const [detail, picks] = await Promise.all([get(`/draft/${d.draft_id}`, {}), get(`/draft/${d.draft_id}/picks`, [])]);
+      const slotToRoster = detail.slot_to_roster_id ?? {};
+      drafts.push({
+        s: season, id: d.draft_id, ts: detail.start_time ?? d.start_time,
+        kind: d.settings?.rounds > 5 ? 'startup' : 'rookie',
+        picks: picks.filter(p => p.player_id).map(p => {
+          // A pick fixed in corrections.js (e.g. a duplicate player entry) becomes that player.
+          const fix = DRAFT_CORRECTIONS.find(c => c.season === season && Number(c.pick) === p.pick_no);
+          let pid = p.player_id;
+          if (fix) {
+            pid = findPlayer(fix.player) ?? pid;
+            if (pid === p.player_id) warnings.push(`${season} draft pick ${p.pick_no}: corrections.js lists "${fix.player}", but no Sleeper player has that name. Check the spelling.`);
+          }
+          usedPlayers.add(pid);
+          return { round: p.round, no: p.pick_no, pid, o: ownerOf[p.roster_id], orig: slotToRoster[p.draft_slot] ?? p.roster_id };
+        }),
+      });
+    }
+
     seasons.push({
       season,
       leagueId: lg.league_id,
@@ -308,6 +350,8 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     schedule,
     playerWeeks,
     players,
+    transactions,
+    drafts,
     warnings,
   };
 }

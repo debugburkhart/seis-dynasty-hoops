@@ -603,10 +603,10 @@ function filterBar(cat, f) {
           ${cats.map(c => `<option value="${c.id}"${c.id === cat.id ? ' selected' : ''}>${esc(c.title)}</option>`).join('')}
         </select>
       </label>
-      <div class="f-group">
+      <div class="f-group${cat.table ? ' f-two' : ''}">
         ${dropdown('season', 'Timeframe', f.season, seasonOpts)}
         ${dropdown('manager', 'Manager', f.manager, managerOpts)}
-        ${dropdown('stage', 'Stage', f.stage, STAGES)}
+        ${cat.table ? '' : dropdown('stage', 'Stage', f.stage, STAGES)}
       </div>
     </section>`;
 }
@@ -619,6 +619,50 @@ function filterSummary(f) {
   if (f.manager !== 'all') bits.push(`${esc(name(f.manager))}'s entries, with their league-wide rank`);
   if (!bits.length) return '';
   return `<p class="filter-note">Showing ${bits.join(' · ')}. <a href="${filterHash(route().sub, { season: 'all', manager: 'all', stage: 'all', q: f.q })}">Clear filters</a></p>`;
+}
+
+// Table layout (Front Office): one row per record, grouped, each opening its leaderboard.
+function recordTable(list, cat, f) {
+  const groups = [...new Set(list.map(r => r.group))];
+  const holder = x => esc(x.whoText ?? name(x.who));
+  const row = r => {
+    const rows = shownRows(r, f.manager);
+    const ranked = rows.filter(x => x.rank !== '–');
+    const top = ranked[0];
+    const leaders = top ? ranked.filter(x => x.rank === top.rank) : [];
+    const who = !top ? '<span class="fo-none">—</span>'
+      : leaders.length > 2 ? `${leaders.length}-way tie`
+      : leaders.map(holder).join(' <span class="amp">&amp;</span> ');
+    const rank = top && top.rank !== 1 ? `<small>#${top.rank} overall</small>` : '';
+    const fresh = f.season === 'all' && top?.rank === 1 ? recentChange(cat.id, r) : null;
+    return `
+      <details class="fo-row${r.bad ? ' fo-bad' : ''}" id="rec-${cat.id}-${slug(r.title)}">
+        <summary>
+          <span class="fo-rec"><b>${esc(r.title)}</b><small>${esc(r.desc ?? '')}</small></span>
+          <span class="fo-holder">${who}${rank}${fresh ? badge(fresh) : ''}</span>
+          <span class="fo-val">${top ? esc(top.display) : '—'}</span>
+          <span class="fo-arrow">${icon('arrow')}</span>
+        </summary>
+        <div class="fo-board">
+          ${rows.length ? `<ol class="rec-rest">${rows.map(x => `
+            <li${x.rank === 1 ? ' class="co"' : ''}>
+              <span class="rk">${x.rank}</span>
+              <span class="rn">${holder(x)}<small>${esc(x.ctx)}</small></span>
+              <span class="rv">${esc(x.display)}</span>
+            </li>`).join('')}</ol>` : `<p class="empty">${f.manager !== 'all' ? `${esc(name(f.manager))} isn't on this board.` : 'No one qualifies yet.'}</p>`}
+          ${r.note ? `<p class="rec-note">${esc(r.note)}</p>` : ''}
+        </div>
+      </details>`;
+  };
+  return `
+    <section class="card fo-table">
+      <div class="fo-head"><span>Record</span><span>Record holder</span><span>Record value</span><span></span></div>
+      ${groups.map(g => {
+        const items = list.filter(r => r.group === g);
+        return `<div class="fo-group"><b>${esc(g)}</b> <small>${items.length} record${items.length === 1 ? '' : 's'}</small></div>${items.map(row).join('')}`;
+      }).join('')}
+    </section>
+    <p class="pw-foot">Every move is valued by the locked points it produced: a player counts for the team that acquired him until he left, and a draft pick counts as the player it became. <b>Est.</b> means the value is still changing, because a player in the deal is still on that roster or a pick hasn't been used yet.</p>`;
 }
 
 function recordResults(cat, f) {
@@ -635,6 +679,7 @@ function recordResults(cat, f) {
       : `<section class="card soon-card"><p>No records match “${esc(f.q)}”.</p></section>`;
   }
   const list = (recs[cat.id] || []).filter(r => recordVisible(r, f));
+  if (cat.table && list.length) return recordTable(list, cat, f);
   return list.length
     ? `<div class="rec-grid">${list.map(r => recordCard(r, cat.id, opts)).join('')}</div>`
     : `<section class="card soon-card"><p>None of the ${esc(cat.title)} records apply to this stage.</p></section>`;
@@ -685,6 +730,7 @@ function renderRecordBook(main, sub, params) {
   }
 
   const f = filterState(params);
+  if (cat.table) f.stage = 'all'; // Front Office values moves by every locked point, so no Stage filter
   main.innerHTML = `
     <div class="page page-wide">
       ${filterBar(cat, f)}

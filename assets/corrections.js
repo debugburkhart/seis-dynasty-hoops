@@ -34,3 +34,11 @@ export const CORRECTIONS = [
     scores: { BenDoverPlz123: 274, TRT3: 374 },
     players: { BenDoverPlz123: { 'Ace Bailey': 31 } } },
 ];
+
+// Draft picks Sleeper recorded as the wrong player, usually a duplicate player
+// entry ("Name DUPLICATE") that never scores. Most fix themselves: when the
+// commissioner added the real player to the same team, the site links them. If
+// the nightly Action emails about a duplicate draft pick, add the real player here:
+//   { season: '2024', pick: 23, player: 'Player Name' }   (pick = overall pick number)
+export const DRAFT_CORRECTIONS = [
+];

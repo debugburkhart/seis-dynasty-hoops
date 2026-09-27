@@ -1,3 +1,5 @@
+import { frontOffice } from './frontoffice.js';
+
 // Record Book. Every record is computed from the league data (data/league.json).
 // Unless a record says otherwise it uses regular-season games only, the same
 // games the nightly scoring check verifies against Sleeper's official standings.
@@ -13,7 +15,7 @@ export const CATEGORIES = [
     desc: 'Monster stat lines, position leaders and the managers who set the sharpest lineups night after night.' },
   { id: 'streaks', title: 'Streaks & Milestones', icon: 'flame',
     desc: 'Hot hands, cold spells, playoff runs that kept going and the long wait for a first banner.' },
-  { id: 'front-office', title: 'Front Office', icon: 'gauge', soon: true,
+  { id: 'front-office', title: 'Front Office', icon: 'gauge', table: true,
     desc: 'Draft hauls, trade verdicts and waiver-wire finds, judged by the points they actually produced.' },
 ];
 
@@ -133,13 +135,13 @@ export function buildRecords(DATA) {
   //    only a change of leader is news.
   // stage: which games the record is about ('regular', 'playoffs' or 'all'),
   //    used by the Stage filter. allTime: only meaningful across every season.
-  const R = (title, rows, { note, asc = false, keepZero = false, all = false, kind = 'mark', stage = 'regular', allTime = false, scopeNote = false } = {}) => {
+  const R = (title, rows, { note, asc = false, keepZero = false, all = false, kind = 'mark', stage = 'regular', allTime = false, scopeNote = false, ...extra } = {}) => {
     const pending = all ? rows.filter(r => r.pending) : [];
     rows = rows.filter(r => !r.pending && Number.isFinite(r.value) && (all || keepZero || r.value !== 0));
     rows.sort((a, b) => (asc ? a.value - b.value : b.value - a.value));
     rows.forEach((r, i) => { r.rank = i && rows[i - 1].value === r.value ? rows[i - 1].rank : i + 1; });
     return {
-      title, note, asc, kind, stage, allTime, scopeNote,
+      title, note, asc, kind, stage, allTime, scopeNote, ...extra,
       limit: all ? null : 10,
       rows: [...rows, ...pending.map(r => ({ ...r, rank: '–' }))],
     };
@@ -285,7 +287,7 @@ export function buildRecords(DATA) {
   // Built from locked points only: what a player scored while in a starting
   // lineup. Bench points never counted, so they're never included.
   const pl = DATA.players ?? {};
-  const pname = pid => pl[pid]?.n ?? `Player ${pid}`;
+  const pname = pid => (pl[pid]?.n ?? `Player ${pid}`).replace(/\s*DUPLICATE\s*/i, ' (duplicate Sleeper entry)');
   const img = pid => `https://sleepercdn.com/content/nba/players/thumb/${pid}.jpg`;
   const forList = by => Object.entries(by).sort((a, b) => b[1] - a[1]).map(([o, p]) => `${name(o)} ${fmt(p)}`).join(', ');
   const pms = {}; // player + manager + season
@@ -342,8 +344,85 @@ export function buildRecords(DATA) {
     })), { ...P, kind: 'total', note: 'Different managers he scored locked points for.' }),
   ];
 
+  // ---------- Front office ----------
+  // Valued from the whole league history (a move made in 2024 keeps earning
+  // after 2024), while the Timeframe filter picks which moves are listed.
+  const fo = frontOffice(DATA.all ?? DATA, DATA.view?.season ?? 'all');
+  const est = (text, isEst) => (isEst ? `Est. ${text}` : text);
+  const names = list => {
+    const ns = list.map(a => (a.pick ? `${a.pick}${a.pid ? ` (${pname(a.pid)})` : ''}` : pname(a.pid)));
+    return ns.length > 3 ? `${ns.slice(0, 3).join(', ')} +${ns.length - 3} more` : ns.join(', ');
+  };
+  const F = (group, desc, opts = {}) => ({ stage: 'all', group, desc, ...opts });
+  const foManagers = careers.map(k => k.o);
+  const byOwner = (list, f) => foManagers.map(o => ({ o, list: list.filter(x => x.o === o) })).map(f);
+  const tradeSides = fo.trades.flatMap(t => t.sides.map(sd => ({ ...sd, s: t.s, w: t.w, partners: t.owners.filter(o => o !== sd.o) })));
+  const sideCtx = sd => `${sd.s} Wk ${sd.w} with ${sd.partners.map(name).join(' & ')} · got ${names(sd.got) || 'nothing'} (${fmt(sd.gotValue)}) · gave ${names(sd.gave) || 'nothing'} (${fmt(sd.gaveValue)})`;
+  // Draft records cover rookie drafts only. The 2023 startup draft still builds
+  // the opening rosters and values startup picks that were traded, but it isn't
+  // compared here: it was every veteran in the league, not a rookie class.
+  const draftable = fo.picks.filter(p => !p.pending && p.kind === 'rookie');
+  const classes = {};
+  for (const p of draftable) (classes[`${p.s}|${p.o}`] ??= { s: p.s, o: p.o, kind: p.kind, picks: [] }).picks.push(p);
+  const classList = Object.values(classes).map(c => ({ ...c, over: r1(c.picks.reduce((a, p) => a + p.over, 0)), est: c.picks.some(p => p.careerActive) }));
+  const pickCtx = p => `${p.s} ${p.kind === 'startup' ? 'startup' : 'rookie'} draft · round ${p.round}, pick ${p.no} · ${fmt(p.career)} pts since (${fmt(p.value)} for ${name(p.o)}) vs ${fmt(p.expected)} round average`;
+
+  byCategory['front-office'] = [
+    A('Most trades', byOwner([], ({ o }) => ({ who: o, value: fo.activity[o]?.trades ?? 0, display: fo.activity[o]?.trades ?? 0, ctx: 'completed trades' })),
+      F('Activity', 'Completed trades in the selected timeframe.', { kind: 'total' })),
+    A('Most roster moves', byOwner([], ({ o }) => {
+      const a = fo.activity[o] ?? {};
+      return { who: o, value: a.moves ?? 0, display: a.moves ?? 0, ctx: `${a.pickups ?? 0} free agent · ${a.claims ?? 0} waiver · ${a.trades ?? 0} trade` };
+    }), F('Activity', 'Free-agent pickups, waiver claims and trades.', { kind: 'total' })),
+    R('Most frequent trade partners', fo.partners.map(p => ({
+      who: p.a, also: p.b, whoText: `${name(p.a)} ⇄ ${name(p.b)}`, value: p.n, display: p.n, ctx: [...p.seasons].sort().join(', '),
+    })), F('Trades', 'The pairs who kept finding reasons to make a deal.', { kind: 'total' })),
+    A('Career trade value', byOwner(tradeSides, ({ o, list }) => {
+      const net = r1(list.reduce((a, sd) => a + sd.net, 0));
+      return { who: o, value: net, display: est(signed(net), list.some(sd => sd.est)), ctx: `${list.length} trade${list.length === 1 ? '' : 's'} · points gained minus points given up` };
+    }), F('Trades', 'Net locked points from every trade: what they got produced for them, minus what they gave produced for the other side.', { kind: 'total', keepZero: true })),
+    R('Biggest trade heist', tradeSides.map(sd => ({ who: sd.o, value: sd.net, display: est(signed(sd.net), sd.est), ctx: sideCtx(sd) })),
+      F('Trades', 'One side of one deal, settled by everything that happened after.')),
+    R('Costliest trade side', tradeSides.map(sd => ({ who: sd.o, value: sd.net, display: est(signed(sd.net), sd.est), ctx: sideCtx(sd) })),
+      F('Trades', 'The deals whose receipts aged the worst.', { asc: true, bad: true })),
+    A('Career pickup value', byOwner(fo.pickups, ({ o, list }) => {
+      const v = r1(list.reduce((a, p) => a + p.value, 0));
+      return { who: o, value: v, display: est(`+${fmt(v)}`, list.some(p => p.active)), ctx: `${list.length} pickup${list.length === 1 ? '' : 's'}` };
+    }), F('Waivers & free agents', 'Locked points from every waiver claim and free-agent pickup.', { kind: 'total', keepZero: true })),
+    R('Greatest pickup', fo.pickups.map(p => ({
+      who: p.o, whoText: pname(p.pid), img: img(p.pid), value: p.value, display: est(`+${fmt(p.value)}`, p.active),
+      ctx: `${p.s} Wk ${p.w} · ${p.src === 'waiver' ? 'waiver claim' : 'free agent'} by ${name(p.o)}`,
+    })), F('Waivers & free agents', 'The pickup that returned the most locked points.')),
+    R('The ones that got away', fo.letGo.map(p => ({
+      who: p.o, whoText: pname(p.pid), img: img(p.pid), value: p.value, display: est(`−${fmt(p.value)}`, p.active),
+      ctx: `dropped by ${name(p.o)} ${p.s} Wk ${p.w} · then ${fmt(p.value)} for ${name(p.to)}`,
+    })), F('Waivers & free agents', 'Players dropped who went on to produce for the next team to grab them.', { bad: true })),
+    R('Greatest draft pick', draftable.map(p => ({
+      who: p.o, whoText: pname(p.pid), img: img(p.pid), value: p.over, display: est(signed(p.over), p.careerActive), ctx: `${name(p.o)} · ${pickCtx(p)}`,
+    })), F('Draft', 'Locked points the rookie has scored since the draft (for any team), compared with the average pick in the same round of that draft.')),
+    R('Biggest draft bust', draftable.map(p => ({
+      who: p.o, whoText: pname(p.pid), img: img(p.pid), value: p.over, display: est(signed(p.over), p.careerActive), ctx: `${name(p.o)} · ${pickCtx(p)}`,
+    })), F('Draft', 'The rookie picks that fell furthest short of their round.', { asc: true, bad: true })),
+    A('Best career drafter', byOwner(draftable, ({ o, list }) => (list.length
+      ? { who: o, value: r1(list.reduce((a, p) => a + p.over, 0) / list.length), display: signed(r1(list.reduce((a, p) => a + p.over, 0) / list.length)), ctx: `per pick, ${list.length} picks` }
+      : { who: o, pending: true, display: '—', ctx: 'no scored picks' })), F('Draft', 'Average points above the round average, per rookie pick.', { kind: 'total', keepZero: true })),
+    R('Best draft class', classList.map(c => ({
+      who: c.o, value: c.over, display: est(signed(c.over), c.est), ctx: `${c.s} ${c.kind} draft · ${c.picks.length} picks · best: ${pname([...c.picks].sort((a, b) => b.over - a.over)[0].pid)}`,
+    })), F('Draft', "A manager's picks in one rookie draft, added up against the round averages.")),
+    R('Worst draft class', classList.map(c => ({
+      who: c.o, value: c.over, display: est(signed(c.over), c.est), ctx: `${c.s} ${c.kind} draft · ${c.picks.length} picks`,
+    })), F('Draft', 'The rookie classes that returned the least against the round averages.', { asc: true, bad: true })),
+    A('Most points from draftees', byOwner(draftable, ({ o, list }) => {
+      const v = r1(list.reduce((a, p) => a + p.value, 0));
+      return { who: o, value: v, display: fmt(v), ctx: `from ${list.length} picks, while on their team` };
+    }), F('Draft', 'Total locked points from rookies they drafted, while on their team.', { kind: 'total', keepZero: true })),
+  ];
+
   const runningTotals = new Set(['Most consecutive playoff trips', 'Longest active title drought', '400-point club']);
   for (const r of byCategory.careers) r.kind = 'total';
+  // Every Front Office value keeps growing as players score, so only a different
+  // move or manager taking #1 counts as a record changing hands.
+  for (const r of byCategory['front-office']) r.kind = 'total';
   for (const r of byCategory.streaks) if (runningTotals.has(r.title)) r.kind = 'total';
 
   return byCategory;
@@ -374,7 +453,7 @@ export function viewData(DATA, { season = 'all', stage = 'all' } = {}) {
     playerWeeks = playerWeeks.filter(g => g.t === 'P');
     medianGames = [];
   }
-  return { ...DATA, games, medianGames, playerWeeks, seasons, view: { season, stage } };
+  return { ...DATA, games, medianGames, playerWeeks, seasons, view: { season, stage }, all: DATA.all ?? DATA };
 }
 
 // Which records a filter shows: a record about regular-season games is hidden
@@ -396,6 +475,8 @@ function asOf(DATA, s, w, lastWeek) {
     games: DATA.games.filter(g => g.s < s || (g.s === s && g.w <= w)),
     medianGames: (DATA.medianGames ?? []).filter(g => g.s < s || (g.s === s && g.w <= w)),
     playerWeeks: (DATA.playerWeeks ?? []).filter(g => g.s < s || (g.s === s && g.w <= w)),
+    transactions: (DATA.transactions ?? []).filter(g => g.s < s || (g.s === s && g.w <= w)),
+    drafts: (DATA.drafts ?? []).filter(d => d.s <= s),
     seasons: DATA.seasons.filter(x => x.season <= s).map(x => {
       if (x.season < s) return x;
       const finished = x.status === 'complete' && w >= lastWeek[x.season];
