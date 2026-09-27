@@ -6,6 +6,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { LEAGUE_ID } from '../assets/config.js';
 import { buildLeagueData } from '../assets/build-data.js';
 import { recordHistory } from '../assets/records.js';
+import { frontOffice } from '../assets/frontoffice.js';
 
 const data = await buildLeagueData(LEAGUE_ID);
 
@@ -92,6 +93,13 @@ if (problems.length) {
 }
 if (playerProblems.length) {
   sections.push(`Player points don't add up to the team score in these games:\n\n${playerProblems.join('\n\n')}\n\nIn the Sleeper app, find the starters whose points differ and add them under "players" in assets/corrections.js.`);
+}
+// Draft picks recorded as a duplicate Sleeper player entry that nobody fixed:
+// the pick would count as 0 points forever.
+const duplicates = frontOffice(data).unusedDuplicates;
+if (duplicates.length) {
+  sections.push(`Draft picks recorded as a duplicate Sleeper player entry (these never score):\n\n${duplicates
+    .map(p => `${p.s} draft, pick ${p.no} by ${name(p.o)}: "${data.players[p.pid]?.n}"`).join('\n')}\n\nAdd the player actually drafted to DRAFT_CORRECTIONS in assets/corrections.js.`);
 }
 if (data.warnings?.length) {
   sections.push(`Problems with assets/corrections.js:\n\n${data.warnings.join('\n')}`);
