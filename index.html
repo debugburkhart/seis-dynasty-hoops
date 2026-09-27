@@ -9,8 +9,25 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css">
-  <script type="module" src="assets/app.js"></script>
+  <!--
+    Every deploy replaces "v=dev" below with a fingerprint of the assets folder, so browsers fetch
+    fresh copies of the site's files after an update instead of using ones they
+    cached. The import map applies the same tag when the scripts load each other.
+  -->
+  <link rel="stylesheet" href="assets/styles.css?v=dev">
+  <script type="importmap">
+  {
+    "imports": {
+      "./assets/app.js": "./assets/app.js?v=dev",
+      "./assets/build-data.js": "./assets/build-data.js?v=dev",
+      "./assets/config.js": "./assets/config.js?v=dev",
+      "./assets/corrections.js": "./assets/corrections.js?v=dev",
+      "./assets/power.js": "./assets/power.js?v=dev",
+      "./assets/records.js": "./assets/records.js?v=dev"
+    }
+  }
+  </script>
+  <script type="module" src="assets/app.js?v=dev"></script>
 </head>
 <body>
   <header class="topbar">
