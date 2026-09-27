@@ -59,6 +59,16 @@ jobs:
           git diff --cached --quiet || git commit -m "Daily league update $(TZ=America/Chicago date +%F)"
           git push
 
+      # Tag the site's files with a fingerprint of the assets folder, so browsers
+      # load new copies right after an upload instead of cached ones. Only the
+      # published copy is changed; index.html in the repo keeps "v=dev".
+      - name: Stamp file versions
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          VERSION=$(git rev-parse --short HEAD:assets)
+          sed -i "s/?v=dev/?v=$VERSION/g" index.html
+          echo "Site files tagged v=$VERSION"
+
       - uses: actions/configure-pages@v5
         if: steps.gate.outputs.run == 'true'
 
