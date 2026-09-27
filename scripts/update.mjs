@@ -63,11 +63,45 @@ for (const s of data.seasons) {
   }
 }
 
+// ---------- Player check ----------
+// Every team's locked player points should add up to its score in that game.
+// A gap means a player's weekly points in the API are wrong (or a player-level
+// correction is still needed after a team-score correction).
+
+const playerProblems = [];
+const lockedSum = {};
+for (const x of data.playerWeeks) lockedSum[`${x.s}|${x.w}|${x.o}`] = (lockedSum[`${x.s}|${x.w}|${x.o}`] ?? 0) + x.p;
+for (const g of data.games) {
+  for (const [o, score] of [[g.a, g.ap], [g.b, g.bp]]) {
+    const sum = r1(lockedSum[`${g.s}|${g.w}|${o}`] ?? 0);
+    if (Math.abs(sum - score) < 0.05) continue;
+    const starters = data.playerWeeks
+      .filter(x => x.s === g.s && x.w === g.w && x.o === o)
+      .sort((a, b) => b.p - a.p)
+      .map(x => `${data.players[x.pid]?.n ?? x.pid} ${x.p}`);
+    playerProblems.push(
+      `${g.s} Week ${g.w} ${name(o)}: team score ${score}, but starters' locked points add up to ${sum} (off by ${r1(score - sum) > 0 ? '+' : ''}${r1(score - sum)}).\n` +
+      `   Starters per the API: ${starters.join(', ') || 'none'}`,
+    );
+  }
+}
+
+const sections = [];
 if (problems.length) {
-  const msg = `Sleeper's weekly scores don't match its official standings:\n\n${problems.join('\n\n')}\n\nLook these up in the Sleeper app and add the right scores to assets/corrections.js.`;
+  sections.push(`Sleeper's weekly scores don't match its official standings:\n\n${problems.join('\n\n')}\n\nLook these up in the Sleeper app and add the right team scores to assets/corrections.js.`);
+}
+if (playerProblems.length) {
+  sections.push(`Player points don't add up to the team score in these games:\n\n${playerProblems.join('\n\n')}\n\nIn the Sleeper app, find the starters whose points differ and add them under "players" in assets/corrections.js.`);
+}
+if (data.warnings?.length) {
+  sections.push(`Problems with assets/corrections.js:\n\n${data.warnings.join('\n')}`);
+}
+
+if (sections.length) {
+  const msg = sections.join('\n\n----------\n\n');
   console.log(`::warning::${msg.replace(/\n/g, '%0A')}`);
   await writeFile('data/scoring-check.txt', msg);
 } else {
-  console.log('Scoring check passed: every weekly score matches Sleeper\'s official standings.');
+  console.log('Scoring check passed: every weekly score matches Sleeper\'s official standings, and every lineup adds up to its team score.');
   await writeFile('data/scoring-check.txt', '');
 }
