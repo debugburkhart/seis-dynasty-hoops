@@ -2,13 +2,56 @@
 // Writes data/league.json (everything the site reads) and a small dated
 // standings snapshot in data/snapshots/ so day-to-day movement is kept.
 
-import { mkdir, writeFile } from 'node:fs/promises';
-import { LEAGUE_ID } from '../assets/config.js';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { FREEZE_SEED, LEAGUE_ID } from '../assets/config.js';
 import { buildLeagueData } from '../assets/build-data.js';
 import { recordHistory } from '../assets/records.js';
 import { frontOffice } from '../assets/frontoffice.js';
+import { extractSeason, sameSeason, verifySeason } from '../assets/freeze.js';
 
-const data = await buildLeagueData(LEAGUE_ID);
+// ---------- Frozen seasons ----------
+// Completed seasons load from data/frozen/ instead of Sleeper (see assets/freeze.js).
+await mkdir('data/frozen', { recursive: true });
+const frozen = {};
+for (const f of await readdir('data/frozen')) {
+  if (!f.endsWith('.json')) continue;
+  const b = JSON.parse(await readFile(`data/frozen/${f}`, 'utf8'));
+  frozen[b.season] = b;
+}
+const readJson = async path => { try { return JSON.parse(await readFile(path, 'utf8')); } catch { return null; } };
+
+// Seed: completed seasons not frozen yet are taken from a known-good saved copy
+// of the league data in this repo's history (FREEZE_SEED in assets/config.js),
+// but only if that copy passes every check for the season.
+if (FREEZE_SEED && process.env.GITHUB_REPOSITORY) {
+  const url = `https://raw.githubusercontent.com/${process.env.GITHUB_REPOSITORY}/${FREEZE_SEED}/data/league.json`;
+  const seed = await fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
+  for (const s of seed?.seasons.filter(x => x.status === 'complete' && !frozen[x.season]) ?? []) {
+    const b = extractSeason(seed, s.season);
+    const check = verifySeason(b);
+    if (!check.ok) { console.log(`Not freezing ${s.season} from ${FREEZE_SEED}: ${check.problems.slice(0, 3).join('; ')}`); continue; }
+    frozen[s.season] = b;
+    await writeFile(`data/frozen/${s.season}.json`, JSON.stringify(b));
+    console.log(`Froze ${s.season} from saved copy ${FREEZE_SEED}.`);
+  }
+}
+const previous = await readJson('data/league.json'); // last night's data, for the two-night rule
+
+const data = await buildLeagueData(LEAGUE_ID, undefined, { frozen });
+
+// A newly completed season is frozen once it passes every check and matches
+// last night's pull exactly, so one glitchy night of Sleeper data can't be locked in.
+for (const s of data.seasons.filter(x => x.status === 'complete' && !frozen[x.season])) {
+  const b = extractSeason(data, s.season);
+  const check = verifySeason(b);
+  if (check.ok && previous && sameSeason(b, extractSeason(previous, s.season))) {
+    await writeFile(`data/frozen/${s.season}.json`, JSON.stringify(b));
+    console.log(`Froze ${s.season}: it passed every check and matched last night's data.`);
+  } else {
+    console.log(`${s.season} is complete but not frozen yet (${check.ok ? 'waiting for two matching nights' : check.problems.slice(0, 3).join('; ')}).`);
+  }
+}
+console.log(`Frozen seasons: ${Object.keys(frozen).sort().join(', ') || 'none'}.`);
 
 // Replaying every week to find record changes takes a couple of seconds,
 // so it's done here once a night instead of in every visitor's browser.
