@@ -639,12 +639,12 @@ function recordTable(list, cat, f) {
     const fresh = f.season === 'all' && top?.rank === 1 ? recentChange(cat.id, r) : null;
     return `
       <details class="fo-row${r.bad ? ' fo-bad' : ''}" id="rec-${cat.id}-${slug(r.title)}">
-        <summary>
+        <summary><div class="row-grid">
           <span class="fo-rec"><b>${esc(r.title)}</b><small>${esc(r.desc ?? '')}</small></span>
           <span class="fo-holder">${who}${rank}${fresh ? badge(fresh) : ''}</span>
           <span class="fo-val">${top ? esc(top.display) : '—'}</span>
           <span class="fo-arrow">${icon('arrow')}</span>
-        </summary>
+        </div></summary>
         <div class="fo-board">
           ${rows.length ? `<ol class="rec-rest">${rows.map(x => `
             <li${x.rank === 1 ? ' class="co"' : ''}>
@@ -938,7 +938,7 @@ function renderLegacy(main) {
         <div class="lg-head"><span>Rank</span><span>Manager / career</span><span>Hardware</span><span>The field</span><span>Legacy score</span><span></span></div>
         ${now.rows.map(r => `
           <details class="lg-row${r.rank <= 2 ? ' lg-top' : ''}">
-            <summary>
+            <summary><div class="row-grid">
               <span class="lg-rank">${String(r.rank).padStart(2, '0')}</span>
               <span class="lg-who">
                 <span class="lg-label">${legacyLabel(r.rank, n)}</span>
@@ -955,7 +955,7 @@ function renderLegacy(main) {
               </span>
               <span class="lg-score"><b>${r.score.toFixed(1)}</b>${move(r)}<small>Legacy score</small></span>
               <span class="lg-open">${icon('arrow')}</span>
-            </summary>
+            </div></summary>
             <div class="lg-detail">
               <div class="lg-parts">
                 ${bar('Championships', r.parts.titles, LEGACY.titles)}
@@ -1043,7 +1043,7 @@ function renderStandingsTable(main, params) {
         <div class="st-head"><span>#</span><span>Manager</span><span>Record</span><span>Win %</span><span>Points / season</span><span>${by[1]} ${dir === 'desc' ? '↓' : '↑'}</span><span></span></div>
         ${rows.map((r, i) => `
           <details class="st-row">
-            <summary>
+            <summary><div class="row-grid">
               <span class="st-rank">${String(i + 1).padStart(2, '0')}</span>
               <span class="st-man"><span class="st-av">${esc(name(r.owner)[0]?.toUpperCase())}</span><span><b>${esc(name(r.owner))}</b><small>${r.titles} title${r.titles === 1 ? '' : 's'}</small><small class="st-meta">${rec(r.w, r.l, r.t)} · ${r.g ? pct1(r.pct) : '—'} · ${num(r.pps)} pts/season</small></span></span>
               <span class="st-rec">${rec(r.w, r.l, r.t)}</span>
@@ -1051,7 +1051,7 @@ function renderStandingsTable(main, params) {
               <span>${num(r.pps)}</span>
               <span class="st-val">${shown(val(r))}<small>${esc(by[1])}</small></span>
               <span class="st-open">${icon('arrow')}</span>
-            </summary>
+            </div></summary>
             <div class="st-detail">
               <div class="st-sub st-sub-head"><span>Season</span><span>Record</span><span>Finish</span><span>Vs median</span><span>Points for</span><span>Points against</span></div>
               ${r.bySeason.map(x => `
