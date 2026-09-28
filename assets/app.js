@@ -943,12 +943,15 @@ function renderLegacy(main) {
                 <span class="lg-label">${legacyLabel(r.rank, n)}</span>
                 <span class="lg-name">${esc(name(r.owner))}<small> — ${r.seasons} season${r.seasons === 1 ? '' : 's'}</small></span>
               </span>
-              <span class="lg-hw">
-                <span title="Championships">${icon('trophy')}<b>${r.titles.length}</b><small>1st</small></span>
-                <span title="Runner-up finishes">${icon('trophy')}<b>${r.seconds.length}</b><small>2nd</small></span>
-                <span title="Last-place finishes">${icon('down')}<b>${r.lasts.length}</b><small>Last</small></span>
+              <span class="lg-stats">
+                <span class="lg-hw">
+                  <span title="Championships">${icon('trophy')}<b>${r.titles.length}</b><small>1st</small></span>
+                  <span title="Runner-up finishes">${icon('trophy')}<b>${r.seconds.length}</b><small>2nd</small></span>
+                  <span title="Last-place finishes">${icon('down')}<b>${r.lasts.length}</b><small>Last</small></span>
+                </span>
+                <span class="lg-field"><b>${Math.round(r.medianPct * 100)}%</b><small>vs median</small></span>
+                <span class="lg-hint">Details ${icon('arrow')}</span>
               </span>
-              <span class="lg-field"><b>${Math.round(r.medianPct * 100)}%</b><small>vs median</small></span>
               <span class="lg-score"><b>${r.score.toFixed(1)}</b>${move(r)}<small>Legacy score</small></span>
               <span class="lg-open">${icon('arrow')}</span>
             </summary>
@@ -1041,23 +1044,23 @@ function renderStandingsTable(main, params) {
           <details class="st-row">
             <summary>
               <span class="st-rank">${String(i + 1).padStart(2, '0')}</span>
-              <span class="st-man"><span class="st-av">${esc(name(r.owner)[0]?.toUpperCase())}</span><span><b>${esc(name(r.owner))}</b><small>${r.titles} title${r.titles === 1 ? '' : 's'}</small></span></span>
+              <span class="st-man"><span class="st-av">${esc(name(r.owner)[0]?.toUpperCase())}</span><span><b>${esc(name(r.owner))}</b><small>${r.titles} title${r.titles === 1 ? '' : 's'}</small><small class="st-meta">${rec(r.w, r.l, r.t)} · ${r.g ? pct1(r.pct) : '—'} · ${num(r.pps)} pts/season</small></span></span>
               <span class="st-rec">${rec(r.w, r.l, r.t)}</span>
               <span>${r.g ? pct1(r.pct) : '—'}</span>
               <span>${num(r.pps)}</span>
-              <span class="st-val">${shown(val(r))}</span>
+              <span class="st-val">${shown(val(r))}<small>${esc(by[1])}</small></span>
               <span class="st-open">${icon('arrow')}</span>
             </summary>
             <div class="st-detail">
-              <div class="st-sub st-sub-head"><span>Season</span><span>Record</span><span>Points for</span><span>Points against</span><span>Vs median</span><span>Finish</span></div>
+              <div class="st-sub st-sub-head"><span>Season</span><span>Record</span><span>Finish</span><span>Vs median</span><span>Points for</span><span>Points against</span></div>
               ${r.bySeason.map(x => `
                 <div class="st-sub">
                   <span>${x.s}</span>
-                  <span>${x.w + x.l + x.t ? rec(x.w, x.l, x.t) : '—'}</span>
-                  <span>${num(x.pf)}</span>
-                  <span>${num(x.pa)}</span>
-                  <span>${mRec(x.median)}</span>
-                  <span>${x.complete ? (x.champion ? '🏆 Champion' : ordinalPlace(x.place)) : 'In progress'}</span>
+                  <span data-l="Record">${x.w + x.l + x.t ? rec(x.w, x.l, x.t) : '—'}</span>
+                  <span data-l="Finish">${x.complete ? (x.champion ? '🏆 Champion' : ordinalPlace(x.place)) : 'In progress'}</span>
+                  <span data-l="Vs median">${mRec(x.median)}</span>
+                  <span data-l="Points for">${num(x.pf)}</span>
+                  <span data-l="Points against">${num(x.pa)}</span>
                 </div>`).join('')}
             </div>
           </details>`).join('')}
