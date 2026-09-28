@@ -532,6 +532,8 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
   .lg-stats { flex-wrap: wrap; row-gap: 5px; }
   .lg-field { margin-left: auto; }
   .lg-hint { display: none; }
+}
+@media (max-width: 760px) {
   .lg-behind-head { flex-direction: column; gap: 2px; }
 
   /* Standings table: record, win % and points per season move under the name. */
