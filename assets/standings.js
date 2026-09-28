@@ -152,6 +152,14 @@ const COMPARISONS = [
   { test: r => won(r) && r.misses === 0, text: 'The 2011 Mavericks: always in the mix, and one ring fully earned.' },
   { test: r => won(r), text: 'The 2019 Raptors: one magical run, and it counts forever.' },
   { test: r => won(r), text: 'The 2016 Cavaliers: one title that changed everything.' },
+  // More champion shapes, used once the ones above are taken
+  { test: r => r.titles.length >= 3, text: "Russell's Celtics: banners are simply what they do." },
+  { test: r => r.titles.length >= 2 && r.misses > 0, text: 'The 1990s Rockets: back-to-back rings from an unlikely place.' },
+  { test: r => won(r) && r.lasts.length, text: 'The 1977 Trail Blazers: from the cellar to the crown.' },
+  { test: r => won(r) && r.seconds.length, text: 'The 2012 Heat: lost in the Finals, came back and finished the job.' },
+  { test: r => won(r) && r.seasons === 1, text: 'The 1999 Spurs: a ring right out of the gate.' },
+  { test: r => won(r) && h2hPct(r) < r.medianPct - 0.08, text: 'The 1995 Rockets: a rough draw in the regular season, champions anyway.' },
+  { test: r => won(r) && r.misses > 0, text: 'The 2021 Bucks: years of near-misses, then the ring.' },
   // No title yet
   { test: r => !won(r) && r.medianPct >= 0.55 && r.seconds.length, text: "Nash's Suns: elite every week, still chasing a ring." },
   { test: r => !won(r) && r.seconds.length, text: "Stockton and Malone's Jazz: made the Finals, no banner yet." },
@@ -161,13 +169,32 @@ const COMPARISONS = [
   { test: r => !won(r) && r.medianPct >= 0.45, text: 'The Pacers of the 2010s: competitive, never quite over the top.' },
   { test: r => !won(r) && r.medianPct < 0.2, text: 'The 2012 Bobcats: every loss is a lottery ticket.' },
   { test: r => !won(r) && r.lasts.length, text: 'The Process-era 76ers: trusting the process.' },
+  // More shapes without a title, used once the ones above are taken
+  { test: r => !won(r) && r.seconds.length >= 2, text: "Ewing's Knicks: knocking on the Finals door, again and again." },
+  { test: r => !won(r) && r.lasts.length >= 2, text: 'The Sacramento Kings of the 2010s: the lottery knows them by name.' },
+  { test: r => !won(r) && r.medianPct >= 0.55 && h2hPct(r) < r.medianPct - 0.08, text: 'The 2010s Thunder: the talent was there, the schedule luck was not.' },
+  { test: r => !won(r) && h2hPct(r) > r.medianPct + 0.08, text: 'The "We Believe" Warriors: winning more than the numbers say they should.' },
+  { test: r => !won(r) && r.seasons === 1, text: 'The Wembanyama-era Spurs: year one, and the future is the story.' },
+  { test: r => !won(r) && r.finish.some(f => f.place === 3), text: 'The 2002 Kings: so close the whole league still talks about it.' },
+  { test: r => !won(r) && r.made === 0, text: 'The 2010s Magic: the rebuild is always one more year away.' },
+  { test: r => !won(r) && r.medianPct >= 0.45 && r.medianPct < 0.55, text: 'The 2010s Hornets: right in the middle of the pack, every single year.' },
+  { test: r => !won(r) && r.made > 0 && r.medianPct < 0.45, text: 'The 2019 Pistons: sneaking into the playoffs on pure grit.' },
 ];
+// Head-to-head win rate, compared with the median rate to spot schedule luck.
+function h2hPct(r) {
+  const g = r.h2h.w + r.h2h.l + r.h2h.t;
+  return g ? (r.h2h.w + r.h2h.t / 2) / g : 0;
+}
 // Used in order when nothing above is still free, so no two managers share one.
 const FALLBACKS = [
   'The 2000s Clippers: the arena is full of hope.',
   'The Kings of the 2010s: a rebuild in every sense.',
   'The Timberwolves before Edwards: waiting on the next leap.',
   "The 1990s Nets: talent on the roster, the wins still on the way.",
+  'The 2000s Bucks: always one piece away from something.',
+  'The 2010s Wizards: flashes of brilliance, waiting on the breakthrough.',
+  "The 1990s Mavericks: before Dirk, before the ring, building the base.",
+  "The 2000s Raptors: a fan base that believes in next year.",
 ];
 export function comparisons(rows) {
   const used = new Set();

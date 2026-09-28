@@ -912,6 +912,7 @@ function renderLegacy(main) {
   const comps = comparisons(now.rows);
   const n = now.rows.length;
   const inProgress = DATA.seasons.find(s => s.status !== 'complete' && s.weeksPlayed);
+  const firstMedian = DATA.seasons.find(s => s.medianGame)?.season;
   const bar = (label, v, max) => `
     <div class="lg-part">
       <div class="lg-part-top"><span>${label}</span><b>${v.toFixed(1)}<small> / ${max}</small></b></div>
@@ -978,11 +979,11 @@ function renderLegacy(main) {
         <p>Career labels are relative to this league: the top-ranked franchise alone is the GOAT, and the bottom-ranked franchise alone is the cellar dweller. NBA comparisons are assigned once per league, best résumé first. Equal scores break ties by titles, then median record, then name; a tie-break is not a score gap.</p>
         <div class="lg-cols">
           <div><h3>Earn the rings</h3><p>Championship points = 40 × (1 − 0.6<sup>titles</sup>). Your first ring adds 16 points, your second adds 9.6, and later rings keep adding credit.</p></div>
-          <div><h3>Prove it over time</h3><p>Median and head-to-head win rates each start with a neutral 10.5–10.5 season, half of a 21-game schedule, before scoring. A short hot streak can't carry the same certainty as years of results.</p></div>
+          <div><h3>Prove it over time</h3><p>Median and head-to-head win rates each start with a neutral ${LEGACY.neutral}–${LEGACY.neutral} season, half of a ${LEGACY.neutral * 2}-game schedule, before scoring. A short hot streak can't carry the same certainty as years of results.</p></div>
           <div><h3>Show up in the spring</h3><p>Playoff points = 20 − 20 × (misses + 1) / (seasons + 2). Only completed seasons count, and a first-round bye counts as making the playoffs. With no history yet, you start at neutral credit.</p></div>
           <div><h3>Read the movement</h3><p>${prevSeason ? `The arrow compares the same formula through ${prevSeason} and through ${now.seasons.at(-1)}. It measures score points, not places. Managers without a season through ${prevSeason} show "New".` : 'Movement arrows appear once there are two completed seasons to compare.'}${inProgress ? ` ${inProgress.season} games are excluded until that season is complete.` : ''}</p></div>
         </div>
-        <p class="lg-fine">The weekly median is measured from every regular-season week's scores, so seasons before the league-median game (added in 2026) count the same way. Last place means last in the final standings: the loser of the last-place game. Components are rounded to tenths. The three takeaways and the NBA comparison come from the same facts as the score.</p>
+        <p class="lg-fine">The weekly median is measured from every regular-season week's scores, so ${firstMedian ? `seasons before the league-median game (added in ${firstMedian})` : 'every season'} count${firstMedian ? '' : 's'} the same way. Last place means last in the final standings: the loser of the last-place game. Components are rounded to tenths. The three takeaways and the NBA comparison come from the same facts as the score.</p>
       </section>
     </div>`;
 }
