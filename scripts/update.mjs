@@ -7,7 +7,7 @@ import { FREEZE_SEED, LEAGUE_ID } from '../assets/config.js';
 import { buildLeagueData } from '../assets/build-data.js';
 import { recordHistory } from '../assets/records.js';
 import { frontOffice } from '../assets/frontoffice.js';
-import { extractSeason, sameSeason, verifySeason } from '../assets/freeze.js';
+import { extractSeason, guardSeason, sameSeason, verifySeason } from '../assets/freeze.js';
 
 // ---------- Frozen seasons ----------
 // Completed seasons load from data/frozen/ instead of Sleeper (see assets/freeze.js).
@@ -37,7 +37,14 @@ if (FREEZE_SEED && process.env.GITHUB_REPOSITORY) {
 }
 const previous = await readJson('data/league.json'); // last night's data, for the two-night rule
 
-const data = await buildLeagueData(LEAGUE_ID, undefined, { frozen });
+const pulled = await buildLeagueData(LEAGUE_ID, undefined, { frozen });
+
+// Week guard: finished weeks of the season in progress that come back from
+// Sleeper stale or half-loaded keep last night's version (see assets/freeze.js).
+const guard = guardSeason(pulled, previous, (await readJson('data/week-guard.json')) ?? {});
+const data = guard.data;
+for (const line of guard.log) console.log(line);
+await writeFile('data/week-guard.json', JSON.stringify(guard.state, null, 1));
 
 // A newly completed season is frozen once it passes every check and matches
 // last night's pull exactly, so one glitchy night of Sleeper data can't be locked in.
@@ -131,6 +138,9 @@ for (const g of data.games) {
 }
 
 const sections = [];
+if (guard.alerts.length) {
+  sections.push(`Weeks Sleeper changed that the site held back, then accepted:\n\n${guard.alerts.join('\n\n')}`);
+}
 if (problems.length) {
   sections.push(`Sleeper's weekly scores don't match its official standings:\n\n${problems.join('\n\n')}\n\nLook these up in the Sleeper app and add the right team scores to assets/corrections.js.`);
 }
