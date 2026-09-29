@@ -2,6 +2,7 @@ import { LEAGUE_ID } from './config.js';
 import { CATEGORIES, CHANGE_LABELS, buildRecords, recordHistory, recordVisible, viewData } from './records.js';
 import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, legacy, legacyLabel, standings } from './standings.js';
+import { frontOffice } from './frontoffice.js';
 
 // ---------- Navigation ----------
 
@@ -294,6 +295,79 @@ function signature(title, x, A, B) {
 
 let showAll = false;
 
+// ---------- Rivalry: trades between the two managers ----------
+// Same valuation as the Front Office records: each player counts for the locked
+// points he produced for the team that got him (until he left), and a draft pick
+// counts as the player it became. "Est." means a value is still changing.
+
+let LEDGER;
+const ledger = () => (LEDGER ??= frontOffice(DATA));
+
+function tradeHistory(A, B) {
+  const trades = ledger().trades
+    .filter(t => t.owners.includes(A) && t.owners.includes(B))
+    .sort((x, y) => y.s - x.s || y.w - x.w);
+  const assetName = a => (a.pick
+    ? `${a.pick.replace(/^(\d+) round (\d+)$/, '$1 round $2 pick')}${a.pid ? ` → ${DATA.players[a.pid]?.n ?? 'player'}` : ' (not used yet)'}`
+    : DATA.players[a.pid]?.n ?? `Player ${a.pid}`);
+  const side = (t, o) => t.sides.find(sd => sd.o === o);
+  // Who's ahead across all their trades: half the gap between the two managers'
+  // nets (in a two-team deal that's just one side's net; a third team's share
+  // in three-team deals doesn't tilt it).
+  const netA = r1(trades.reduce((sum, t) => sum + (side(t, A).net - side(t, B).net) / 2, 0));
+  const anyEst = trades.some(t => side(t, A).est || side(t, B).est);
+  const column = (t, o) => {
+    const sd = side(t, o);
+    const others = t.owners.length > 2;
+    return `
+      <div class="tr-side${sd.net > 0 ? ' tr-won' : ''}">
+        <div class="tr-who">${esc(name(o))} got</div>
+        ${sd.got.length ? `<ul>${sd.got.map(a => `
+          <li><span>${esc(assetName(a))}${others ? ` <small>from ${esc(name(fromWhom(t, a, o)))}</small>` : ''}</span><b>${num(a.value)}${a.active ? '<i>*</i>' : ''}</b></li>`).join('')}</ul>`
+          : '<p class="empty">Nothing</p>'}
+        <div class="tr-total"><span>Total produced</span><b>${num(sd.gotValue)}</b></div>
+        ${others ? `<div class="tr-total tr-net"><span>Gave up ${num(sd.gaveValue)} · net</span><b>${signedNum(sd.net)}</b></div>` : ''}
+      </div>`;
+  };
+  const verdict = t => {
+    const a = side(t, A);
+    const est = a.est || side(t, B).est;
+    if (t.owners.length > 2) {
+      return `${esc(name(A))} ${signedNum(a.net)} · ${esc(name(B))} ${signedNum(side(t, B).net)}${est ? ' · Est.' : ''}`;
+    }
+    if (a.net === 0) return `Even${est ? ' so far' : ''}`;
+    const winner = a.net > 0 ? A : B;
+    return `${esc(name(winner))} ${est ? 'leads' : 'won'} by ${num(Math.abs(a.net))}${est ? ' · Est.' : ''}`;
+  };
+
+  return `
+    <section class="card">
+      <div class="card-head"><h2>Trade history</h2><span class="card-sub">${trades.length
+        ? `${trades.length} trade${trades.length === 1 ? '' : 's'} · ${netA === 0 ? 'dead even on value' : `${esc(name(netA > 0 ? A : B))} ${anyEst ? 'is' : 'came out'} ahead by ${num(Math.abs(netA))}`}`
+        : 'No trades yet'}</span></div>
+      ${trades.length ? trades.map(t => `
+        <div class="tr">
+          <div class="tr-head">
+            <span class="tr-when">${t.s} · Wk ${t.w}${t.owners.length > 2 ? ` · 3-team trade with ${esc(t.owners.filter(o => o !== A && o !== B).map(name).join(' & '))}` : ''}</span>
+            <span class="tr-verdict">${verdict(t)}</span>
+          </div>
+          <div class="tr-sides">${column(t, A)}${column(t, B)}</div>
+        </div>`).join('') : `<p class="empty">${esc(name(A))} and ${esc(name(B))} haven't made a trade with each other.</p>`}
+      ${trades.length ? `<p class="rec-note">Values are locked points each player produced for the team that received him, until he left it; a draft pick counts as the player it became. * still on that roster, so the value is still growing.</p>` : ''}
+    </section>`;
+}
+
+// In a 3-team trade, who an asset came from.
+function fromWhom(t, asset, receiver) {
+  const x = DATA.transactions?.find(tx => tx.type === 'trade' && tx.s === t.s && tx.w === t.w && tx.owners.length === t.owners.length && t.owners.every(o => tx.owners.includes(o)));
+  if (!x) return receiver;
+  if (asset.pick) return x.picks.find(p => `${p.season} round ${p.round}` === asset.pick && p.to === receiver)?.from ?? receiver;
+  return x.drops[asset.pid] ?? receiver;
+}
+
+const r1 = n => Math.round(n * 10) / 10;
+const signedNum = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${num(Math.abs(n))}`;
+
 function renderRivalry(main, params) {
   let A = params.get('a');
   let B = params.get('b');
@@ -377,6 +451,8 @@ function renderRivalry(main, params) {
           ${tapeRow('Weekly high scores', ca.highs, cb.highs, ca.highs, cb.highs)}
         </div>
       </section>
+
+      ${tradeHistory(A, B)}
 
       <section class="card">
         ${r.meetings.length ? `
