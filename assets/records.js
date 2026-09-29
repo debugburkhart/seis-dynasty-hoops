@@ -331,10 +331,23 @@ export function buildRecords(DATA) {
       who: b.o, whoText: pname(b.pid), img: img(b.pid), value: b.p, display: fmt(b.p),
       ctx: `for ${name(b.o)} · ${span(b.seasons)} · ${b.wks} weeks`,
     })), { ...P, kind: 'total' }),
-    ...['PG', 'SG', 'SF', 'PF', 'C'].map(pos => R(`Best ${pos} season`, Object.values(psn).filter(s => pl[s.pid]?.pos === pos).map(s => ({
-      who: topOwner(s.by), whos: Object.keys(s.by), whoText: pname(s.pid), img: img(s.pid), value: s.p, display: fmt(s.p),
-      ctx: `${seasonLabel(s.s)} · for ${forList(s.by)}`,
-    })), { ...P, note: `Most locked points by a ${pos} in one season, and who rostered him. Positions are Sleeper's primary position.` })),
+    ...['PG', 'SG', 'SF', 'PF', 'C'].map(pos => {
+      const title = `Best ${pos} season`;
+      const atPos = Object.values(psn).filter(s => pl[s.pid]?.pos === pos);
+      const record = R(title, atPos.map(s => ({
+        who: topOwner(s.by), whos: Object.keys(s.by), whoText: pname(s.pid), img: img(s.pid), value: s.p, display: fmt(s.p),
+        ctx: `${seasonLabel(s.s)} · for ${forList(s.by)}`,
+      })), { ...P, note: `Most locked points by a ${pos} in one season, and who rostered him. Positions are Sleeper's primary position.` });
+      // For the Manager filter: each player's season split by team, counting only
+      // the points he scored for that one manager (a traded player's season for
+      // someone else doesn't count toward theirs). Ranked across every team.
+      record.managerRows = R(title, atPos.flatMap(s => Object.entries(s.by).map(([o, p]) => ({
+        who: o, whoText: pname(s.pid), img: img(s.pid), value: p, display: fmt(p),
+        ctx: `${seasonLabel(s.s)} · for ${name(o)}${Object.keys(s.by).length > 1 ? ` (of ${fmt(s.p)} that season)` : ''}`,
+      }))), P).rows;
+      record.managerNote = `Only the locked points he scored for this manager count here. Positions are Sleeper's primary position.`;
+      return record;
+    }),
     R('Most-used players', Object.values(pall).map(d => ({
       who: topOwner(d.wksBy), whos: Object.keys(d.by), whoText: pname(d.pid), img: img(d.pid), value: d.weeks.size, display: d.weeks.size,
       ctx: `weeks in a lineup · ${Object.entries(d.wksBy).sort((a, b) => b[1] - a[1]).map(([o, n]) => `${name(o)} ${n}`).join(', ')}`,

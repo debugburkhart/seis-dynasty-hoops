@@ -589,7 +589,10 @@ function recordsFor(season, stage) {
 // league-wide rank), then trimmed to the record's limit.
 function shownRows(r, manager) {
   let rows = r.rows;
-  if (manager !== 'all') rows = rows.filter(x => x.who === manager || x.also === manager || x.whos?.includes(manager));
+  // Records with per-manager rows (the position seasons) count only what a
+  // player did for the chosen manager.
+  if (manager !== 'all' && r.managerRows) rows = r.managerRows.filter(x => x.who === manager);
+  else if (manager !== 'all') rows = rows.filter(x => x.who === manager || x.also === manager || x.whos?.includes(manager));
   return r.limit ? rows.slice(0, r.limit) : rows;
 }
 
@@ -614,7 +617,7 @@ function recordCard(r, cat, { manager = 'all', badges = true, stage = 'all', sho
   const rankNote = topRank === 1 ? '' : topRank === '–' ? 'Not ranked yet' : `#${topRank} overall`;
   const ctx = leaders.length === 1 ? [top.ctx, rankNote].filter(Boolean).join(' · ') : 'Shared record';
   // A note about "any game" doesn't apply once the Stage filter narrows the games.
-  const note = r.scopeNote && stage !== 'all' ? '' : r.note;
+  const note = r.scopeNote && stage !== 'all' ? '' : manager !== 'all' && r.managerNote ? r.managerNote : r.note;
   return `
     <article class="rec${fresh ? ' rec-fresh' : ''}${topRank !== 1 ? ' rec-sub' : ''}" id="rec-${cat}-${slug(r.title)}">
       <div class="rec-title"><span>${head}</span>${fresh ? badge(fresh) : ''}</div>
