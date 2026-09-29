@@ -307,10 +307,29 @@ function tradeHistory(A, B) {
   const trades = ledger().trades
     .filter(t => t.owners.includes(A) && t.owners.includes(B))
     .sort((x, y) => y.s - x.s || y.w - x.w);
-  const assetName = a => (a.pick
-    ? `${a.pick.replace(/^(\d+) round (\d+)$/, '$1 round $2 pick')}${a.pid ? ` → ${DATA.players[a.pid]?.n ?? 'player'}` : ' (not used yet)'}`
-    : DATA.players[a.pid]?.n ?? `Player ${a.pid}`);
   const side = (t, o) => t.sides.find(sd => sd.o === o);
+  // The later trade in which this manager passed the pick on, if they did.
+  const flipOf = (t, a, o) => ledger().trades
+    .filter(x => x.ts > t.ts && x.sides.some(sd => sd.o === o && sd.gave.some(g => g.key === a.key)))
+    .sort((x, y) => x.ts - y.ts)
+    .map(x => ({ s: x.s, w: x.w, to: x.sides.find(sd => sd.got.some(g => g.key === a.key))?.o }))[0];
+  // An asset as received by manager o: its label, a note under it, and whether
+  // its value is still growing on o's own roster (the * marker).
+  const describe = (t, a, o) => {
+    if (!a.pick) return { label: DATA.players[a.pid]?.n ?? `Player ${a.pid}`, note: '', mine: a.active };
+    const pick = a.pick.replace(/^(\d+) round (\d+)$/, '$1 round $2 pick');
+    const player = a.pid ? DATA.players[a.pid]?.n ?? 'player' : null;
+    const flip = a.usedBy === o ? null : flipOf(t, a, o);
+    if (flip) {
+      return {
+        label: `${pick}${player ? ` → ${player}` : ''}`,
+        note: `flipped to ${name(flip.to)} in ${flip.s} Wk ${flip.w}${player ? `; ${name(a.usedBy)} drafted ${player}` : ', not used yet'}`,
+        mine: false,
+      };
+    }
+    if (!player) return { label: `${pick} (not used yet)`, note: '', mine: true };
+    return { label: `${pick} → ${player}`, note: a.usedBy && a.usedBy !== o ? `drafted by ${name(a.usedBy)}` : '', mine: a.usedBy === o && a.active };
+  };
   // Who's ahead across all their trades: half the gap between the two managers'
   // nets (in a two-team deal that's just one side's net; a third team's share
   // in three-team deals doesn't tilt it).
@@ -322,8 +341,12 @@ function tradeHistory(A, B) {
     return `
       <div class="tr-side${sd.net > 0 ? ' tr-won' : ''}">
         <div class="tr-who">${esc(name(o))} got</div>
-        ${sd.got.length ? `<ul>${sd.got.map(a => `
-          <li><span>${esc(assetName(a))}${others ? ` <small>from ${esc(name(fromWhom(t, a, o)))}</small>` : ''}</span><b>${num(a.value)}${a.active ? '<i>*</i>' : ''}</b></li>`).join('')}</ul>`
+        ${sd.got.length ? `<ul>${sd.got.map(a => {
+          const d = describe(t, a, o);
+          const notes = [others ? `from ${name(fromWhom(t, a, o))}` : '', d.note].filter(Boolean).join(' · ');
+          return `
+          <li><span>${esc(d.label)}${notes ? ` <small>${esc(notes)}</small>` : ''}</span><b>${num(a.value)}${d.mine ? '<i>*</i>' : ''}</b></li>`;
+        }).join('')}</ul>`
           : '<p class="empty">Nothing</p>'}
         <div class="tr-total"><span>Total produced</span><b>${num(sd.gotValue)}</b></div>
         ${others ? `<div class="tr-total tr-net"><span>Gave up ${num(sd.gaveValue)} · net</span><b>${signedNum(sd.net)}</b></div>` : ''}
@@ -353,7 +376,7 @@ function tradeHistory(A, B) {
           </div>
           <div class="tr-sides">${column(t, A)}${column(t, B)}</div>
         </div>`).join('') : `<p class="empty">${esc(name(A))} and ${esc(name(B))} haven't made a trade with each other.</p>`}
-      ${trades.length ? `<p class="rec-note">Values are locked points each player produced for the team that received him, until he left it; a draft pick counts as the player it became. * still on that roster, so the value is still growing.</p>` : ''}
+      ${trades.length ? `<p class="rec-note">Values are locked points each player produced for the team that received him, until he left it. A draft pick counts as the player it became, even if it was flipped before the draft; that value then moves on in the trade where it was flipped, so it's never counted twice. * still on that manager's roster (or a pick they still hold), so the value is still growing. Est. means some value in the deal is still changing.</p>` : ''}
     </section>`;
 }
 

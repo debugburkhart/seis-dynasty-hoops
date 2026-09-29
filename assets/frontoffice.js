@@ -152,14 +152,20 @@ export function frontOffice(DATA, season = 'all') {
       }
       for (const p of x.picks) {
         const used = pickUse[`${p.season}|${p.round}|${p.orig}`];
-        const asset = { pick: `${p.season} round ${p.round}`, pid: used?.pid, value: used && !used.pending ? used.value : 0, active: !used || used.pending || used.active };
+        // key identifies the pick across trades; usedBy is who drafted with it
+        // (unset until the draft happens).
+        const asset = {
+          pick: `${p.season} round ${p.round}`, key: `${p.season}|${p.round}|${p.orig}`,
+          pid: used?.pid, usedBy: used?.o, value: used && !used.pending ? used.value : 0,
+          active: !used || used.pending || used.active,
+        };
         if (p.to === o) got.push(asset);
         else if (p.from === o) gave.push(asset);
       }
       const total = list => r1(list.reduce((a, b) => a + b.value, 0));
       return { o, got, gave, gotValue: total(got), gaveValue: total(gave), net: r1(total(got) - total(gave)), est: [...got, ...gave].some(a => a.active) };
     });
-    trades.push({ s: x.s, w: x.w, owners: x.owners, sides });
+    trades.push({ s: x.s, w: x.w, ts: x.ts ?? 0, owners: x.owners, sides });
   });
 
   // Waiver claims and free-agent pickups, and drops that produced elsewhere.
