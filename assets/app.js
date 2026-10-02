@@ -252,6 +252,13 @@ function corner(id, side, wins) {
     </div>`;
 }
 
+// "1 title meeting (2025)" from the seasons the two met in the Championship.
+function titleLine(seasons, short = false) {
+  const years = [...new Set(seasons)].sort();
+  if (!years.length) return short ? '0 title meetings' : 'No title meetings yet';
+  return `${years.length} title meeting${years.length === 1 ? '' : 's'} (${years.join(', ')})`;
+}
+
 // Playoff games tied on points are decided by Sleeper's tiebreaker.
 const result = (m, winner) => (m.ap === m.bp
   ? `${esc(name(winner))} advanced on tiebreaker`
@@ -432,6 +439,7 @@ function renderRivalry(main, params) {
           <div class="vs-col">
             <div class="vs">VS</div>
             <div class="vs-meta">${r.meetings.length} meeting${r.meetings.length === 1 ? '' : 's'} · ${r.playoffs} playoff</div>
+            <div class="vs-meta">${titleLine(r.meetings.filter(m => m.label === 'Championship').map(m => m.s), true)}</div>
             ${r.ties ? `<div class="vs-meta">${r.ties} tie${r.ties === 1 ? '' : 's'}</div>` : ''}
             <button class="swap" type="button">${icon('swap')} Swap</button>
           </div>
@@ -1255,7 +1263,7 @@ async function renderHype(main, params) {
           : srow('Last meeting', 'Never played', '—', '—')}
         ${srow('Current win streak', '', sr.streak?.who === 'A' ? sr.streak.n : '—', sr.streak?.who === 'B' ? sr.streak.n : '—', sr.streak?.who === 'A', sr.streak?.who === 'B')}
       </div>
-      <div class="hy-sfoot">${icon('trophy')} ${sr.titles.length ? `${sr.titles.length} title meeting${sr.titles.length === 1 ? '' : 's'}` : 'No title meetings yet'}
+      <div class="hy-sfoot">${icon('trophy')} ${titleLine([...sr.titles.map(m => m.s), ...(g.label === 'Championship' ? [season] : [])])}
         · <a href="#/rivalry?a=${encodeURIComponent(A)}&b=${encodeURIComponent(B)}">Full rivalry</a></div>
     </section>`;
 
