@@ -51,7 +51,7 @@ function cached(DATA) {
     c = {
       finishes: finishes(DATA),
       byGame,
-      playerPts: (DATA.playerWeeks ?? []).map(x => x.p).sort((a, b) => a - b),
+      pools: new Map(), // "season|week" -> sorted player-week points before that week
     };
     CACHE.set(DATA, c);
   }
@@ -392,12 +392,24 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
 
 // ---------- Notable moments ----------
 // The best player weeks (locked points) from the two teams' earlier meetings,
-// tiered against every locked player week in league history.
+// tiered against every locked player week in league history before the week
+// being viewed, so an old week's moments never change as later seasons are played.
 
 const TIERS = [[0.99, 'Eruption'], [0.95, 'Takeover'], [0.85, 'Heat check'], [0, 'Steady hand']];
 
-export function moments(DATA, series, A, B, perSide = 2) {
-  const { byGame, playerPts } = cached(DATA);
+// Every locked player week before a given week, sorted, built once per week.
+function playerPtsBefore(DATA, season, week) {
+  const c = cached(DATA);
+  const key = `${season}|${week}`;
+  if (!c.pools.has(key)) {
+    c.pools.set(key, (DATA.playerWeeks ?? []).filter(x => isBefore(x, season, week)).map(x => x.p).sort((a, b) => a - b));
+  }
+  return c.pools.get(key);
+}
+
+export function moments(DATA, series, A, B, season, week, perSide = 2) {
+  const { byGame } = cached(DATA);
+  const pool = playerPtsBefore(DATA, season, week);
   const all = [];
   for (const m of series.meetings) {
     for (const o of [A, B]) {
@@ -410,12 +422,13 @@ export function moments(DATA, series, A, B, perSide = 2) {
   all.sort((x, y) => y.p - x.p);
   all.forEach((x, i) => {
     x.rivalryRank = i + 1;
-    x.pctile = rankIn(playerPts, x.p);
+    x.pctile = rankIn(pool, x.p);
     x.tier = TIERS.find(([cut]) => x.pctile >= cut)[1];
   });
   return {
     A: all.filter(x => x.o === A).slice(0, perSide),
     B: all.filter(x => x.o === B).slice(0, perSide),
     total: all.length,
+    pool: pool.length,
   };
 }
