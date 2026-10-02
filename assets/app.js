@@ -1268,7 +1268,7 @@ async function renderHype(main, params) {
     </section>`;
 
   // ----- Notable moments -----
-  const mo = moments(DATA, sr, A, B, season, week);
+  const mo = moments(DATA, sr, A, B);
   const moment = x => {
     const res = x.tie ? 'tie' : x.won ? 'win' : 'loss';
     return `
@@ -1282,7 +1282,7 @@ async function renderHype(main, params) {
           <div class="hy-mo-pts"><b>${num(x.p)}</b><span>points</span></div>
           <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
         </summary>
-        <p>${x.rivalryRank === 1 ? 'The best player week in this rivalry. ' : `No. ${x.rivalryRank} player week in this rivalry. `}Locked points in a ${num(x.teamScore)}–${num(x.oppScore)} ${res}${x.m.t === 'R' ? '' : ` (${esc(x.m.label)})`}, ${Math.round((x.p / (x.teamScore || 1)) * 100)}% of the team’s score. Better than ${Math.floor(x.pctile * 100)}% of the ${mo.pool.toLocaleString('en-US')} player weeks in league history before Week ${week} of ${season}.</p>
+        <p>${x.rivalryRank === 1 ? 'The best player week in this rivalry. ' : `No. ${x.rivalryRank} player week in this rivalry. `}Locked points in a ${num(x.teamScore)}–${num(x.oppScore)} ${res}${x.m.t === 'R' ? '' : ` (${esc(x.m.label)})`}, ${Math.round((x.p / (x.teamScore || 1)) * 100)}% of the team’s score. Better than ${Math.floor(x.pctile * 100)}% of every player week in league history.</p>
       </details>`;
   };
   const momentsCard = `
