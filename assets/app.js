@@ -1,8 +1,9 @@
 import { LEAGUE_ID } from './config.js';
 import { CATEGORIES, CHANGE_LABELS, buildRecords, recordHistory, recordVisible, viewData } from './records.js';
 import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
-import { LEGACY, comparisons, legacy, legacyLabel, standings } from './standings.js';
+import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
 import { frontOffice } from './frontoffice.js';
+import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, weekPairs } from './hype.js';
 
 // ---------- Navigation ----------
 
@@ -12,7 +13,7 @@ const NAV = [
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['cheat-sheet', 'Cheat Sheet', 'clipboard'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['rivalry', 'records', 'power', 'standings']);
+const READY = new Set(['rivalry', 'records', 'power', 'hype', 'standings']);
 const DEFAULT_PAGE = 'rivalry';
 
 const ICONS = {
@@ -977,6 +978,393 @@ function renderPower(main, params) {
   }));
 }
 
+// ---------- Matchup Hype ----------
+// The slate, Main event and labels come from assets/hype.js. Which week is out
+// and the live scores come straight from Sleeper in the visitor's browser, so a
+// week's hype appears the moment that week starts, not after the nightly update.
+
+const SLEEPER = 'https://api.sleeper.com/v1';
+const sleeper = async path => {
+  const res = await fetch(`${SLEEPER}${path}?t=${Date.now()}`);
+  if (!res.ok) throw new Error(`Sleeper returned ${res.status}`);
+  return res.json();
+};
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
+
+const ctToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+const dayShift = (ymd, days) => {
+  const d = new Date(`${ymd}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+const mondayOf = ymd => dayShift(ymd, -((new Date(`${ymd}T12:00:00Z`).getUTCDay() + 6) % 7));
+const prettyDate = ymd => new Date(`${ymd}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' });
+
+let HYPE_NOW; // { season, week, done, tipoff, reveal }: the week whose hype is out
+let HYPE_TIMER;
+const LIVE = {}; // "season|week" -> { scores, pairs, at }
+
+// The last week of the current season, from last season's bracket length.
+function lastWeekOf(s) {
+  const prev = DATA.seasons.filter(x => x.status === 'complete').at(-1);
+  const rounds = prev ? Math.max(...DATA.games.filter(g => g.s === prev.season).map(g => g.w)) - prev.playoffStart : 2;
+  return s.playoffStart + rounds;
+}
+
+// Hype for a week comes out once that week is under way in Sleeper. Week 1
+// comes out on the Monday of tip-off week.
+async function hypeNow() {
+  const cur = DATA.seasons.at(-1);
+  let state = null;
+  try { state = await withTimeout(sleeper('/state/nba'), 5000); } catch { /* fall back to the saved data */ }
+  const out = { season: cur.season, week: 0, done: cur.status === 'complete', tipoff: state?.season_start_date ?? null };
+  if (out.tipoff) out.reveal = mondayOf(out.tipoff);
+  if (out.done) return out;
+  if (state && state.league_season === cur.season) {
+    if (state.season_type === 'pre') out.week = out.reveal && ctToday() >= out.reveal ? 1 : 0;
+    else if (state.season_type === 'regular' || state.season_type === 'post') out.week = Math.max(state.week || 0, state.leg || 0);
+  } else if (cur.weeksPlayed) {
+    out.week = cur.weeksPlayed + 1;
+  }
+  if (out.week > lastWeekOf(cur)) { out.week = lastWeekOf(cur); out.over = true; }  return out;
+}
+
+// Live scores (and, in the playoffs, the bracket pairings) for the week under way.
+async function liveWeek(season, week) {
+  const key = `${season}|${week}`;
+  if (LIVE[key] && Date.now() - LIVE[key].at < 60_000) return LIVE[key];
+  const s = DATA.seasons.find(x => x.season === season);
+  const ownerOf = Object.fromEntries(s.teams.map(t => [t.rosterId, t.owner]));
+  const rows = await withTimeout(sleeper(`/league/${s.leagueId}/matchups/${week}`), 8000);
+  const scores = {};
+  const byMatch = {};
+  for (const m of rows ?? []) {
+    scores[ownerOf[m.roster_id]] = Math.round((m.custom_points ?? m.points ?? 0) * 10) / 10;
+    if (m.matchup_id != null) (byMatch[m.matchup_id] ??= []).push(ownerOf[m.roster_id]);
+  }
+  let pairs = null;
+  if (week >= s.playoffStart) {
+    // Bracket games for this round. Rounds are one week each in this league.
+    const [lg, wb, lb] = await Promise.all([
+      sleeper(`/league/${s.leagueId}`), sleeper(`/league/${s.leagueId}/winners_bracket`), sleeper(`/league/${s.leagueId}/losers_bracket`),
+    ]);
+    const twoWeek = lg?.settings?.playoff_round_type === 2;
+    const round = twoWeek ? Math.floor((week - s.playoffStart) / 2) + 1 : week - s.playoffStart + 1;
+    const maxRound = Math.max(0, ...(wb ?? []).map(g => g.r));
+    const label = g => (g.p === 1 ? 'Championship' : g.p ? `${g.p}${{ 1: 'st', 2: 'nd', 3: 'rd' }[g.p] ?? 'th'} place game`
+      : g.r === maxRound - 1 ? 'Semifinal' : g.r === maxRound - 2 ? 'Quarterfinal' : `Playoff round ${g.r}`);
+    const ok = g => g.r === round && typeof g.t1 === 'number' && typeof g.t2 === 'number';
+    pairs = [
+      ...(wb ?? []).filter(ok).map(g => ({ a: ownerOf[g.t1], b: ownerOf[g.t2], t: g.p && g.p !== 1 ? 'X' : 'P', label: label(g), final: null })),
+      ...(lb ?? []).filter(ok).map(g => ({ a: ownerOf[g.t1], b: ownerOf[g.t2], t: 'X', label: g.p === 1 ? 'Last place game' : 'Consolation', final: null })),
+    ];
+  } else if (!weekPairs(DATA, season, week).length) {
+    pairs = Object.values(byMatch).filter(x => x.length === 2).map(([a, b]) => ({ a, b, t: 'R', label: null, final: null }));
+  }
+  return (LIVE[key] = { scores, pairs, at: Date.now() });
+}
+
+const HYPE_TONES = { gold: 'hy-gold', red: 'hy-red', navy: 'hy-navy' };
+const chip = l => `<span class="hy-chip ${HYPE_TONES[l.tone] ?? ''}">${l.id === 'main' ? icon('bolt') : ''}${esc(l.text)}</span>`;
+const teamName = (o, season) => DATA.owners[o]?.teams?.[season] ?? name(o);
+
+async function renderHype(main, params) {
+  if (!HYPE_NOW) {
+    main.innerHTML = '<div class="page"><div class="loading">Checking this week’s slate…</div></div>';
+    HYPE_NOW = await hypeNow();
+    if (route().page !== 'hype') return;
+  }
+  const now = HYPE_NOW;
+  const cur = DATA.seasons.at(-1);
+  const curOpen = now.done || now.week >= 1;
+
+  // Seasons and weeks a visitor can pick: past seasons in full, the current one
+  // only up to the week under way.
+  const weeksFor = season => {
+    let list = seasonWeeks(DATA, season);
+    if (season === cur.season && !now.done) {
+      for (let w = cur.playoffStart; w <= now.week; w++) if (!list.some(x => x.w === w)) list.push({ w, label: 'Playoffs' });
+      list = list.sort((a, b) => a.w - b.w);
+    }
+    return list;
+  };
+  const seasons = DATA.seasons.filter(s => (s.season === cur.season ? curOpen : weeksFor(s.season).length && DATA.games.some(g => g.s === s.season)));
+  if (!seasons.length) {
+    main.innerHTML = `<div class="page"><section class="card soon-card"><p>Matchup Hype starts with week 1 of the season.</p></section></div>`;
+    return;
+  }
+  const pickSeason = seasons.find(s => s.season === params.get('season')) ?? seasons.at(-1);
+  const season = pickSeason.season;
+  const isCur = season === cur.season && !now.done;
+  const allWeeks = weeksFor(season);
+  const open = isCur ? allWeeks.filter(x => x.w <= now.week) : allWeeks.filter(x => DATA.games.some(g => g.s === season && g.w === x.w));
+  const wanted = Number(params.get('week'));
+  const week = open.some(x => x.w === wanted) ? wanted : (isCur ? now.week : open.at(-1)?.w);
+  const live = isCur && week === now.week && !DATA.games.some(g => g.s === season && g.w === week);
+
+  let liveData = null;
+  if (live) {
+    try { liveData = await liveWeek(season, week); } catch { /* scores just won't be live */ }
+    if (route().page !== 'hype') return;
+  }
+  const pairs = liveData?.pairs ?? weekPairs(DATA, season, week);
+  const slate = hypeSlate(DATA, season, week, pairs);
+  const g = slate.games.find(x => x.a === params.get('m') || x.b === params.get('m')) ?? slate.games[0];
+  const isPlayoffWeek = week > slate.lastRegular;
+  const weekLabel = w => {
+    const x = allWeeks.find(y => y.w === w);
+    return `Week ${w}${x?.label ? ` · ${x.label}` : ''}`;
+  };
+
+  const hash = changes => {
+    const p = new URLSearchParams({ season, week, ...changes });
+    return `#/hype?${p}`;
+  };
+  const seasonSelect = `
+    <label class="ed-select">
+      <span>${esc(season)}</span>
+      <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+      <select data-h="season" aria-label="Season">
+        ${!curOpen ? `<option disabled>${cur.season} season (hype starts ${now.reveal ? prettyDate(now.reveal) : 'week 1'})</option>` : ''}
+        ${[...seasons].reverse().map(s => `<option value="${s.season}"${s.season === season ? ' selected' : ''}>${s.season} season${s.season === cur.season && !now.done ? ' (in progress)' : ''}</option>`).join('')}
+      </select>
+    </label>`;
+  const nextWeek = isCur && allWeeks.find(x => x.w > now.week);
+  const weekSelect = `
+    <label class="hy-pick">
+      <span class="hy-pick-label">Week</span>
+      <span class="ed-select"><span>Week ${week}</span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select data-h="week" aria-label="Week">
+          ${nextWeek ? `<option disabled>Week ${nextWeek.w} · revealed when it starts</option>` : ''}
+          ${[...open].reverse().map(x => `<option value="${x.w}"${x.w === week ? ' selected' : ''}>${esc(weekLabel(x.w))}${isCur && x.w === now.week ? ' (this week)' : ''}</option>`).join('')}
+        </select>
+      </span>
+    </label>`;
+  const matchSelect = g ? `
+    <label class="hy-pick hy-pick-wide">
+      <span class="hy-pick-label">Matchup</span>
+      <span class="ed-select"><span class="hy-pick-val">${esc(g.labels[0]?.text ?? 'Matchup')} · ${esc(teamName(g.a, season))} vs ${esc(teamName(g.b, season))}</span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select data-h="m" aria-label="Matchup">
+          ${slate.games.map(x => `<option value="${esc(x.a)}"${x === g ? ' selected' : ''}>${esc(x.labels[0]?.text ?? 'Matchup')} · ${esc(teamName(x.a, season))} vs ${esc(teamName(x.b, season))}</option>`).join('')}
+        </select>
+      </span>
+    </label>` : '';
+
+  const head = `
+    <div class="page-head">
+      <div class="page-icon">${icon('bolt')}</div>
+      <div><div class="eyebrow">The weekly matchup desk</div><h1>Matchup Hype</h1></div>
+      <div class="archive">
+        <div class="archive-main"><div class="archive-kicker">Season</div><div class="pw-season">${esc(season)}</div></div>
+        <div class="archive-stat"><b>W${week}</b><span>${live ? 'This week' : 'Week'}</span></div>
+      </div>
+    </div>
+    <div class="hy-controls">${seasonSelect}${weekSelect}${matchSelect}</div>
+    ${!curOpen && now.tipoff ? `<p class="hy-banner">${icon('clock')}<span><b>The ${esc(cur.season)} season tips off ${esc(prettyDate(now.tipoff))}.</b> Week 1’s Main event and labels drop ${esc(prettyDate(now.reveal))}, the start of tip-off week. Each week stays under wraps until it starts. Until then, look back at past weeks.</span></p>` : ''}`;
+
+  if (!g) {
+    main.innerHTML = `<div class="page page-wide">${head}<section class="card soon-card"><p>${isPlayoffWeek ? 'The bracket matchups show up here once Sleeper sets them.' : 'No matchups found for this week.'}</p></section></div>`;
+    bindHype(main, hash);
+    return;
+  }
+
+  // ----- This week -----
+  const A = g.a;
+  const B = g.b;
+  const score = o => {
+    if (g.final) return o === A ? g.final.ap : g.final.bp;
+    return liveData?.scores?.[o] ?? 0;
+  };
+  const pa = score(A);
+  const pb = score(B);
+  const lastSeason = slate.prevSeason;
+  // Before any games, show last season's finish instead of a standing.
+  const kicker = (o, t) => {
+    if (t?.dec) return `Standing · No. ${t.rank}`;
+    const place = lastSeason && finishPlace(lastSeason, o);
+    return place ? `${lastSeason} finish · ${ordinalPlace(place)}` : 'Standing · —';
+  };
+  const sideCard = (o, t, cls) => {
+    const av = avatarUrl(DATA.owners[o]?.avatar);
+    return `
+      <div class="hy-side ${cls}">
+        ${av ? `<img class="hy-av" src="${av}" alt="" loading="lazy">` : `<span class="hy-av avatar-blank">${esc(name(o)[0])}</span>`}
+        <div class="hy-kicker">${esc(kicker(o, t))}</div>
+        <div class="hy-team">${esc(teamName(o, season))}</div>
+        <div class="hy-owner">${esc(name(o))}</div>
+        <div class="hy-rec">${t ? rec(t.w, t.l, t.t) : '—'}</div>
+        <div class="hy-pts" data-o="${esc(o)}">${num(score(o))}</div>
+        <div class="hy-pts-label">${g.final ? 'Final' : 'Points'}</div>
+      </div>`;
+  };
+  const leadLine = () => {
+    const x = score(A);
+    const y = score(B);
+    const total = num(x + y);
+    if (g.final) {
+      if (g.final.win === 'tie') return `Tied at ${num(x)} · ${total} combined points`;
+      const w = g.final.win === 'A' ? A : B;
+      return x === y ? `${esc(name(w))} advanced on the tiebreaker · ${total} combined points`
+        : `${esc(name(w))} won by ${num(Math.abs(x - y))} · ${total} combined points`;
+    }
+    if (!x && !y) return 'No points on the board yet · tip-off pending';
+    if (x === y) return `All square · ${total} combined live points`;
+    return `${esc(name(x > y ? A : B))} leads by ${num(Math.abs(x - y))} · ${total} combined live points`;
+  };
+  const status = g.final ? 'Final' : live && liveData ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Scores load from Sleeper';
+
+  // ----- The hype -----
+  const rankOnSlate = slate.games.indexOf(g) + 1;
+  const hypeCard = `
+    <section class="card hy-why">
+      <div class="card-head"><h2>Why it’s hyped</h2><span class="card-sub">${g.main ? 'Matchup of the Week' : `No. ${rankOnSlate} of ${slate.games.length} on the slate`}</span></div>
+      <div class="hy-why-grid">
+        <ul class="hy-reasons">
+          ${g.labels.length ? g.labels.map(l => `<li>${chip(l)}<span>${esc(l.why)}</span></li>`).join('')
+            : '<li><span class="empty">Nothing special on paper. Sometimes those are the wild ones.</span></li>'}
+        </ul>
+        <div class="hy-meter">
+          <div class="hy-score"><b>${g.hype}</b><span>Hype score</span></div>
+          ${HYPE_PARTS.map(p => `
+            <div class="pw-part">
+              <div class="pw-part-label">${esc(p.name.toUpperCase())} <small>${Math.round(p.weight * 100)}%</small></div>
+              <div class="pw-track"><span style="width:${Math.max(2, g.parts[p.id])}%"></span></div>
+              <div class="pw-part-val">${Math.round(g.parts[p.id])}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </section>`;
+
+  // ----- All-time series (entering this week) -----
+  const sr = g.series;
+  const cell = (v, lead) => `<div class="hy-cell${lead ? ' lead' : ''}">${v}</div>`;
+  const srow = (label, sub, a, b, la, lb) => `
+    <div class="hy-srow">${cell(a, la)}<div class="hy-slabel">${label}${sub ? `<small>${sub}</small>` : ''}</div>${cell(b, lb)}</div>`;
+  const lm = sr.last;
+  const seriesCard = `
+    <section class="card hy-series">
+      <div class="card-head"><h2>${icon('history')} All-time series</h2><span class="card-sub">${sr.reg.n} regular-season meeting${sr.reg.n === 1 ? '' : 's'} · ${sr.reg.ties} tie${sr.reg.ties === 1 ? '' : 's'}${g.final ? ' · entering this game' : ''}</span></div>
+      <div class="hy-stable">
+        <div class="hy-srow hy-shead"><div>${esc(name(A))}</div><div>Head to head</div><div>${esc(name(B))}</div></div>
+        ${srow('Regular-season wins', '', sr.reg.A, sr.reg.B, sr.reg.A > sr.reg.B, sr.reg.B > sr.reg.A)}
+        ${srow('Playoff wins', `${sr.po.n} meeting${sr.po.n === 1 ? '' : 's'}`, sr.po.A, sr.po.B, sr.po.A > sr.po.B, sr.po.B > sr.po.A)}
+        ${sr.other.n ? srow('Placement games', `${sr.other.n} meeting${sr.other.n === 1 ? '' : 's'}`, sr.other.A, sr.other.B, sr.other.A > sr.other.B, sr.other.B > sr.other.A) : ''}
+        ${lm ? srow('Last meeting', `${lm.s} · Week ${lm.w}${lm.t === 'R' ? '' : ` · ${esc(lm.label)}`}`, num(lm.ap), num(lm.bp), lm.win === 'A', lm.win === 'B')
+          : srow('Last meeting', 'Never played', '—', '—')}
+        ${srow('Current win streak', '', sr.streak?.who === 'A' ? sr.streak.n : '—', sr.streak?.who === 'B' ? sr.streak.n : '—', sr.streak?.who === 'A', sr.streak?.who === 'B')}
+      </div>
+      <div class="hy-sfoot">${icon('trophy')} ${sr.titles.length ? `${sr.titles.length} title meeting${sr.titles.length === 1 ? '' : 's'}` : 'No title meetings yet'}
+        · <a href="#/rivalry?a=${encodeURIComponent(A)}&b=${encodeURIComponent(B)}">Full rivalry</a></div>
+    </section>`;
+
+  // ----- Notable moments -----
+  const mo = moments(DATA, sr, A, B);
+  const moment = x => {
+    const res = x.tie ? 'tie' : x.won ? 'win' : 'loss';
+    return `
+      <details class="hy-moment">
+        <summary>
+          <div class="hy-mo-text">
+            <div class="hy-tier">${icon('bolt')}${esc(x.tier)}</div>
+            <div class="hy-player">${esc(DATA.players[x.pid]?.n ?? `Player ${x.pid}`)}</div>
+            <div class="hy-mo-meta">${esc(name(x.o))} · ${x.m.s} · Week ${x.m.w}</div>
+          </div>
+          <div class="hy-mo-pts"><b>${num(x.p)}</b><span>points</span></div>
+          <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        </summary>
+        <p>${x.rivalryRank === 1 ? 'The best player week in this rivalry. ' : `No. ${x.rivalryRank} player week in this rivalry. `}Locked points in a ${num(x.teamScore)}–${num(x.oppScore)} ${res}${x.m.t === 'R' ? '' : ` (${esc(x.m.label)})`}, ${Math.round((x.p / (x.teamScore || 1)) * 100)}% of the team’s score. Better than ${Math.floor(x.pctile * 100)}% of every player week in league history.</p>
+      </details>`;
+  };
+  const momentsCard = `
+    <section class="card hy-moments">
+      <div class="card-head"><h2>${icon('bolt')} Notable moments</h2><span class="card-sub hy-right">Player performances</span></div>
+      ${mo.A.length || mo.B.length ? `
+        <div class="hy-mo-grid">
+          <div>${mo.A.map(moment).join('') || `<p class="empty">No standout weeks for ${esc(name(A))} yet.</p>`}</div>
+          <div>${mo.B.map(moment).join('') || `<p class="empty">No standout weeks for ${esc(name(B))} yet.</p>`}</div>
+        </div>` : '<p class="empty">No earlier meetings, so no moments yet. This one writes the first chapter.</p>'}
+    </section>`;
+
+  // ----- The rest of the slate -----
+  const slateCard = `
+    <section class="card hy-slate">
+      <div class="card-head"><h2>The full slate</h2><span class="card-sub">Week ${week} · ranked by hype</span></div>
+      ${slate.games.map((x, i) => {
+        const sa = x.final ? x.final.ap : liveData?.scores?.[x.a];
+        const sb = x.final ? x.final.bp : liveData?.scores?.[x.b];
+        return `
+        <a class="hy-game${x === g ? ' on' : ''}" href="${hash({ m: x.a })}">
+          <span class="hy-g-rank">${i + 1}</span>
+          <span class="hy-g-teams"><b>${esc(teamName(x.a, season))}</b> <i>vs</i> <b>${esc(teamName(x.b, season))}</b>
+            <small>${x.labels.slice(0, 3).map(chip).join('')}</small></span>
+          <span class="hy-g-score">${sa != null && (sa || sb) ? `${num(sa)}–${num(sb)}` : ''}</span>
+          <span class="hy-g-hype"><b>${x.hype}</b><small>Hype</small></span>
+        </a>`;
+      }).join('')}
+    </section>`;
+
+  const lag = isCur && week === now.week && !isPlayoffWeek && (cur.weeksPlayed ?? 0) < week - 1;
+  main.innerHTML = `
+    <div class="page page-wide">
+      ${head}
+      <section class="card hy-this">
+        <div class="hy-this-head"><h2>${live ? 'This week' : `Week ${week}`}${g.label ? ` <span class="tag tag-po">${esc(g.label)}</span>` : ''}</h2><span class="card-sub" id="hy-status">${esc(status)}</span></div>
+        <div class="hy-duel">
+          ${sideCard(A, g.tA, 'hy-dark')}
+          <div class="hy-vs">VS</div>
+          ${sideCard(B, g.tB, 'hy-light')}
+        </div>
+        <div class="hy-lead" id="hy-lead">${leadLine()}</div>
+      </section>
+      <p class="filter-note">Standings use win percentage (league-median games included, as in Sleeper), then points for. The head-to-head series leaves median games out.${lag ? ' Last week’s results arrive with the nightly update, so this week’s hype may shift slightly until then.' : ''}</p>
+      ${g.labels.length ? `<div class="hy-tags">${g.labels.map(chip).join('')}</div>` : ''}
+      ${hypeCard}
+      ${seriesCard}
+      ${momentsCard}
+      ${slateCard}
+      <p class="pw-foot">
+        <b>How hype works.</b> Each game gets a hype score out of 100: <b>Quality</b> (30%) is how strong both teams are by their Power Rankings score,
+        <b>Closeness</b> (25%) is how evenly matched they are, <b>Stakes</b> (25%) is what the result means for the playoff race (it grows as the season goes on) or the bracket round,
+        and <b>History</b> (20%) is the rivalry: a close series, playoff and title meetings, a recent nail-biter, a long streak.
+        Until six weeks are played, strength leans on last season’s finish. The top score is the <b>Main event</b>; in title week it’s always the Championship.
+        Labels like <b>Trap-game watch</b> (a clear favorite with a reason to slip: the underdog won the last meeting, is hotter lately, or the favorite has a top team on deck next week) come from the same numbers.
+        Everything uses only games played before that week, and each week is revealed only once it starts.
+      </p>
+    </div>`;
+
+  bindHype(main, hash);
+
+  // Keep live scores fresh while the week is being played.
+  if (live && liveData) {
+    HYPE_TIMER = setInterval(async () => {
+      if (route().page !== 'hype') return clearInterval(HYPE_TIMER);
+      try {
+        const d = await liveWeek(season, week);
+        liveData = d;
+        main.querySelectorAll('.hy-pts[data-o]').forEach(el => { el.textContent = num(d.scores[el.dataset.o] ?? 0); });
+        const lead = $('#hy-lead', main);
+        if (lead) lead.innerHTML = leadLine();
+        const st = $('#hy-status', main);
+        if (st) st.textContent = `Live · updated ${new Date(d.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+      } catch { /* try again next time */ }
+    }, 60 * 60_000); // hourly; every visit also loads fresh scores
+  }
+}
+
+let FINISHES;
+const finishPlace = (season, owner) => (FINISHES ??= finishes(DATA))[season]?.[owner];
+
+function bindHype(main, hash) {
+  main.querySelectorAll('select[data-h]').forEach(sel => sel.addEventListener('change', () => {
+    const key = sel.dataset.h;
+    if (key === 'season') location.hash = `#/hype?season=${sel.value}`;
+    else if (key === 'week') location.hash = hash({ week: sel.value });
+    else location.hash = hash({ m: sel.value });
+  }));
+}
+
 // ---------- Standings ----------
 
 const ordinalPlace = n => (n ? `${n}${{ 1: 'st', 2: 'nd', 3: 'rd' }[n] ?? 'th'}` : '—');
@@ -1190,9 +1578,11 @@ function route() {
 
 function render() {
   const { page, sub, params } = route();
+  clearInterval(HYPE_TIMER);
   renderSidebar(page);
   const main = $('#main');
   if (page === 'rivalry') renderRivalry(main, params);
+  else if (page === 'hype') renderHype(main, params);
   else if (page === 'records') renderRecordBook(main, sub, params);
   else if (page === 'power') renderPower(main, params);
   else if (page === 'standings') renderStandings(main, params);
