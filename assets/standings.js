@@ -101,7 +101,14 @@ export function legacy(DATA, { through } = {}) {
     const finish = mine.map(s => ({ s: s.season, place: place[s.season]?.[o], size: s.teams.length }));
     const titles = mine.filter(s => s.champion === o).map(s => s.season);
     const seconds = mine.filter(s => s.runnerUp === o).map(s => s.season);
+    const thirds = finish.filter(f => f.place === 3).map(f => f.s);
+    // Last in the final standings = lost the toilet bowl (last-place game).
     const lasts = finish.filter(f => f.place === f.size).map(f => f.s);
+    // Worst regular-season record (win %, then points for), as in Sleeper's standings.
+    const regLasts = mine.filter(s => {
+      const pct = t => (t.w + t.t / 2) / Math.max(1, t.w + t.l + t.t);
+      return [...s.teams].sort((a, b) => pct(a) - pct(b) || a.pf - b.pf)[0]?.owner === o;
+    }).map(s => s.season);
     const made = mine.filter(s => (s.playoffTeams ?? []).includes(o) || DATA.games.some(g => g.s === s.season && g.t === 'P' && (g.a === o || g.b === o)));
     const misses = mine.length - made.length;
     const m = med[o] ?? { w: 0, l: 0, t: 0 };
@@ -114,7 +121,7 @@ export function legacy(DATA, { through } = {}) {
     };
     return {
       owner: o, seasons: mine.length, seasonList: mine.map(s => s.season),
-      titles, seconds, lasts, finish, made: made.length, misses,
+      titles, seconds, thirds, lasts, regLasts, finish, made: made.length, misses,
       median: m, h2h: h,
       medianPct: m.w + m.l + m.t ? (m.w + m.t / 2) / (m.w + m.l + m.t) : 0,
       parts,

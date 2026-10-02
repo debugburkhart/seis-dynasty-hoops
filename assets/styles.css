@@ -404,7 +404,7 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
 /* ---------- Standings: Legacy ---------- */
 
 .lg-table { padding: 10px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
-.lg-head, .lg-row .row-grid { display: grid; grid-template-columns: 64px minmax(0, 1fr) 150px 96px 170px 44px; align-items: stretch; }
+.lg-head, .lg-row .row-grid { display: grid; grid-template-columns: 64px minmax(0, 1fr) 270px 96px 170px 44px; align-items: stretch; }
 .lg-head { padding: 6px 0 2px; font: 800 9.5px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .lg-head span:nth-child(1) { padding-left: 16px; }
 .lg-head span:nth-child(3), .lg-head span:nth-child(4), .lg-head span:nth-child(5) { text-align: center; }
@@ -421,11 +421,16 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
 }
 .lg-name { font: 900 19px/1.1 var(--display); overflow-wrap: anywhere; }
 .lg-name small { font: 500 11.5px var(--font); color: #b9c6da; }
-.lg-hw { display: flex; justify-content: center; align-items: center; gap: 14px; }
+.lg-hw { display: flex; justify-content: center; align-items: center; gap: 12px; }
 .lg-hw > span { display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--gold); }
 .lg-hw b { font: 900 15px/1 var(--display); color: #fff; }
 .lg-hw small { font-size: 9.5px; color: #b9c6da; }
 .lg-hw .ic { width: 15px; height: 15px; }
+.lg-hw .hw-2nd { color: #d3dbe6; }
+.lg-hw .hw-3rd { color: #d9894a; }
+.lg-hw .hw-reg { color: #f0a37f; }
+.lg-hw .hw-toilet { color: #e7705e; }
+.lg-hw small { white-space: nowrap; }
 .lg-field { display: flex; flex-direction: column; justify-content: center; align-items: center; }
 .lg-field b { font: 700 22px/1 Georgia, 'Times New Roman', serif; }
 .lg-field small { font-size: 10px; color: #b9c6da; margin-top: 3px; }
@@ -501,7 +506,7 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
 
 /* Legacy rows become two-line cards on tablets and phones, so every column
    stays visible: name and score on top, hardware and the field underneath. */
-@media (max-width: 1080px) {
+@media (max-width: 1240px) {
   .lg-head { display: none; }
   .lg-table { padding: 10px; }
   .lg-row .row-grid {
@@ -529,7 +534,7 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
   .lg-detail { grid-template-columns: 1fr; gap: 16px; padding: 14px 14px 16px; }
   .lg-cols { grid-template-columns: repeat(2, 1fr); }
 }
-@media (min-width: 1081px) {
+@media (min-width: 1241px) {
   .lg-stats { display: contents; }
 }
 @media (max-width: 760px) {
@@ -545,8 +550,12 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
   .lg-score b { font-size: 25px; }
   .lg-move { font-size: 10px; }
   .lg-score small { font-size: 7.5px; letter-spacing: .08em; }
-  .lg-stats { gap: 8px; padding: 7px 10px 9px; }
-  .lg-hw { gap: 10px; }
+  /* Phones: the five hardware counts get their own row of equal columns,
+     with the median figure on the line below. */
+  .lg-stats { gap: 8px; padding: 8px 10px 9px; flex-wrap: wrap; row-gap: 8px; }
+  .lg-hw { width: 100%; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+  .lg-hw > span { flex-direction: column; align-items: center; gap: 3px; }
+  .lg-hw .ic { align-self: center; }
   .lg-hw small { font-size: 8.5px; }
   .lg-field { gap: 3px; white-space: nowrap; }
   .lg-field b { font-size: 15px; }
@@ -554,9 +563,6 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
   .lg-hint { font-size: 0; }
 }
 @media (max-width: 400px) {
-  /* Narrow phones: the median figure wraps to its own line rather than clipping. */
-  .lg-stats { flex-wrap: wrap; row-gap: 5px; }
-  .lg-field { margin-left: auto; }
   .lg-hint { display: none; }
 }
 @media (max-width: 760px) {
