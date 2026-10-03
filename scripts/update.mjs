@@ -37,9 +37,9 @@ if (FREEZE_SEED && process.env.GITHUB_REPOSITORY) {
 }
 const previous = await readJson('data/league.json'); // last night's data, for the two-night rule
 
-// All-Stars are worked out once per season (they need every box score up to the
-// break), then carried forward from last night's data.
-const pulled = await buildLeagueData(LEAGUE_ID, undefined, { frozen, allStars: previous?.allStars ?? {} });
+// All-Stars (they need every box score up to the break) and each season's rookies
+// are worked out once, then carried forward from last night's data.
+const pulled = await buildLeagueData(LEAGUE_ID, undefined, { frozen, allStars: previous?.allStars ?? {}, rookies: previous?.rookies ?? {} });
 
 // Week guard: finished weeks of the season in progress that come back from
 // Sleeper stale or half-loaded keep last night's version (see assets/freeze.js).

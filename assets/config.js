@@ -9,3 +9,6 @@ export const LEAGUE_ID = '1398888652733472768';
 // every 2025 playoff score confirmed in the Sleeper app. Seasons that complete
 // later freeze on their own, so this never needs changing.
 export const FREEZE_SEED = 'ad30616';
+
+// The first season the league named All-Stars.
+export const ALL_STARS_FROM = '2025';

@@ -220,5 +220,8 @@ export function frontOffice(DATA, season = 'all') {
     activity,
     partners: Object.values(partners),
     unusedDuplicates,
+    // Every player's time on each team, for "who had him when" ({ pid, o, start, end }:
+    // season*100+week keys, end null while he's still there).
+    stints: [...stintOf.values()].map(st => ({ pid: st.pid, o: st.o, start: st.start, end: st.end })),
   };
 }

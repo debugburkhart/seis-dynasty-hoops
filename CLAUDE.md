@@ -50,7 +50,18 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   api.sleeper.com/stats/nba/{season}/{week}; computed once per season, then carried over
   by update.mjs; weekly aggregate endpoints are WRONG: they hold only the last game).
   Positions are Sleeper's current ones saved at computation time; ALL_STAR_POSITIONS in
-  corrections.js overrides by season + name. Coach of the Year on
+  corrections.js overrides by season + name. All-Stars start in 2025 (ALL_STARS_FROM in
+  config.js); the owner confirmed the 2025 list. All-Fantasy Team = DATA.mvp top 10.
+  Rookie of the Year / All-Rookie Team (top 5) = DATA.rookies: total fantasy points, rookie =
+  NBA games that season and none in the 10 seasons before (Sleeper's years_exp is wrong for
+  some players, e.g. Amen Thompson, Yabusele); computed once per completed season, carried
+  over by update.mjs. Ties at a team's cutoff are all included. Award order on banners:
+  01 GM, 02 Player of the Year, 03 League MVP, 04 Rookie of the Year, 05 All-Stars,
+  06 All-Fantasy, 07 All-Rookie. Awards lists show position only (Sleeper's NBA team is
+  today's) plus the FANTASY team that had the player: season's end for season-long
+  awards, the All-Star break week (allStars[s].week; Sleeper fantasy weeks = NBA stats
+  weeks) for All-Stars, most-points team for Player of the Year. From awards.js ownerAt()
+  over frontoffice `stints`. Coach of the Year on
   hold. frontoffice values carry `weeks` ({k: season*100+week, p}) for season-limited sums.
 - `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record

@@ -1,5 +1,6 @@
 // Awards: each completed season's banner (champion, title game and Championship
-// MVP) and its awards: GM of the Year, Player of the Year, League MVP and All-Stars.
+// MVP) and its awards: GM of the Year, Player of the Year, League MVP, Rookie of
+// the Year, All-Stars, the All-Fantasy Team and the All-Rookie Team.
 //
 // GM of the Year: the playoff team whose moves that season added the most
 // locked points that season (regular season and playoffs). Moves made in other
@@ -90,8 +91,8 @@ export function playerOfTheYear(DATA, season, n = 3) {
 // League MVP: the most fantasy points over the whole NBA regular season under
 // the league's scoring, whether or not anyone started him (DATA.mvp, saved by
 // the nightly update from Sleeper's season stats).
-export function mvpRace(DATA, season, n = 3) {
-  return (DATA.mvp?.[season] ?? []).slice(0, n);
+export function mvpRace(DATA, fo, season, n = 3) {
+  return withOwners(DATA, fo, season, (DATA.mvp?.[season] ?? []).slice(0, n));
 }
 
 // All-Stars: the top 5 guards (PG/SG), forwards (SF/PF) and centers (C) by total
@@ -101,13 +102,54 @@ export function mvpRace(DATA, season, n = 3) {
 export const POSITION_GROUPS = [['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']];
 const groupOf = pos => (/^(PG|SG|G)/.test(pos) ? 'G' : /^(SF|PF|F)/.test(pos) ? 'F' : /^C/.test(pos) ? 'C' : null);
 
-export function allStars(DATA, season, overrides = {}) {
+// Which manager had a player in a given week (season*100+week), from the draft and
+// every transaction (frontOffice stints). null = on no roster (a free agent).
+export function ownerAt(fo, pid, key) {
+  return fo.stints.filter(st => st.pid === pid && st.start <= key && (st.end == null || st.end >= key))
+    .sort((a, b) => b.start - a.start)[0]?.o ?? null;
+}
+
+// The last week of a season with games (its championship week).
+export const seasonEndKey = (DATA, season) =>
+  Number(season) * 100 + Math.max(0, ...DATA.games.filter(g => g.s === season).map(g => g.w));
+
+// The top n by fantasy points, plus anyone tied with the last one in.
+const topWithTies = (rows, n) => rows.filter((r, i) => i < n || (rows[n - 1] && r.fp === rows[n - 1].fp));
+
+// Returns { awarded: false } for seasons before the league started naming All-Stars.
+// Each player's `o` is the manager who had him at the All-Star break.
+export function allStars(DATA, fo, season, overrides = {}, from = '') {
+  if (from && Number(season) < Number(from)) return { awarded: false };
   const pool = DATA.allStars?.[season];
   if (!pool) return null;
   const fixes = overrides[season] ?? {};
-  const players = pool.players.map(p => ({ ...p, group: fixes[DATA.players?.[p.pid]?.n] ?? groupOf(p.pos) }));
-  const teams = Object.fromEntries(POSITION_GROUPS.map(([g]) => [g, players.filter(p => p.group === g).slice(0, 5)]));
-  return { through: pool.through, asg: pool.asg, teams };
+  const key = pool.week != null ? Number(season) * 100 + pool.week : null;
+  const players = pool.players.map(p => ({
+    ...p, group: fixes[DATA.players?.[p.pid]?.n] ?? groupOf(p.pos),
+    o: key == null ? undefined : ownerAt(fo, p.pid, key),
+  }));
+  const teams = Object.fromEntries(POSITION_GROUPS.map(([g]) => [g, topWithTies(players.filter(p => p.group === g), 5)]));
+  return { awarded: true, through: pool.through, asg: pool.asg, teams };
+}
+
+// Season-long awards name the manager who had each player at season's end (`o`).
+const withOwners = (DATA, fo, season, rows) => {
+  const key = seasonEndKey(DATA, season);
+  return rows.map(r => ({ ...r, o: ownerAt(fo, r.pid, key) }));
+};
+
+// All-Fantasy Team: the 10 players with the most total fantasy points over the
+// NBA regular season, any position (the same season totals as League MVP).
+export function allFantasy(DATA, fo, season) {
+  return withOwners(DATA, fo, season, topWithTies(DATA.mvp?.[season] ?? [], 10));
+}
+
+// Rookies, by total fantasy points over the NBA regular season (DATA.rookies:
+// players with NBA games that season and none in the 10 seasons before).
+// Rookie of the Year is the top one; the All-Rookie Team is the top 5.
+export function rookieClass(DATA, fo, season) {
+  const rows = withOwners(DATA, fo, season, DATA.rookies?.[season] ?? []);
+  return { roy: rows[0] ?? null, team: topWithTies(rows, 5) };
 }
 
 // Championship MVP: the champion's player with the most locked points in the title game.

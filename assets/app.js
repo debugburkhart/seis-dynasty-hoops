@@ -1,11 +1,11 @@
-import { LEAGUE_ID } from './config.js';
+import { ALL_STARS_FROM, LEAGUE_ID } from './config.js';
 import { CATEGORIES, CHANGE_LABELS, buildRecords, recordHistory, recordVisible, viewData } from './records.js';
 import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, weekPairs } from './hype.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
-import { POSITION_GROUPS, REGULAR_WEEKS, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, playerOfTheYear } from './awards.js';
+import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, playerOfTheYear, rookieClass } from './awards.js';
 import { ALL_STAR_POSITIONS } from './corrections.js';
 
 // ---------- Navigation ----------
@@ -1604,11 +1604,17 @@ function renderAwards(main) {
     return;
   }
   const fo = ledger();
-  const banners = done.map(s => ({ ...banner(DATA, s), gm: gmOfTheYear(DATA, fo, s), poy: playerOfTheYear(DATA, s), mvp: mvpRace(DATA, s),
-    finalsMvp: championshipMvp(DATA, s), stars: allStars(DATA, s, ALL_STAR_POSITIONS) }));
+  const banners = done.map(s => ({ ...banner(DATA, s), gm: gmOfTheYear(DATA, fo, s), poy: playerOfTheYear(DATA, s), mvp: mvpRace(DATA, fo, s),
+    finalsMvp: championshipMvp(DATA, s), stars: allStars(DATA, fo, s, ALL_STAR_POSITIONS, ALL_STARS_FROM),
+    allFantasy: allFantasy(DATA, fo, s), rookies: rookieClass(DATA, fo, s) }));
+  // A player's fantasy team: o null = on no roster; undefined = not known.
+  const fteam = (o, s) => (o === null ? 'Free agent' : o ? teamName(o, s) : '');
+  const fteamFull = (o, s) => (o === null ? 'Free agent' : o ? `${teamName(o, s)} (${name(o)})` : '');
+  const sub = (s, r, ...rest) => [fteam(r.o, s), pmeta(r.pid), ...rest].filter(Boolean).join(' · ');
   const longDate = ymd => new Date(`${ymd}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
   const pname = pid => DATA.players?.[pid]?.n ?? `Player ${pid}`;
-  const pmeta = pid => [DATA.players?.[pid]?.pos, DATA.players?.[pid]?.t].filter(Boolean).join(' · ');
+  // Position only: Sleeper's NBA team is today's, which would be wrong for past seasons.
+  const pmeta = pid => DATA.players?.[pid]?.pos ?? '';
   // Top-3 race list for Player of the Year and League MVP.
   const raceList = (rows, value, sub) => `<ol class="aw-race">${rows.map((r, i) => `
     <li${i === 0 ? ' class="win"' : ''}><span>${i + 1}. ${esc(pname(r.pid))}<small>${esc(sub(r))}</small></span><b>${value(r)}</b></li>`).join('')}</ol>`;
@@ -1694,10 +1700,11 @@ function renderAwards(main) {
                     <div class="aw-label">Player of the Year</div>
                     ${b.poy.length ? `
                       <div class="aw-winner">${esc(pname(b.poy[0].pid))}${pmeta(b.poy[0].pid) ? ` <small class="aw-pos">${esc(pmeta(b.poy[0].pid))}</small>` : ''}</div>
-                      <div class="aw-meta">${num(b.poy[0].pts)} locked pts for ${esc(name(b.poy[0].team))}${b.poy[0].multi ? ' and others' : ''}</div>
+                      <div class="aw-meta aw-fteam">${esc(fteamFull(b.poy[0].team, b.season))}</div>
+                      <div class="aw-meta">${num(b.poy[0].pts)} locked pts${b.poy[0].multi ? ' (most for this team; he also started for others)' : ''}</div>
                       <details class="aw-more">
                         <summary>The race · top 3 ${icon('arrow')}</summary>
-                        ${raceList(b.poy, r => `${num(r.pts)}`, r => `${r.weeks} weeks started · ${Object.entries(r.teams).sort((x, y) => y[1] - x[1]).map(([o, p]) => `${name(o)}${r.multi ? ` ${num(p)}` : ''}`).join(', ')}`)}
+                        ${raceList(b.poy, r => `${num(r.pts)}`, r => `${r.weeks} weeks started · ${Object.entries(r.teams).sort((x, y) => y[1] - x[1]).map(([o, p]) => `${teamName(o, b.season)}${r.multi ? ` ${num(p)}` : ''}`).join(', ')}`)}
                       </details>` : '<div class="aw-meta">No locked points recorded.</div>'}
                   </div>
                 </li>
@@ -1707,19 +1714,30 @@ function renderAwards(main) {
                     <div class="aw-label">League MVP</div>
                     ${b.mvp.length ? `
                       <div class="aw-winner">${esc(pname(b.mvp[0].pid))}${pmeta(b.mvp[0].pid) ? ` <small class="aw-pos">${esc(pmeta(b.mvp[0].pid))}</small>` : ''}</div>
+                      <div class="aw-meta aw-fteam">${esc(fteamFull(b.mvp[0].o, b.season))}</div>
                       <div class="aw-meta">${num(b.mvp[0].fp)} fantasy pts in ${b.mvp[0].gp} games</div>
                       <details class="aw-more">
                         <summary>The race · top 3 ${icon('arrow')}</summary>
-                        ${raceList(b.mvp, r => `${num(r.fp)}`, r => `${r.gp} games · ${num(r.fp / Math.max(1, r.gp))} per game`)}
+                        ${raceList(b.mvp, r => `${num(r.fp)}`, r => [fteam(r.o, b.season), `${r.gp} games`, `${num(r.fp / Math.max(1, r.gp))} per game`].filter(Boolean).join(' · '))}
                       </details>` : '<div class="aw-meta">Added with the next nightly update.</div>'}
                   </div>
                 </li>
                 <li>
                   <span class="aw-num">04</span>
                   <div class="aw-award">
+                    <div class="aw-label">Rookie of the Year</div>
+                    ${b.rookies.roy ? `
+                      <div class="aw-winner">${esc(pname(b.rookies.roy.pid))}${pmeta(b.rookies.roy.pid) ? ` <small class="aw-pos">${esc(pmeta(b.rookies.roy.pid))}</small>` : ''}</div>
+                      <div class="aw-meta aw-fteam">${esc(fteamFull(b.rookies.roy.o, b.season))}</div>
+                      <div class="aw-meta">${num(b.rookies.roy.fp)} fantasy pts in ${b.rookies.roy.gp} games</div>` : '<div class="aw-meta">Added with the next nightly update.</div>'}
+                  </div>
+                </li>
+                <li>
+                  <span class="aw-num">05</span>
+                  <div class="aw-award">
                     <div class="aw-label">All-Stars</div>
-                    ${b.stars ? `
-                      <div class="aw-winner">15 players</div>
+                    ${b.stars && !b.stars.awarded ? `<div class="aw-meta">First named in ${esc(ALL_STARS_FROM)}.</div>` : b.stars ? `
+                      <div class="aw-winner">${Object.values(b.stars.teams).flat().length} players</div>
                       <div class="aw-meta">Top 5 guards, forwards and centers in total fantasy points through ${esc(longDate(b.stars.through))}</div>
                       <details class="aw-more">
                         <summary>The All-Star teams ${icon('arrow')}</summary>
@@ -1727,9 +1745,35 @@ function renderAwards(main) {
                           ${POSITION_GROUPS.map(([g, label]) => `
                             <div>
                               <div class="aw-race-title">${label}</div>
-                              <ol class="aw-race">${b.stars.teams[g].map((p, i) => `<li${i === 0 ? ' class="win"' : ''}><span>${esc(pname(p.pid))}<small>${esc(p.pos)} · ${p.gp} games</small></span><b>${num(p.fp)}</b></li>`).join('')}</ol>
+                              <ol class="aw-race">${b.stars.teams[g].map((p, i) => `<li${i === 0 ? ' class="win"' : ''}><span>${esc(pname(p.pid))}<small>${esc([fteam(p.o, b.season), p.pos, `${p.gp} games`].filter(Boolean).join(' · '))}</small></span><b>${num(p.fp)}</b></li>`).join('')}</ol>
                             </div>`).join('')}
                         </div>
+                      </details>` : '<div class="aw-meta">Added with the next nightly update.</div>'}
+                  </div>
+                </li>
+                <li>
+                  <span class="aw-num">06</span>
+                  <div class="aw-award">
+                    <div class="aw-label">All-Fantasy Team</div>
+                    ${b.allFantasy.length ? `
+                      <div class="aw-winner">${b.allFantasy.length} players</div>
+                      <div class="aw-meta">The top ${b.allFantasy.length} in total fantasy points, any position</div>
+                      <details class="aw-more">
+                        <summary>The team ${icon('arrow')}</summary>
+                        ${raceList(b.allFantasy, r => `${num(r.fp)}`, r => sub(b.season, r, `${r.gp} games`))}
+                      </details>` : '<div class="aw-meta">Added with the next nightly update.</div>'}
+                  </div>
+                </li>
+                <li>
+                  <span class="aw-num">07</span>
+                  <div class="aw-award">
+                    <div class="aw-label">All-Rookie Team</div>
+                    ${b.rookies.team.length ? `
+                      <div class="aw-winner">${b.rookies.team.length} players</div>
+                      <div class="aw-meta">The top ${b.rookies.team.length === 5 ? 5 : `5 (${b.rookies.team.length} with a tie)`} rookies in total fantasy points</div>
+                      <details class="aw-more">
+                        <summary>The team ${icon('arrow')}</summary>
+                        ${raceList(b.rookies.team, r => `${num(r.fp)}`, r => sub(b.season, r, `${r.gp} games`))}
                       </details>` : '<div class="aw-meta">Added with the next nightly update.</div>'}
                   </div>
                 </li>
@@ -1763,8 +1807,12 @@ function renderAwards(main) {
             <p>The player with the most fantasy points over the whole NBA regular season, scored with this league’s settings for that season, whether or not anyone started him (or even rostered him). It measures the best fantasy season in the NBA; Player of the Year measures what counted here. The race shows the top 3.</p>
           </article>
           <article class="aw-rule-block">
-            <h3><span class="aw-num">04</span> All-Stars</h3>
-            <p>Named at the NBA All-Star break: the 15 players with the most total fantasy points (every game, this league’s scoring, rostered or not) through the last regular-season game before the All-Star Game. Five per position, by primary position that season:</p>
+            <h3><span class="aw-num">04</span> Rookie of the Year</h3>
+            <p>The rookie with the most total fantasy points over the NBA regular season, scored with this league’s settings, rostered or not. A rookie is a player in his first NBA season: no NBA games in any of the 10 seasons before.</p>
+          </article>
+          <article class="aw-rule-block">
+            <h3><span class="aw-num">05</span> All-Stars</h3>
+            <p>Named at the NBA All-Star break, starting in ${esc(ALL_STARS_FROM)}: the 15 players with the most total fantasy points (every game, this league’s scoring, rostered or not) through the last regular-season game before the All-Star Game. Five per position, by primary position that season:</p>
             <dl class="aw-parts">
               <div><dt>Guards</dt><dd>Point guards and shooting guards (PG, SG).</dd></div>
               <div><dt>Forwards</dt><dd>Small forwards and power forwards (SF, PF).</dd></div>
@@ -1773,11 +1821,20 @@ function renderAwards(main) {
             <p class="aw-rule-fine">All-Star Weekend exhibitions (Rising Stars and the All-Star Game) don’t count.</p>
           </article>
           <article class="aw-rule-block">
+            <h3><span class="aw-num">06</span> All-Fantasy Team</h3>
+            <p>The 10 players with the most total fantasy points over the NBA regular season, any position: the same season totals as League MVP, so the MVP leads it.</p>
+          </article>
+          <article class="aw-rule-block">
+            <h3><span class="aw-num">07</span> All-Rookie Team</h3>
+            <p>The 5 rookies with the most total fantasy points over the NBA regular season (same rookie rule as Rookie of the Year, who leads it).</p>
+          </article>
+          <p class="aw-rule-fine">Teams list everyone tied with the last player in, so a tie can make a team one bigger.</p>
+          <article class="aw-rule-block">
             <h3><span class="aw-num">${icon('medal')}</span> Championship MVP</h3>
             <p>Shown with each champion: the player on the winning team with the most locked points in the championship game.</p>
           </article>
         </div>
-        <p class="lg-fine">Bench points never count toward GM or Player of the Year: only locked points do. League MVP is the one award that looks past this league’s lineups. Season recap opens that season’s standings.</p>
+        <p class="lg-fine">Bench points never count toward GM or Player of the Year: only locked points do. League MVP is the one award that looks past this league’s lineups. Each player is shown with the fantasy team that had him at the end of the season (All-Stars: at the All-Star break; Player of the Year: the team he scored the most for), or “Free agent” if no one did. Season recap opens that season’s standings.</p>
       </section>
     </div>`;
 }
