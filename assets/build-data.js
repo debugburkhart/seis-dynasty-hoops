@@ -390,14 +390,15 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     });
   }
 
-  // Names and positions for every player who has scored locked points here.
-  // Sleeper's full list is ~2.5 MB, so only those players are kept.
+  // Names, positions and current NBA teams for every player who has scored locked
+  // points or moved in a transaction here. Sleeper's full list is ~2.5 MB, so only
+  // those players are kept.
   const players = {};
   for (const pid of usedPlayers) {
     const p = allPlayers[pid];
     players[pid] = p
-      ? { n: [p.first_name, p.last_name].filter(Boolean).join(' ') || pid, pos: p.position ?? p.fantasy_positions?.[0] ?? '' }
-      : { n: `Player ${pid}`, pos: '' };
+      ? { n: [p.first_name, p.last_name].filter(Boolean).join(' ') || pid, pos: p.position ?? p.fantasy_positions?.[0] ?? '', t: p.team ?? '' }
+      : { n: `Player ${pid}`, pos: '', t: '' };
   }
 
   const latest = chain.at(-1);

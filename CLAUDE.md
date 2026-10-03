@@ -22,7 +22,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 ## Architecture (all plain ES modules, no build step)
 - `index.html`: shell + import map. Every module in `assets/` must be listed in the
   import map with `?v=dev` (the Action replaces it with a version fingerprint).
-- `assets/app.js`: all pages (hash routes: rivalry, records, power, standings), sidebar.
+- `assets/app.js`: all pages (hash routes: rivalry, records, power, hype, standings,
+  transactions), sidebar.
 - `assets/build-data.js`: pulls everything from Sleeper (`api.sleeper.com`, cache-busted),
   applies `corrections.js`, loads frozen seasons. Output = `data/league.json`.
 - `assets/records.js`: Record Book (6 categories, filters, record-change history).
@@ -32,6 +33,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `assets/hype.js`: Matchup Hype (hype score, Main event, labels, moments). Uses only games
   before the week. The page (app.js) fetches Sleeper state + live scores in the browser and
   reveals a week only once it's under way (week 1: the Monday of tip-off week).
+- `assets/transactions.js`: Transactions page data (move kinds, Ledger totals); values come
+  from frontoffice.js (trades/pickups/letGo carry `tx` = index into DATA.transactions).
+  Players carry `t` = current NBA team (added Oct 2026; older data files lack it).
 - `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
@@ -55,10 +59,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - Most visitors use phones (owner's iPhone is 402px wide). Test layouts at 320, 375,
   390, 402, 414, 430 px and desktop. Media query blocks must be closed correctly.
 - Preview: `.claude/launch.json` config "hoops" serves this folder (`.claude/serve.ps1`).
-  Without `data/league.json` locally, the site builds live from Sleeper (slow, ~20s).
+  Without `data/league.json` locally, the site builds live from Sleeper (slow, ~20s) and
+  WITHOUT frozen seasons, so old numbers can be wrong. For testing, download the real file
+  from raw.githubusercontent.com into `data/` and delete it afterward.
 - Verify numbers against the data before reporting; the owner checks things in the app.
 
 ## Not built yet (sidebar shows "Soon")
-Home, Transactions, Weekly Props, Trade Court, Awards, Timeline,
+Home, Weekly Props, Trade Court, Awards, Timeline,
 Draft History, Cheat Sheet, Draft Grades. The owner shares screenshots of a football
 reference site (fantasyhoff.com) for each feature and wants it adapted for basketball.

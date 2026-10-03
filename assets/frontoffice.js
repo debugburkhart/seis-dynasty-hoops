@@ -165,7 +165,7 @@ export function frontOffice(DATA, season = 'all') {
       const total = list => r1(list.reduce((a, b) => a + b.value, 0));
       return { o, got, gave, gotValue: total(got), gaveValue: total(gave), net: r1(total(got) - total(gave)), est: [...got, ...gave].some(a => a.active) };
     });
-    trades.push({ s: x.s, w: x.w, ts: x.ts ?? 0, owners: x.owners, sides });
+    trades.push({ s: x.s, w: x.w, ts: x.ts ?? 0, tx: i, owners: x.owners, sides });
   });
 
   // Waiver claims and free-agent pickups, and drops that produced elsewhere.
@@ -174,7 +174,7 @@ export function frontOffice(DATA, season = 'all') {
   for (const e of events) {
     if (e.dir === 'in' && (e.src === 'waiver' || e.src === 'free_agent')) {
       const st = stint(e);
-      pickups.push({ s: Math.floor(e.k / 100) + '', w: e.k % 100, o: e.o, pid: e.pid, src: e.src, value: st?.value ?? 0, active: st?.active ?? false });
+      pickups.push({ s: Math.floor(e.k / 100) + '', w: e.k % 100, tx: e.tx, o: e.o, pid: e.pid, src: e.src, value: st?.value ?? 0, active: st?.active ?? false });
     }
     if (e.dir === 'out' && (e.src === 'waiver' || e.src === 'free_agent')) {
       // The next team to pick him up, before the team that dropped him gets him back.
@@ -182,7 +182,7 @@ export function frontOffice(DATA, season = 'all') {
       const back = later.find(n => n.o === e.o);
       const next = later.find(n => n.o !== e.o && (!back || n.k < back.k || (n.k === back.k && n.ts < back.ts)));
       const st = stint(next);
-      if (st) letGo.push({ s: Math.floor(e.k / 100) + '', w: e.k % 100, o: e.o, pid: e.pid, to: st.o, value: st.value, active: st.active });
+      if (st) letGo.push({ s: Math.floor(e.k / 100) + '', w: e.k % 100, tx: e.tx, o: e.o, pid: e.pid, to: st.o, value: st.value, active: st.active });
     }
   }
 

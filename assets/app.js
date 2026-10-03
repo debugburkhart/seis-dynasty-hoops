@@ -4,6 +4,7 @@ import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, weekPairs } from './hype.js';
+import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
 
 // ---------- Navigation ----------
 
@@ -13,7 +14,7 @@ const NAV = [
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['cheat-sheet', 'Cheat Sheet', 'clipboard'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['rivalry', 'records', 'power', 'hype', 'standings']);
+const READY = new Set(['rivalry', 'records', 'power', 'hype', 'standings', 'transactions']);
 const DEFAULT_PAGE = 'rivalry';
 
 const ICONS = {
@@ -1374,6 +1375,202 @@ function bindHype(main, hash) {
   }));
 }
 
+// ---------- Transactions ----------
+// Every roster move, newest first, grouped by week (assets/transactions.js).
+// The Value Desk adds what each move produced, from the Front Office numbers.
+
+let TXLOG;
+const TX_PAGE = 50;
+let txShown = TX_PAGE;
+let txKey = '';
+const TX_PILL = { trades: ['Trade', 'tx-trade'], waivers: ['Waiver', 'tx-waiver'], fa: ['FA', 'tx-fa'], drops: ['Drop', 'tx-drop'], commish: ['Commish', 'tx-commish'] };
+const shortDate = ts => (ts ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '');
+
+function playerTag(pid) {
+  const p = DATA.players?.[pid];
+  const meta = [p?.pos, p?.t].filter(Boolean).join(' · ');
+  return `<span class="tx-p">${esc(p?.n ?? `Player ${pid}`)}${meta ? ` <small>${esc(meta)}</small>` : ''}</span>`;
+}
+
+// Who a draft pick originally belonged to, from its roster ID.
+function pickOwner(season, orig, fallbackSeason) {
+  const teams = (DATA.seasons.find(s => s.season === season) ?? DATA.seasons.find(s => s.season === fallbackSeason))?.teams ?? [];
+  return teams.find(t => t.rosterId === orig)?.owner;
+}
+
+function tradeBody(m) {
+  if (!m.trade) return '';
+  return m.trade.sides.map(sd => {
+    const assets = sd.got.map(a => {
+      if (!a.pick) return `<span class="tx-item"><i class="tx-in">→</i>${playerTag(a.pid)}</span>`;
+      const [season, , round] = a.pick.split(' ');
+      const raw = m.picks.find(p => `${p.season}|${p.round}|${p.orig}` === a.key);
+      const orig = raw && pickOwner(season, raw.orig, m.s);
+      const became = a.pid ? DATA.players?.[a.pid]?.n : null;
+      const note = [orig && orig !== raw.from ? `orig. ${name(orig)}` : '', became ? `became ${became}` : ''].filter(Boolean).join(' · ');
+      return `<span class="tx-item"><i class="tx-in">→</i><span class="tx-p">${season} Rd ${round} pick${note ? ` <small>${esc(note)}</small>` : ''}</span></span>`;
+    });
+    return `<div class="tx-side"><b>${esc(name(sd.o))}</b> gets ${assets.join('') || '<span class="tx-none">nothing</span>'}</div>`;
+  }).join('');
+}
+
+function txFlow(m) {
+  const who = esc(name(m.owners[0] ?? m.adds[0]?.o ?? m.drops[0]?.o));
+  if (m.kind === 'trades') return [...new Set(m.owners)].map(o => esc(name(o))).join(` <i class="tx-swap">${icon('swap')}</i> `);
+  if (m.kind === 'waivers') return `<em class="src-w">Waivers</em> → ${who}`;
+  if (m.kind === 'fa') return `<em class="src-fa">Free agents</em> → ${who}`;
+  if (m.kind === 'drops') return `${who} → <em class="src-w">Waivers</em>`;
+  return `<em class="src-c">Commissioner</em> → ${who}`;
+}
+
+function txValue(m) {
+  if (m.kind === 'trades' && m.trade) {
+    const sides = m.trade.sides;
+    const est = sides.some(sd => sd.est);
+    const best = [...sides].sort((a, b) => b.net - a.net)[0];
+    if (!best || best.net === 0) return `<b>Even</b><small>${est ? 'so far · Est.' : 'on value'}</small>`;
+    return `<b class="v-pos">+${num(best.net)}</b><small>${esc(name(best.o))} ${est ? 'leads · Est.' : 'won it'}</small>`;
+  }
+  const out = [];
+  const add = m.adds.find(a => a.pickup);
+  if (add) out.push(`<b class="v-pos">${num(add.pickup.value)}${add.pickup.active ? '<i>*</i>' : ''}</b><small>pts for ${esc(name(add.o))}</small>`);
+  const gone = m.drops.find(d => d.later);
+  if (gone) {
+    const l = gone.later;
+    out.push(add
+      ? `<small class="v-neg">drop: ${num(l.value)}${l.active ? '*' : ''} for ${esc(name(l.to))}</small>`
+      : `<b class="v-neg">${num(l.value)}${l.active ? '<i>*</i>' : ''}</b><small>for ${esc(name(l.to))} after</small>`);
+  }
+  return out.join('') || '<span class="tx-dash">—</span>';
+}
+
+function txRow(m, desk) {
+  const [label, cls] = TX_PILL[m.kind];
+  const body = m.kind === 'trades' ? tradeBody(m)
+    : [...m.adds.map(a => `<span class="tx-item"><i class="tx-in">→</i>${playerTag(a.pid)}</span>`),
+      ...m.drops.map(d => `<span class="tx-item"><i class="tx-out">←</i>${playerTag(d.pid)}</span>`)].join('');
+  return `
+    <div class="tx-row${desk ? ' tx-desk' : ''}">
+      <span class="tx-pill ${cls}">${label}</span>
+      <div class="tx-body">${body}</div>
+      <div class="tx-flow">${txFlow(m)}</div>
+      ${desk ? `<div class="tx-val">${txValue(m)}</div>` : ''}
+      <div class="tx-date">${shortDate(m.ts)}</div>
+    </div>`;
+}
+
+function renderTransactions(main, params) {
+  TXLOG ??= transactionLog(DATA, ledger());
+  const kind = KINDS.some(([id]) => id === params.get('type')) ? params.get('type') : 'all';
+  const seasons = [...new Set(TXLOG.map(m => m.s))].sort().reverse();
+  const season = seasons.includes(params.get('season')) ? params.get('season') : 'all';
+  const manager = DATA.owners[params.get('manager')] ? params.get('manager') : 'all';
+  const desk = true; // the Value Desk is always on
+  const key = `${kind}|${season}|${manager}`;
+  if (key !== txKey) { txKey = key; txShown = TX_PAGE; }
+
+  const scoped = TXLOG.filter(m => (season === 'all' || m.s === season) && (manager === 'all' || m.owners.includes(manager)));
+  const list = scoped.filter(m => matchesKind(m, kind));
+  const shown = list.slice(0, txShown);
+  const totals = ledgerTotals(scoped);
+  // Everyone: the busiest manager. One manager: where they rank in moves.
+  const { ranking } = ledgerTotals(TXLOG.filter(m => season === 'all' || m.s === season));
+  const rankOf = manager === 'all' ? -1 : ranking.findIndex(x => x.o === manager);
+  const lastStat = manager === 'all'
+    ? `<span>${icon('users')} Busiest</span><b>${totals.busiest ? totals.busiest.n : '—'} <small>${totals.busiest ? esc(name(totals.busiest.o)) : ''}</small></b>`
+    : `<span>${icon('users')} Activity rank</span><b>${rankOf >= 0 ? `#${rankOf + 1}` : '—'} <small>of ${ranking.length} managers</small></b>`;
+
+  const hash = changes => {
+    const p = new URLSearchParams();
+    const next = { type: kind, season, manager, ...changes };
+    if (next.type !== 'all') p.set('type', next.type);
+    if (next.season !== 'all') p.set('season', next.season);
+    if (next.manager !== 'all') p.set('manager', next.manager);
+    const qs = p.toString();
+    return `#/transactions${qs ? `?${qs}` : ''}`;
+  };
+  const { current, former } = ownerOrder();
+  const pick = (key, label, value, options) => `
+    <label class="hy-pick">
+      <span class="hy-pick-label">${label}</span>
+      <span class="ed-select"><span class="hy-pick-val">${esc(options.find(([id]) => id === value)?.[1] ?? '')}</span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select data-t="${key}" aria-label="${label}">
+          ${options.map(([id, text]) => `<option value="${esc(id)}"${id === value ? ' selected' : ''}>${esc(text)}</option>`).join('')}
+        </select>
+      </span>
+    </label>`;
+
+  // Week groups, newest first.
+  const groups = [];
+  for (const m of shown) {
+    const g = groups.at(-1);
+    if (g && g.s === m.s && g.w === m.w) g.moves.push(m);
+    else groups.push({ s: m.s, w: m.w, moves: [m] });
+  }
+  const scopeName = [season === 'all' ? 'All-time' : season, manager === 'all' ? '' : name(manager)].filter(Boolean).join(' · ');
+
+  main.innerHTML = `
+    <div class="page page-wide">
+      <div class="page-head">
+        <div class="page-icon">${icon('swap')}</div>
+        <div><div class="eyebrow">Front office</div><h1>Transactions</h1></div>
+      </div>
+
+      <div class="tx-controls">
+        <nav class="tx-tabs" aria-label="Move type">
+          ${KINDS.map(([id, label]) => `<a class="${id === kind ? 'on' : ''}" href="${hash({ type: id })}">${label}</a>`).join('')}
+        </nav>
+        ${pick('season', 'Season', season, [['all', 'All-time'], ...seasons.map(s => [s, s])])}
+        ${pick('manager', 'Manager', manager, [['all', 'Everyone'], ...current.map(id => [id, name(id)]), ...former.map(id => [id, `${name(id)} (former)`])])}
+        <span class="tx-count">${shown.length} of ${list.length} · newest first</span>
+      </div>
+
+      <section class="tx-ledger">
+        <div class="tx-ledger-main"><b>The Ledger</b><span>${esc(scopeName)}</span></div>
+        <div class="tx-stat"><span>${icon('swap')} Trades</span><b>${totals.trades}</b></div>
+        <div class="tx-stat"><span>${icon('clipboard')} Waivers</span><b>${totals.waivers}</b></div>
+        <div class="tx-stat"><span>${icon('users')} Adds / drops</span><b>${totals.addsDrops}</b></div>
+        <div class="tx-stat"><span>${icon('history')} Total moves</span><b>${totals.total}</b></div>
+        <div class="tx-stat">${lastStat}</div>
+      </section>
+
+      <section class="tx-deskbar">
+        <div><h2>The Value Desk</h2><p>Which moves paid off in starting-lineup points. Pickups show the locked points the player scored for the team that added him, until he left. Drops show what he scored for the next team that picked him up. Trades show who’s ahead. * still on that roster, so the value is still growing.</p></div>
+      </section>
+
+      ${list.length ? `
+        <div class="tx-timeline">
+          ${groups.map(g => {
+            const all = list.filter(m => m.s === g.s && m.w === g.w);
+            const trades = all.filter(m => m.kind === 'trades').length;
+            const ts = all.map(m => m.ts).filter(Boolean);
+            const from = shortDate(Math.min(...ts));
+            const to = shortDate(Math.max(...ts));
+            return `
+            <section class="tx-week">
+              <div class="tx-week-head">
+                <span><b>Wk ${g.w}</b> · ${g.s}${ts.length ? ` <small>${from === to ? from : `${from} – ${to}`}</small>` : ''}</span>
+                <span class="tx-week-n"><b>${all.length}</b> move${all.length === 1 ? '' : 's'}${trades ? ` <b>${trades}</b> trade${trades === 1 ? '' : 's'}` : ''}</span>
+              </div>
+              ${g.moves.map(m => txRow(m, desk)).join('')}
+            </section>`;
+          }).join('')}
+        </div>
+        ${shown.length < list.length ? `<div class="tx-more"><button class="tx-morebtn" type="button">Load more (showing ${shown.length} of ${list.length})</button></div>` : ''}`
+        : '<section class="card soon-card"><p>No moves match these filters.</p></section>'}
+      <p class="pw-foot">Sleeper files offseason moves under week 1 of the new season. Commissioner moves count in the total but not toward the busiest manager. NBA teams are each player’s current team.</p>
+    </div>`;
+
+  main.querySelectorAll('select[data-t]').forEach(sel => sel.addEventListener('change', () => {
+    location.hash = hash({ [sel.dataset.t]: sel.value });
+  }));
+  $('.tx-morebtn', main)?.addEventListener('click', () => {
+    txShown += TX_PAGE;
+    renderTransactions(main, params);
+  });
+}
+
 // ---------- Standings ----------
 
 const ordinalPlace = n => (n ? `${n}${{ 1: 'st', 2: 'nd', 3: 'rd' }[n] ?? 'th'}` : '—');
@@ -1594,6 +1791,7 @@ function render() {
   const main = $('#main');
   if (page === 'rivalry') renderRivalry(main, params);
   else if (page === 'hype') renderHype(main, params);
+  else if (page === 'transactions') renderTransactions(main, params);
   else if (page === 'records') renderRecordBook(main, sub, params);
   else if (page === 'power') renderPower(main, params);
   else if (page === 'standings') renderStandings(main, params);
