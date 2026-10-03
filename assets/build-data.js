@@ -43,8 +43,57 @@ function applyFrozenCorrections(b, season, owners, findPlayer) {
   }
 }
 
+// ---------- All-Stars ----------
+// Every player's total fantasy points (all his games, under that season's league
+// scoring) through the last regular-season game before the NBA All-Star Game.
+// Sleeper's weekly stat totals can't be used: they hold only a player's latest
+// game (in All-Star week, just the All-Star Game). So this adds up every box score
+// week by week, about 1.5 MB a week, and is done once per season (the nightly job
+// keeps the result). Returns null until that season's All-Star Game has been played.
+
+const NBA_TEAMS = new Set('ATL BOS BKN CHA CHI CLE DAL DEN DET GSW HOU IND LAC LAL MEM MIA MIL MIN NOP NYK OKC ORL PHI PHX POR SAC SAS TOR UTA WAS'.split(' '));
+
+export async function allStarPool(season, scoring, fetchImpl = globalThis.fetch.bind(globalThis), keep = 60) {
+  const totals = {};
+  for (let w = 1; w <= 30; w++) {
+    let res;
+    for (let attempt = 0; attempt < 3 && !res?.ok; attempt++) {
+      res = await fetchImpl(`https://api.sleeper.com/stats/nba/${season}/${w}?season_type=regular&t=${Date.now()}`).catch(() => null);
+    }
+    if (!res?.ok) return null; // try again tomorrow night
+    const games = (await res.json()) ?? [];
+    if (!games.length) return null; // the break hasn't come yet this season
+    // The All-Star Game's team names change every year (EST/WST, SHQ/CHK, STP/STR...),
+    // so it's found as the first game with stats that isn't between two NBA teams.
+    const asg = games
+      .filter(g => /^\d+$/.test(g.player_id) && g.team && !NBA_TEAMS.has(g.team) && g.stats && Object.keys(g.stats).length)
+      .map(g => g.date).sort()[0];
+    for (const g of games) {
+      // Real NBA games only (Rising Stars and the All-Star Game are exhibitions),
+      // and in All-Star week only those before the All-Star Game.
+      // Team totals (ids like "TEAM_BOS") are skipped too.
+      if (!/^\d+$/.test(g.player_id) || !NBA_TEAMS.has(g.team) || !g.stats || (asg && g.date >= asg)) continue;
+      const t = (totals[g.player_id] ??= { pid: g.player_id, fp: 0, gp: 0, last: '' });
+      t.fp += Object.entries(scoring).reduce((sum, [k, v]) => sum + (Number(g.stats[k]) || 0) * v, 0);
+      if (g.stats.gp || g.stats.sp) t.gp++;
+      if (g.date > t.last) t.last = g.date;
+    }
+    if (asg) {
+      const through = Object.values(totals).reduce((d, t) => (t.last > d ? t.last : d), '');
+      const players = Object.values(totals)
+        .map(t => ({ pid: t.pid, fp: round1(t.fp), gp: t.gp }))
+        .sort((a, b) => b.fp - a.fp)
+        .slice(0, keep);
+      return { asg, through, players };
+    }
+  }
+  return null;
+}
+
 // frozen: { season: saved season } for completed seasons to load instead of downloading.
-export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {} } = {}) {
+// allStars: last night's All-Star results ({ season: ... }) to keep. Without it
+// (the browser's live fallback), All-Stars are skipped: they're too heavy to fetch there.
+export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {}, allStars: knownAllStars = null } = {}) {
   // Sleeper's cache can serve stale matchup scores for weeks after the fact
   // (2025 week 17 came back 290-315 instead of the real 355-352), so every
   // request carries a unique value to force a fresh copy.
@@ -390,6 +439,40 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     });
   }
 
+  // League MVP: every player's fantasy points over the whole NBA regular season,
+  // under that season's league scoring, whether or not anyone started him.
+  // Only each season's top 10 are kept.
+  const mvp = {};
+  for (const lg of chain) {
+    const stats = await get(`/stats/nba/regular/${lg.season}`, {});
+    const scoring = Object.entries(lg.scoring_settings ?? {});
+    const rows = Object.entries(stats ?? {})
+      .filter(([pid]) => /^\d+$/.test(pid)) // team totals use ids like "TEAM_BOS"
+      .map(([pid, x]) => ({ pid, fp: round1(scoring.reduce((sum, [k, v]) => sum + (Number(x?.[k]) || 0) * v, 0)), gp: x?.gp ?? 0 }))
+      .filter(r => r.fp > 0)
+      .sort((a, b) => b.fp - a.fp)
+      .slice(0, 10);
+    for (const r of rows) usedPlayers.add(r.pid);
+    if (rows.length) mvp[lg.season] = rows;
+  }
+
+  // All-Stars (see allStarPool): kept from last night once a season has them.
+  // Each player's position is saved with the result, as of when it was worked out.
+  const allStars = {};
+  if (knownAllStars) {
+    for (const lg of chain) {
+      let result = knownAllStars[lg.season];
+      // The All-Star Game is in mid-February, so don't look before then.
+      if (!result && new Date() >= new Date(`${Number(lg.season) + 1}-02-10T00:00:00Z`)) {
+        result = await allStarPool(lg.season, lg.scoring_settings ?? {}, fetchImpl);
+        if (result) for (const p of result.players) p.pos = allPlayers[p.pid]?.position ?? allPlayers[p.pid]?.fantasy_positions?.[0] ?? '';
+      }
+      if (!result) continue;
+      allStars[lg.season] = result;
+      for (const p of result.players) usedPlayers.add(p.pid);
+    }
+  }
+
   // Names, positions and current NBA teams for every player who has scored locked
   // points or moved in a transaction here. Sleeper's full list is ~2.5 MB, so only
   // those players are kept.
@@ -416,6 +499,8 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     players,
     transactions,
     drafts,
+    mvp,
+    allStars,
     warnings,
   };
 }

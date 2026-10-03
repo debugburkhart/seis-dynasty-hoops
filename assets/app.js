@@ -5,6 +5,8 @@ import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from '.
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, weekPairs } from './hype.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
+import { POSITION_GROUPS, REGULAR_WEEKS, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, playerOfTheYear } from './awards.js';
+import { ALL_STAR_POSITIONS } from './corrections.js';
 
 // ---------- Navigation ----------
 
@@ -14,7 +16,7 @@ const NAV = [
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['cheat-sheet', 'Cheat Sheet', 'clipboard'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['rivalry', 'records', 'power', 'hype', 'standings', 'transactions']);
+const READY = new Set(['rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards']);
 const DEFAULT_PAGE = 'rivalry';
 
 const ICONS = {
@@ -1571,6 +1573,215 @@ function renderTransactions(main, params) {
   });
 }
 
+// ---------- Awards ----------
+// Banners for completed seasons, each with its GM of the Year (assets/awards.js).
+
+const signedPts = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${num(Math.abs(n))}`;
+
+function assetName(a) {
+  if (!a.pick) return DATA.players?.[a.pid]?.n ?? `Player ${a.pid}`;
+  const [season, , round] = a.pick.split(' ');
+  const became = a.pid ? DATA.players?.[a.pid]?.n : null;
+  return `${season} Rd ${round} pick${became ? ` (${became})` : ''}`;
+}
+
+function gmMove(m) {
+  const pl = pid => DATA.players?.[pid]?.n ?? `Player ${pid}`;
+  const starts = n => `${n} start${n === 1 ? '' : 's'}`;
+  const what = m.kind === 'trade'
+    ? `Trade with ${m.with.map(name).join(' & ')}: got ${m.got.map(assetName).join(', ') || 'nothing'} for ${m.gave.map(assetName).join(', ') || 'nothing'}`
+    : m.kind === 'claim' ? `Claimed ${pl(m.pid)} off waivers (${starts(m.starts)})`
+    : m.kind === 'pickup' ? `Picked up ${pl(m.pid)} (${starts(m.starts)})`
+    : m.kind === 'rookie' ? `Drafted ${pl(m.pid)} (round ${m.round}, pick ${m.no})`
+    : `Dropped ${pl(m.pid)}, who made ${starts(m.starts)} for ${name(m.to)}`;
+  return `<li><span>${esc(what)}</span><b class="${m.value >= 0 ? 'v-pos' : 'v-neg'}">${signedPts(m.value)}</b></li>`;
+}
+
+function renderAwards(main) {
+  const done = DATA.seasons.filter(s => s.status === 'complete' && s.champion).map(s => s.season).reverse();
+  if (!done.length) {
+    main.innerHTML = '<div class="page"><section class="card soon-card"><p>The first banner goes up when the first season is complete.</p></section></div>';
+    return;
+  }
+  const fo = ledger();
+  const banners = done.map(s => ({ ...banner(DATA, s), gm: gmOfTheYear(DATA, fo, s), poy: playerOfTheYear(DATA, s), mvp: mvpRace(DATA, s),
+    finalsMvp: championshipMvp(DATA, s), stars: allStars(DATA, s, ALL_STAR_POSITIONS) }));
+  const longDate = ymd => new Date(`${ymd}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
+  const pname = pid => DATA.players?.[pid]?.n ?? `Player ${pid}`;
+  const pmeta = pid => [DATA.players?.[pid]?.pos, DATA.players?.[pid]?.t].filter(Boolean).join(' · ');
+  // Top-3 race list for Player of the Year and League MVP.
+  const raceList = (rows, value, sub) => `<ol class="aw-race">${rows.map((r, i) => `
+    <li${i === 0 ? ' class="win"' : ''}><span>${i + 1}. ${esc(pname(r.pid))}<small>${esc(sub(r))}</small></span><b>${value(r)}</b></li>`).join('')}</ol>`;
+  const champs = {};
+  for (const b of [...banners].reverse()) (champs[b.champ] ??= []).push(b.season);
+  const multi = Object.entries(champs).filter(([, list]) => list.length >= 2);
+  const once = Object.entries(champs).filter(([, list]) => list.length === 1);
+  const latest = banners[0];
+  const chips = list => list.map(([o, seasons]) => `<span class="aw-chip">${esc(name(o))} ${seasons.map(yy).join(' ')}</span>`).join('');
+
+  main.innerHTML = `
+    <div class="page page-wide">
+      <div class="page-head">
+        <div class="page-icon">${icon('trophy')}</div>
+        <div><div class="eyebrow">Hung from the rafters · Est. ${esc(done.at(-1))}</div><h1>Awards</h1></div>
+        <div class="archive">
+          <div class="archive-main">
+            <div class="archive-kicker">Defending champion</div>
+            <div class="archive-name">${esc(name(latest.champ))}</div>
+            <div class="archive-sub">${esc(latest.season)} season</div>
+          </div>
+          <div class="archive-stat"><b>${banners.length}</b><span>Banners</span></div>
+          <div class="archive-stat"><b>${Object.keys(champs).length}</b><span>Champions</span></div>
+        </div>
+      </div>
+
+      <div class="aw-groups">
+        ${multi.length ? `
+          <section class="card aw-group">
+            <div><div class="eyebrow">Multiple rings</div><h2 class="aw-group-title">Dynasty</h2><p class="card-sub">Managers with more than one banner</p><div class="aw-chips">${chips(multi)}</div></div>
+            <b class="aw-group-n">${multi.length}</b>
+          </section>` : ''}
+        ${once.length ? `
+          <section class="card aw-group">
+            <div><div class="eyebrow">One shining moment</div><h2 class="aw-group-title">The field</h2><p class="card-sub">One-time champions</p><div class="aw-chips">${chips(once)}</div></div>
+            <b class="aw-group-n">${once.length}</b>
+          </section>` : ''}
+      </div>
+
+      <div class="aw-rule">
+        <h2>Every banner</h2><span class="aw-range">${esc(done.at(-1))}${done.length > 1 ? ` – ${esc(done[0])}` : ''}</span>
+        <span class="aw-line"></span><span class="aw-note">Title game · winner’s score first</span>
+      </div>
+
+      <div class="aw-grid">
+        ${banners.map((b, i) => {
+          const gm = b.gm.winner;
+          const race = b.gm.rows.filter(r => r.eligible);
+          return `
+          <article class="aw-banner">
+            <div class="aw-top"><span class="aw-year">${esc(b.season)}</span><span class="aw-tag">${i === 0 ? 'Reigning' : 'Champion'}</span></div>
+            <div class="aw-body">
+              <div class="aw-champ">
+                <div class="aw-label">League champion</div>
+                <div class="aw-name">${esc(name(b.champ))}</div>
+                <div class="aw-team">${esc(teamName(b.champ, b.season))}</div>
+                ${b.finalsMvp ? `<div class="aw-fmvp">${icon('medal')}<span>Championship MVP</span><b>${esc(pname(b.finalsMvp.pid))}</b><small>${num(b.finalsMvp.pts)} pts</small></div>` : ''}
+                ${b.won ? `
+                  <div class="aw-score"><b>${num(b.won.pts)}</b> – ${num(b.won.oppPts)}</div>
+                  <div class="aw-meta">def. ${esc(name(b.won.opp))}</div>
+                  <div class="aw-meta">${b.won.pts === b.won.oppPts ? 'Won on the tiebreaker' : `Won by ${num(b.won.pts - b.won.oppPts)}`} · Week ${b.week}</div>` : ''}
+              </div>
+              ${b.record ? `<div class="aw-row"><span>Regular season</span><b>${rec(b.record.w, b.record.l, b.record.t)} · ${ordinalPlace(b.seed)}</b></div>` : ''}
+              <ol class="aw-awards">
+                <li>
+                  <span class="aw-num">01</span>
+                  <div class="aw-award">
+                    <div class="aw-label">GM of the Year</div>
+                    ${gm ? `
+                      <div class="aw-winner">${esc(name(gm.o))} <b class="${gm.total >= 0 ? 'v-pos' : 'v-neg'}">${signedPts(gm.total)} pts</b></div>
+                      <div class="aw-meta">Trades ${signedPts(gm.trades)} · Pickups ${signedPts(gm.pickups)} · Rookies ${signedPts(gm.rookies)} · Drops ${signedPts(gm.drops)}</div>
+                      <details class="aw-more">
+                        <summary>Biggest moves and the race ${icon('arrow')}</summary>
+                        <ul class="aw-moves">${gm.moves.slice(0, 5).map(gmMove).join('') || '<li><span>No moves counted.</span></li>'}</ul>
+                        <div class="aw-race-title">The race · playoff teams</div>
+                        <ol class="aw-race">${race.map(r => `<li${r === gm ? ' class="win"' : ''}><span>${esc(name(r.o))}</span><b>${signedPts(r.total)}</b></li>`).join('')}</ol>
+                      </details>` : '<div class="aw-meta">No playoff teams recorded.</div>'}
+                  </div>
+                </li>
+                <li>
+                  <span class="aw-num">02</span>
+                  <div class="aw-award">
+                    <div class="aw-label">Player of the Year</div>
+                    ${b.poy.length ? `
+                      <div class="aw-winner">${esc(pname(b.poy[0].pid))}${pmeta(b.poy[0].pid) ? ` <small class="aw-pos">${esc(pmeta(b.poy[0].pid))}</small>` : ''}</div>
+                      <div class="aw-meta">${num(b.poy[0].pts)} locked pts for ${esc(name(b.poy[0].team))}${b.poy[0].multi ? ' and others' : ''}</div>
+                      <details class="aw-more">
+                        <summary>The race · top 3 ${icon('arrow')}</summary>
+                        ${raceList(b.poy, r => `${num(r.pts)}`, r => `${r.weeks} weeks started · ${Object.entries(r.teams).sort((x, y) => y[1] - x[1]).map(([o, p]) => `${name(o)}${r.multi ? ` ${num(p)}` : ''}`).join(', ')}`)}
+                      </details>` : '<div class="aw-meta">No locked points recorded.</div>'}
+                  </div>
+                </li>
+                <li>
+                  <span class="aw-num">03</span>
+                  <div class="aw-award">
+                    <div class="aw-label">League MVP</div>
+                    ${b.mvp.length ? `
+                      <div class="aw-winner">${esc(pname(b.mvp[0].pid))}${pmeta(b.mvp[0].pid) ? ` <small class="aw-pos">${esc(pmeta(b.mvp[0].pid))}</small>` : ''}</div>
+                      <div class="aw-meta">${num(b.mvp[0].fp)} fantasy pts in ${b.mvp[0].gp} games</div>
+                      <details class="aw-more">
+                        <summary>The race · top 3 ${icon('arrow')}</summary>
+                        ${raceList(b.mvp, r => `${num(r.fp)}`, r => `${r.gp} games · ${num(r.fp / Math.max(1, r.gp))} per game`)}
+                      </details>` : '<div class="aw-meta">Added with the next nightly update.</div>'}
+                  </div>
+                </li>
+                <li>
+                  <span class="aw-num">04</span>
+                  <div class="aw-award">
+                    <div class="aw-label">All-Stars</div>
+                    ${b.stars ? `
+                      <div class="aw-winner">15 players</div>
+                      <div class="aw-meta">Top 5 guards, forwards and centers in total fantasy points through ${esc(longDate(b.stars.through))}</div>
+                      <details class="aw-more">
+                        <summary>The All-Star teams ${icon('arrow')}</summary>
+                        <div class="aw-stars">
+                          ${POSITION_GROUPS.map(([g, label]) => `
+                            <div>
+                              <div class="aw-race-title">${label}</div>
+                              <ol class="aw-race">${b.stars.teams[g].map((p, i) => `<li${i === 0 ? ' class="win"' : ''}><span>${esc(pname(p.pid))}<small>${esc(p.pos)} · ${p.gp} games</small></span><b>${num(p.fp)}</b></li>`).join('')}</ol>
+                            </div>`).join('')}
+                        </div>
+                      </details>` : '<div class="aw-meta">Added with the next nightly update.</div>'}
+                  </div>
+                </li>
+              </ol>
+            </div>
+            <a class="aw-recap" href="#/standings?tab=table&period=${encodeURIComponent(b.season)}">Season recap ${icon('arrow')}</a>
+          </article>`;
+        }).join('')}
+      </div>
+
+      <section class="lg-behind">
+        <div class="lg-behind-head"><h2>How the awards are decided</h2><span>In plain English</span></div>
+        <div class="aw-rules">
+          <article class="aw-rule-block">
+            <h3><span class="aw-num">01</span> GM of the Year</h3>
+            <p>Goes to the playoff team whose moves that season added the most locked points that season, regular season and playoffs included. Only moves made that season count, and only the points they produced that season, so the award is settled the day the season ends. A manager’s total adds up four parts:</p>
+            <dl class="aw-parts">
+              <div><dt>Trades</dt><dd>Locked points from everything he received, minus what the other team got from what he gave up. A draft pick counts as the player it became. The same math as the Value Desk, limited to that season.</dd></div>
+              <div><dt>Pickups</dt><dd>Waiver claims and free-agent adds count only if the player became a regular: at least ${REGULAR_WEEKS} weeks in his starting lineup that season. Streaming volume alone doesn’t win it.</dd></div>
+              <div><dt>Rookies</dt><dd>Locked points his rookie-draft picks scored for him that season.</dd></div>
+              <div><dt>Drops</dt><dd>Count against him: what a player he dropped scored for the next team that picked him up, if he became a regular there (the same ${REGULAR_WEEKS}-week rule).</dd></div>
+            </dl>
+            <p class="aw-rule-fine">Commissioner moves aren’t a manager’s decision and are left out. Only playoff teams are eligible; “the race” on each banner lists them all.</p>
+          </article>
+          <article class="aw-rule-block">
+            <h3><span class="aw-num">02</span> Player of the Year</h3>
+            <p>The player with the most locked points that season, regular season and playoffs included: the points he actually scored in this league’s starting lineups. A player traded mid-season keeps his points from every team he started for; the banner names the team he scored the most for. The race shows the top 3.</p>
+          </article>
+          <article class="aw-rule-block">
+            <h3><span class="aw-num">03</span> League MVP</h3>
+            <p>The player with the most fantasy points over the whole NBA regular season, scored with this league’s settings for that season, whether or not anyone started him (or even rostered him). It measures the best fantasy season in the NBA; Player of the Year measures what counted here. The race shows the top 3.</p>
+          </article>
+          <article class="aw-rule-block">
+            <h3><span class="aw-num">04</span> All-Stars</h3>
+            <p>Named at the NBA All-Star break: the 15 players with the most total fantasy points (every game, this league’s scoring, rostered or not) through the last regular-season game before the All-Star Game. Five per position, by primary position that season:</p>
+            <dl class="aw-parts">
+              <div><dt>Guards</dt><dd>Point guards and shooting guards (PG, SG).</dd></div>
+              <div><dt>Forwards</dt><dd>Small forwards and power forwards (SF, PF).</dd></div>
+              <div><dt>Centers</dt><dd>Centers (C).</dd></div>
+            </dl>
+            <p class="aw-rule-fine">All-Star Weekend exhibitions (Rising Stars and the All-Star Game) don’t count.</p>
+          </article>
+          <article class="aw-rule-block">
+            <h3><span class="aw-num">${icon('medal')}</span> Championship MVP</h3>
+            <p>Shown with each champion: the player on the winning team with the most locked points in the championship game.</p>
+          </article>
+        </div>
+        <p class="lg-fine">Bench points never count toward GM or Player of the Year: only locked points do. League MVP is the one award that looks past this league’s lineups. Season recap opens that season’s standings.</p>
+      </section>
+    </div>`;
+}
+
 // ---------- Standings ----------
 
 const ordinalPlace = n => (n ? `${n}${{ 1: 'st', 2: 'nd', 3: 'rd' }[n] ?? 'th'}` : '—');
@@ -1792,6 +2003,7 @@ function render() {
   if (page === 'rivalry') renderRivalry(main, params);
   else if (page === 'hype') renderHype(main, params);
   else if (page === 'transactions') renderTransactions(main, params);
+  else if (page === 'awards') renderAwards(main);
   else if (page === 'records') renderRecordBook(main, sub, params);
   else if (page === 'power') renderPower(main, params);
   else if (page === 'standings') renderStandings(main, params);

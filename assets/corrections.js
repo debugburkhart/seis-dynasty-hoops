@@ -47,3 +47,11 @@ export const DRAFT_CORRECTIONS = [
   // Ron Holland went to loganzarvell, and who jimmycooks2 meant to take is unknown.
   { season: '2024', pick: 23, ignore: true },
 ];
+
+// All-Star positions. Sleeper only knows each player's position today, so a
+// season's All-Stars use the position he had when that season's All-Stars were
+// first worked out. If a player was listed differently that season, set it here
+// by season and name: 'G' (PG/SG), 'F' (SF/PF) or 'C'.
+//   '2024': { 'Karl-Anthony Towns': 'F' },
+export const ALL_STAR_POSITIONS = {
+};

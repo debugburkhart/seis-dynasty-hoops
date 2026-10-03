@@ -5,6 +5,8 @@
 // him (draft, trade, waiver or free agent) and ends when he leaves (trade or
 // drop). A stint's value is the locked points he scored in that team's lineups
 // during it. A stint still running is marked active, since its value is still growing.
+// Values also carry the weeks they came from ({ k: season*100+week, p }), so
+// awards can count a single season.
 //
 // Draft picks are valued by who they became: the drafted player's stint with the
 // team that used the pick. In a trade, a pick is worth that value to whoever
@@ -90,11 +92,11 @@ export function frontOffice(DATA, season = 'all') {
   for (const st of stintOf.values()) (byTeam[`${st.pid}|${st.o}`] ??= []).push(st);
   for (const [k, list] of Object.entries(byTeam)) {
     list.sort((a, b) => a.start - b.start);
-    for (const st of list) st.value = 0;
+    for (const st of list) { st.value = 0; st.weeks = []; }
     for (const w of pts[k] ?? []) {
       // The latest stint that started on or before this week and hadn't ended before it.
       const st = list.filter(s => s.start <= w.k && (s.end == null || s.end >= w.k)).at(-1);
-      if (st) st.value += w.p;
+      if (st) { st.value += w.p; st.weeks.push(w); }
     }
     for (const st of list) { st.value = r1(st.value); st.active = st.end == null; }
   }
@@ -120,7 +122,7 @@ export function frontOffice(DATA, season = 'all') {
     const st = stint(e);
     const pick = {
       s: d.s, kind: d.kind, round: e.ref.round, no: e.ref.no, pid: e.pid, o: e.o,
-      value: st?.value ?? 0, active: st?.active ?? false,
+      value: st?.value ?? 0, active: st?.active ?? false, weeks: st?.weeks ?? [],
       career: careerSince(e.pid, e.k), careerActive: activeAnywhere(e.pid),
       pending: !seasonsWithGames.has(d.s),
     };
@@ -146,7 +148,7 @@ export function frontOffice(DATA, season = 'all') {
       const gave = [];
       for (const [pid, to] of Object.entries(x.adds)) {
         const st = stint(inEvent[`${i}|${pid}`]);
-        const asset = { pid, value: st?.value ?? 0, active: st?.active ?? false };
+        const asset = { pid, value: st?.value ?? 0, active: st?.active ?? false, weeks: st?.weeks ?? [] };
         if (to === o) got.push(asset);
         else if (x.drops[pid] === o) gave.push(asset);
       }
@@ -157,6 +159,7 @@ export function frontOffice(DATA, season = 'all') {
         const asset = {
           pick: `${p.season} round ${p.round}`, key: `${p.season}|${p.round}|${p.orig}`,
           pid: used?.pid, usedBy: used?.o, value: used && !used.pending ? used.value : 0,
+          weeks: used && !used.pending ? used.weeks : [],
           active: !used || used.pending || used.active,
         };
         if (p.to === o) got.push(asset);
@@ -174,7 +177,7 @@ export function frontOffice(DATA, season = 'all') {
   for (const e of events) {
     if (e.dir === 'in' && (e.src === 'waiver' || e.src === 'free_agent')) {
       const st = stint(e);
-      pickups.push({ s: Math.floor(e.k / 100) + '', w: e.k % 100, tx: e.tx, o: e.o, pid: e.pid, src: e.src, value: st?.value ?? 0, active: st?.active ?? false });
+      pickups.push({ s: Math.floor(e.k / 100) + '', w: e.k % 100, tx: e.tx, o: e.o, pid: e.pid, src: e.src, value: st?.value ?? 0, active: st?.active ?? false, weeks: st?.weeks ?? [] });
     }
     if (e.dir === 'out' && (e.src === 'waiver' || e.src === 'free_agent')) {
       // The next team to pick him up, before the team that dropped him gets him back.
@@ -182,7 +185,7 @@ export function frontOffice(DATA, season = 'all') {
       const back = later.find(n => n.o === e.o);
       const next = later.find(n => n.o !== e.o && (!back || n.k < back.k || (n.k === back.k && n.ts < back.ts)));
       const st = stint(next);
-      if (st) letGo.push({ s: Math.floor(e.k / 100) + '', w: e.k % 100, tx: e.tx, o: e.o, pid: e.pid, to: st.o, value: st.value, active: st.active });
+      if (st) letGo.push({ s: Math.floor(e.k / 100) + '', w: e.k % 100, tx: e.tx, o: e.o, pid: e.pid, to: st.o, value: st.value, active: st.active, weeks: st.weeks });
     }
   }
 

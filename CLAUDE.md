@@ -23,7 +23,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `index.html`: shell + import map. Every module in `assets/` must be listed in the
   import map with `?v=dev` (the Action replaces it with a version fingerprint).
 - `assets/app.js`: all pages (hash routes: rivalry, records, power, hype, standings,
-  transactions), sidebar.
+  transactions, awards), sidebar.
 - `assets/build-data.js`: pulls everything from Sleeper (`api.sleeper.com`, cache-busted),
   applies `corrections.js`, loads frozen seasons. Output = `data/league.json`.
 - `assets/records.js`: Record Book (6 categories, filters, record-change history).
@@ -36,6 +36,22 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `assets/transactions.js`: Transactions page data (move kinds, Ledger totals); values come
   from frontoffice.js (trades/pickups/letGo carry `tx` = index into DATA.transactions).
   Players carry `t` = current NBA team (added Oct 2026; older data files lack it).
+- `assets/awards.js`: Awards page: season banners + GM of the Year (rules decided with the
+  owner: moves made that season, locked points that season incl. playoffs, trade net like
+  the Value Desk, pickups/drops count only if the player started 3+ weeks, rookies count,
+  playoff teams only). Player of the Year = most locked points that season (all teams,
+  playoffs incl.). League MVP = most fantasy points over the whole NBA regular season
+  under that season's league scoring (DATA.mvp: top 10 per season, built nightly from
+  Sleeper's /stats/nba/regular/{season}; team rows "TEAM_*" skipped). Not tied to the
+  playoffs (the owner confirmed). Championship MVP = winning team's top locked scorer in
+  the title game (winning team only). All-Stars = top 5 G (PG/SG), F (SF/PF), C by total
+  fantasy points through the last game before the NBA All-Star Game (DATA.allStars,
+  built by allStarPool in build-data.js from per-game box scores
+  api.sleeper.com/stats/nba/{season}/{week}; computed once per season, then carried over
+  by update.mjs; weekly aggregate endpoints are WRONG: they hold only the last game).
+  Positions are Sleeper's current ones saved at computation time; ALL_STAR_POSITIONS in
+  corrections.js overrides by season + name. Coach of the Year on
+  hold. frontoffice values carry `weeks` ({k: season*100+week, p}) for season-limited sums.
 - `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
@@ -65,6 +81,6 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - Verify numbers against the data before reporting; the owner checks things in the app.
 
 ## Not built yet (sidebar shows "Soon")
-Home, Weekly Props, Trade Court, Awards, Timeline,
+Home, Weekly Props, Trade Court, Timeline,
 Draft History, Cheat Sheet, Draft Grades. The owner shares screenshots of a football
 reference site (fantasyhoff.com) for each feature and wants it adapted for basketball.
