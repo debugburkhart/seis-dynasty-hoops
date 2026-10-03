@@ -48,6 +48,13 @@ export const DRAFT_CORRECTIONS = [
   { season: '2024', pick: 23, ignore: true },
 ];
 
+// Player photos Sleeper has wrong (its photo for LeBron James is Bronny James).
+// These use the official NBA.com headshot instead: the number is the player's
+// NBA.com ID, from his page's address (nba.com/player/2544/lebron-james -> 2544).
+export const PHOTO_CORRECTIONS = {
+  'LeBron James': 2544,
+};
+
 // All-Star positions. Sleeper only knows each player's position today, so a
 // season's All-Stars use the position he had when that season's All-Stars were
 // first worked out. If a player was listed differently that season, set it here

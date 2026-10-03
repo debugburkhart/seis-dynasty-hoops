@@ -1,5 +1,5 @@
 import { ALL_STARS_FROM, LEAGUE_ID } from './config.js';
-import { CATEGORIES, CHANGE_LABELS, buildRecords, recordHistory, recordVisible, viewData } from './records.js';
+import { CATEGORIES, CHANGE_LABELS, buildRecords, playerPhoto, recordHistory, recordVisible, viewData } from './records.js';
 import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
 import { frontOffice } from './frontoffice.js';
@@ -7,16 +7,17 @@ import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, weekPairs } from './hype.j
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
 import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, playerOfTheYear, rookieClass } from './awards.js';
 import { ALL_STAR_POSITIONS } from './corrections.js';
+import { SORTS, playerIndex } from './players.js';
 
 // ---------- Navigation ----------
 
 const NAV = [
   { title: 'Now', items: [['home', 'Home', 'home'], ['standings', 'Standings', 'list'], ['transactions', 'Transactions', 'swap']] },
   { title: 'In Season', items: [['props', 'Weekly Props', 'ticket'], ['trade-court', 'Trade Court', 'scale'], ['power', 'Power Rankings', 'gauge'], ['hype', 'Matchup Hype', 'bolt']] },
-  { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
+  { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['players', 'Player Index', 'users'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['cheat-sheet', 'Cheat Sheet', 'clipboard'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards']);
+const READY = new Set(['rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players']);
 const DEFAULT_PAGE = 'rivalry';
 
 const ICONS = {
@@ -1839,6 +1840,164 @@ function renderAwards(main) {
     </div>`;
 }
 
+// ---------- Player Index ----------
+// Every player's locked points (assets/players.js), searchable, with season and
+// manager filters and a breakdown by fantasy team.
+
+const PI_PAGE = 50;
+const PI_MIN_STARTS = 5;
+let piShown = PI_PAGE;
+let piKey = '';
+const PI_CACHE = {};
+const plainText = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+function piState(params) {
+  const seasons = DATA.seasons.filter(s => s.weeksPlayed).map(s => s.season);
+  return {
+    q: params.get('q') ?? '',
+    season: seasons.includes(params.get('season')) ? params.get('season') : 'all',
+    manager: DATA.owners[params.get('manager')] ? params.get('manager') : 'all',
+    sort: SORTS.some(([id]) => id === params.get('sort')) ? params.get('sort') : 'pts',
+  };
+}
+
+function piHash(f) {
+  const p = new URLSearchParams();
+  if (f.q) p.set('q', f.q);
+  if (f.season !== 'all') p.set('season', f.season);
+  if (f.manager !== 'all') p.set('manager', f.manager);
+  if (f.sort !== 'pts') p.set('sort', f.sort);
+  const qs = p.toString();
+  return `#/players${qs ? `?${qs}` : ''}`;
+}
+
+// The filtered, sorted list (ranks come from the full list, before the search).
+function piRows(f) {
+  const key = `${f.season}|${f.manager}`;
+  const all = (PI_CACHE[key] ??= playerIndex(DATA, f));
+  const val = SORTS.find(([id]) => id === f.sort)[2];
+  // Per-start averages rank players with enough starts first, so one big week can't top the list.
+  const enough = r => (f.sort === 'avg' ? (r.weeks >= PI_MIN_STARTS ? 1 : 0) : 0);
+  const ranked = [...all].sort((a, b) => enough(b) - enough(a) || val(b) - val(a) || b.pts - a.pts)
+    .map((r, i) => ({ ...r, rank: i + 1 }));
+  const q = plainText(f.q.trim());
+  return { total: all.length, rows: q ? ranked.filter(r => plainText(DATA.players?.[r.pid]?.n).includes(q)) : ranked };
+}
+
+function piRow(r, f) {
+  const p = DATA.players?.[r.pid];
+  const teams = o => [...new Set(o.seasons.map(s => teamName(o.o, s)))].join(' / ');
+  const seasons = list => (list.length > 1 ? `${list[0]}–${list.at(-1)}` : list[0]);
+  return `
+    <details class="pi-row">
+      <summary><div class="row-grid">
+        <span class="pi-rank">${r.rank}</span>
+        <span class="pi-who">
+          <img class="pi-img" src="${esc(playerPhoto(DATA, r.pid))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+          <span><b>${esc(p?.n ?? `Player ${r.pid}`)}</b><small>${esc([p?.pos, `${r.owners.length} fantasy team${r.owners.length === 1 ? '' : 's'}`].filter(Boolean).join(' · '))}</small>
+            <small class="pi-meta">${r.weeks} weeks · ${num(r.avg)} per start</small></span>
+        </span>
+        <span class="pi-num">${r.weeks}</span>
+        <span class="pi-num">${num(r.avg)}</span>
+        <span class="pi-pts">${num(r.pts)}<small>locked pts</small></span>
+        <span class="pi-open">${icon('arrow')}</span>
+      </div></summary>
+      <div class="pi-detail">
+        <div class="pi-sub pi-sub-head"><span>Fantasy team</span><span>Seasons</span><span>Weeks</span><span>Locked pts</span></div>
+        ${r.owners.map(o => `
+          <div class="pi-sub">
+            <span><b>${esc(teams(o))}</b><small>${esc(name(o.o))}</small>
+              <span class="pi-bar"><i style="width:${Math.max(2, (o.pts / (r.pts || 1)) * 100)}%"></i></span></span>
+            <span data-l="Seasons">${esc(seasons(o.seasons))}</span>
+            <span data-l="Weeks">${o.weeks}</span>
+            <span data-l="Locked pts"><b>${num(o.pts)}</b> <small>${Math.round((o.pts / (r.pts || 1)) * 100)}%</small></span>
+          </div>`).join('')}
+        ${f.season === 'all' && r.seasons.length > 1 ? `<p class="pi-seasons">By season: ${r.seasons.map(x => `<span><b>${x.s}</b> ${num(x.pts)}</span>`).join('')}</p>` : ''}
+      </div>
+    </details>`;
+}
+
+function piResults(f) {
+  const { total, rows } = piRows(f);
+  const shown = rows.slice(0, piShown);
+  const by = SORTS.find(([id]) => id === f.sort)[1];
+  const scope = [f.season === 'all' ? 'all-time' : `the ${f.season} season`, f.manager === 'all' ? '' : `for ${name(f.manager)}’s teams only`].filter(Boolean).join(', ');
+  return `
+    <p class="filter-note">${f.q ? `${rows.length} of ${total} players match “${esc(f.q)}”` : `${total} players`} · ${esc(scope)} · ranked by ${esc(by.toLowerCase())}${f.sort === 'avg' ? ` (players with ${PI_MIN_STARTS}+ starts first)` : ''}</p>
+    ${rows.length ? `
+      <section class="pi-table">
+        <div class="pi-head"><span>#</span><span>Player</span><span>Weeks</span><span>Per start</span><span>Locked pts</span><span></span></div>
+        ${shown.map(r => piRow(r, f)).join('')}
+      </section>
+      ${shown.length < rows.length ? `<div class="tx-more"><button class="tx-morebtn pi-more" type="button">Load more (showing ${shown.length} of ${rows.length})</button></div>` : ''}`
+      : '<section class="card soon-card"><p>No players match. Try a different spelling or filter.</p></section>'}`;
+}
+
+function renderPlayers(main, params) {
+  const f = piState(params);
+  const key = `${f.season}|${f.manager}|${f.sort}|${f.q}`;
+  if (key !== piKey) { piKey = key; piShown = PI_PAGE; }
+  const seasons = DATA.seasons.filter(s => s.weeksPlayed).map(s => s.season).reverse();
+  const { current, former } = ownerOrder();
+  const all = PI_CACHE['all|all'] ??= playerIndex(DATA);
+  const pick = (k, label, value, options) => `
+    <label class="hy-pick">
+      <span class="hy-pick-label">${label}</span>
+      <span class="ed-select"><span class="hy-pick-val">${esc(options.find(([id]) => id === value)?.[1] ?? '')}</span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select data-pi="${k}" aria-label="${label}">
+          ${options.map(([id, text]) => `<option value="${esc(id)}"${id === value ? ' selected' : ''}>${esc(text)}</option>`).join('')}
+        </select>
+      </span>
+    </label>`;
+
+  main.innerHTML = `
+    <div class="page page-wide">
+      <div class="page-head">
+        <div class="page-icon">${icon('users')}</div>
+        <div><div class="eyebrow">Every locked point</div><h1>Player Index</h1></div>
+        <div class="archive">
+          <div class="archive-main"><div class="archive-kicker">All-time</div><div class="archive-name">${esc(DATA.name)}</div></div>
+          <div class="archive-stat"><b>${all.length.toLocaleString('en-US')}</b><span>Players</span></div>
+        </div>
+      </div>
+      <div class="pi-controls">
+        <label class="rb-search pi-search">
+          <svg class="ic" viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><path d="m13.5 13.5 3.5 3.5"/></svg>
+          <input type="search" id="pi-q" placeholder="Search players" value="${esc(f.q)}" autocomplete="off">
+        </label>
+        ${pick('season', 'Season', f.season, [['all', 'All-time'], ...seasons.map(s => [s, s])])}
+        ${pick('manager', 'Manager', f.manager, [['all', 'Everyone'], ...current.map(id => [id, name(id)]), ...former.map(id => [id, `${name(id)} (former)`])])}
+        ${pick('sort', 'Sort', f.sort, SORTS.map(([id, label]) => [id, label]))}
+      </div>
+      <div id="pi-results">${piResults(f)}</div>
+      <p class="pw-foot">Locked points are what a player scored while in a fantasy starting lineup here, regular season and playoffs; bench points never count. A player’s breakdown lists every fantasy team he started for, with the team names that manager used in those seasons. Ranks come from the full list, so they stay the same while you search. With a manager selected, only the points he scored for that manager’s teams count.</p>
+    </div>`;
+
+  const bind = () => $('.pi-more', main)?.addEventListener('click', () => {
+    piShown += PI_PAGE;
+    $('#pi-results', main).innerHTML = piResults(piState(route().params));
+    bind();
+  });
+  bind();
+  main.querySelectorAll('select[data-pi]').forEach(sel => sel.addEventListener('change', () => {
+    location.hash = piHash({ ...piState(route().params), [sel.dataset.pi]: sel.value });
+  }));
+  // Search updates the list in place so the box keeps focus while typing.
+  let timer;
+  $('#pi-q', main).addEventListener('input', e => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const next = { ...piState(route().params), q: e.target.value };
+      history.replaceState(null, '', piHash(next));
+      piKey = `${next.season}|${next.manager}|${next.sort}|${next.q}`;
+      piShown = PI_PAGE;
+      $('#pi-results', main).innerHTML = piResults(next);
+      bind();
+    }, 150);
+  });
+}
+
 // ---------- Standings ----------
 
 const ordinalPlace = n => (n ? `${n}${{ 1: 'st', 2: 'nd', 3: 'rd' }[n] ?? 'th'}` : '—');
@@ -2061,6 +2220,7 @@ function render() {
   else if (page === 'hype') renderHype(main, params);
   else if (page === 'transactions') renderTransactions(main, params);
   else if (page === 'awards') renderAwards(main);
+  else if (page === 'players') renderPlayers(main, params);
   else if (page === 'records') renderRecordBook(main, sub, params);
   else if (page === 'power') renderPower(main, params);
   else if (page === 'standings') renderStandings(main, params);

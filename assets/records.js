@@ -1,5 +1,14 @@
 import { frontOffice } from './frontoffice.js';
 import { finishes } from './standings.js';
+import { PHOTO_CORRECTIONS } from './corrections.js';
+
+// A player's headshot: Sleeper's, unless corrections.js lists an NBA.com one.
+export function playerPhoto(DATA, pid) {
+  const nbaId = PHOTO_CORRECTIONS[DATA.players?.[pid]?.n];
+  return nbaId
+    ? `https://cdn.nba.com/headshots/nba/latest/260x190/${nbaId}.png`
+    : `https://sleepercdn.com/content/nba/players/thumb/${pid}.jpg`;
+}
 
 // Record Book. Every record is computed from the league data (data/league.json).
 // Unless a record says otherwise it uses regular-season games only, the same
@@ -293,7 +302,7 @@ export function buildRecords(DATA) {
   // lineup. Bench points never counted, so they're never included.
   const pl = DATA.players ?? {};
   const pname = pid => (pl[pid]?.n ?? `Player ${pid}`).replace(/\s*DUPLICATE\s*/i, ' (duplicate Sleeper entry)');
-  const img = pid => `https://sleepercdn.com/content/nba/players/thumb/${pid}.jpg`;
+  const img = pid => playerPhoto(DATA, pid);
   const forList = by => Object.entries(by).sort((a, b) => b[1] - a[1]).map(([o, p]) => `${name(o)} ${fmt(p)}`).join(', ');
   const pms = {}; // player + manager + season
   const pmc = {}; // player + manager, career

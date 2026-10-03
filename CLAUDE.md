@@ -23,7 +23,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `index.html`: shell + import map. Every module in `assets/` must be listed in the
   import map with `?v=dev` (the Action replaces it with a version fingerprint).
 - `assets/app.js`: all pages (hash routes: rivalry, records, power, hype, standings,
-  transactions, awards), sidebar.
+  transactions, awards, players), sidebar.
 - `assets/build-data.js`: pulls everything from Sleeper (`api.sleeper.com`, cache-busted),
   applies `corrections.js`, loads frozen seasons. Output = `data/league.json`.
 - `assets/records.js`: Record Book (6 categories, filters, record-change history).
@@ -63,7 +63,14 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   weeks) for All-Stars, most-points team for Player of the Year. From awards.js ownerAt()
   over frontoffice `stints`. Coach of the Year on
   hold. frontoffice values carry `weeks` ({k: season*100+week, p}) for season-limited sums.
-- `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks).
+- `assets/players.js`: Player Index (#/players, under Hall of Fame): every player's locked
+  points with season/manager filters, sort (points, weeks, per start: 5+ starts first),
+  search (accent-insensitive), and a breakdown by fantasy team and by season.
+- `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks,
+  All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has
+  wrong; Sleeper's LeBron James photo (id 1362) is Bronny). All player photos go through
+  playerPhoto() in records.js. Checked Oct 2026: no duplicate photos among league players;
+  families/twins (Thompson, Murray, Champagnie, Lopez, Ball, Holiday...) are correct.
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
 - `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json).
