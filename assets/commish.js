@@ -166,6 +166,248 @@ export async function seasonTotals(DATA, season) {
   return { rows, rookies };
 }
 
+// ---------- Waiver wire ----------
+
+const groupOf = pos => (/^(PG|SG|G)/.test(pos) ? 'G' : /^(SF|PF|F)/.test(pos) ? 'F' : /^C/.test(pos) ? 'C' : null);
+
+// Extra feeds for the waiver wire: Sleeper-wide adds over the last 48 hours, and
+// every game in the last two weeks (for recent form), once the season has started.
+export async function loadWaivers(season, week, started) {
+  const [trending, ...recentWeeks] = await Promise.all([
+    get('/v1/players/nba/trending/add?lookback_hours=48&limit=100', []),
+    ...(started ? [week, week - 1].filter(w => w >= 1).map(w => get(`/stats/nba/${season}/${w}?season_type=regular`, [])) : []),
+  ]);
+  return { trending: trending ?? [], games: recentWeeks.flat() };
+}
+
+// Players on no roster in this league, with what makes them worth a look.
+export function waiverWire(DATA, ctx, extra) {
+  const rostered = new Set((ctx.rosters ?? []).flatMap(r => [...(r.players ?? []), ...(r.reserve ?? []), ...(r.taxi ?? [])]));
+  const trending = Object.fromEntries((extra.trending ?? []).map(t => [t.player_id, t.count]));
+  // Recent form: fantasy points per game over the last 14 days of real NBA games.
+  const cutoff = new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10);
+  const recent = {};
+  for (const g of extra.games ?? []) {
+    if (!/^\d+$/.test(g.player_id) || !g.stats || !Object.keys(g.stats).length || !g.date || g.date < cutoff) continue;
+    if (!(g.stats.gp || g.stats.sp)) continue;
+    const r = (recent[g.player_id] ??= { fp: 0, g: 0 });
+    r.fp += fantasy(g.stats, ctx.scoring);
+    r.g++;
+  }
+  const pids = new Set([...Object.keys(ctx.info), ...Object.keys(trending), ...Object.keys(ctx.now)]);
+  const out = [];
+  for (const pid of pids) {
+    if (rostered.has(pid)) continue;
+    const i = ctx.info[pid];
+    const team = i?.team ?? DATA.players?.[pid]?.t ?? '';
+    if (!team) continue; // not on an NBA roster right now, so he can't score
+    const games = (ctx.games[team] ?? []).length;
+    const pr = ctx.projBy[pid];
+    const rec = recent[pid];
+    const season = ctx.now[pid];
+    out.push({
+      pid,
+      name: i ? `${i.first_name} ${i.last_name}` : DATA.players?.[pid]?.n ?? `Player ${pid}`,
+      pos: i?.position ?? DATA.players?.[pid]?.pos ?? '',
+      team,
+      injury: i?.injury_status ?? null,
+      games,
+      proj: pr ? r1(pr.perGame * lockFactor(games)) : 0,
+      fpg: season ? r1(season.fpg) : null,
+      gp: season?.gp ?? 0,
+      fpgLast: ctx.last[pid] ? r1(ctx.last[pid].fpg) : null,
+      recent: rec?.g ? r1(rec.fp / rec.g) : null,
+      recentGames: rec?.g ?? 0,
+      adds: trending[pid] ?? 0,
+    });
+  }
+  for (const p of out) {
+    p.group = groupOf(p.pos);
+    p.jump = p.recent != null && p.fpg != null ? r1(p.recent - p.fpg) : null;
+    p.out = /out|ir|susp|inactive/i.test(p.injury ?? '');
+  }
+  return out;
+}
+
+// ---------- Draft pick ledger ----------
+
+export const loadTradedPicks = DATA => get(`/v1/league/${DATA.seasons.at(-1).leagueId}/traded_picks`, []);
+
+// Every future rookie pick: who it originally belonged to, who owns it now, and the
+// trades it went through. Seasons: any future pick that's been traded, and the next 3 drafts.
+export function pickLedger(DATA, traded) {
+  const cur = DATA.seasons.at(-1);
+  const ownerOf = Object.fromEntries(cur.teams.map(t => [t.rosterId, t.owner]));
+  const lastDraft = Math.max(0, ...(DATA.drafts ?? []).map(d => Number(d.s)));
+  const rounds = Math.max(3, ...(DATA.drafts ?? []).filter(d => d.kind === 'rookie').flatMap(d => d.picks.map(p => p.round)));
+  const future = (traded ?? []).filter(p => Number(p.season) > lastDraft);
+  const seasons = [...new Set([...future.map(p => Number(p.season)), lastDraft + 1, lastDraft + 2, lastDraft + 3])].sort((a, b) => a - b).map(String);
+  const picks = [];
+  for (const season of seasons) {
+    for (let round = 1; round <= rounds; round++) {
+      for (const t of cur.teams) {
+        const moved = future.find(p => p.season === season && p.round === round && p.roster_id === t.rosterId);
+        const path = (DATA.transactions ?? [])
+          .filter(x => x.type === 'trade' && x.picks.some(p => p.season === season && p.round === round && p.orig === t.rosterId))
+          .sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0))
+          .map(x => {
+            const p = x.picks.find(y => y.season === season && y.round === round && y.orig === t.rosterId);
+            return { s: x.s, w: x.w, ts: x.ts, from: p.from, to: p.to };
+          });
+        picks.push({ season, round, orig: t.owner, owner: moved ? ownerOf[moved.owner_id] ?? t.owner : t.owner, path });
+      }
+    }
+  }
+  return { seasons, rounds, picks };
+}
+
+// ---------- Taxi squad limit ----------
+
+// Players on a taxi squad who are past the league's taxi limit. The league's rule:
+// a player can stay on taxi until he completes his 3rd NBA season, so he's past it
+// once he has played 3 NBA seasons before this one. (Sleeper's own taxi setting says
+// 2 and isn't what the league uses.) NBA seasons are counted from real games played,
+// since Sleeper's years-of-experience field is wrong for some players.
+export const TAXI_SEASONS = 3;
+export async function taxiCheck(DATA, rosters, league, season) {
+  const years = TAXI_SEASONS;
+  const prior = await Promise.all(Array.from({ length: 10 }, (_, k) => get(`/v1/stats/nba/regular/${Number(season) - 1 - k}`, {})));
+  const out = [];
+  for (const r of rosters ?? []) {
+    for (const pid of r.taxi ?? []) {
+      // NBA seasons before this one in which he played.
+      const played = prior.map((p, k) => ((p?.[pid]?.gp ?? 0) > 0 ? Number(season) - 1 - k : null)).filter(Boolean);
+      if (played.length >= years) out.push({ owner: r.owner_id, pid, seasons: played.sort() });
+    }
+  }
+  return { years, flagged: out };
+}
+
+// ---------- Playoff picture ----------
+
+// Clinch and elimination math for the regular season, as of after `week`.
+// Wins count half for a tie; with the league-median game a team can win 2 a week.
+// Standings ties break on points for, which is too close to call ahead of time,
+// so a team only clinches when no tie is possible either.
+export function playoffPicture(DATA, season, week, standingsBefore) {
+  const s = DATA.seasons.find(x => x.season === season);
+  const lastRegular = (s.playoffStart ?? 22) - 1;
+  const table = standingsBefore(DATA, season, week + 1);
+  const spots = s.playoffTeams?.length || 6;
+  const byes = 2;
+  const perWeek = s.medianGame ? 2 : 1;
+  const left = Math.max(0, lastRegular - week);
+  const rows = table.rows.map(r => ({ ...r, max: r.winsEq + left * perWeek }));
+  for (const r of rows) {
+    const others = rows.filter(x => x !== r);
+    const canPass = others.filter(x => x.max >= r.winsEq).length; // could finish level or ahead
+    const ahead = others.filter(x => x.winsEq > r.max).length; // already out of reach
+    r.clinchedBye = canPass < byes;
+    r.clinched = canPass < spots;
+    r.eliminated = ahead >= spots;
+    r.byeGone = ahead >= byes;
+    r.status = r.clinchedBye ? 'Clinched a bye' : r.clinched ? 'Clinched playoffs' : r.eliminated ? 'Eliminated' : r.rank <= byes ? 'Bye spot' : r.rank <= spots ? 'In for now' : 'Chasing';
+    // Magic number: wins that clinch a spot even if everyone else wins out. It's
+    // the 6th-best possible finish among the other teams, plus one.
+    const bar = others.map(x => x.max).sort((a, b) => b - a)[spots - 1] ?? 0;
+    const need = Math.floor(bar - r.winsEq) + 1;
+    r.magic = r.clinched || r.eliminated ? null : need <= left * perWeek ? need : 'help';
+  }
+  // Cushion over the first team out (teams in) or distance to the last team in (teams out).
+  for (const r of rows) {
+    r.gap = r.rank <= spots ? r.winsEq - (rows[spots]?.winsEq ?? r.winsEq) : r.winsEq - rows[spots - 1].winsEq;
+  }
+  const remaining = o => (DATA.schedule ?? []).filter(g => g.s === season && g.w > week && g.w <= lastRegular && (g.a === o || g.b === o))
+    .map(g => ({ w: g.w, opp: g.a === o ? g.b : g.a }));
+  return { lastRegular, spots, byes, perWeek, left, rows, remaining, seeds: rows.slice(0, spots) };
+}
+
+// ---------- Weekly recap ----------
+
+// A plain-text recap of one week, ready to paste into the group chat.
+export function weeklyRecap(DATA, season, week, { hypeSlate, standingsBefore, nextSlate }) {
+  const name = o => DATA.owners[o]?.name ?? 'Unknown';
+  const team = o => DATA.owners[o]?.teams?.[season] ?? name(o);
+  const fmt = n => (Math.round(n * 10) / 10).toLocaleString('en-US', { maximumFractionDigits: 1 });
+  const games = DATA.games.filter(g => g.s === season && g.w === week);
+  if (!games.length) return null;
+  const before = hypeSlate(DATA, season, week);
+  const strength = o => {
+    const g = before.games.find(x => x.a === o || x.b === o);
+    return g ? (g.a === o ? g.sA : g.sB) : 50;
+  };
+  const lines = [];
+  const regular = games.every(g => g.t === 'R');
+  lines.push(`🏀 ${DATA.name}: ${season} Week ${week} recap`);
+  lines.push('');
+
+  // Results, biggest margin first.
+  const results = games.map(g => {
+    const aWon = g.win === 'a';
+    const [w, l, wp, lp] = aWon ? [g.a, g.b, g.ap, g.bp] : [g.b, g.a, g.bp, g.ap];
+    return { g, w, l, wp, lp, margin: wp - lp, upset: strength(w) + 5 < strength(l), tie: g.win === 'tie' };
+  }).sort((x, y) => y.margin - x.margin);
+  lines.push('RESULTS');
+  for (const r of results) {
+    const tag = r.g.label ? ` (${r.g.label})` : '';
+    lines.push(r.tie
+      ? `• ${team(r.g.a)} and ${team(r.g.b)} tied at ${fmt(r.g.ap)}${tag}`
+      : `• ${team(r.w)} ${fmt(r.wp)}, ${team(r.l)} ${fmt(r.lp)}: ${name(r.w)} by ${fmt(r.margin)}${tag}${r.upset ? ' 🚨 upset' : ''}`);
+  }
+  lines.push('');
+
+  // The week's headlines.
+  const scores = games.flatMap(g => [[g.a, g.ap], [g.b, g.bp]]).sort((a, b) => b[1] - a[1]);
+  const close = [...results].filter(r => !r.tie).sort((a, b) => a.margin - b.margin)[0];
+  const upset = results.filter(r => r.upset).sort((a, b) => (strength(b.l) - strength(b.w)) - (strength(a.l) - strength(a.w)))[0];
+  lines.push('HEADLINES');
+  lines.push(`🔥 High score: ${team(scores[0][0])} (${name(scores[0][0])}) with ${fmt(scores[0][1])}`);
+  lines.push(`🧊 Low score: ${team(scores.at(-1)[0])} (${name(scores.at(-1)[0])}) with ${fmt(scores.at(-1)[1])}`);
+  if (close) lines.push(`😬 Closest finish: ${team(close.w)} over ${team(close.l)} by ${fmt(close.margin)}`);
+  if (results[0] && !results[0].tie) lines.push(`💥 Biggest blowout: ${team(results[0].w)} over ${team(results[0].l)} by ${fmt(results[0].margin)}`);
+  if (upset) lines.push(`🚨 Upset of the week: ${team(upset.w)} beat ${team(upset.l)}, the stronger team on paper`);
+  const med = (DATA.medianGames ?? []).filter(m => m.s === season && m.w === week);
+  if (med.length) {
+    lines.push(`📏 League median: ${fmt(med[0].median)}. Beat it for a second win: ${med.filter(m => m.res === 'W').map(m => name(m.o)).join(', ') || 'nobody'}`);
+  }
+  lines.push('');
+
+  // Top player performances (locked points).
+  const players = (DATA.playerWeeks ?? []).filter(x => x.s === season && x.w === week).sort((a, b) => b.p - a.p).slice(0, 3);
+  if (players.length) {
+    lines.push('TOP PERFORMANCES');
+    players.forEach((x, i) => lines.push(`${['🥇', '🥈', '🥉'][i]} ${DATA.players?.[x.pid]?.n ?? x.pid}: ${fmt(x.p)} for ${team(x.o)}`));
+    lines.push('');
+  }
+
+  // Records set this week.
+  const events = (DATA.recordEvents ?? []).filter(e => e.s === season && e.w === week);
+  if (events.length) {
+    lines.push('RECORD BOOK');
+    for (const e of events.slice(0, 5)) {
+      const who = e.holders.map(h => h.whoText ?? name(h.who)).join(' & ');
+      lines.push(`📖 ${e.title}: ${who}, ${e.holders[0].display} (${e.type === 'broken' ? 'new record' : e.type === 'tied' ? 'tied the record' : 'new leader'})`);
+    }
+    lines.push('');
+  }
+
+  // Standings after the week (regular season).
+  if (regular) {
+    const t = standingsBefore(DATA, season, week + 1);
+    lines.push('STANDINGS');
+    for (const r of t.rows) lines.push(`${r.rank}. ${team(r.owner)} ${r.w}–${r.l}${r.t ? `–${r.t}` : ''}`);
+    lines.push('');
+  }
+
+  // Next week's Main event.
+  const next = nextSlate?.games?.[0];
+  if (next) {
+    const label = next.labels.filter(l => l.id !== 'main').map(l => l.text).slice(0, 2).join(', ');
+    lines.push(`⚡ Next week’s Main event: ${team(next.a)} vs ${team(next.b)}${label ? ` (${label})` : ''}`);
+  }
+  return lines.join('\n').trim();
+}
+
 // ---------- Team form ----------
 
 // A team's regular-season scores in a season (head-to-head games), oldest first.

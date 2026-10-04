@@ -4,7 +4,7 @@ import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, seriesBefore, standingsBefore, weekPairs } from './hype.js';
-import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadWeek, matchupForm, seasonTotals, teamRoster, tradeFlags } from './commish.js';
+import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
 import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, ownerAt, playerOfTheYear, rookieClass, seasonEndKey } from './awards.js';
 import { ALL_STAR_POSITIONS, CORRECTIONS, DRAFT_CORRECTIONS, PHOTO_CORRECTIONS } from './corrections.js';
@@ -2036,7 +2036,7 @@ function renderCommish(main, params) {
     $('#cm-code', main).focus();
     return;
   }
-  const TABS = [['scout', 'Scouting report'], ['races', 'Award races'], ['hype', 'Early hype'], ['health', 'Health report']];
+  const TABS = [['scout', 'Scouting report'], ['waivers', 'Waiver wire'], ['playoffs', 'Playoff picture'], ['recap', 'Weekly recap'], ['picks', 'Draft picks'], ['races', 'Award races'], ['hype', 'Early hype'], ['health', 'Health report']];
   const tab = TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : 'scout';
   main.innerHTML = `
     <div class="page page-wide">
@@ -2050,7 +2050,7 @@ function renderCommish(main, params) {
       <div id="cm-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
     </div>`;
   const body = $('#cm-body', main);
-  const show = { scout: renderScouting, races: renderRaces, hype: renderEarlyHype, health: renderHealth }[tab];
+  const show = { scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, health: renderHealth }[tab];
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
   });
@@ -2215,6 +2215,220 @@ async function renderScouting(body, params) {
   bindPick();
 }
 
+// ---- Waiver wire: players on no roster worth a look ----
+
+async function renderWaivers(body, params) {
+  const at = (await scoutWeek()) ?? { season: DATA.seasons.at(-1).season, week: 1, started: false };
+  const [ctx, extra] = await Promise.all([loadWeek(DATA, at.season, at.week), loadWaivers(at.season, at.week, at.started)]);
+  if (route().page !== 'commish') return;
+  const pos = ['G', 'F', 'C'].includes(params.get('pos')) ? params.get('pos') : 'all';
+  const all = waiverWire(DATA, ctx, extra).filter(p => !p.out && (pos === 'all' || p.group === pos));
+  const top = (rows, n = 10) => rows.slice(0, n);
+  const risers = top(all.filter(p => p.recentGames >= 2 && p.recent >= 20 && p.jump >= 5).sort((a, b) => b.jump - a.jump));
+  const trending = top(all.filter(p => p.adds > 0).sort((a, b) => b.adds - a.adds));
+  const best = top(all.filter(p => (p.gp >= 5 ? p.fpg : p.fpgLast) != null).sort((a, b) => (b.gp >= 5 ? b.fpg : b.fpgLast) - (a.gp >= 5 ? a.fpg : a.fpgLast)));
+  const streams = top(all.filter(p => p.proj > 0).sort((a, b) => b.proj - a.proj));
+  const meta = p => [p.pos, p.team || 'No team', p.games ? `${p.games} game${p.games === 1 ? '' : 's'} this week` : 'no games this week'].join(' · ');
+  const rows = (list, value, extraLine) => (list.length ? `<ol class="aw-race">${list.map((p, i) => `
+    <li><span>${i + 1}. ${esc(p.name)} ${injuryTag(p)}<small>${esc(meta(p))}${extraLine ? ` · ${esc(extraLine(p))}` : ''}</small></span><b>${value(p)}</b></li>`).join('')}</ol>`
+    : '<p class="empty">Nobody fits right now.</p>');
+  const chips = [['all', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']].map(([id, label]) =>
+    `<a class="${id === pos ? 'on' : ''}" href="#/commish?tab=waivers${id === 'all' ? '' : `&pos=${id}`}">${label}</a>`).join('');
+
+  body.innerHTML = `
+    <div class="st-stage cm-pos">${chips}</div>
+    <p class="filter-note">Players on no roster in this league, ${at.started ? `week ${at.week}` : `before week ${at.week}`}. Players listed Out are hidden. Recently dropped players stay on waivers for ${ctx.league?.settings?.waiver_clear_days ?? 2} days before they’re free agents.</p>
+    <div class="cm-races">
+      <section class="card"><div class="card-head"><h2>Risers</h2></div>
+        <p class="cm-rule">Fantasy points per game over the last 14 days vs his season average (2+ recent games, 20+ a game).</p>
+        ${at.started ? rows(risers, p => `+${num(p.jump)}`, p => `${num(p.recent)} a game lately vs ${num(p.fpg)}`) : '<p class="empty">Risers show up after the first week of games.</p>'}
+      </section>
+      <section class="card"><div class="card-head"><h2>Trending on Sleeper</h2></div>
+        <p class="cm-rule">Adds across every Sleeper league in the last 48 hours: often the first sign of a new role or an injury elsewhere.</p>
+        ${rows(trending, p => `${p.adds.toLocaleString('en-US')}<small> adds</small>`, p => (p.fpg != null ? `${num(p.fpg)} a game` : p.fpgLast != null ? `${num(p.fpgLast)} a game last season` : ''))}
+      </section>
+      <section class="card"><div class="card-head"><h2>Best available</h2></div>
+        <p class="cm-rule">Fantasy points per game this season (5+ games; last season’s until then).</p>
+        ${rows(best, p => num(p.gp >= 5 ? p.fpg : p.fpgLast), p => (p.gp >= 5 ? `${p.gp} games` : 'last season'))}
+      </section>
+      <section class="card"><div class="card-head"><h2>Streamers this week</h2></div>
+        <p class="cm-rule">Projected locked points this week: his projected game, boosted by how many games he has to choose from (same as the scouting report).</p>
+        ${rows(streams, p => num(p.proj))}
+      </section>
+    </div>`;
+}
+
+// ---- Playoff picture: clinch and elimination math ----
+
+// Seasons and regular-season weeks with games, for the "as of" pickers.
+function playedWeeks(season) {
+  const s = DATA.seasons.find(x => x.season === season);
+  return [...new Set(DATA.games.filter(g => g.s === season && g.t === 'R').map(g => g.w))]
+    .filter(w => w < (s.playoffStart ?? 99)).sort((a, b) => a - b);
+}
+
+async function renderPlayoffs(body, params) {
+  const cur = DATA.seasons.at(-1);
+  const seasons = DATA.seasons.filter(s => s.season === cur.season || playedWeeks(s.season).length).map(s => s.season).reverse();
+  const season = seasons.includes(params.get('season')) ? params.get('season') : seasons[0];
+  const weeks = playedWeeks(season);
+  const week = weeks.includes(Number(params.get('week'))) ? Number(params.get('week')) : weeks.at(-1) ?? 0;
+  const pic = playoffPicture(DATA, season, week, standingsBefore);
+  const power = week ? Object.fromEntries(powerRankings(DATA, season, week).rows.map(r => [r.owner, r.str])) : {};
+  const hash = c => `#/commish?${new URLSearchParams({ tab: 'playoffs', season, week, ...c })}`;
+  const statusCls = r => (r.clinched ? 'good' : r.eliminated ? 'bad' : '');
+  const magic = r => (r.magic == null ? '—' : r.magic === 'help' ? 'Needs help' : `${r.magic}`);
+  const gapText = r => (r.rank <= pic.spots ? (r.gap > 0 ? `+${r.gap} up` : r.gap === 0 ? 'tied with 7th' : '') : `${-r.gap} back`);
+  const seed = n => pic.seeds[n - 1];
+
+  body.innerHTML = `
+    <div class="cm-pickers">
+      <label class="hy-pick"><span class="hy-pick-label">Season</span><span class="ed-select"><span class="hy-pick-val">${esc(season)}</span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select data-c="season">${seasons.map(s => `<option value="${s}"${s === season ? ' selected' : ''}>${s}</option>`).join('')}</select></span></label>
+      <label class="hy-pick"><span class="hy-pick-label">As of</span><span class="ed-select"><span class="hy-pick-val">${week ? `After week ${week}` : 'Before week 1'}</span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select data-c="week">${[0, ...weeks].reverse().map(w => `<option value="${w}"${w === week ? ' selected' : ''}>${w ? `After week ${w}` : 'Before week 1'}</option>`).join('')}</select></span></label>
+    </div>
+    <p class="filter-note">${pic.left} regular-season week${pic.left === 1 ? '' : 's'} left. ${pic.spots} teams make the playoffs, the top ${pic.byes} get a bye. A team can win ${pic.perWeek} a week${pic.perWeek === 2 ? ' (head-to-head plus the league median)' : ''}. Ties in the standings break on points for, so a team only clinches when even a tie can’t catch it.</p>
+
+    <section class="card">
+      <div class="card-head"><h2>The race</h2><span class="card-sub">${season} · ${week ? `after week ${week}` : 'before week 1'}</span></div>
+      <div class="cm-scroll">
+        <table class="cm-table cm-race">
+          <thead><tr><th>#</th><th>Team</th><th>Record</th><th>Line</th><th>Magic #</th><th>Status</th></tr></thead>
+          <tbody>${pic.rows.map(r => `
+            <tr class="${r.owner === COMMISH ? 'cm-me' : ''}${r.rank === pic.spots ? ' cm-line' : ''}">
+              <td class="cm-slot">${r.rank}</td>
+              <td class="cm-player"><b>${esc(teamName(r.owner, season))}</b><small>${esc(name(r.owner))} · ${pic.remaining(r.owner).length} left${power[r.owner] != null && pic.remaining(r.owner).length ? ` · opp. strength ${Math.round(mean(pic.remaining(r.owner).map(g => power[g.opp] ?? 50)))}` : ''}</small><span class="cm-pill cm-pill-m ${statusCls(r)}">${esc(r.status)}</span></td>
+              <td>${rec(r.w, r.l, r.t)}</td>
+              <td>${esc(gapText(r))}</td>
+              <td>${esc(magic(r))}</td>
+              <td><span class="cm-pill ${statusCls(r)}">${esc(r.status)}</span></td>
+            </tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <p class="cm-rule">The line after No. ${pic.spots} is the playoff cut. Magic # = wins that clinch a spot even if everyone else wins out (“Needs help” = can’t clinch alone). Opp. strength: the average Power Rankings strength of the teams left on the schedule (50 = average).</p>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>If the season ended today</h2></div>
+      <div class="cm-bracket">
+        <div><span class="cm-seed">Bye</span><b>1. ${esc(teamName(seed(1).owner, season))}</b></div>
+        <div><span class="cm-seed">Bye</span><b>2. ${esc(teamName(seed(2).owner, season))}</b></div>
+        <div><span class="cm-seed">Quarterfinal</span><b>3. ${esc(teamName(seed(3).owner, season))}</b> vs <b>6. ${esc(teamName(seed(6).owner, season))}</b></div>
+        <div><span class="cm-seed">Quarterfinal</span><b>4. ${esc(teamName(seed(4).owner, season))}</b> vs <b>5. ${esc(teamName(seed(5).owner, season))}</b></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Schedules left</h2></div>
+      ${pic.left ? `<div class="cm-scroll"><table class="cm-table cm-picks"><tbody>${pic.rows.map(r => `<tr${r.owner === COMMISH ? ' class="cm-me"' : ''}><td class="cm-player"><b>${esc(name(r.owner))}</b></td><td class="cm-left">${pic.remaining(r.owner).map(g => `<span>Wk ${g.w} ${esc(name(g.opp))}</span>`).join('')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">The regular season is over.</p>'}
+    </section>`;
+  body.querySelectorAll('select[data-c]').forEach(sel => sel.addEventListener('change', () => {
+    location.hash = sel.dataset.c === 'season' ? `#/commish?tab=playoffs&season=${sel.value}` : hash({ week: sel.value });
+  }));
+}
+
+// ---- Weekly recap: ready to paste into the group chat ----
+
+async function renderRecap(body, params) {
+  const cur = DATA.seasons.at(-1);
+  const withGames = s => [...new Set(DATA.games.filter(g => g.s === s).map(g => g.w))].sort((a, b) => a - b);
+  const seasons = DATA.seasons.filter(s => withGames(s.season).length).map(s => s.season).reverse();
+  if (!seasons.length) {
+    body.innerHTML = '<section class="card soon-card"><p>Recaps start after the first week of games.</p></section>';
+    return;
+  }
+  const season = seasons.includes(params.get('season')) ? params.get('season') : seasons[0];
+  const weeks = withGames(season);
+  const week = weeks.includes(Number(params.get('week'))) ? Number(params.get('week')) : weeks.at(-1);
+  const s = DATA.seasons.find(x => x.season === season);
+  const next = week + 1 < (s.playoffStart ?? 99) && weekPairs(DATA, season, week + 1).length ? hypeSlate(DATA, season, week + 1) : null;
+  const text = weeklyRecap(DATA, season, week, { hypeSlate, standingsBefore, nextSlate: next });
+  const hash = c => `#/commish?${new URLSearchParams({ tab: 'recap', season, week, ...c })}`;
+
+  body.innerHTML = `
+    <div class="cm-pickers">
+      <label class="hy-pick"><span class="hy-pick-label">Season</span><span class="ed-select"><span class="hy-pick-val">${esc(season)}</span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select data-c="season">${seasons.map(x => `<option value="${x}"${x === season ? ' selected' : ''}>${x}</option>`).join('')}</select></span></label>
+      <label class="hy-pick"><span class="hy-pick-label">Week</span><span class="ed-select"><span class="hy-pick-val">Week ${week}</span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select data-c="week">${[...weeks].reverse().map(w => `<option value="${w}"${w === week ? ' selected' : ''}>Week ${w}</option>`).join('')}</select></span></label>
+    </div>
+    ${season !== cur.season ? `<p class="hy-banner">${icon('clock')}<span>${esc(cur.season)} hasn’t played a week yet, so this shows ${esc(season)}. Once week 1 is final, the newest recap shows here.</span></p>` : ''}
+    <section class="card">
+      <div class="card-head"><h2>Week ${week} recap</h2><span class="card-sub">${esc(season)} · ${text.length.toLocaleString('en-US')} characters</span></div>
+      <textarea class="cm-recap" id="cm-recap" readonly rows="18">${esc(text)}</textarea>
+      <div class="cm-copy"><button class="btn" type="button" id="cm-copy">Copy recap</button><span id="cm-copied" hidden>Copied. Paste it in the group chat.</span></div>
+    </section>
+    <p class="filter-note">Built from the week’s final scores: results (biggest win first; 🚨 marks a win over a team stronger on paper by the Power Rankings), high and low scores, the closest and most lopsided games, the league median, the top 3 player performances by locked points, any records set, the standings, and next week’s Main event.</p>`;
+  body.querySelectorAll('select[data-c]').forEach(sel => sel.addEventListener('change', () => {
+    location.hash = sel.dataset.c === 'season' ? `#/commish?tab=recap&season=${sel.value}` : hash({ week: sel.value });
+  }));
+  $('#cm-copy', body).addEventListener('click', async () => {
+    const area = $('#cm-recap', body);
+    try { await navigator.clipboard.writeText(area.value); } catch { area.select(); document.execCommand('copy'); }
+    $('#cm-copied', body).hidden = false;
+  });
+}
+
+const mean = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+
+// ---- Draft picks: who owns every future rookie pick ----
+
+async function renderPicks(body) {
+  const traded = await loadTradedPicks(DATA);
+  if (route().page !== 'commish') return;
+  const { seasons, rounds, picks } = pickLedger(DATA, traded);
+  const cur = DATA.seasons.at(-1);
+  const ord = r => `${r}${{ 1: 'st', 2: 'nd', 3: 'rd' }[r] ?? 'th'}`;
+  const managers = [...cur.teams].sort((a, b) => (a.owner === COMMISH ? -1 : b.owner === COMMISH ? 1 : name(a.owner).localeCompare(name(b.owner))));
+  const holdings = (o, s) => {
+    const mine = picks.filter(p => p.season === s && p.owner === o);
+    return Array.from({ length: rounds }, (_, i) => i + 1).map(r => {
+      const n = mine.filter(p => p.round === r).length;
+      return n ? `${ord(r)}${n > 1 ? ` ×${n}` : ''}` : '';
+    }).filter(Boolean).join(', ') || '—';
+  };
+  const pathText = p => (p.path.length
+    ? [name(p.path[0].from), ...p.path.map(x => `${name(x.to)} (${x.s} Wk ${x.w})`)].join(' → ')
+    : `traded to ${name(p.owner)}`);
+
+  body.innerHTML = `
+    <p class="filter-note">Every future rookie-draft pick and who owns it today, from Sleeper’s traded-pick list. Draft order is set later, so picks are listed by original team.</p>
+    <section class="card">
+      <div class="card-head"><h2>Picks by manager</h2><span class="card-sub">What each manager holds</span></div>
+      <div class="cm-scroll">
+        <table class="cm-table cm-picks">
+          <thead><tr><th>Manager</th>${seasons.map(s => `<th>${s}</th>`).join('')}<th>Total</th></tr></thead>
+          <tbody>${managers.map(t => `<tr${t.owner === COMMISH ? ' class="cm-me"' : ''}><td class="cm-player"><b>${esc(teamName(t.owner, cur.season))}</b><small>${esc(name(t.owner))}</small></td>${seasons.map(s => `<td>${holdings(t.owner, s)}</td>`).join('')}<td><b>${picks.filter(p => p.owner === t.owner).length}</b></td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </section>
+    ${seasons.map(s => {
+      const list = picks.filter(p => p.season === s);
+      const moved = list.filter(p => p.owner !== p.orig);
+      return `
+      <section class="card">
+        <div class="card-head"><h2>${s} rookie draft</h2><span class="card-sub">${moved.length} of ${list.length} picks traded</span></div>
+        <div class="cm-scroll">
+          <table class="cm-table cm-picks">
+            <thead><tr><th>Original team</th>${Array.from({ length: rounds }, (_, i) => `<th>${ord(i + 1)} rd</th>`).join('')}</tr></thead>
+            <tbody>${managers.map(t => `<tr><td class="cm-player"><b>${esc(name(t.owner))}</b></td>${Array.from({ length: rounds }, (_, i) => {
+              const p = list.find(x => x.round === i + 1 && x.orig === t.owner);
+              const cls = [p.owner !== p.orig ? 'cm-moved' : '', p.owner === COMMISH ? 'cm-mine' : ''].filter(Boolean).join(' ');
+              return `<td${cls ? ` class="${cls}"` : ''}>${p.owner === p.orig ? 'Own pick' : `<b>${esc(name(p.owner))}</b>`}</td>`;
+            }).join('')}</tr>`).join('')}</tbody>
+          </table>
+        </div>
+        ${moved.length ? `<ul class="cm-list cm-paths">${moved.sort((a, b) => a.round - b.round).map(p => `<li><b>${ord(p.round)} round, orig. ${esc(name(p.orig))}</b>: ${esc(pathText(p))}</li>`).join('')}</ul>` : ''}
+      </section>`;
+    }).join('')}
+    <p class="filter-note">Highlighted: picks that changed hands; gold = yours. Trade dates come from the league’s transactions.</p>`;
+}
+
 // ---- Award races: where every award stands today ----
 
 async function renderRaces(body, params) {
@@ -2338,6 +2552,12 @@ async function renderHealth(body) {
   const inSeason = DATA.seasons.at(-1).status === 'in_season' && at?.started;
   const flags = tradeFlags(DATA, fo);
   const lineups = ctx ? lineupIssues(DATA, ctx) : [];
+  const taxi = ctx ? await taxiCheck(DATA, ctx.rosters, ctx.league, at.season).catch(() => null) : null;
+  if (route().page !== 'commish') return;
+  const taxiName = pid => {
+    const i = ctx?.info?.[pid];
+    return i ? `${i.first_name} ${i.last_name}` : DATA.players?.[pid]?.n ?? `Player ${pid}`;
+  };
   const holds = Object.entries(guard ?? {});
   const corrections = [
     ...CORRECTIONS.map(c => `${c.season} week ${c.week}: ${[c.scores && `scores for ${Object.keys(c.scores).join(', ')}`, c.players && `player points for ${Object.keys(c.players).join(', ')}`].filter(Boolean).join('; ')}`),
@@ -2370,6 +2590,14 @@ async function renderHealth(body) {
     <section class="card">
       <div class="card-head"><h2>Lineup check</h2><span class="card-sub">${at ? `Week ${at.week}${at.started ? '' : ' (before tip-off)'}` : 'No week to check'}</span></div>
       ${ctx ? `<ul class="cm-checks">${lineups.map(l => `<li>${ok(!l.issues.length, `<b>${esc(teamName(l.owner, at.season))}</b> <small>${esc(name(l.owner))}</small>${l.issues.length ? `<span class="cm-issues">${l.issues.map(esc).join(' · ')}</span>` : ' <small>All set</small>'}`)}</li>`).join('')}</ul>` : '<p class="empty">Couldn’t load rosters from Sleeper.</p>'}
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Taxi squad limit</h2><span class="card-sub">${taxi ? `A player can stay on taxi through his ${ordinalPlace(taxi.years)} NBA season` : ''}</span></div>
+      ${!taxi ? '<p class="empty">Couldn’t load taxi squads from Sleeper.</p>'
+        : taxi.flagged.length ? `<ul class="cm-checks">${taxi.flagged.map(f => `<li>${ok(false, `<b>${esc(taxiName(f.pid))}</b> on ${esc(teamName(f.owner, at.season))} <small>${esc(name(f.owner))} · already played NBA seasons ${f.seasons.join(', ')}</small>`)}</li>`).join('')}</ul>`
+        : `<ul class="cm-checks"><li>${ok(true, `Every taxi player is within his first ${taxi.years} NBA seasons.`)}</li></ul>`}
+      <p class="cm-rule">League rule: a player can stay on taxi until he completes his ${ordinalPlace(taxi?.years ?? 3)} NBA season, so he’s flagged once he has played ${taxi?.years ?? 3} NBA seasons before this one. Seasons are counted from real NBA games.</p>
     </section>
 
     <section class="card">

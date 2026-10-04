@@ -75,7 +75,17 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   starter counts ONE game per week (locked by the manager, else his last game), verified
   against box scores. Projection = per-game proj x lock factor (1g 1.00, 2g 1.11, 3g 1.23,
   4+ 1.25) x 1.08 calibration; backtest 2024-25: ~27 pt avg miss, picks winner 72%.
-  Tabs: Scouting report, Award races (season picker; live season totals + rookies from
+  Playoff picture tab: playoffPicture() clinch/elimination math (6 teams, top 2 byes,
+  QF 3v6 and 4v5, verified against 2025's real bracket), magic numbers, season/week pickers.
+  Weekly recap tab: weeklyRecap() plain text + copy button. Health report also has a taxi
+  limit check. LEAGUE TAXI RULE (from the owner): a player may stay on taxi until he
+  completes his 3rd NBA season (TAXI_SEASONS = 3 in commish.js; Sleeper's taxi_years=2
+  setting is NOT the league rule). Flagged once he played 3 NBA seasons before this one,
+  counted from real games.
+  Tabs: Scouting report, Waiver wire (unrostered players with an NBA team, Out hidden:
+  risers = last-14-day FP/G vs season, Sleeper trending adds 48h, best available,
+  streamers by projected locked pts), Draft picks (future rookie picks from
+  /league/{id}/traded_picks + trade paths from DATA.transactions; next 3 drafts), Award races (season picker; live season totals + rookies from
   Sleeper via seasonTotals(); 2025 matches the Awards page), Early hype (unrevealed
   regular weeks' hypeSlate, default = next week to be revealed), Health report.
   Health report: GitHub runs, scoring-check.txt, week-guard.json, warnings, corrections,
