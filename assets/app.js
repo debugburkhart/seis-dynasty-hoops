@@ -3,10 +3,11 @@ import { CATEGORIES, CHANGE_LABELS, buildRecords, playerPhoto, recordHistory, re
 import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
 import { frontOffice } from './frontoffice.js';
-import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, weekPairs } from './hype.js';
+import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, seriesBefore, standingsBefore, weekPairs } from './hype.js';
+import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadWeek, matchupForm, seasonTotals, teamRoster, tradeFlags } from './commish.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
-import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, playerOfTheYear, rookieClass } from './awards.js';
-import { ALL_STAR_POSITIONS } from './corrections.js';
+import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, ownerAt, playerOfTheYear, rookieClass, seasonEndKey } from './awards.js';
+import { ALL_STAR_POSITIONS, CORRECTIONS, DRAFT_CORRECTIONS, PHOTO_CORRECTIONS } from './corrections.js';
 import { SORTS, playerIndex } from './players.js';
 
 // ---------- Navigation ----------
@@ -43,6 +44,7 @@ const ICONS = {
   arrow: '<path d="M4 10h12M11 5l5 5-5 5"/>',
   back: '<path d="M16 10H4M9 5l-5 5 5 5"/>',
   down: '<path d="M10 3v9M6 8.5l4 4 4-4M4 16.5h12"/>',
+  lock: '<rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>',
   toilet: '<path d="M4.5 3h4v6h-4zM3 9h14c0 3-2.4 5.2-5.5 5.7L12 17H7l.6-2.4C5 13.8 3 11.7 3 9z"/>',
 };
 const icon = name => `<svg class="ic" viewBox="0 0 20 20" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -209,6 +211,7 @@ function renderSidebar(page) {
           </a>`).join('')}
       `).join('')}
     </nav>
+    <a class="commish-btn${page === 'commish' ? ' active' : ''}" href="#/commish">${icon('lock')}<span>Commish</span></a>
     <div class="sidebar-foot">
       ${DATA.live ? 'Live from Sleeper' : `Updated ${esc(updated)} CT`}
     </div>`;
@@ -1998,6 +2001,393 @@ function renderPlayers(main, params) {
   });
 }
 
+// ---------- Commissioner's office ----------
+// Behind a passcode that's asked for every time the section is opened (nothing is
+// remembered). Scouting report and health report live in assets/commish.js.
+
+let COMMISH_OPEN = false;
+
+function renderCommish(main, params) {
+  if (!COMMISH_OPEN) {
+    main.innerHTML = `
+      <div class="page">
+        <section class="card cm-lock">
+          <div class="page-icon">${icon('lock')}</div>
+          <h1>Commish only</h1>
+          <p class="card-sub">Enter the passcode to open the commissioner’s office.</p>
+          <form class="cm-form" autocomplete="off">
+            <input type="password" id="cm-code" placeholder="Passcode" aria-label="Passcode" autocomplete="off" autofocus>
+            <button class="btn" type="submit">Open</button>
+          </form>
+          <p class="cm-error" id="cm-error" hidden>Wrong passcode.</p>
+        </section>
+      </div>`;
+    $('.cm-form', main).addEventListener('submit', async e => {
+      e.preventDefault();
+      if (await checkPasscode($('#cm-code', main).value)) {
+        COMMISH_OPEN = true;
+        renderCommish(main, route().params);
+      } else {
+        const err = $('#cm-error', main);
+        err.hidden = false;
+        $('#cm-code', main).select();
+      }
+    });
+    $('#cm-code', main).focus();
+    return;
+  }
+  const TABS = [['scout', 'Scouting report'], ['races', 'Award races'], ['hype', 'Early hype'], ['health', 'Health report']];
+  const tab = TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : 'scout';
+  main.innerHTML = `
+    <div class="page page-wide">
+      <div class="page-head">
+        <div class="page-icon">${icon('lock')}</div>
+        <div><div class="eyebrow">For the commish only</div><h1>Commissioner’s office</h1></div>
+      </div>
+      <div class="st-tabs cm-tabs" role="tablist">
+        ${TABS.map(([id, label]) => `<a role="tab" class="${tab === id ? 'on' : ''}" href="#/commish${id === 'scout' ? '' : `?tab=${id}`}">${label}</a>`).join('')}
+      </div>
+      <div id="cm-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
+    </div>`;
+  const body = $('#cm-body', main);
+  const show = { scout: renderScouting, races: renderRaces, hype: renderEarlyHype, health: renderHealth }[tab];
+  show(body, params).catch(err => {
+    body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
+  });
+}
+
+// The week to scout: the one under way, or week 1 before the season starts.
+async function scoutWeek() {
+  HYPE_NOW ??= await hypeNow();
+  const cur = DATA.seasons.at(-1);
+  if (HYPE_NOW.done || HYPE_NOW.over) return null;
+  return { season: cur.season, week: Math.max(1, HYPE_NOW.week), started: HYPE_NOW.week >= 1 };
+}
+
+const injuryTag = p => (p.injury ? `<span class="cm-inj${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}">${esc(p.injury)}</span>` : '');
+
+function rosterTable(team, ctx, title) {
+  const row = p => (p.empty ? `<tr class="cm-empty"><td>${esc(p.slot)}</td><td colspan="5">Empty spot</td></tr>` : `
+    <tr>
+      <td class="cm-slot">${esc(p.slot ?? '')}</td>
+      <td class="cm-player"><b>${esc(p.name)}</b> ${injuryTag(p)}<small>${esc([p.pos, p.team].filter(Boolean).join(' · ') || 'No team')}</small></td>
+      <td>${ctx.live ? `${p.left}<small>/${p.games}</small>` : p.games}</td>
+      <td>${p.projNow ? num(p.projNow) : '—'}</td>
+      <td>${p.fpg != null ? num(p.fpg) : p.fpgLast != null ? `${num(p.fpgLast)}<small>*</small>` : '—'}</td>
+      ${ctx.live ? `<td><b>${p.livePts != null ? num(p.livePts) : '—'}</b></td>` : ''}
+    </tr>`);
+  const head = `<tr><th>Slot</th><th>Player</th><th>${ctx.live ? 'Games left' : 'Games'}</th><th>${ctx.live ? 'Proj. left' : 'Proj.'}</th><th>Pts/game</th>${ctx.live ? '<th>This week</th>' : ''}</tr>`;
+  const group = (label, list, open) => (list.length ? `
+    <details class="cm-group"${open ? ' open' : ''}><summary>${label} <small>${list.length}</small></summary>
+      <table class="cm-table"><tbody>${list.map(p => row({ ...p, slot: label === 'Bench' ? 'BN' : label === 'IR' ? 'IR' : 'TX' })).join('')}</tbody></table>
+    </details>` : '');
+  return `
+    <section class="card cm-roster">
+      <div class="card-head"><h2>${esc(title)}</h2><span class="card-sub">${esc(name(team.owner))}</span></div>
+      <div class="cm-scroll">
+        <table class="cm-table"><thead>${head}</thead><tbody>${team.starters.map(row).join('')}</tbody></table>
+      </div>
+      <div class="cm-total"><span>Projected locked points${ctx.live ? ' (final)' : ''}</span><b>${num(team.projStarters)}</b></div>
+      ${group('Bench', team.bench, false)}${group('IR', team.ir, false)}${group('Taxi', team.taxi, false)}
+    </section>`;
+}
+
+async function renderScouting(body, params) {
+  const at = await scoutWeek();
+  if (!at) {
+    body.innerHTML = '<section class="card soon-card"><p>The season is over. Scouting reports return when next season’s schedule is set.</p></section>';
+    return;
+  }
+  const { season, week } = at;
+  const cur = DATA.seasons.at(-1);
+  const me = cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH;
+  let pairs = weekPairs(DATA, season, week);
+  if (!pairs.length) pairs = (await liveWeek(season, week).catch(() => null))?.pairs ?? [];
+  const pair = pairs.find(p => p.a === me || p.b === me);
+  const teamPick = `
+    <label class="hy-pick cm-pick">
+      <span class="hy-pick-label">Scout for</span>
+      <span class="ed-select"><span class="hy-pick-val">${esc(teamName(me, season))}</span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select id="cm-team" aria-label="Team">${cur.teams.map(t => `<option value="${esc(t.owner)}"${t.owner === me ? ' selected' : ''}>${esc(teamName(t.owner, season))} (${esc(name(t.owner))})</option>`).join('')}</select>
+      </span>
+    </label>`;
+  const bindPick = () => $('#cm-team', body)?.addEventListener('change', e => {
+    location.hash = `#/commish?team=${encodeURIComponent(e.target.value)}`;
+  });
+  if (!pair) {
+    body.innerHTML = `${teamPick}<section class="card soon-card"><p>${esc(teamName(me, season))} has no matchup in week ${week}.</p></section>`;
+    bindPick();
+    return;
+  }
+  const opp = pair.a === me ? pair.b : pair.a;
+  const [ctx] = await Promise.all([loadWeek(DATA, season, week)]);
+  if (route().page !== 'commish') return;
+  const A = teamRoster(DATA, ctx, me);
+  const B = teamRoster(DATA, ctx, opp);
+  const table = standingsBefore(DATA, season, week);
+  const slate = hypeSlate(DATA, season, week, pairs);
+  const g = slate.games.find(x => (x.a === me && x.b === opp) || (x.a === opp && x.b === me));
+  const strength = o => (g ? (g.a === o ? g.sA : g.sB) : null);
+  const form = matchupForm(DATA, season, me, opp);
+  const series = seriesBefore(DATA, me, opp, season, week);
+  const mo = moments(DATA, series, me, opp);
+  const ta = table.by[me];
+  const tb = table.by[opp];
+  const live = ctx.live && A?.liveScore != null;
+  const projA = A?.projStarters ?? 0;
+  const projB = B?.projStarters ?? 0;
+  const gamesOf = t => t.starters.reduce((s, p) => s + (ctx.live ? p.left || 0 : p.games || 0), 0);
+  const pct = x => `${Math.round(x * 100)}%`;
+  const basisNote = form.basis !== season ? ` (from ${form.basis}, until both teams have played this season)` : '';
+
+  // Scouting notes, most useful first.
+  const notes = [];
+  const diff = r1(projA - projB);
+  notes.push(`${live ? 'Projected final' : 'Sleeper’s projections with the current lineups'}: ${esc(teamName(me, season))} ${num(projA)}, ${esc(teamName(opp, season))} ${num(projB)}. ${diff === 0 ? 'Dead even.' : `${diff > 0 ? 'You’re' : 'They’re'} ahead by ${num(Math.abs(diff))}.`}`);
+  notes.push(`Your starters have ${gamesOf(A)} game${gamesOf(A) === 1 ? '' : 's'}${ctx.live ? ' left' : ''} this week; theirs have ${gamesOf(B)}. Each starter locks one game, so more games mean more chances at a big night.`);
+  const outs = t => t.starters.filter(p => !p.empty && p.injury).map(p => `${p.name} (${p.injury})`);
+  if (outs(B).length) notes.push(`Their starters on the injury report: ${esc(outs(B).join(', '))}.`);
+  if (outs(A).length) notes.push(`Your starters on the injury report: ${esc(outs(A).join(', '))}.`);
+  const star = [...B.starters].filter(p => !p.empty).sort((x, y) => y.projNow - x.projNow)[0];
+  if (star?.projNow) notes.push(`Their biggest threat: ${esc(star.name)}, ${star.games} game${star.games === 1 ? '' : 's'}, about ${num(star.perGame)} a game, ${num(star.projNow)} projected to lock.`);
+  const few = t => t.starters.filter(p => !p.empty && p.games === 1).map(p => p.name);
+  if (few(A).length) notes.push(`Only one game this week (no choice of which to lock): ${esc(few(A).join(', '))}. A bench player with more games could be worth a look.`);
+  if (form.b.n >= 3) {
+    const trend = form.b.last3 - form.b.ppg;
+    if (Math.abs(trend) >= 10) notes.push(`They’re ${trend > 0 ? 'heating up' : 'cooling off'}: ${num(form.b.last3)} a week over their last three vs ${num(form.b.ppg)} on the season${basisNote}.`);
+  }
+  if (form.odds != null) notes.push(`On scoring alone${basisNote}, your weekly score beats theirs ${pct(form.odds)} of the time.`);
+  if (form.a.medianRate != null && form.b.medianRate != null) notes.push(`Beating the weekly median (a second win each week this season): you ${pct(form.a.medianRate)}, them ${pct(form.b.medianRate)}${basisNote}.`);
+  const streak = series.streak ? `${name(series.streak.who === 'A' ? me : opp)} ${series.streak.n === 1 ? 'won the last meeting' : `has won the last ${series.streak.n}`}` : '';
+  notes.push(series.all.n ? `All-time you’re ${series.all.A}–${series.all.B}${series.all.ties ? `–${series.all.ties}` : ''} against them${streak ? `; ${esc(streak)}` : ''}.` : 'You’ve never played them before.');
+  for (const l of g?.labels ?? []) notes.push(`Matchup Hype: <b>${esc(l.text)}</b>. ${esc(l.why)}`);
+
+  const side = (o, t, team, proj, cls) => `
+    <div class="hy-side ${cls}">
+      <div class="hy-kicker">${t?.dec ? `Standing · No. ${t.rank}` : 'Week ' + week}</div>
+      <div class="hy-team">${esc(teamName(o, season))}</div>
+      <div class="hy-owner">${esc(name(o))}</div>
+      <div class="hy-rec">${t ? rec(t.w, t.l, t.t) : ''}${strength(o) != null ? ` · strength ${Math.round(strength(o))}` : ''}</div>
+      <div class="hy-pts">${num(live ? team.liveScore : proj)}</div>
+      <div class="hy-pts-label">${live ? `Live · proj. ${num(proj)}` : 'Projected'}</div>
+    </div>`;
+  const tape = (label, a, b, ca, cb) => tapeRow(label, a, b, ca, cb);
+  const lastMeet = [...series.meetings].reverse().slice(0, 5);
+
+  body.innerHTML = `
+    ${teamPick}
+    <section class="card hy-this">
+      <div class="hy-this-head"><h2>Week ${week} scouting report</h2><span class="card-sub">${esc(season)}${at.started ? '' : ' · preview before tip-off'}${ctx.live ? ' · live' : ''}</span></div>
+      <div class="hy-duel">${side(me, ta, A, projA, 'hy-dark')}<div class="hy-vs">VS</div>${side(opp, tb, B, projB, 'hy-light')}</div>
+      <div class="hy-lead">${form.odds != null ? `Win odds on scoring${esc(basisNote)}: ${pct(form.odds)}` : 'Not enough games yet for scoring odds'}</div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Scouting notes</h2></div>
+      <ul class="cm-notes">${notes.map(n => `<li>${n}</li>`).join('')}</ul>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Form</h2><span class="card-sub">${form.basis === season ? `${season} season` : `${form.basis} season${basisNote}`}</span></div>
+      <div class="tape">
+        <div class="tape-row tape-names"><div class="tv tv-a">${esc(name(me))}</div><div class="tl"></div><div class="tv tv-b">${esc(name(opp))}</div></div>
+        ${tape('Points per week', num(form.a.ppg), num(form.b.ppg), form.a.ppg, form.b.ppg)}
+        ${tape('Last 3 weeks', num(form.a.last3), num(form.b.last3), form.a.last3, form.b.last3)}
+        ${tape('Best week', num(form.a.high), num(form.b.high), form.a.high, form.b.high)}
+        ${tape('Worst week', num(form.a.low), num(form.b.low), form.a.low, form.b.low)}
+        ${tape('Beat the median', form.a.medianRate != null ? pct(form.a.medianRate) : '—', form.b.medianRate != null ? pct(form.b.medianRate) : '—', form.a.medianRate, form.b.medianRate)}
+        ${tape('Projected this week', num(projA), num(projB), projA, projB)}
+      </div>
+    </section>
+
+    <div class="cm-rosters">
+      ${rosterTable(A, ctx, `Your lineup · ${teamName(me, season)}`)}
+      ${rosterTable(B, ctx, `Their lineup · ${teamName(opp, season)}`)}
+    </div>
+    <p class="filter-note">This league counts one locked game per starter per week. Proj. is Sleeper’s per-game projection (scored with this league’s settings) boosted by how many games he has to choose from, using this league’s own history: a 2-game week locks about 11% above his average game, 3+ games about 23–25%, plus 8% because Sleeper’s projections run low here. Tested on real 2024–25 lineups, this lands within about 27 points of a team’s score on average and picks the winner about 72% of the time. Once the week starts, a player’s current points count if they beat what his remaining games are expected to give. Games come from Sleeper’s NBA schedule. Pts/game is this season’s fantasy points per game (* last season’s, until he plays this season). Injury tags are Sleeper’s current report.</p>
+
+    <section class="card">
+      <div class="card-head"><h2>Head to head</h2><span class="card-sub">${series.all.n} meeting${series.all.n === 1 ? '' : 's'} · <a href="#/rivalry?a=${encodeURIComponent(me)}&b=${encodeURIComponent(opp)}">Full rivalry</a></span></div>
+      ${lastMeet.length ? lastMeet.map(m => meetingRow(m, me, opp)).join('') : '<p class="empty">First meeting.</p>'}
+      ${mo.A.length || mo.B.length ? `<div class="cm-moments">${[...mo.A, ...mo.B].map(x => `<span><b>${esc(DATA.players?.[x.pid]?.n ?? x.pid)}</b> ${num(x.p)} <small>${esc(name(x.o))} · ${x.m.s} Wk ${x.m.w}</small></span>`).join('')}</div>` : ''}
+    </section>`;
+  bindPick();
+}
+
+// ---- Award races: where every award stands today ----
+
+async function renderRaces(body, params) {
+  HYPE_NOW ??= await hypeNow();
+  const cur = DATA.seasons.at(-1);
+  const seasons = DATA.seasons.filter(s => s.season === cur.season || s.weeksPlayed).map(s => s.season).reverse();
+  const season = seasons.includes(params.get('season')) ? params.get('season') : seasons[0];
+  const s = DATA.seasons.find(x => x.season === season);
+  const done = s.status === 'complete';
+  const fo = ledger();
+  const totals = await seasonTotals(DATA, season);
+  if (route().page !== 'commish') return;
+  const key = done ? seasonEndKey(DATA, season) : Number(season) * 100 + 99; // who has him now / at season's end
+  const owner = pid => {
+    const o = ownerAt(fo, pid, key);
+    return o ? teamName(o, season) : 'Free agent';
+  };
+  const spots = s.playoffTeams?.length || 6;
+  const table = standingsBefore(DATA, season, 99);
+  const inPlayoffs = o => (done ? (s.playoffTeams ?? []).includes(o) : (table.by[o]?.dec ? table.by[o].rank <= spots : null));
+  const gm = gmOfTheYear(DATA, fo, season);
+  const poy = playerOfTheYear(DATA, season, 10);
+  const noGames = !totals.rows.length && !poy.length;
+  const list = (rows, value, sub) => (rows.length ? `<ol class="aw-race">${rows.map((r, i) => `
+    <li${i === 0 ? ' class="win"' : ''}><span>${i + 1}. ${esc(r.name ?? DATA.players?.[r.pid]?.n ?? r.pid)}<small>${esc(sub(r))}</small></span><b>${value(r)}</b></li>`).join('')}</ol>`
+    : '<p class="empty">No games yet.</p>');
+  const card = (title, rule, inner) => `
+    <section class="card"><div class="card-head"><h2>${title}</h2></div><p class="cm-rule">${rule}</p>${inner}</section>`;
+  const groupOf = pos => (/^(PG|SG|G)/.test(pos) ? 'G' : /^(SF|PF|F)/.test(pos) ? 'F' : /^C/.test(pos) ? 'C' : null);
+  const starRace = !done && Number(season) >= Number(ALL_STARS_FROM);
+
+  body.innerHTML = `
+    <label class="hy-pick cm-pick">
+      <span class="hy-pick-label">Season</span>
+      <span class="ed-select"><span class="hy-pick-val">${esc(season)}${done ? ' (final)' : ' (so far)'}</span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select id="cm-season" aria-label="Season">${seasons.map(x => `<option value="${x}"${x === season ? ' selected' : ''}>${x}${DATA.seasons.find(y => y.season === x).status === 'complete' ? ' (final)' : ' (in progress)'}</option>`).join('')}</select>
+      </span>
+    </label>
+    ${noGames ? `<p class="hy-banner">${icon('clock')}<span><b>No games yet in ${esc(season)}.</b> The races fill in once the season tips off${HYPE_NOW.tipoff && !done ? ` on ${esc(prettyDate(HYPE_NOW.tipoff))}` : ''}. Pick ${esc(seasons[1] ?? 'last season')} above to see how the races finished.</span></p>` : ''}
+    ${done ? '<p class="filter-note">A finished season: these match its banner on the Awards page.</p>' : '<p class="filter-note">Where each award stands today. Teams are who has the player now.</p>'}
+    <div class="cm-races">
+      ${card('GM of the Year', `Locked points added by ${esc(season)} moves. Playoff teams only${done ? '' : `: ✓ = in a playoff spot today (top ${spots})`}.`,
+        `<ol class="aw-race">${gm.rows.map((r, i) => `<li${r === gm.winner ? ' class="win"' : ''}><span>${i + 1}. ${esc(teamName(r.o, season))}${inPlayoffs(r.o) ? ' <i class="cm-in">✓</i>' : ''}<small>${esc(name(r.o))} · trades ${signedPts(r.trades)} · pickups ${signedPts(r.pickups)} · rookies ${signedPts(r.rookies)} · drops ${signedPts(r.drops)}</small></span><b>${signedPts(r.total)}</b></li>`).join('')}</ol>`)}
+      ${card('Player of the Year', 'Most locked points this season, every team he started for.',
+        list(poy, r => num(r.pts), r => `${teamName(r.team, season)} · ${r.weeks} weeks started`))}
+      ${card('League MVP · All-Fantasy Team', 'Most total fantasy points (every game, rostered or not). The top 10 make the All-Fantasy Team.',
+        list(totals.rows.slice(0, 10), r => num(r.fp), r => [owner(r.pid), r.pos, `${r.gp} games`].filter(Boolean).join(' · ')))}
+      ${card('Rookie of the Year · All-Rookie Team', 'Most total fantasy points by a rookie (no NBA games in the 10 seasons before). The top 5 make the All-Rookie Team.',
+        list(totals.rookies.slice(0, 5), r => num(r.fp), r => [owner(r.pid), r.pos, `${r.gp} games`].filter(Boolean).join(' · ')))}
+      ${starRace ? card('All-Stars (if named today)', 'Top 5 guards, forwards and centers in total fantasy points so far. The real teams are named at the NBA All-Star break.',
+        `<div class="aw-stars">${POSITION_GROUPS.map(([g, label]) => `<div><div class="aw-race-title">${label}</div>${list(totals.rows.filter(r => groupOf(r.pos) === g).slice(0, 5), r => num(r.fp), r => [owner(r.pid), r.pos].filter(Boolean).join(' · '))}</div>`).join('')}</div>`) : ''}
+    </div>`;
+  $('#cm-season', body)?.addEventListener('change', e => { location.hash = `#/commish?tab=races&season=${e.target.value}`; });
+}
+
+// ---- Early hype: upcoming weeks' Matchup Hype before it's revealed ----
+
+async function renderEarlyHype(body, params) {
+  HYPE_NOW ??= await hypeNow();
+  const cur = DATA.seasons.at(-1);
+  const season = cur.season;
+  const lastRegular = (cur.playoffStart ?? 99) - 1;
+  const future = HYPE_NOW.done ? [] : seasonWeeks(DATA, season).map(x => x.w).filter(w => w > HYPE_NOW.week && w <= lastRegular && weekPairs(DATA, season, w).length);
+  if (!future.length) {
+    body.innerHTML = '<section class="card soon-card"><p>No upcoming weeks to preview. Early hype returns when next season’s schedule is set.</p></section>';
+    return;
+  }
+  const week = future.includes(Number(params.get('week'))) ? Number(params.get('week')) : future[0];
+  const slate = hypeSlate(DATA, season, week);
+  const g0 = slate.games[0];
+  const weeksAway = week - Math.max(HYPE_NOW.week, 0);
+
+  body.innerHTML = `
+    <label class="hy-pick cm-pick">
+      <span class="hy-pick-label">Week</span>
+      <span class="ed-select"><span class="hy-pick-val">Week ${week}</span>
+        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+        <select id="cm-week" aria-label="Week">${future.map(w => `<option value="${w}"${w === week ? ' selected' : ''}>Week ${w}${w === future[0] ? ' (next to be revealed)' : ''}</option>`).join('')}</select>
+      </span>
+    </label>
+    <p class="hy-banner">${icon('lock')}<span><b>Not public yet.</b> Week ${week} is revealed to everyone ${week === 1 && HYPE_NOW.reveal ? `on ${esc(prettyDate(HYPE_NOW.reveal))}` : 'when it starts'}. ${weeksAway > 1 ? `This preview uses only the results so far; ${weeksAway - 1} more week${weeksAway - 1 === 1 ? '' : 's'} will be played first, so the hype can change by then.` : week === 1 ? 'Nothing is played before it, so this is what everyone will see unless a manager or team name changes.' : 'It uses the same results the announcement will, so this is very likely what everyone will see (unless last week’s results are still coming in).'}</span></p>
+
+    <section class="card hy-why">
+      <div class="card-head"><h2>Week ${week} main event</h2><span class="card-sub">${esc(season)}</span></div>
+      <div class="cm-main">
+        <div class="cm-main-teams"><b>${esc(teamName(g0.a, season))}</b> <i>vs</i> <b>${esc(teamName(g0.b, season))}</b><small>${esc(name(g0.a))} vs ${esc(name(g0.b))}</small></div>
+        <div class="hy-score"><b>${g0.hype}</b><span>Hype score</span></div>
+      </div>
+      <ul class="hy-reasons">${g0.labels.map(l => `<li>${chip(l)}<span>${esc(l.why)}</span></li>`).join('')}</ul>
+    </section>
+
+    <section class="card hy-slate">
+      <div class="card-head"><h2>The full slate</h2><span class="card-sub">Week ${week} · ranked by hype</span></div>
+      ${slate.games.map((x, i) => `
+        <div class="hy-game cm-hype-game">
+          <span class="hy-g-rank">${i + 1}</span>
+          <span class="hy-g-teams"><b>${esc(teamName(x.a, season))}</b> <i>vs</i> <b>${esc(teamName(x.b, season))}</b>
+            <small>${x.labels.map(chip).join('')}</small>
+            ${x.labels.length ? `<span class="cm-why">${x.labels.map(l => esc(l.why)).join(' ')}</span>` : '<span class="cm-why">No labels: nothing special on paper.</span>'}
+            <span class="cm-parts">${HYPE_PARTS.map(p => `${p.name} ${Math.round(x.parts[p.id])}`).join(' · ')}</span></span>
+          <span class="hy-g-hype"><b>${x.hype}</b><small>Hype</small></span>
+        </div>`).join('')}
+    </section>`;
+  $('#cm-week', body)?.addEventListener('change', e => { location.hash = `#/commish?tab=hype&week=${e.target.value}`; });
+}
+
+async function renderHealth(body) {
+  const fo = ledger();
+  const at = await scoutWeek().catch(() => null);
+  const [runs, check, guard, ctx] = await Promise.all([
+    fetch('https://api.github.com/repos/debugburkhart/seis-dynasty-hoops/actions/runs?per_page=5').then(r => (r.ok ? r.json() : null)).catch(() => null),
+    fetch(`data/scoring-check.txt?t=${Date.now()}`).then(r => (r.ok ? r.text() : null)).catch(() => null),
+    fetch(`data/week-guard.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
+    at ? loadWeek(DATA, at.season, at.week).catch(() => null) : null,
+  ]);
+  if (route().page !== 'commish') return;
+  const when = x => new Date(x).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const ok = (good, text) => `<span class="cm-status ${good ? 'good' : 'bad'}">${good ? '✓' : '!'}</span>${text}`;
+  const acts = activity(DATA);
+  const inSeason = DATA.seasons.at(-1).status === 'in_season' && at?.started;
+  const flags = tradeFlags(DATA, fo);
+  const lineups = ctx ? lineupIssues(DATA, ctx) : [];
+  const holds = Object.entries(guard ?? {});
+  const corrections = [
+    ...CORRECTIONS.map(c => `${c.season} week ${c.week}: ${[c.scores && `scores for ${Object.keys(c.scores).join(', ')}`, c.players && `player points for ${Object.keys(c.players).join(', ')}`].filter(Boolean).join('; ')}`),
+    ...DRAFT_CORRECTIONS.map(c => `${c.season} draft pick ${c.pick}: ${c.ignore ? 'left out of the draft records' : `counted as ${c.player}`}`),
+    ...Object.keys(PHOTO_CORRECTIONS).map(n => `Photo for ${n} from NBA.com`),
+    ...Object.entries(ALL_STAR_POSITIONS).flatMap(([s, m]) => Object.entries(m).map(([n, p]) => `${s} All-Star position for ${n}: ${p}`)),
+  ];
+
+  body.innerHTML = `
+    <section class="card">
+      <div class="card-head"><h2>Nightly update</h2><span class="card-sub">Data from ${esc(when(DATA.generatedAt))} CT</span></div>
+      <ul class="cm-checks">
+        ${runs?.workflow_runs ? runs.workflow_runs.map(r => `<li>${ok(r.conclusion === 'success', `<b>${esc(r.display_title)}</b> <small>${esc(when(r.created_at))} · ${esc(r.conclusion ?? r.status)}</small>`)}</li>`).join('') : '<li>Couldn’t reach GitHub for the run history.</li>'}
+      </ul>
+      <p class="filter-note"><a href="https://github.com/debugburkhart/seis-dynasty-hoops/actions" target="_blank" rel="noopener">All runs on GitHub</a></p>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Data checks</h2></div>
+      <ul class="cm-checks">
+        <li>${check == null ? '<span class="cm-status">?</span>Scoring check result isn’t available here (it is on the live site).' : check.trim() ? ok(false, `<b>Scoring check found problems</b><pre class="cm-pre">${esc(check.trim())}</pre>`) : ok(true, '<b>Scoring check passed.</b> Every weekly score matches Sleeper’s standings and every lineup adds up.')}</li>
+        <li>${(DATA.warnings ?? []).length ? ok(false, `<b>corrections.js warnings</b><pre class="cm-pre">${esc(DATA.warnings.join('\n'))}</pre>`) : ok(true, 'No problems with corrections.js.')}</li>
+        <li>${holds.length ? ok(false, `<b>Weeks held back by the week guard:</b> ${holds.map(([k, v]) => `${esc(k.replace('|', ' week '))} (night ${v.nights})`).join(', ')}`) : ok(true, 'No weeks held back by the week guard.')}</li>
+        <li>${fo.unusedDuplicates.length ? ok(false, `<b>Draft picks recorded as a duplicate player:</b> ${fo.unusedDuplicates.map(p => `${p.s} pick ${p.no} (${esc(name(p.o))})`).join(', ')}`) : ok(true, 'No unresolved duplicate draft picks.')}</li>
+        <li>${ok(true, `Frozen seasons: ${DATA.seasons.filter(s => s.frozen).map(s => s.season).join(', ') || 'none'}.`)}</li>
+      </ul>
+      <details class="cm-group"><summary>Corrections in effect <small>${corrections.length}</small></summary><ul class="cm-list">${corrections.map(c => `<li>${esc(c)}</li>`).join('')}</ul></details>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Lineup check</h2><span class="card-sub">${at ? `Week ${at.week}${at.started ? '' : ' (before tip-off)'}` : 'No week to check'}</span></div>
+      ${ctx ? `<ul class="cm-checks">${lineups.map(l => `<li>${ok(!l.issues.length, `<b>${esc(teamName(l.owner, at.season))}</b> <small>${esc(name(l.owner))}</small>${l.issues.length ? `<span class="cm-issues">${l.issues.map(esc).join(' · ')}</span>` : ' <small>All set</small>'}`)}</li>`).join('')}</ul>` : '<p class="empty">Couldn’t load rosters from Sleeper.</p>'}
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Activity watch</h2><span class="card-sub">Last move by each manager (commissioner moves aside)</span></div>
+      <ul class="cm-checks">${acts.map(a => `<li>${ok(!inSeason || (a.days ?? 99) <= 21, `<b>${esc(name(a.owner))}</b> <small>${a.last ? `${esc(when(a.last))} · ${a.days} day${a.days === 1 ? '' : 's'} ago` : 'no moves yet'} · ${a.season} move${a.season === 1 ? '' : 's'} this season</small>`)}</li>`).join('')}</ul>
+      <p class="filter-note">${inSeason ? 'Flagged: no move in more than 3 weeks during the season.' : 'Flags start once the season tips off.'}</p>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Trade review</h2><span class="card-sub">This season and last</span></div>
+      <ul class="cm-checks">
+        ${flags.lopsided.length ? flags.lopsided.map(x => `<li>${ok(false, `<b>${esc(x.t.s)} Wk ${x.t.w}: ${x.t.owners.map(name).map(esc).join(' ⇄ ')}</b> <small>${esc(name(x.best.o))} ${x.best.est ? 'leads' : 'won'} by ${num(x.best.net)} locked pts${x.best.est ? ' (still changing)' : ''}</small>`)}</li>`).join('') : `<li>${ok(true, `No trade has a side ahead by ${LOPSIDED}+ locked points.`)}</li>`}
+        ${flags.repeats.length ? flags.repeats.map(p => `<li>${ok(false, `<b>${esc(name(p.a))} and ${esc(name(p.b))}</b> <small>traded ${p.n} times in ${p.s}</small>`)}</li>`).join('') : `<li>${ok(true, `No pair of managers traded ${REPEAT_TRADES}+ times in one season.`)}</li>`}
+      </ul>
+      <p class="filter-note">Lopsided means one side is ahead by ${LOPSIDED}+ locked points on the Value Desk. That’s often just a trade that worked out, so it’s a prompt to look, not proof of anything.</p>
+    </section>`;
+}
+
 // ---------- Standings ----------
 
 const ordinalPlace = n => (n ? `${n}${{ 1: 'st', 2: 'nd', 3: 'rd' }[n] ?? 'th'}` : '—');
@@ -2214,6 +2604,7 @@ function route() {
 function render() {
   const { page, sub, params } = route();
   clearInterval(HYPE_TIMER);
+  if (page !== 'commish') COMMISH_OPEN = false; // leaving the section locks it again
   renderSidebar(page);
   const main = $('#main');
   if (page === 'rivalry') renderRivalry(main, params);
@@ -2221,6 +2612,7 @@ function render() {
   else if (page === 'transactions') renderTransactions(main, params);
   else if (page === 'awards') renderAwards(main);
   else if (page === 'players') renderPlayers(main, params);
+  else if (page === 'commish') renderCommish(main, params);
   else if (page === 'records') renderRecordBook(main, sub, params);
   else if (page === 'power') renderPower(main, params);
   else if (page === 'standings') renderStandings(main, params);

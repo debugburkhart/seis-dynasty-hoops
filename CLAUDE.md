@@ -66,6 +66,20 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `assets/players.js`: Player Index (#/players, under Hall of Fame): every player's locked
   points with season/manager filters, sort (points, weeks, per start: 5+ starts first),
   search (accent-insensitive), and a breakdown by fantasy team and by season.
+- `assets/commish.js`: Commissioner's office (#/commish, lock button under the menu, not in
+  NAV). Passcode asked every time (in-memory flag, reset when leaving the route); only its
+  SHA-256 is stored (the owner knows the code; never write it in files). Scouting report
+  (default team bigdaddyburk = Parma John Wall; any team selectable) uses live Sleeper data
+  in the browser: rosters, /schedule/nba/regular/{season}, per-game projections
+  /projections/nba/{season}/{week}, season stats, matchups. LEAGUE IS LOCK-IN SCORING: each
+  starter counts ONE game per week (locked by the manager, else his last game), verified
+  against box scores. Projection = per-game proj x lock factor (1g 1.00, 2g 1.11, 3g 1.23,
+  4+ 1.25) x 1.08 calibration; backtest 2024-25: ~27 pt avg miss, picks winner 72%.
+  Tabs: Scouting report, Award races (season picker; live season totals + rookies from
+  Sleeper via seasonTotals(); 2025 matches the Awards page), Early hype (unrevealed
+  regular weeks' hypeSlate, default = next week to be revealed), Health report.
+  Health report: GitHub runs, scoring-check.txt, week-guard.json, warnings, corrections,
+  lineup check, activity (flag >21 days in season), trade review (750+ net, 4+ trades/pair).
 - `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has
   wrong; Sleeper's LeBron James photo (id 1362) is Bronny). All player photos go through
