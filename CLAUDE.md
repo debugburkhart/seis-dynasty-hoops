@@ -26,7 +26,14 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   transactions, awards, players), sidebar.
 - `assets/build-data.js`: pulls everything from Sleeper (`api.sleeper.com`, cache-busted),
   applies `corrections.js`, loads frozen seasons. Output = `data/league.json`.
-- `assets/records.js`: Record Book (6 categories, filters, record-change history).
+- `assets/records.js`: Record Book (6 categories, filters, record-change history). Every
+  category uses the grouped table layout (GROUPS = sections per category, BAD = muted
+  records). Manager filter: records with many entries per manager rank his own entries
+  1-10 in gold (personal records) with league rank alongside. recordHistory() also emits
+  personal events ({personal, owner, order}: a manager beating his own best in a "mark"
+  record; bad and schedule/luck records excluded; same performance announced once; last
+  30 kept). The Record Book page shows the 6 newest under "Personal records"; league
+  "Recently broken", badges and the weekly recap ignore personal events.
 - `assets/frontoffice.js`: trades/waivers/drafts valued by locked points ("stints").
 - `assets/standings.js`: Legacy score + standings table + final finishes.
 - `assets/power.js`: Power Rankings. `assets/freeze.js`: frozen seasons + week guard.

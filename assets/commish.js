@@ -381,7 +381,7 @@ export function weeklyRecap(DATA, season, week, { hypeSlate, standingsBefore, ne
   }
 
   // Records set this week.
-  const events = (DATA.recordEvents ?? []).filter(e => e.s === season && e.w === week);
+  const events = (DATA.recordEvents ?? []).filter(e => !e.personal && e.s === season && e.w === week);
   if (events.length) {
     lines.push('RECORD BOOK');
     for (const e of events.slice(0, 5)) {

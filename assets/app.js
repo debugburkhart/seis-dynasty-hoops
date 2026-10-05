@@ -531,7 +531,8 @@ function renderRivalry(main, params) {
 // ---------- Record Book ----------
 
 let RECORDS;
-let EVENTS;
+let EVENTS; // league-wide record changes
+let PERSONAL; // managers beating their own bests
 
 // The latest change to a record, if it happened recently and the new holder
 // still holds it.
@@ -596,6 +597,30 @@ function recentlyBroken() {
     </section>`;
 }
 
+// The 6 most recent personal records, across every manager.
+function personalBroken() {
+  const latest = [...(PERSONAL ?? [])].sort((a, b) => (b.order ?? 0) - (a.order ?? 0)).slice(0, 6);
+  if (!latest.length) return '';
+  const catTitle = id => CATEGORIES.find(c => c.id === id)?.title ?? id;
+  return `
+    <section class="card">
+      <div class="card-head"><h2>Personal records</h2><span class="card-sub">The latest managers to beat their own best</span></div>
+      <div class="rb-list">
+        ${latest.map(e => `
+          <a class="rb-item rb-personal" href="#/records/${e.cat}?manager=${encodeURIComponent(e.owner)}">
+            <div class="rb-top">
+              <span class="rb-pill rb-personal">${esc(name(e.owner))}</span>
+              <span class="rb-when">${e.s} · Wk ${e.w}</span>
+            </div>
+            <div class="rb-title">${esc(e.title)} <small>${esc(catTitle(e.cat))}</small></div>
+            <div class="rb-who"><b>${esc(e.holders[0].whoText ?? name(e.owner))}</b> <span class="rb-val">${esc(e.holders[0].display)}</span></div>
+            <div class="rb-prev">${esc(e.holders[0].ctx ?? '')}</div>
+            <div class="rb-prev">Previous best: ${esc(e.prev[0].display)}${e.prev[0].ctx ? ` (${esc(e.prev[0].ctx)})` : ''}</div>
+          </a>`).join('')}
+      </div>
+    </section>`;
+}
+
 // Records for a Timeframe + Stage combination, built once and cached.
 const RECORD_VIEWS = {};
 function recordsFor(season, stage) {
@@ -611,56 +636,6 @@ function shownRows(r, manager) {
   if (manager !== 'all' && r.managerRows) rows = r.managerRows.filter(x => x.who === manager);
   else if (manager !== 'all') rows = rows.filter(x => x.who === manager || x.also === manager || x.whos?.includes(manager));
   return r.limit ? rows.slice(0, r.limit) : rows;
-}
-
-function recordCard(r, cat, { manager = 'all', badges = true, stage = 'all', showCat = false } = {}) {
-  const rows = shownRows(r, manager);
-  const head = `${esc(r.title)}${showCat ? ` <small class="rec-cat">${esc(CATEGORIES.find(c => c.id === cat)?.title)}</small>` : ''}`;
-  if (!rows.length) {
-    const why = manager !== 'all' ? `${esc(name(manager))} isn't on this board.` : 'No one qualifies yet.';
-    return `<article class="rec"><div class="rec-title">${head}</div><p class="empty">${why}</p></article>`;
-  }
-  const topRank = rows[0].rank;
-  if (topRank === '–' && manager === 'all') {
-    return `<article class="rec"><div class="rec-title">${head}</div><p class="empty">No one qualifies yet.</p>${r.note ? `<p class="rec-note">${esc(r.note)}</p>` : ''}</article>`;
-  }
-  const leaders = topRank === '–' ? [rows[0]] : rows.filter(x => x.rank === topRank);
-  // A shared record lists every co-holder below, so each keeps its details.
-  const rest = leaders.length > 1 ? rows : rows.filter(x => !leaders.includes(x));
-  const top = leaders[0];
-  const holder = x => esc(x.whoText ?? name(x.who));
-  const av = avatarUrl(DATA.owners[top.who]?.avatar);
-  const fresh = badges && topRank === 1 ? recentChange(cat, r) : null;
-  const rankNote = topRank === 1 ? '' : topRank === '–' ? 'Not ranked yet' : `#${topRank} overall`;
-  const ctx = leaders.length === 1 ? [top.ctx, rankNote].filter(Boolean).join(' · ') : 'Shared record';
-  // A note about "any game" doesn't apply once the Stage filter narrows the games.
-  const note = r.scopeNote && stage !== 'all' ? '' : manager !== 'all' && r.managerNote ? r.managerNote : r.note;
-  return `
-    <article class="rec${fresh ? ' rec-fresh' : ''}${topRank !== 1 ? ' rec-sub' : ''}" id="rec-${cat}-${slug(r.title)}">
-      <div class="rec-title"><span>${head}</span>${fresh ? badge(fresh) : ''}</div>
-      <div class="rec-lead">
-        ${leaders.length === 1 && top.img
-          ? `<img class="rec-av rec-player" src="${esc(top.img)}" alt="" loading="lazy" onerror="this.remove()">`
-          : leaders.length === 1 && !top.whoText
-            ? (av ? `<img class="rec-av" src="${av}" alt="" loading="lazy">` : `<span class="rec-av avatar-blank">${esc(name(top.who)[0])}</span>`)
-            : ''}
-        <div class="rec-holder">
-          <div class="rec-name">${leaders.length > 3 ? `${leaders.length}-way tie` : leaders.map(holder).join(' <span class="amp">&amp;</span> ')}</div>
-          <div class="rec-ctx">${esc(ctx)}</div>
-        </div>
-        <div class="rec-value">${esc(top.display)}</div>
-      </div>
-      ${rest.length ? `
-        <ol class="rec-rest">
-          ${rest.map(x => `
-            <li${x.rank === 1 ? ' class="co"' : ''}>
-              <span class="rk">${x.rank}</span>
-              <span class="rn">${holder(x)}<small>${esc(x.ctx)}</small></span>
-              <span class="rv">${esc(x.display)}</span>
-            </li>`).join('')}
-        </ol>` : ''}
-      ${note ? `<p class="rec-note">${esc(note)}</p>` : ''}
-    </article>`;
 }
 
 const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -724,10 +699,10 @@ function filterBar(cat, f) {
           ${cats.map(c => `<option value="${c.id}"${c.id === cat.id ? ' selected' : ''}>${esc(c.title)}</option>`).join('')}
         </select>
       </label>
-      <div class="f-group${cat.table ? ' f-two' : ''}">
+      <div class="f-group${cat.noStage ? ' f-two' : ''}">
         ${dropdown('season', 'Timeframe', f.season, seasonOpts)}
         ${dropdown('manager', 'Manager', f.manager, managerOpts)}
-        ${cat.table ? '' : dropdown('stage', 'Stage', f.stage, STAGES)}
+        ${cat.noStage ? '' : dropdown('stage', 'Stage', f.stage, STAGES)}
       </div>
     </section>`;
 }
@@ -737,78 +712,96 @@ function filterSummary(f) {
   if (f.season !== 'all') bits.push(`the ${f.season} season only`);
   if (f.stage === 'regular') bits.push('regular-season games only');
   if (f.stage === 'playoffs') bits.push('championship-bracket games only');
-  if (f.manager !== 'all') bits.push(`${esc(name(f.manager))}'s entries, with their league-wide rank`);
+  if (f.manager !== 'all') bits.push(`${esc(name(f.manager))}'s personal records (gold 1–10), with their league-wide rank`);
   if (!bits.length) return '';
   return `<p class="filter-note">Showing ${bits.join(' · ')}. <a href="${filterHash(route().sub, { season: 'all', manager: 'all', stage: 'all', q: f.q })}">Clear filters</a></p>`;
 }
 
-// Table layout (Front Office): one row per record, grouped, each opening its leaderboard.
-function recordTable(list, cat, f) {
-  const groups = [...new Set(list.map(r => r.group))];
+// Table layout for every category: one row per record, grouped into sections,
+// each opening its leaderboard. items: [{ r, cat, group }].
+// With a manager selected, records a manager can hold many times (a game, a
+// season) rank his own entries 1-10 in gold: his personal records, with his
+// league-wide rank alongside.
+function recordTable(items, f) {
+  const groups = [...new Set(items.map(x => x.group))];
   const holder = x => esc(x.whoText ?? name(x.who));
-  const row = r => {
+  const one = f.manager !== 'all';
+  const row = ({ r, cat }) => {
     const rows = shownRows(r, f.manager);
+    const personal = one && r.limit; // records with many entries per manager
+    // Personal ranks: ties share a number, like the league ranks.
+    const pranks = rows.map(x => x.value);
+    const prank = i => (i && pranks[i - 1] === pranks[i] ? prank(i - 1) : i + 1);
     const ranked = rows.filter(x => x.rank !== '–');
     const top = ranked[0];
-    const leaders = top ? ranked.filter(x => x.rank === top.rank) : [];
+    const leaders = top ? (personal ? [top] : ranked.filter(x => x.rank === top.rank)) : [];
     const who = !top ? '<span class="fo-none">—</span>'
       : leaders.length > 2 ? `${leaders.length}-way tie`
       : leaders.map(holder).join(' <span class="amp">&amp;</span> ');
-    const rank = top && top.rank !== 1 ? `<small>#${top.rank} overall</small>` : '';
-    const fresh = f.season === 'all' && top?.rank === 1 ? recentChange(cat.id, r) : null;
+    const rank = !top ? ''
+      : personal ? `<small>${top.rank === 1 ? 'Personal best · league record' : `Personal best · #${top.rank} in the league`}</small>`
+      : top.rank !== 1 ? `<small>#${top.rank} overall</small>` : '';
+    const fresh = f.season === 'all' && top?.rank === 1 ? recentChange(cat, r) : null;
+    // A note about "any game" doesn't apply once the Stage filter narrows the games.
+    const note = r.scopeNote && f.stage !== 'all' ? '' : r.note;
+    const desc = r.desc ?? note ?? '';
     return `
-      <details class="fo-row${r.bad ? ' fo-bad' : ''}" id="rec-${cat.id}-${slug(r.title)}">
+      <details class="fo-row${r.bad ? ' fo-bad' : ''}" id="rec-${cat}-${slug(r.title)}">
         <summary><div class="row-grid">
-          <span class="fo-rec"><b>${esc(r.title)}</b><small>${esc(r.desc ?? '')}</small></span>
+          <span class="fo-rec"><b>${esc(r.title)}</b><small>${esc(desc)}</small></span>
           <span class="fo-holder">${who}${rank}${fresh ? badge(fresh) : ''}</span>
           <span class="fo-val">${top ? esc(top.display) : '—'}</span>
           <span class="fo-arrow">${icon('arrow')}</span>
         </div></summary>
         <div class="fo-board">
-          ${rows.length ? `<ol class="rec-rest">${rows.map(x => `
-            <li${x.rank === 1 ? ' class="co"' : ''}>
-              <span class="rk">${x.rank}</span>
-              <span class="rn">${holder(x)}<small>${esc(x.ctx)}</small></span>
+          ${rows.length ? `<ol class="rec-rest${personal ? ' rec-personal' : ''}">${rows.map((x, i) => `
+            <li${!personal && x.rank === 1 ? ' class="co"' : ''}>
+              <span class="rk${personal ? ' rk-gold' : ''}">${personal ? prank(i) : x.rank}</span>
+              <span class="rn">${x.img ? `<img class="rk-img" src="${esc(x.img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}${holder(x)}<small>${esc(x.ctx)}${personal && x.rank !== '–' ? ` · #${x.rank} in the league` : ''}</small></span>
               <span class="rv">${esc(x.display)}</span>
-            </li>`).join('')}</ol>` : `<p class="empty">${f.manager !== 'all' ? `${esc(name(f.manager))} isn't on this board.` : 'No one qualifies yet.'}</p>`}
-          ${r.note ? `<p class="rec-note">${esc(r.note)}</p>` : ''}
+            </li>`).join('')}</ol>` : `<p class="empty">${one ? `${esc(name(f.manager))} isn't on this board.` : 'No one qualifies yet.'}</p>`}
+          ${r.desc && note ? `<p class="rec-note">${esc(note)}</p>` : ''}
+          ${one && r.managerNote ? `<p class="rec-note">${esc(r.managerNote)}</p>` : ''}
         </div>
       </details>`;
   };
   return `
     <section class="card fo-table">
-      <div class="fo-head"><span>Record</span><span>Record holder</span><span>Record value</span><span></span></div>
+      <div class="fo-head"><span>Record</span><span>${one ? `${esc(name(f.manager))}’s best` : 'Record holder'}</span><span>Record value</span><span></span></div>
       ${groups.map(g => {
-        const items = list.filter(r => r.group === g);
-        return `<div class="fo-group"><b>${esc(g)}</b> <small>${items.length} record${items.length === 1 ? '' : 's'}</small></div>${items.map(row).join('')}`;
+        const list = items.filter(x => x.group === g);
+        return `<div class="fo-group"><b>${esc(g)}</b> <small>${list.length} record${list.length === 1 ? '' : 's'}</small></div>${list.map(row).join('')}`;
       }).join('')}
     </section>
-    <p class="pw-foot">Every move is valued by the locked points it produced: a player counts for the team that acquired him until he left, and a draft pick counts as the player it became. <b>Est.</b> means the value is still changing, because a player in the deal is still on that roster or a pick hasn't been used yet.</p>`;
+    ${items.some(x => x.cat === 'front-office') ? '<p class="pw-foot">Every move is valued by the locked points it produced: a player counts for the team that acquired him until he left, and a draft pick counts as the player it became. <b>Est.</b> means the value is still changing, because a player in the deal is still on that roster or a pick hasn\'t been used yet.</p>' : ''}
+    ${one ? `<p class="pw-foot"><b class="rk-gold-key">1–10</b> in gold are ${esc(name(f.manager))}’s personal records: his best entries on that board, with where each ranks in the whole league. Records with one entry per manager (career totals, streaks) show his league rank.</p>` : ''}`;
 }
 
 function recordResults(cat, f) {
   const recs = recordsFor(f.season, f.stage);
-  const opts = { manager: f.manager, badges: f.season === 'all' && f.stage === 'all', stage: f.stage };
   const q = f.q.trim().toLowerCase();
   if (q) {
-    // Search looks through every category, not just this one.
+    // Search looks through every category, not just this one; each category is a section.
     const hits = CATEGORIES.filter(c => !c.soon).flatMap(c => (recs[c.id] || [])
-      .filter(r => recordVisible(r, f) && `${r.title} ${c.title}`.toLowerCase().includes(q))
-      .map(r => recordCard(r, c.id, { ...opts, showCat: true })));
+      .filter(r => recordVisible(r, f) && `${r.title} ${c.title} ${r.group ?? ''}`.toLowerCase().includes(q))
+      .map(r => ({ r, cat: c.id, group: c.title })));
     return hits.length
-      ? `<p class="filter-note">${hits.length} record${hits.length === 1 ? '' : 's'} matching “${esc(f.q)}” across every category.</p><div class="rec-grid">${hits.join('')}</div>`
+      ? `<p class="filter-note">${hits.length} record${hits.length === 1 ? '' : 's'} matching “${esc(f.q)}” across every category.</p>${recordTable(hits, f)}`
       : `<section class="card soon-card"><p>No records match “${esc(f.q)}”.</p></section>`;
   }
   const list = (recs[cat.id] || []).filter(r => recordVisible(r, f));
-  if (cat.table && list.length) return recordTable(list, cat, f);
   return list.length
-    ? `<div class="rec-grid">${list.map(r => recordCard(r, cat.id, opts)).join('')}</div>`
+    ? recordTable(list.map(r => ({ r, cat: cat.id, group: r.group })), f)
     : `<section class="card soon-card"><p>None of the ${esc(cat.title)} records apply to this stage.</p></section>`;
 }
 
 function renderRecordBook(main, sub, params) {
   RECORDS = recordsFor('all', 'all');
-  EVENTS ??= DATA.recordEvents ?? recordHistory(DATA);
+  if (!EVENTS) {
+    const all = DATA.recordEvents ?? recordHistory(DATA);
+    EVENTS = all.filter(e => !e.personal);
+    PERSONAL = all.filter(e => e.personal);
+  }
   const cat = CATEGORIES.find(c => c.id === sub);
 
   if (!cat) {
@@ -833,6 +826,7 @@ function renderRecordBook(main, sub, params) {
           }).join('')}
         </section>
         ${recentlyBroken()}
+        ${personalBroken()}
       </div>`;
     return;
   }
@@ -851,7 +845,7 @@ function renderRecordBook(main, sub, params) {
   }
 
   const f = filterState(params);
-  if (cat.table) f.stage = 'all'; // Front Office values moves by every locked point, so no Stage filter
+  if (cat.noStage) f.stage = 'all'; // Front Office values moves by every locked point, so no Stage filter
   main.innerHTML = `
     <div class="page page-wide">
       ${filterBar(cat, f)}

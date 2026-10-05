@@ -25,9 +25,43 @@ export const CATEGORIES = [
     desc: 'Monster stat lines, position leaders and the managers who set the sharpest lineups night after night.' },
   { id: 'streaks', title: 'Streaks & Milestones', icon: 'flame',
     desc: 'Hot hands, cold spells, playoff runs that kept going and the long wait for a first banner.' },
-  { id: 'front-office', title: 'Front Office', icon: 'gauge', table: true,
+  { id: 'front-office', title: 'Front Office', icon: 'gauge', noStage: true,
     desc: 'Draft hauls, trade verdicts and waiver-wire finds, judged by the points they actually produced.' },
 ];
+
+// Sections within each category, in display order.
+const GROUPS = {
+  careers: [
+    ['Hardware', ['Most championships', 'Most finals appearances', 'Most playoff appearances']],
+    ['Playoffs', ['Most playoff wins', 'Best playoff win %']],
+    ['Winning', ['Most regular-season wins', 'Best regular-season win %']],
+    ['Scoring', ['Most regular-season points', 'Most points per game', 'Most weekly high scores', 'Most points against']],
+    ['Rock bottom', ['Most weekly low scores', 'Most last-place finishes']],
+  ],
+  seasons: [
+    ['Winning', ['Most wins in a season', 'Worst record in a season']],
+    ['Scoring', ['Most points in a season', 'Most points per game in a season', 'Fewest points per game in a season', 'Most weekly high scores in a season', 'Most above-median weeks in a season']],
+    ['Schedule & luck', ['Toughest schedule', 'Friendliest schedule', 'Best all-play record', 'Luckiest season', 'Unluckiest season']],
+  ],
+  matchups: [
+    ['Big scores', ['Highest score', 'Highest playoff score', 'Highest combined score', 'Highest score in a loss']],
+    ['Low scores', ['Lowest score', 'Lowest combined score', 'Lowest score in a win']],
+    ['Margins', ['Biggest blowout', 'Closest win']],
+  ],
+  players: [
+    ['Single week', ['Most points in a week']],
+    ['Seasons', ['Most points for one manager in a season', /^Best (PG|SG|SF|PF|C) season$/]],
+    ['Careers', ['Most points for one manager, career', 'Most-used players', 'Most-used by one manager', 'Scored for the most teams']],
+  ],
+  streaks: [
+    ['Streaks', ['Longest winning streak', 'Longest losing streak', 'Longest above-median streak']],
+    ['Playoff runs & droughts', ['Most consecutive playoff trips', 'Longest active title drought']],
+    ['Milestones', ['Fastest to 25 wins', '400-point club']],
+  ],
+};
+const BAD = new Set(['Most weekly low scores', 'Most last-place finishes', 'Most points against', 'Worst record in a season',
+  'Fewest points per game in a season', 'Unluckiest season', 'Lowest score', 'Lowest combined score',
+  'Longest losing streak', 'Longest active title drought']);
 
 const r1 = n => Math.round(n * 10) / 10;
 const fmt = n => r1(n).toLocaleString('en-US', { maximumFractionDigits: 1 });
@@ -445,6 +479,15 @@ export function buildRecords(DATA) {
     }), F('Draft', 'Total locked points from rookies they drafted, while on their team.', { kind: 'total', keepZero: true })),
   ];
 
+  // Sections within each category (Front Office records set theirs above), and
+  // which records are the bad kind (shown with a muted marker).
+  for (const [cat, groups] of Object.entries(GROUPS)) {
+    for (const r of byCategory[cat] ?? []) {
+      r.group ??= groups.find(([, titles]) => titles.some(t => (t instanceof RegExp ? t.test(r.title) : t === r.title)))?.[0] ?? 'Other';
+      if (BAD.has(r.title)) r.bad = true;
+    }
+  }
+
   const runningTotals = new Set(['Most consecutive playoff trips', 'Longest active title drought', '400-point club']);
   for (const r of byCategory.careers) r.kind = 'total';
   // Every Front Office value keeps growing as players score, so only a different
@@ -547,7 +590,30 @@ function change(before, now) {
   return null;
 }
 
-export const CHANGE_LABELS = { broken: 'Record broken', tied: 'Record tied', 'new-leader': 'New leader' };
+export const CHANGE_LABELS = { broken: 'Record broken', tied: 'Record tied', 'new-leader': 'New leader', personal: 'Personal record' };
+
+// Personal records: a manager beating his own best in a record of single
+// performances (a game, a season, a player's week). Totals that grow every week
+// aren't personal records. A season or streak still going only counts once it's
+// over, so a season in progress doesn't set a "new best" every week.
+const involves = (x, m) => x.who === m || x.also === m;
+// Personal records are achievements: the bad kind (worst, lowest) and schedule or
+// luck trivia aren't announced as a manager's new personal best.
+const NOT_PERSONAL = new Set(['Toughest schedule', 'Friendliest schedule', 'Luckiest season', 'Unluckiest season',
+  'Lowest score in a win', 'Highest score in a loss', 'Closest win', 'Lowest combined score']);
+function personalChanges(before, now) {
+  const rowsOf = r => r.managerRows ?? r.rows;
+  const out = [];
+  const managers = new Set(rowsOf(now).flatMap(x => [x.who, x.also]).filter(Boolean));
+  for (const m of managers) {
+    const best = rowsOf(now).find(x => x.rank !== '–' && involves(x, m));
+    const old = rowsOf(before).find(x => x.rank !== '–' && involves(x, m));
+    if (!best || !old || /in progress|active/.test(best.ctx ?? '')) continue;
+    const better = now.asc ? best.value < old.value : best.value > old.value;
+    if (better) out.push({ owner: m, holders: [best], prev: [old] });
+  }
+  return out;
+}
 
 // Every record change, oldest first: { cat, title, s, w, index, type, holders, prev }.
 // `recent` is true for changes in the last few weeks of games played.
@@ -559,6 +625,8 @@ export function recordHistory(DATA, { recentWeeks = 3 } = {}) {
     .sort((a, b) => a.s.localeCompare(b.s) || a.w - b.w);
 
   const events = [];
+  const personal = [];
+  const seen = new Set();
   let prev = null;
   points.forEach((p, i) => {
     const snap = i === points.length - 1 ? DATA : asOf(DATA, p.s, p.w, lastWeek);
@@ -566,18 +634,33 @@ export function recordHistory(DATA, { recentWeeks = 3 } = {}) {
     if (prev) {
       for (const [cat, list] of Object.entries(recs)) {
         for (const r of list) {
-          const c = change(prev[cat]?.find(x => x.title === r.title), r);
+          const before = prev[cat]?.find(x => x.title === r.title);
+          const c = change(before, r);
           if (c) events.push({ ...c, cat, title: r.title, s: p.s, w: p.w, index: i });
+          if (before && r.limit && r.kind === 'mark' && !r.bad && !NOT_PERSONAL.has(r.title)) {
+            for (const pc of personalChanges(before, r)) {
+              // A league record the same week is already announced; don't repeat it.
+              if (c?.holders.some(h => involves(h, pc.owner))) continue;
+              // One performance can top two boards (a PG's season is also his best
+              // season by anyone): announce it once.
+              const same = `${pc.owner}|${p.s}|${p.w}|${pc.holders[0].whoText ?? ''}|${pc.holders[0].value}`;
+              if (seen.has(same)) continue;
+              seen.add(same);
+              personal.push({ ...pc, type: 'personal', personal: true, cat, title: r.title, s: p.s, w: p.w, index: i });
+            }
+          }
         }
       }
     }
     prev = recs;
   });
   const cutoff = points.length - recentWeeks;
-  // Keep only what the page shows, so the saved file stays small.
-  const slim = x => ({ who: x.who, whoText: x.whoText, display: x.display, ctx: x.ctx });
-  return events.map(e => ({
+  // Keep only what the page shows, so the saved file stays small (and only the
+  // latest personal records: the page shows 6).
+  const slim = x => ({ who: x.who, also: x.also, whoText: x.whoText, display: x.display, ctx: x.ctx });
+  return [...events, ...personal.slice(-30)].map(e => ({
     cat: e.cat, title: e.title, s: e.s, w: e.w, type: e.type, recent: e.index >= cutoff,
+    ...(e.personal ? { personal: true, owner: e.owner, order: e.index } : {}),
     holders: e.holders.map(slim), prev: e.prev.map(slim),
   }));
 }
