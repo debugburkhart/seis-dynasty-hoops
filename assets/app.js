@@ -18,8 +18,8 @@ const NAV = [
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['players', 'Player Index', 'users'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['cheat-sheet', 'Cheat Sheet', 'clipboard'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players']);
-const DEFAULT_PAGE = 'rivalry';
+const READY = new Set(['home', 'rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players']);
+const DEFAULT_PAGE = 'home';
 
 const ICONS = {
   home: '<path d="M3 9.5 10 4l7 5.5V16a1 1 0 0 1-1 1h-3.5v-4.5h-5V17H4a1 1 0 0 1-1-1z"/>',
@@ -226,7 +226,7 @@ function renderSoon(main, page) {
         <div><div class="eyebrow">Coming soon</div><h1>${esc(item?.[1] || 'Not found')}</h1></div>
       </div>
       <section class="card soon-card">
-        <p>This page hasn't been built yet. For now, head over to the <a href="#/rivalry">Rivalry</a> page.</p>
+        <p>This page hasn't been built yet. For now, head back <a href="#/home">Home</a>.</p>
       </section>
     </div>`;
 }
@@ -795,13 +795,16 @@ function recordResults(cat, f) {
     : `<section class="card soon-card"><p>None of the ${esc(cat.title)} records apply to this stage.</p></section>`;
 }
 
+function loadRecordEvents() {
+  if (EVENTS) return;
+  const all = DATA.recordEvents ?? recordHistory(DATA);
+  EVENTS = all.filter(e => !e.personal);
+  PERSONAL = all.filter(e => e.personal);
+}
+
 function renderRecordBook(main, sub, params) {
   RECORDS = recordsFor('all', 'all');
-  if (!EVENTS) {
-    const all = DATA.recordEvents ?? recordHistory(DATA);
-    EVENTS = all.filter(e => !e.personal);
-    PERSONAL = all.filter(e => e.personal);
-  }
+  loadRecordEvents();
   const cat = CATEGORIES.find(c => c.id === sub);
 
   if (!cat) {
@@ -853,6 +856,14 @@ function renderRecordBook(main, sub, params) {
       <div id="rb-summary">${filterSummary(f)}</div>
       <div id="rb-results">${recordResults(cat, f)}</div>
     </div>`;
+
+  // ?rec=<slug> (from the Home page's record watch) opens that leaderboard.
+  const target = params.get('rec') && document.getElementById(`rec-${cat.id}-${params.get('rec')}`);
+  if (target) {
+    target.open = true;
+    target.classList.add('rec-flash');
+    setTimeout(() => target.scrollIntoView({ block: 'start' })); // after render() scrolls to the top
+  }
 
   main.querySelectorAll('select[data-f]').forEach(sel => sel.addEventListener('change', () => {
     const next = { ...filterState(route().params) };
@@ -2815,6 +2826,255 @@ function renderStandings(main, params) {
   else renderLegacy(main);
 }
 
+// ---------- Home ----------
+// One look at the league right now: this week's Main event, a scrolling record
+// watch, the top of the Power Rankings, all-time standings and the latest moves.
+// Every piece links to its full page.
+
+const HOME_BY = [['wins', 'Wins'], ['titles', 'Titles'], ['median', 'Median %'], ['pf', 'Total points'], ['pps', 'Pts / season']];
+let homeBy = 'wins';
+
+// The week the Matchup Hype page opens on: the week under way, or else the
+// last week with games.
+async function homeHypeWeek() {
+  HYPE_NOW ??= await hypeNow();
+  const now = HYPE_NOW;
+  const cur = DATA.seasons.at(-1);
+  if (!now.done && now.week >= 1) {
+    const live = !DATA.games.some(g => g.s === cur.season && g.w === now.week);
+    return { season: cur.season, week: now.week, live, now };
+  }
+  const season = DATA.games.map(g => g.s).sort().at(-1);
+  if (!season) return { now };
+  const week = seasonWeeks(DATA, season).filter(x => DATA.games.some(g => g.s === season && g.w === x.w)).at(-1)?.w;
+  return { season, week, live: false, now };
+}
+
+async function homeHype(box) {
+  let pick;
+  try { pick = await homeHypeWeek(); } catch { pick = {}; }
+  if (route().page !== 'home') return;
+  const { season, week, live, now } = pick;
+  const cur = DATA.seasons.at(-1);
+  if (!season || !week) {
+    box.innerHTML = '<a class="card hm-card hm-link" href="#/hype"><p class="empty">Matchup Hype starts with week 1 of the season.</p></a>';
+    return;
+  }
+  let liveData = null;
+  if (live) {
+    try { liveData = await liveWeek(season, week); } catch { /* scores just won't be live */ }
+    if (route().page !== 'home') return;
+  }
+  const pairs = liveData?.pairs ?? weekPairs(DATA, season, week);
+  const slate = hypeSlate(DATA, season, week, pairs);
+  const g = slate.games[0];
+  if (!g) {
+    box.innerHTML = `<a class="card hm-card hm-link" href="#/hype"><p class="empty">Week ${week}’s matchups show up once Sleeper sets them.</p></a>`;
+    return;
+  }
+  const score = o => (g.final ? (o === g.a ? g.final.ap : g.final.bp) : liveData?.scores?.[o]);
+  const sa = score(g.a);
+  const sb = score(g.b);
+  const hasScore = sa != null && (sa || sb);
+  const winner = g.final && g.final.win !== 'tie' ? (g.final.win === 'A' ? g.a : g.b) : null;
+  const side = (o, t) => {
+    const av = avatarUrl(DATA.owners[o]?.avatar);
+    return `
+      <div class="hm-side${winner === o ? ' won' : ''}">
+        ${av ? `<img class="hy-av" src="${av}" alt="" loading="lazy">` : `<span class="hy-av avatar-blank">${esc(name(o)[0])}</span>`}
+        <div class="hm-team">${esc(teamName(o, season))}</div>
+        <div class="hm-owner">${esc(name(o))}${t ? ` · <span class="nw">${rec(t.w, t.l, t.t)}</span>` : ''}</div>
+      </div>`;
+  };
+  const waiting = !(now.done || now.week >= 1) && now.tipoff && cur.season !== season;
+  const when = waiting ? `Last Main event · ${season} Week ${week}` : live ? `This week · Week ${week}` : `${season} · Week ${week}`;
+  const status = g.final ? 'Final' : live && hasScore ? 'Live' : live ? 'Tip-off pending' : '';
+  const why = g.labels.find(l => l.id === 'main')?.why ?? g.labels[0]?.why;
+  box.innerHTML = `
+    <a class="hm-main" href="#/hype?${new URLSearchParams({ season, week, m: g.a })}">
+      <div class="hm-main-top">
+        <span class="hm-kicker">${icon('bolt')} ${esc(when)}${g.label ? ` · ${esc(g.label)}` : ''}</span>
+        <span class="hm-hype"><b>${g.hype}</b> Hype</span>
+      </div>
+      <div class="hm-duel">
+        ${side(g.a, g.tA)}
+        <div class="hm-mid">
+          ${hasScore ? `<div class="hm-score"><span${winner === g.a ? ' class="won"' : ''}>${num(sa)}</span><i>–</i><span${winner === g.b ? ' class="won"' : ''}>${num(sb)}</span></div>` : '<div class="hm-vs">VS</div>'}
+          ${status ? `<div class="hm-status">${esc(status)}</div>` : ''}
+        </div>
+        ${side(g.b, g.tB)}
+      </div>
+      ${g.labels.length ? `<div class="hm-chips">${g.labels.slice(0, 3).map(chip).join('')}</div>` : ''}
+      ${why ? `<p class="hm-why">${esc(why)}</p>` : ''}
+      <span class="hm-go">Full matchup ${icon('arrow')}</span>
+    </a>
+    ${waiting ? `<p class="hm-note">${icon('clock')}<span>The ${esc(cur.season)} season tips off ${esc(prettyDate(now.tipoff))}. Week 1’s Main event drops ${esc(prettyDate(now.reveal))}.</span></p>` : ''}`;
+}
+
+// Newest record changes, league and personal together.
+function homeRecordItems() {
+  loadRecordEvents();
+  const seen = new Set();
+  const league = [];
+  for (let i = EVENTS.length - 1; i >= 0 && league.length < 8; i--) {
+    const e = EVENTS[i];
+    const k = `${e.cat}/${e.title}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    league.push(e);
+  }
+  const personal = [...(PERSONAL ?? [])].sort((a, b) => (b.order ?? 0) - (a.order ?? 0)).slice(0, 6);
+  const when = e => Number(e.s) * 100 + e.w;
+  return [...league, ...personal].sort((a, b) => when(b) - when(a) || (a.personal ? 1 : 0) - (b.personal ? 1 : 0)).slice(0, 14);
+}
+
+function homeTicker() {
+  const items = homeRecordItems();
+  if (!items.length) return '';
+  const catTitle = id => CATEGORIES.find(c => c.id === id)?.title ?? id;
+  const item = (e, copy) => {
+    const href = e.personal
+      ? `#/records/${e.cat}?manager=${encodeURIComponent(e.owner)}&rec=${slug(e.title)}`
+      : `#/records/${e.cat}?rec=${slug(e.title)}`;
+    const player = e.personal && e.holders[0].whoText;
+    const who = e.personal ? `${esc(name(e.owner))}${player ? `</b> · ${esc(player)}<b>` : ''}` : holderNames(e.holders);
+    return `
+      <a class="hm-tk-item${e.personal ? ' rb-personal' : ''}" href="${href}"${copy ? ' tabindex="-1" aria-hidden="true"' : ''}>
+        <span class="hm-tk-top">
+          <span class="rb-pill rb-${e.personal ? 'personal' : e.type}">${esc(CHANGE_LABELS[e.personal ? 'personal' : e.type])}</span>
+          <span class="rb-when">${e.s} · Wk ${e.w}</span>
+        </span>
+        <span class="hm-tk-title">${esc(e.title)} <small>${esc(catTitle(e.cat))}</small></span>
+        <span class="hm-tk-who"><b>${who}</b> <span class="rb-val">${esc(e.holders[0].display)}</span></span>
+      </a>`;
+  };
+  const list = items.map(e => item(e)).join('');
+  return `
+    <section class="hm-ticker" aria-label="Recently broken records">
+      <a class="hm-tk-label" href="#/records">${icon('flame')}<span>Record<br>watch</span></a>
+      <div class="hm-tk-view">
+        <div class="hm-tk-track" style="--hm-dur:${items.length * 5}s">${list}<span class="hm-tk-copy">${items.map(e => item(e, true)).join('')}</span></div>
+      </div>
+    </section>`;
+}
+
+function homePower() {
+  const withWeeks = powerSeasons(DATA).filter(s => s.weeks.length);
+  const pick = withWeeks.at(-1);
+  if (!pick) return '';
+  const week = pick.weeks.at(-1);
+  const ed = powerRankings(DATA, pick.season, week);
+  const href = `#/power?season=${pick.season}&week=${week}`;
+  const edition = pick.complete ? `${pick.season} · Final edition` : `${pick.season} · After week ${week}`;
+  const move = m => (!m ? '' : m > 0 ? `<span class="pw-move pw-up">↑ ${m}</span>` : `<span class="pw-move pw-down">↓ ${-m}</span>`);
+  return `
+    <section class="card hm-card">
+      <div class="hm-head"><h2>${icon('gauge')} Power Rankings</h2><a class="hm-all" href="#/power">All ${ed.rows.length} ${icon('arrow')}</a></div>
+      <p class="card-sub">${esc(edition)}</p>
+      <ol class="hm-list">
+        ${ed.rows.slice(0, 3).map(r => `
+          <li><a class="hm-row${r.rank === 1 ? ' hm-first' : ''}" href="${href}">
+            <span class="hm-rank">${r.rank}</span>
+            <span class="pw-badge">${esc(initials(r.team))}</span>
+            <span class="hm-name"><b>${esc(r.team)}</b><small>${esc(name(r.owner))} · ${rec(r.w, r.l, r.t)} ${move(r.move)}</small></span>
+            <span class="hm-val"><b>${r.power.toFixed(1)}</b><small>Power</small></span>
+          </a></li>`).join('')}
+      </ol>
+    </section>`;
+}
+
+function homeStandingsRows() {
+  const by = RANK_BY.find(([id]) => id === homeBy);
+  const label = HOME_BY.find(([id]) => id === homeBy)[1];
+  const { rows } = standings(DATA, { period: 'all', stage: 'regular' });
+  const val = by[2];
+  rows.sort((a, b) => val(b) - val(a) || b.pct - a.pct || b.pf - a.pf);
+  const shown = v => (homeBy === 'median' ? pct1(v) : homeBy === 'pf' || homeBy === 'pps' ? num(v) : v);
+  const sub = r => (homeBy === 'titles' ? `${r.seasons} season${r.seasons === 1 ? '' : 's'}`
+    : homeBy === 'median' ? `${rec(r.median.w, r.median.l, r.median.t)} vs median`
+    : `${rec(r.w, r.l, r.t)} · ${r.g ? pct1(r.pct) : '—'}`);
+  // Equal values share a rank.
+  const rank = i => (i && val(rows[i - 1]) === val(rows[i]) ? rank(i - 1) : i + 1);
+  const href = `#/standings?${new URLSearchParams({ tab: 'table', period: 'all', stage: 'regular', by: by[0], dir: 'desc' })}`;
+  return rows.slice(0, 5).map((r, i) => `
+    <li><a class="hm-row${rank(i) === 1 ? ' hm-first' : ''}" href="${href}">
+      <span class="hm-rank">${rank(i)}</span>
+      <span class="hm-name"><b>${esc(name(r.owner))}</b><small>${esc(sub(r))}</small></span>
+      <span class="hm-val"><b>${shown(val(r))}</b><small>${esc(label)}</small></span>
+    </a></li>`).join('');
+}
+
+function homeStandings() {
+  return `
+    <section class="card hm-card">
+      <div class="hm-head"><h2>${icon('list')} All-time standings</h2><a class="hm-all" href="#/standings?tab=table">Full table ${icon('arrow')}</a></div>
+      <div class="hm-tabs" role="tablist" aria-label="Rank by">
+        ${HOME_BY.map(([id, label]) => `<button type="button" role="tab" data-by="${id}" aria-selected="${id === homeBy}" class="${id === homeBy ? 'on' : ''}">${label}</button>`).join('')}
+      </div>
+      <ol class="hm-list" id="hm-st">${homeStandingsRows()}</ol>
+      <p class="hm-foot">Regular season, every season. Records include league-median games, as in Sleeper.</p>
+    </section>`;
+}
+
+function homeWireRow(m) {
+  const [label, cls] = TX_PILL[m.kind];
+  const pl = pid => DATA.players?.[pid]?.n ?? `Player ${pid}`;
+  let what;
+  let detail;
+  if (m.kind === 'trades') {
+    what = [...new Set(m.owners)].map(o => esc(name(o))).join(' <i class="hm-swap">⇄</i> ');
+    detail = m.trade
+      ? m.trade.sides.map(sd => `${esc(name(sd.o))} gets ${esc(sd.got.map(assetName).join(', ') || 'nothing')}`).join(' · ')
+      : '';
+  } else {
+    what = esc(name(m.owners[0] ?? m.adds[0]?.o ?? m.drops[0]?.o));
+    detail = [...m.adds.map(a => `<span class="hm-in">+</span> ${esc(pl(a.pid))}`), ...m.drops.map(d => `<span class="hm-out">−</span> ${esc(pl(d.pid))}`)].join(' &nbsp;');
+  }
+  return `
+    <li><a class="hm-tx" href="#/transactions?type=${m.kind}&season=${m.s}">
+      <span class="tx-pill ${cls}">${label}</span>
+      <span class="hm-tx-body"><b>${what}</b><small>${detail}</small></span>
+      <span class="hm-tx-date">${shortDate(m.ts) || `Wk ${m.w}`}</span>
+    </a></li>`;
+}
+
+function homeWire() {
+  TXLOG ??= transactionLog(DATA, ledger());
+  const latest = TXLOG.slice(0, 6);
+  return `
+    <section class="card hm-card">
+      <div class="hm-head"><h2>${icon('swap')} Transaction wire</h2><a class="hm-all" href="#/transactions">All moves ${icon('arrow')}</a></div>
+      ${latest.length ? `<ol class="hm-wire">${latest.map(homeWireRow).join('')}</ol>` : '<p class="empty">No moves yet.</p>'}
+    </section>`;
+}
+
+function renderHome(main) {
+  main.innerHTML = `
+    <div class="page page-wide hm">
+      <div class="page-head">
+        <div class="page-icon">${icon('home')}</div>
+        <div><div class="eyebrow">${esc(DATA.name)}</div><h1>Home</h1></div>
+      </div>
+      <div id="hm-hype"><div class="hm-main hm-loading"><span class="hm-kicker">${icon('bolt')} Main event</span><p>Checking this week’s slate…</p></div></div>
+      ${homeTicker()}
+      <div class="hm-grid">
+        ${homePower()}
+        ${homeStandings()}
+      </div>
+      ${homeWire()}
+    </div>`;
+
+  main.querySelectorAll('.hm-tabs button').forEach(b => b.addEventListener('click', () => {
+    homeBy = b.dataset.by;
+    main.querySelectorAll('.hm-tabs button').forEach(x => {
+      x.classList.toggle('on', x === b);
+      x.setAttribute('aria-selected', x === b);
+    });
+    $('#hm-st', main).innerHTML = homeStandingsRows();
+  }));
+  homeHype($('#hm-hype', main));
+}
+
 // ---------- Boot ----------
 
 function route() {
@@ -2829,7 +3089,8 @@ function render() {
   if (page !== 'commish') COMMISH_OPEN = false; // leaving the section locks it again
   renderSidebar(page);
   const main = $('#main');
-  if (page === 'rivalry') renderRivalry(main, params);
+  if (page === 'home') renderHome(main);
+  else if (page === 'rivalry') renderRivalry(main, params);
   else if (page === 'hype') renderHype(main, params);
   else if (page === 'transactions') renderTransactions(main, params);
   else if (page === 'awards') renderAwards(main);

@@ -22,8 +22,16 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 ## Architecture (all plain ES modules, no build step)
 - `index.html`: shell + import map. Every module in `assets/` must be listed in the
   import map with `?v=dev` (the Action replaces it with a version fingerprint).
-- `assets/app.js`: all pages (hash routes: rivalry, records, power, hype, standings,
+- `assets/app.js`: all pages (hash routes: home, rivalry, records, power, hype, standings,
   transactions, awards, players), sidebar.
+- Home (#/home, the default page; renderHome in app.js): Main event = top of hypeSlate for
+  the week the Hype page opens on (preseason: last season's final week + tip-off note);
+  "Record watch" auto-scrolling ticker (newest 8 league + 6 personal record events; plain
+  swipe strip when the device has Reduce Motion on); Power top 3 (latest edition); all-time
+  standings top 5 with Wins/Titles/Median %/Total points/Pts per season buttons (regular
+  season, same numbers as the Standings table); 6 newest transactions. Every item links to
+  its page. Record links use `#/records/{cat}?rec={slug}` (+ `manager=` for personal),
+  which opens and scrolls to that leaderboard.
 - `assets/build-data.js`: pulls everything from Sleeper (`api.sleeper.com`, cache-busted),
   applies `corrections.js`, loads frozen seasons. Output = `data/league.json`.
 - `assets/records.js`: Record Book (6 categories, filters, record-change history). Every
@@ -130,6 +138,6 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - Verify numbers against the data before reporting; the owner checks things in the app.
 
 ## Not built yet (sidebar shows "Soon")
-Home, Weekly Props, Trade Court, Timeline,
+Weekly Props, Trade Court, Timeline,
 Draft History, Cheat Sheet, Draft Grades. The owner shares screenshots of a football
 reference site (fantasyhoff.com) for each feature and wants it adapted for basketball.
