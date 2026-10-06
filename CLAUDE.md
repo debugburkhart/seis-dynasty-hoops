@@ -82,7 +82,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   corrections.js overrides by season + name. All-Stars start in 2025 (ALL_STARS_FROM in
   config.js); the owner confirmed the 2025 list. All-Fantasy Team = top 10 of DATA.mvp (now top 60 kept) whose fantasy team at season's
   end made the playoffs (rulebook rule 4.3, owner chose to fix the site, Oct 2026); League
-  MVP has no playoff rule.
+  MVP has no playoff rule. AWARD_SCORING (config.js) {2023: 2024}: 2023-24 award totals (MVP,
+  All-Fantasy, ROY, All-Rookie, Commish Award races) use 2024-25 scoring (1/pt; 2023 league
+  used 0.5/pt), because the owner already handed out awards that way (Brunson, not Fox).
+  DATA.rookiesScoring records the scoring each saved rookie list used; update.mjs passes it
+  back, and a list is redone only when that differs (once after a scoring change). Draft Kit stats
+  keep each season's own scoring.
   Rookie of the Year / All-Rookie Team (top 5) = DATA.rookies: total fantasy points, rookie =
   NBA games that season and none in the 10 seasons before (Sleeper's years_exp is wrong for
   some players, e.g. Amen Thompson, Yabusele); computed once per completed season, carried

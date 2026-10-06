@@ -2,6 +2,8 @@
 // and a league health report. The site is public files, so the passcode only
 // keeps the section out of casual view; only its SHA-256 fingerprint is stored here.
 
+import { AWARD_SCORING } from './config.js';
+
 export const PASSCODE_SHA256 = '86477df6cc9ac53fe05aa7a71b6d5ac9f1063f23b76142bc2393ec40d8f85884';
 export const COMMISH = '1035475215997906944'; // bigdaddyburk (Parma John Wall): the default team to scout
 
@@ -146,7 +148,8 @@ export function teamRoster(DATA, ctx, owner) {
 export async function seasonTotals(DATA, season) {
   const s = DATA.seasons.find(x => x.season === season);
   const [league, list, ...prior] = await Promise.all([
-    get(`/v1/league/${s.leagueId}`, {}),
+    // Scoring rules: that season's, or another season's per AWARD_SCORING (config.js).
+    get(`/v1/league/${(DATA.seasons.find(x => x.season === AWARD_SCORING[season]) ?? s).leagueId}`, {}),
     get(`/stats/nba/${season}?season_type=regular`, []),
     ...Array.from({ length: 10 }, (_, k) => get(`/v1/stats/nba/regular/${Number(season) - 1 - k}`, {})),
   ]);

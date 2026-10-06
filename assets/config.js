@@ -13,6 +13,12 @@ export const FREEZE_SEED = 'ad30616';
 // The first season the league named All-Stars.
 export const ALL_STARS_FROM = '2025';
 
+// Seasons whose awards (League MVP, All-Fantasy, Rookie of the Year, All-Rookie) are
+// scored with another season's settings. The commissioner awarded 2023-24 under
+// today's scoring (1 per point), not that season's 0.5 per point, so the site
+// matches the awards already handed out. Season -> season whose scoring to use.
+export const AWARD_SCORING = { '2023': '2024' };
+
 // League rivalries (set by the commissioner). When a pair meets, Matchup Hype
 // tags the game "Rivalry" and adds up to 5 hype (through the History part).
 // Only from RIVALRIES_FROM on: earlier seasons stay as they were.

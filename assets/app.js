@@ -1871,7 +1871,7 @@ function renderAwards(main) {
             <p>Shown with each champion: the player on the winning team with the most locked points in the championship game.</p>
           </article>
         </div>
-        <p class="lg-fine">Bench points never count toward GM or Player of the Year: only locked points do. League MVP is the one award that looks past this league’s lineups. Each player is shown with the fantasy team that had him at the end of the season (All-Stars: at the All-Star break; Player of the Year: the team he scored the most for), or “Free agent” if no one did. Season recap opens that season’s standings.</p>
+        <p class="lg-fine">Bench points never count toward GM or Player of the Year: only locked points do. League MVP is the one award that looks past this league’s lineups. Fantasy-point awards use that season’s league scoring, except 2023-24, which was awarded under today’s scoring (1 per point) instead of that season’s 0.5 per point. Each player is shown with the fantasy team that had him at the end of the season (All-Stars: at the All-Star break; Player of the Year: the team he scored the most for), or “Free agent” if no one did. Season recap opens that season’s standings.</p>
       </section>
     </div>`;
 }

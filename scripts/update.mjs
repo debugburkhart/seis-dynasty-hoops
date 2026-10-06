@@ -39,7 +39,9 @@ const previous = await readJson('data/league.json'); // last night's data, for t
 
 // All-Stars (they need every box score up to the break) and each season's rookies
 // are worked out once, then carried forward from last night's data.
-const pulled = await buildLeagueData(LEAGUE_ID, undefined, { frozen, allStars: previous?.allStars ?? {}, rookies: previous?.rookies ?? {} });
+const pulled = await buildLeagueData(LEAGUE_ID, undefined, {
+  frozen, allStars: previous?.allStars ?? {}, rookies: previous?.rookies ?? {}, rookiesScoring: previous?.rookiesScoring ?? {},
+});
 
 // Week guard: finished weeks of the season in progress that come back from
 // Sleeper stale or half-loaded keep last night's version (see assets/freeze.js).

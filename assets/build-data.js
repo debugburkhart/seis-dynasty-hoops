@@ -3,7 +3,7 @@
 // is missing, by the browser as a live fallback.
 
 import { CORRECTIONS, DRAFT_CORRECTIONS } from './corrections.js';
-import { ALL_STARS_FROM } from './config.js';
+import { ALL_STARS_FROM, AWARD_SCORING } from './config.js';
 import { draftedPlayers, seasonPoints } from './draft.js';
 
 const API = 'https://api.sleeper.com/v1';
@@ -95,7 +95,7 @@ export async function allStarPool(season, scoring, fetchImpl = globalThis.fetch.
 // frozen: { season: saved season } for completed seasons to load instead of downloading.
 // allStars, rookies: last night's results ({ season: ... }) to keep. Without them
 // (the browser's live fallback), both are skipped: they're too heavy to fetch there.
-export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {}, allStars: knownAllStars = null, rookies: knownRookies = null } = {}) {
+export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {}, allStars: knownAllStars = null, rookies: knownRookies = null, rookiesScoring: knownRookiesScoring = {} } = {}) {
   // Sleeper's cache can serve stale matchup scores for weeks after the fact
   // (2025 week 17 came back 290-315 instead of the real 355-352), so every
   // request carries a unique value to force a fresh copy.
@@ -442,11 +442,13 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   }
 
   // Season totals: every player's fantasy points over the whole NBA regular season,
-  // under that season's league scoring, whether or not anyone started him.
+  // under that season's league scoring (or another season's, per AWARD_SCORING in
+  // config.js), whether or not anyone started him.
   const seasonStats = {}; // NBA season -> Sleeper's season stat lines
   const statsFor = async y => (seasonStats[y] ??= (await get(`/stats/nba/regular/${y}`, {})) ?? {});
   const totalsFor = async lg => {
-    const scoring = Object.entries(lg.scoring_settings ?? {});
+    const rulesFrom = chain.find(x => x.season === AWARD_SCORING[lg.season]) ?? lg;
+    const scoring = Object.entries(rulesFrom.scoring_settings ?? {});
     return Object.entries(await statsFor(lg.season))
       .filter(([pid]) => /^\d+$/.test(pid)) // team totals use ids like "TEAM_BOS"
       .map(([pid, x]) => ({ pid, fp: round1(scoring.reduce((sum, [k, v]) => sum + (Number(x?.[k]) || 0) * v, 0)), gp: x?.gp ?? 0 }))
@@ -477,15 +479,19 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   // Sleeper's years-of-experience field is wrong for some players, so it isn't used.
   // Worked out once a season is complete, then kept from last night.
   const rookies = {};
+  const rookiesScoring = {}; // season -> the season whose scoring its rookie list used
   if (knownRookies) {
     for (const lg of chain) {
-      let result = knownRookies[lg.season];
+      // Redone once if the scoring it was worked out under has changed since (AWARD_SCORING).
+      const scoredWith = AWARD_SCORING[lg.season] ?? lg.season;
+      let result = (knownRookiesScoring[lg.season] ?? lg.season) === scoredWith ? knownRookies[lg.season] : null;
       if (!result && lg.status === 'complete') {
         const prior = await Promise.all(Array.from({ length: 10 }, (_, k) => statsFor(String(Number(lg.season) - 1 - k))));
         result = (await totalsFor(lg)).filter(r => !prior.some(p => (p[r.pid]?.gp ?? 0) > 0)).slice(0, 10);
       }
       if (!result?.length) continue;
       rookies[lg.season] = result;
+      rookiesScoring[lg.season] = scoredWith;
       for (const r of result) usedPlayers.add(r.pid);
     }
   }
@@ -538,6 +544,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     mvp,
     draftStats,
     rookies,
+    rookiesScoring,
     allStars,
     warnings,
   };
