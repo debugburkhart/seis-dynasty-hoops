@@ -747,6 +747,8 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
 }
 .hy-banner .ic { color: var(--gold-ink); margin-top: 1px; }
 .hy-banner b { color: var(--ink); }
+.hy-banner.hy-rivalry { border-color: #efbfb5; background: #fbe6e1; color: #6e2a20; }
+.hy-banner.hy-rivalry .ic { color: #a03a2d; }
 
 .hy-this { padding: 0; overflow: hidden; }
 .hy-this-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 20px; border-bottom: 1px solid var(--line); }

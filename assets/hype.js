@@ -18,6 +18,7 @@
 
 import { powerRankings, powerSeasons } from './power.js';
 import { finishes } from './standings.js';
+import { RIVALRIES, RIVALRIES_FROM } from './config.js';
 
 export const HYPE_PARTS = [
   { id: 'quality', name: 'Quality', weight: 0.30, desc: 'how strong both teams are' },
@@ -39,7 +40,13 @@ const PEDIGREE_WEEKS = 6; // weeks until this season's results fully replace las
 // Chosen with the owner (Oct 2026, "V5") so a 100 is reachable: a title game between the
 // league's two best teams, within 2 Power points, with a deep rivalry. Tested on every past
 // game: the 2025 final went from 81 to 91; regular-season games average about 46.
-export const TUNING = { quality: 'relative', closeFree: 2, closePer: 3.5, historyScale: 1.5 };
+//   rivalryHistory: added to History (after the boost, capped at 100) when a league
+//   rivalry (config.js) meets: up to +5 hype. Owner's choice, from RIVALRIES_FROM on.
+export const TUNING = { quality: 'relative', closeFree: 2, closePer: 3.5, historyScale: 1.5, rivalryHistory: 25 };
+
+// A league rivalry, from the season they started.
+export const isRivalry = (season, a, b) => Number(season) >= Number(RIVALRIES_FROM)
+  && RIVALRIES.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
 const clamp = x => Math.max(0, Math.min(100, x));
 const mean = xs => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
 const r1 = x => Math.round(x * 10) / 10;
@@ -291,7 +298,8 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
       if (lm && lm.t === 'P') history += 10;
       if (series.streak?.n >= 3) history += 10;
     }
-    history = clamp(history * TUNING.historyScale);
+    const rivalry = isRivalry(season, A, B);
+    history = clamp(history * TUNING.historyScale + (rivalry ? TUNING.rivalryHistory : 0));
     const parts = { quality, closeness, stakes, history };
     const hype = Math.round(HYPE_PARTS.reduce((sum, x) => sum + parts[x.id] * x.weight, 0));
 
@@ -307,6 +315,7 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
     else if (p.label === 'Last place game') add('toilet', 'Toilet bowl', 'The lower score finishes last in the league. Nobody wants this one.', 'red');
     else if (p.t === 'P') add('elim', 'Win or go home', `${p.label}: the loser's season is over.`, 'red');
     else if (p.t === 'X') add('consolation', p.label ?? 'Consolation', 'Playing for final position in the standings.');
+    if (rivalry) add('rivalry', 'Rivalry', `League rivalry: ${name(A)} vs ${name(B)}. Rivalry games get extra hype.`, 'red');
 
     if (series.titles.length) {
       const t = series.titles.at(-1);
@@ -381,7 +390,7 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
     if (!series.all.n) add('first', 'First meeting', `${name(A)} and ${name(B)} have never played each other.`);
     if (week === 1) add('opener', 'Opening night', `Week 1. Strength is based on last season's finish until real games are played.`);
 
-    return { a: A, b: B, t: p.t, label: p.label, final, tA, tB, sA, sB, gap, series, parts, hype, labels, raceA, raceB };
+    return { a: A, b: B, t: p.t, label: p.label, final, tA, tB, sA, sB, gap, series, parts, hype, labels, raceA, raceB, rivalry };
   });
 
   // One Trap-game watch and one David vs. Goliath a week at most: the biggest favorite keeps it.
@@ -403,7 +412,9 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
   }
   for (const g of games) g.labels = g.labels.slice(0, MAX_LABELS);
   games.sort((x, y) => (y.main ? 1 : 0) - (x.main ? 1 : 0) || y.hype - x.hype);
-  return { season, week, playoffs, lastRegular, spots, left, weeksIn, games, prevSeason: Object.values(str)[0]?.prevSeason ?? null };
+  // Rivalry Week: every game on a regular-season slate is a league rivalry.
+  const rivalryWeek = !playoffs && games.length > 1 && games.every(g => g.rivalry);
+  return { season, week, playoffs, lastRegular, spots, left, weeksIn, games, rivalryWeek, prevSeason: Object.values(str)[0]?.prevSeason ?? null };
 }
 
 // ---------- Notable moments ----------

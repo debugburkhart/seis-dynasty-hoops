@@ -12,3 +12,15 @@ export const FREEZE_SEED = 'ad30616';
 
 // The first season the league named All-Stars.
 export const ALL_STARS_FROM = '2025';
+
+// League rivalries (set by the commissioner). When a pair meets, Matchup Hype
+// tags the game "Rivalry" and adds up to 5 hype (through the History part).
+// Only from RIVALRIES_FROM on: earlier seasons stay as they were.
+// Pairs are Sleeper user IDs, so a display-name change doesn't break them.
+export const RIVALRIES_FROM = '2026';
+export const RIVALRIES = [
+  ['986665284570279936', '1035744206368657408'], // jimmycooks2 vs tzola13
+  ['1035475215997906944', '1036083466980458496'], // bigdaddyburk vs TRT3
+  ['1035995054579617792', '1035999704737259520'], // loganzarvell vs bigtrey5456
+  ['866760756052537344', '1038192436067016704'], // simeoncampbell7 vs BenDoverPlz123
+];

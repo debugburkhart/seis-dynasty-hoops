@@ -1,4 +1,4 @@
-import { ALL_STARS_FROM, LEAGUE_ID } from './config.js';
+import { ALL_STARS_FROM, LEAGUE_ID, RIVALRIES } from './config.js';
 import { CATEGORIES, CHANGE_LABELS, buildRecords, playerPhoto, recordHistory, recordVisible, viewData } from './records.js';
 import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
@@ -1090,6 +1090,8 @@ async function liveWeek(season, week) {
 const HYPE_TONES = { gold: 'hy-gold', red: 'hy-red', navy: 'hy-navy' };
 const chip = l => `<span class="hy-chip ${HYPE_TONES[l.tone] ?? ''}">${l.id === 'main' ? icon('bolt') : ''}${esc(l.text)}</span>`;
 const teamName = (o, season) => DATA.owners[o]?.teams?.[season] ?? name(o);
+// Every game on the slate is a league rivalry (config.js).
+const rivalryBanner = () => `<p class="hy-banner hy-rivalry">${icon('swords')}<span><b>Rivalry Week.</b> Every league rivalry plays this week: ${RIVALRIES.map(([a, b]) => `${esc(name(a))} vs ${esc(name(b))}`).join(', ')}. Each one gets the Rivalry bonus.</span></p>`;
 
 async function renderHype(main, params) {
   if (!HYPE_NOW) {
@@ -1185,6 +1187,7 @@ async function renderHype(main, params) {
       </div>
     </div>
     <div class="hy-controls">${seasonSelect}${weekSelect}${matchSelect}</div>
+    ${slate.rivalryWeek ? rivalryBanner() : ''}
     ${!curOpen && now.tipoff ? `<p class="hy-banner">${icon('clock')}<span><b>The ${esc(cur.season)} season tips off ${esc(prettyDate(now.tipoff))}.</b> Week 1’s Main event and labels drop ${esc(prettyDate(now.reveal))}, the start of tip-off week. Each week stays under wraps until it starts. Until then, look back at past weeks.</span></p>` : ''}`;
 
   if (!g) {
@@ -2539,6 +2542,7 @@ async function renderEarlyHype(body, params) {
         <select id="cm-week" aria-label="Week">${future.map(w => `<option value="${w}"${w === week ? ' selected' : ''}>Week ${w}${w === future[0] ? ' (next to be revealed)' : ''}</option>`).join('')}</select>
       </span>
     </label>
+    ${slate.rivalryWeek ? rivalryBanner() : ''}
     <p class="hy-banner">${icon('lock')}<span><b>Not public yet.</b> Week ${week} is revealed to everyone ${week === 1 && HYPE_NOW.reveal ? `on ${esc(prettyDate(HYPE_NOW.reveal))}` : 'when it starts'}. ${weeksAway > 1 ? `This preview uses only the results so far; ${weeksAway - 1} more week${weeksAway - 1 === 1 ? '' : 's'} will be played first, so the hype can change by then.` : week === 1 ? 'Nothing is played before it, so this is what everyone will see unless a manager or team name changes.' : 'It uses the same results the announcement will, so this is very likely what everyone will see (unless last week’s results are still coming in).'}</span></p>
 
     <section class="card hy-why">

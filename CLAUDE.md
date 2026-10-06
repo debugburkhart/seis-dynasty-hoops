@@ -48,7 +48,11 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `assets/hype.js`: Matchup Hype (hype score, Main event, labels, moments). TUNING (owner chose
   "V5", Oct 2026, so 100 is reachable): Quality relative to that week's league (top-2 pair =
   100, average pair = 50), Closeness free within 2 Power pts then -3.5/pt, History x1.5
-  (capped). 2025 final went 81 -> 91. Uses only games
+  (capped). 2025 final went 81 -> 91. League rivalries (RIVALRIES + RIVALRIES_FROM in config.js,
+  owner IDs; owner chose 2026+ only, earlier seasons untouched): "Rivalry" tag (red) and
+  +25 History after the boost, capped (= up to +5 hype); a regular week where every game is
+  a rivalry gets a "Rivalry Week" banner (2026: weeks 7, 14, 21). Public "How hype works"
+  text doesn't mention rivalries yet (owner wanted it seen only in Early hype for now). Uses only games
   before the week. The page (app.js) fetches Sleeper state + live scores in the browser and
   reveals a week only once it's under way (week 1: the Monday of tip-off week). Live scores
   refresh every minute while the page is open (Home's Main event card too); the nightly
