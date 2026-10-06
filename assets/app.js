@@ -1053,7 +1053,7 @@ async function hypeNow() {
 // Live scores (and, in the playoffs, the bracket pairings) for the week under way.
 async function liveWeek(season, week) {
   const key = `${season}|${week}`;
-  if (LIVE[key] && Date.now() - LIVE[key].at < 60_000) return LIVE[key];
+  if (LIVE[key] && Date.now() - LIVE[key].at < 50_000) return LIVE[key];
   const s = DATA.seasons.find(x => x.season === season);
   const ownerOf = Object.fromEntries(s.teams.map(t => [t.rosterId, t.owner]));
   const rows = await withTimeout(sleeper(`/league/${s.leagueId}/matchups/${week}`), 8000);
@@ -1370,7 +1370,7 @@ async function renderHype(main, params) {
         const st = $('#hy-status', main);
         if (st) st.textContent = `Live · updated ${new Date(d.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
       } catch { /* try again next time */ }
-    }, 60 * 60_000); // hourly; every visit also loads fresh scores
+    }, 60_000); // every minute while the page is open
   }
 }
 
@@ -2850,27 +2850,30 @@ async function homeHypeWeek() {
   return { season, week, live: false, now };
 }
 
-async function homeHype(box) {
+// Fills the Main event card. Returns true when the week is being played, so
+// the scores are worth refreshing. refresh: a timed update of a card already
+// shown, which keeps the old card if Sleeper doesn't answer.
+async function homeHype(box, refresh = false) {
   let pick;
   try { pick = await homeHypeWeek(); } catch { pick = {}; }
-  if (route().page !== 'home') return;
+  if (!box.isConnected) return false;
   const { season, week, live, now } = pick;
   const cur = DATA.seasons.at(-1);
   if (!season || !week) {
     box.innerHTML = '<a class="card hm-card hm-link" href="#/hype"><p class="empty">Matchup Hype starts with week 1 of the season.</p></a>';
-    return;
+    return false;
   }
   let liveData = null;
   if (live) {
     try { liveData = await liveWeek(season, week); } catch { /* scores just won't be live */ }
-    if (route().page !== 'home') return;
+    if (!box.isConnected || (refresh && !liveData)) return live;
   }
   const pairs = liveData?.pairs ?? weekPairs(DATA, season, week);
   const slate = hypeSlate(DATA, season, week, pairs);
   const g = slate.games[0];
   if (!g) {
     box.innerHTML = `<a class="card hm-card hm-link" href="#/hype"><p class="empty">Week ${week}’s matchups show up once Sleeper sets them.</p></a>`;
-    return;
+    return live;
   }
   const score = o => (g.final ? (o === g.a ? g.final.ap : g.final.bp) : liveData?.scores?.[o]);
   const sa = score(g.a);
@@ -2888,7 +2891,7 @@ async function homeHype(box) {
   };
   const waiting = !(now.done || now.week >= 1) && now.tipoff && cur.season !== season;
   const when = waiting ? `Last Main event · ${season} Week ${week}` : live ? `This week · Week ${week}` : `${season} · Week ${week}`;
-  const status = g.final ? 'Final' : live && hasScore ? 'Live' : live ? 'Tip-off pending' : '';
+  const status = g.final ? 'Final' : live && hasScore ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : live ? 'Tip-off pending' : '';
   const why = g.labels.find(l => l.id === 'main')?.why ?? g.labels[0]?.why;
   box.innerHTML = `
     <a class="hm-main" href="#/hype?${new URLSearchParams({ season, week, m: g.a })}">
@@ -2909,6 +2912,7 @@ async function homeHype(box) {
       <span class="hm-go">Full matchup ${icon('arrow')}</span>
     </a>
     ${waiting ? `<p class="hm-note">${icon('clock')}<span>The ${esc(cur.season)} season tips off ${esc(prettyDate(now.tipoff))}. Week 1’s Main event drops ${esc(prettyDate(now.reveal))}.</span></p>` : ''}`;
+  return live;
 }
 
 // Newest record changes, league and personal together.
@@ -3072,7 +3076,15 @@ function renderHome(main) {
     });
     $('#hm-st', main).innerHTML = homeStandingsRows();
   }));
-  homeHype($('#hm-hype', main));
+  // While a week is being played, refresh the Main event's scores every minute.
+  const box = $('#hm-hype', main);
+  homeHype(box).then(live => {
+    if (!live || !box.isConnected) return;
+    HYPE_TIMER = setInterval(() => {
+      if (!box.isConnected) return clearInterval(HYPE_TIMER);
+      homeHype(box, true);
+    }, 60_000);
+  });
 }
 
 // ---------- Boot ----------

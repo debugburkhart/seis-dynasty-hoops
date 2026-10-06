@@ -47,7 +47,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `assets/power.js`: Power Rankings. `assets/freeze.js`: frozen seasons + week guard.
 - `assets/hype.js`: Matchup Hype (hype score, Main event, labels, moments). Uses only games
   before the week. The page (app.js) fetches Sleeper state + live scores in the browser and
-  reveals a week only once it's under way (week 1: the Monday of tip-off week).
+  reveals a week only once it's under way (week 1: the Monday of tip-off week). Live scores
+  refresh every minute while the page is open (Home's Main event card too); the nightly
+  Action stays once a day (GitHub won't run more often than every 5 min and runs late).
 - `assets/transactions.js`: Transactions page data (move kinds, Ledger totals); values come
   from frontoffice.js (trades/pickups/letGo carry `tx` = index into DATA.transactions).
   Players carry `t` = current NBA team (added Oct 2026; older data files lack it).

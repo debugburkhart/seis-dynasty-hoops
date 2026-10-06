@@ -1435,7 +1435,7 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
 .hm-score span { color: #c9d4e6; }
 .hm-score span.won { color: var(--gold); }
 .hm-score i { font-style: normal; color: #6f82a3; }
-.hm-status { font: 800 9.5px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; color: #a9b7cc; }
+.hm-status { max-width: 120px; text-align: center; font: 800 9.5px/1.3 var(--display); letter-spacing: .12em; text-transform: uppercase; color: #a9b7cc; }
 .hm-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
 .hm-chips .hy-chip:not(.hy-gold) { background: rgba(255,255,255,.1); color: #dfe6f1; }
 .hm-why { margin: 0; text-align: center; font-size: 13px; color: #dfe6f1; }
