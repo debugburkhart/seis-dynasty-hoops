@@ -1802,11 +1802,25 @@ function renderAwards(main) {
                       <div class="aw-winner">${esc(name(b.draft.winner.owner))} <b class="aw-grade">${b.draft.winner.grade}</b></div>
                       <div class="aw-meta aw-fteam">${esc(teamName(b.draft.winner.owner, b.season))}</div>
                       <div class="aw-meta">${b.draft.winner.picks.length} pick${b.draft.winner.picks.length === 1 ? '' : 's'} · ${perGame(b.draft.winner.diff)} pts/game vs their spots · best: ${esc(playerName(b.draft.winner.best.pid))}</div>
-                      ${b.draft.steal ? `<div class="aw-meta aw-steal">Steal of the Draft: <b>${esc(playerName(b.draft.steal.pid))}</b> (${pickLabel(b.draft.steal)}, ${esc(name(b.draft.steal.o))}) · ${fpg(b.draft.steal.value)} pts/game vs ${fpg(b.draft.steal.expected)} expected</div>` : ''}
                       <details class="aw-more">
                         <summary>Every class after year one ${icon('arrow')}</summary>
                         <ol class="aw-race">${b.draft.rows.map((r, j) => `<li${j === 0 ? ' class="win"' : ''}><span>${esc(name(r.owner))}<small>${r.picks.length} pick${r.picks.length === 1 ? '' : 's'} · best: ${esc(playerName(r.best.pid))}</small></span><b>${r.grade}</b></li>`).join('')}</ol>
                         <a class="aw-link" href="#/draft-grades?season=${esc(b.season)}">Today’s grades for this draft ${icon('arrow')}</a>
+                      </details>` : '<div class="aw-meta">Decided once that draft’s rookies have played their first season.</div>'}
+                  </div>
+                </li>
+                <li>
+                  <span class="aw-num">09</span>
+                  <div class="aw-award">
+                    <div class="aw-label">Steal of the Draft</div>
+                    ${b.draft?.none ? `<div class="aw-meta">No rookie draft this season${DATA.drafts?.some(d => d.s === b.season && d.kind === 'startup') ? ': the startup draft built the league' : ''}.</div>`
+                      : b.draft?.steal ? `
+                      <div class="aw-winner">${esc(playerName(b.draft.steal.pid))}${pmeta(b.draft.steal.pid) ? ` <small class="aw-pos">${esc(pmeta(b.draft.steal.pid))}</small>` : ''}</div>
+                      <div class="aw-meta aw-fteam">Drafted by ${esc(teamName(b.draft.steal.o, b.season))} (${esc(name(b.draft.steal.o))}) · ${pickLabel(b.draft.steal)}, #${b.draft.steal.no} overall</div>
+                      <div class="aw-meta">${fpg(b.draft.steal.value)} pts/game vs ${fpg(b.draft.steal.expected)} expected for the spot · ${perGame(pickDiff(b.draft.steal))}</div>
+                      <details class="aw-more">
+                        <summary>The race · top 3 ${icon('arrow')}</summary>
+                        <ol class="aw-race">${b.draft.steals.map((p, j) => `<li${j === 0 ? ' class="win"' : ''}><span>${j + 1}. ${esc(playerName(p.pid))}<small>${pickLabel(p)} · ${esc(name(p.o))} · ${fpg(p.value)} vs ${fpg(p.expected)} expected</small></span><b>${perGame(pickDiff(p))}</b></li>`).join('')}</ol>
                       </details>` : '<div class="aw-meta">Decided once that draft’s rookies have played their first season.</div>'}
                   </div>
                 </li>
@@ -1863,7 +1877,11 @@ function renderAwards(main) {
           </article>
           <article class="aw-rule-block">
             <h3><span class="aw-num">08</span> Draft of the Year</h3>
-            <p>The best class grade from that season’s rookie draft, judged on the rookies’ first NBA season: fantasy points per game against what each draft spot is expected to produce, the same method as the Draft Grades in the Draft Kit. It uses only what was known when the season ended, so the banner never changes. The Draft Grades tab keeps grading every class as the players develop, so today’s grade can differ. Steal of the Draft is the pick from that draft that beat its spot by the most.</p>
+            <p>The best class grade from that season’s rookie draft, judged on the rookies’ first NBA season: fantasy points per game against what each draft spot is expected to produce, the same method as the Draft Grades in the Draft Kit. It uses only what was known when the season ended, so the banner never changes. The Draft Grades tab keeps grading every class as the players develop, so today’s grade can differ.</p>
+          </article>
+          <article class="aw-rule-block">
+            <h3><span class="aw-num">09</span> Steal of the Draft</h3>
+            <p>The pick from that season’s rookie draft that beat its draft spot by the most after the rookies’ first NBA season: his fantasy points per game minus what that spot is expected to produce, the same numbers as the Draft Grades. Like Draft of the Year, it uses only what was known when the season ended, so it never changes. The race shows the top 3.</p>
           </article>
           <p class="aw-rule-fine">Teams list everyone tied with the last player in, so a tie can make a team one bigger.</p>
           <article class="aw-rule-block">

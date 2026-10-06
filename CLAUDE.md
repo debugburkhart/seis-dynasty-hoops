@@ -95,7 +95,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   01 GM, 02 Player of the Year, 03 League MVP, 04 Rookie of the Year, 05 All-Stars,
   06 All-Fantasy, 07 All-Rookie, 08 Draft of the Year (draftOfYear in draft.js: best class
   grade from that season's rookie draft judged on year one only, data filtered to seasons/
-  drafts/draftStats <= that season so the banner never changes; + Steal of the Draft;
+  drafts/draftStats <= that season so the banner never changes), 09 Steal of the Draft (own
+  award since Oct 2026: that draft's pick furthest above its spot after year one, race = top 3;
   startup-only seasons say so). Record Book draft records are locked-points based and
   were renamed "(locked points)" with a note pointing to Draft Grades (owner chose to keep
   both views). Awards lists show position only (Sleeper's NBA team is

@@ -161,7 +161,8 @@ export function draftClasses(grades, season) {
 // from that season's rookie draft, judged on the rookies' first season only, with
 // the league's data as it stood when that season ended. Later seasons and drafts
 // are left out, so a banner never changes. The Draft Grades tab keeps the living
-// grade. Steal of the Draft = that class's pick furthest above its spot.
+// grade. Steal of the Draft (its own award, 09) = that draft's pick furthest above
+// its spot after year one; steals = the top 3 for the race.
 export function draftOfYear(DATA, season) {
   if (!(DATA.drafts ?? []).some(d => d.s === season && d.kind === 'rookie')) return { none: true };
   if (!DATA.draftStats) return null;
@@ -173,7 +174,8 @@ export function draftOfYear(DATA, season) {
   };
   const c = draftClasses(draftGrades(asOf), season);
   const rows = c.rows.filter(r => r.grade);
-  return rows.length ? { winner: rows[0], rows, steal: c.steal } : null;
+  const steals = c.picks.filter(p => p.z != null).sort((a, b) => b.z - a.z).slice(0, 3);
+  return rows.length ? { winner: rows[0], rows, steal: c.steal, steals } : null;
 }
 
 // Report card: a manager across every rookie draft.
