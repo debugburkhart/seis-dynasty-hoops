@@ -9,6 +9,7 @@ import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions
 import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, ownerAt, playerOfTheYear, rookieClass, seasonEndKey } from './awards.js';
 import { ALL_STAR_POSITIONS, CORRECTIONS, DRAFT_CORRECTIONS, PHOTO_CORRECTIONS } from './corrections.js';
 import { SORTS, playerIndex } from './players.js';
+import { TIERS, draftClasses, draftGrades, draftedPlayers, projectedOrder, reportCards, seasonPoints } from './draft.js';
 
 // ---------- Navigation ----------
 
@@ -16,9 +17,9 @@ const NAV = [
   { title: 'Now', items: [['home', 'Home', 'home'], ['standings', 'Standings', 'list'], ['transactions', 'Transactions', 'swap']] },
   { title: 'In Season', items: [['props', 'Weekly Props', 'ticket'], ['trade-court', 'Trade Court', 'scale'], ['power', 'Power Rankings', 'gauge'], ['hype', 'Matchup Hype', 'bolt']] },
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['players', 'Player Index', 'users'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
-  { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['cheat-sheet', 'Cheat Sheet', 'clipboard'], ['draft-grades', 'Draft Grades', 'cap']] },
+  { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['future-drafts', 'Future Drafts', 'calendar'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['home', 'rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players']);
+const READY = new Set(['home', 'rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players', 'draft-history', 'future-drafts', 'draft-grades']);
 const DEFAULT_PAGE = 'home';
 
 const ICONS = {
@@ -31,6 +32,7 @@ const ICONS = {
   bolt: '<path d="M11 2 4 11h5l-1 7 7-9h-5z"/>',
   trophy: '<path d="M6 3h8v4a4 4 0 0 1-8 0zM6 5H3v1a3 3 0 0 0 3 3M14 5h3v1a3 3 0 0 1-3 3M10 11v3M7 17h6M8 14h4v3H8z"/>',
   book: '<path d="M4 4h5a2 2 0 0 1 2 2v11a1.5 1.5 0 0 0-1.5-1.5H4zM16 4h-5M16 4v11.5h-5.5"/>',
+  calendar: '<rect x="3" y="4.5" width="14" height="12.5" rx="1.5"/><path d="M3 8.5h14M7 3v3M13 3v3"/>',
   clock: '<circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2"/>',
   swords: '<path d="M3 3l8 8M3 3h3M3 3v3M17 3l-8 8M17 3h-3M17 3v3M6 14l-2 2 1 1 2-2M14 14l2 2-1 1-2-2M5 12l3 3M15 12l-3 3"/>',
   history: '<path d="M3.5 10a6.5 6.5 0 1 0 2-4.7M3 3v3.5h3.5M10 6.5V10l2.5 1.5"/>',
@@ -3087,6 +3089,329 @@ function renderHome(main) {
   });
 }
 
+// ---------- Draft Kit ----------
+// Three tabs on one page: Draft History (every board, colored by how each pick
+// turned out), Future Drafts (who owns every pick of the next three drafts, plus
+// the projected order of the next one) and Draft Grades (class grades and manager
+// report cards). The math is in assets/draft.js.
+
+const DRAFT_TABS = [['draft-history', 'Draft History'], ['future-drafts', 'Future Drafts'], ['draft-grades', 'Draft Grades']];
+let DRAFT_GRADES;
+let TRADED_PICKS; // { at, list } from Sleeper, refreshed after 5 minutes
+let dkPath = null; // the traded future pick whose trade path is open
+
+const pickLabel = p => `${p.round}.${String(p.inRound).padStart(2, '0')}`;
+const roundName = r => `${r}${{ 1: 'st', 2: 'nd', 3: 'rd' }[r] ?? 'th'}`;
+const perSeason = n => `${n >= 0 ? '+' : '−'}${Math.round(Math.abs(n)).toLocaleString('en-US')}`;
+const playerName = pid => DATA.players?.[pid]?.n ?? `Player ${pid}`;
+const playerLink = pid => `#/players?q=${encodeURIComponent(playerName(pid))}`;
+
+// Season fantasy points for drafted players are saved nightly; until the first
+// nightly run with them (or when the site builds live), they're pulled here.
+async function draftKitData() {
+  if (DRAFT_GRADES) return DRAFT_GRADES;
+  if (!DATA.draftStats) {
+    const pids = draftedPlayers(DATA);
+    const out = {};
+    await Promise.all(DATA.seasons.map(async s => {
+      const [lg, stats] = await Promise.all([sleeper(`/league/${s.leagueId}`), sleeper(`/stats/nba/regular/${s.season}`)]);
+      const pts = seasonPoints(stats, lg?.scoring_settings, pids);
+      if (Object.keys(pts).length) out[s.season] = pts;
+    }));
+    DATA.draftStats = out;
+  }
+  return (DRAFT_GRADES = draftGrades(DATA));
+}
+
+const tierPill = p => (p.tier
+  ? `<span class="dk-tier t-${p.tier}">${TIERS.find(t => t.id === p.tier).label}</span>`
+  : '<span class="dk-tier t-none">Incomplete</span>');
+const gradeBadge = (g, big = false) => `<span class="dk-grade${big ? ' big' : ''} g-${g ? g[0].toLowerCase() : 'none'}">${g ?? 'INC'}</span>`;
+
+function draftTabs(page) {
+  return `
+    <div class="st-tabs dk-tabs" role="tablist">
+      ${DRAFT_TABS.map(([id, label]) => `<a role="tab" class="${id === page ? 'on' : ''}" href="#/${id}">${label.replace('Draft ', '').replace(' Drafts', '')}</a>`).join('')}
+    </div>`;
+}
+
+function draftSeasonPicker(page, list, season, extra = '') {
+  return `
+    <div class="dk-seasons">
+      ${list.map(([s, label]) => `<a class="${s === season ? 'on' : ''}" href="#/${page}?season=${s}${extra}">${label}</a>`).join('')}
+    </div>`;
+}
+
+async function renderDraftKit(main, page, params) {
+  const title = DRAFT_TABS.find(([id]) => id === page)[1];
+  const shell = body => `
+    <div class="page page-wide">
+      <div class="page-head">
+        <div class="page-icon">${icon('cap')}</div>
+        <div><div class="eyebrow">Draft Kit</div><h1>${title}</h1></div>
+      </div>
+      ${draftTabs(page)}
+      ${body}
+    </div>`;
+  if (!DRAFT_GRADES) {
+    main.innerHTML = shell('<div class="loading">Loading the draft room…</div>');
+    try { await draftKitData(); } catch (err) {
+      if (route().page === page) main.innerHTML = shell(`<section class="card soon-card"><p>Couldn’t load player stats from Sleeper (${esc(err.message)}). Try again in a minute.</p></section>`);
+      return;
+    }
+    if (route().page !== page) return;
+  }
+  if (page === 'draft-history') main.innerHTML = shell(draftHistory(params));
+  else if (page === 'draft-grades') main.innerHTML = shell(draftGradesTab(params));
+  else {
+    main.innerHTML = shell('<div class="loading">Checking Sleeper for traded picks…</div>');
+    let body;
+    try {
+      if (!TRADED_PICKS || Date.now() - TRADED_PICKS.at > 5 * 60_000) {
+        TRADED_PICKS = { at: Date.now(), list: await withTimeout(sleeper(`/league/${DATA.seasons.at(-1).leagueId}/traded_picks`), 8000) };
+      }
+      body = futureDrafts();
+    } catch (err) {
+      body = `<section class="card soon-card"><p>Couldn’t reach Sleeper for the traded-pick list (${esc(err.message)}). Try again in a minute.</p></section>`;
+    }
+    if (route().page !== page) return;
+    main.innerHTML = shell(body);
+    bindFuture(main);
+  }
+}
+
+// ----- Draft History -----
+
+function draftHistory(params) {
+  const drafts = [...(DATA.drafts ?? [])].sort((a, b) => Number(b.s) - Number(a.s));
+  if (!drafts.length) return '<section class="card soon-card"><p>No drafts yet.</p></section>';
+  const d = drafts.find(x => x.s === params.get('season')) ?? drafts[0];
+  const picks = DRAFT_GRADES.picks.filter(p => p.s === d.s && p.kind === d.kind);
+  const rounds = Math.max(...picks.map(p => p.round));
+  const teams = DATA.seasons.find(s => s.season === d.s)?.teams ?? [];
+  const slots = Math.max(teams.length, ...picks.map(p => p.slot));
+  const startup = d.kind === 'startup';
+  const graded = picks.some(p => p.tier);
+  const slotTeam = slot => picks.find(p => p.slot === slot && p.round === 1)?.orig;
+
+  const cell = p => {
+    if (!p) return '<td class="dk-empty">—</td>';
+    const via = p.orig !== p.o ? `<small class="dk-via">via ${esc(name(p.orig))}</small>` : '';
+    const pos = DATA.players?.[p.pid]?.pos;
+    return `
+      <td><a class="dk-cell t-${p.tier ?? 'none'}" href="${playerLink(p.pid)}" title="${esc(`${playerName(p.pid)}: ${p.value != null ? `${Math.round(p.value)} fantasy pts per season` : 'not graded yet'}`)}">
+        <span class="dk-no">${pickLabel(p)}<i>#${p.no}</i></span>
+        <b>${esc(playerName(p.pid))}</b>
+        <small>${pos ? `${esc(pos)} · ` : ''}${esc(name(p.o))}</small>
+        ${via}
+      </a></td>`;
+  };
+
+  return `
+    ${draftSeasonPicker('draft-history', drafts.map(x => [x.s, x.kind === 'startup' ? `${x.s} Startup` : `${x.s} Rookie`]), d.s)}
+    <p class="page-desc">${startup
+      ? `The ${d.s} startup draft that built the league: ${rounds} rounds, snake order. Colors show how each pick turned out against other startup picks; startup picks aren’t graded.`
+      : `The ${d.s} rookie draft: ${rounds} rounds, ${picks.length} picks. Tap a pick to open the player.`}</p>
+    <div class="dk-legend">
+      ${TIERS.map(t => `<span class="dk-key t-${t.id}">${t.label}</span>`).join('')}
+      <span class="dk-key t-none">Not graded yet</span>
+    </div>
+    ${graded ? '' : `<p class="filter-note">The ${d.s} class hasn’t played enough NBA games yet. Colors start once these players are a quarter of the way through an NBA season.</p>`}
+    <section class="dk-board-wrap">
+      <div class="dk-scroll">
+        <table class="dk-board">
+          <thead><tr><th class="dk-rd">Rd</th>${Array.from({ length: slots }, (_, i) => {
+            const o = slotTeam(i + 1);
+            return `<th>${startup ? `Slot ${i + 1}` : `Pick ${i + 1}`}${o ? `<small>${esc(name(o))}</small>` : ''}</th>`;
+          }).join('')}</tr></thead>
+          <tbody>${Array.from({ length: rounds }, (_, r) => `
+            <tr><th class="dk-rd">${r + 1}</th>${Array.from({ length: slots }, (_, i) => cell(picks.find(p => p.round === r + 1 && p.slot === i + 1))).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <p class="pw-foot">Each square shows the pick (round.pick and overall number), the player, his position and the manager who made the pick; “via” means the pick was traded and first belonged to that manager. ${startup ? 'Columns are draft slots, so the snake runs back and forth.' : `Columns are the draft order; the name under each pick number is the team that owned that spot. <a href="#/draft-grades?season=${d.s}">See the ${d.s} draft grades</a>.`}</p>`;
+}
+
+// ----- Future Drafts -----
+
+function futureDrafts() {
+  const { seasons: all, rounds, picks } = pickLedger(DATA, TRADED_PICKS.list);
+  const seasons = all.slice(0, 3);
+  const cur = DATA.seasons.at(-1);
+  const proj = projectedOrder(DATA, seasons[0], standingsBefore);
+  const slotOf = Object.fromEntries((proj?.rows ?? []).map(r => [r.owner, r]));
+  const managers = cur.teams.map(t => t.owner)
+    .sort((a, b) => (slotOf[a]?.slot ?? 99) - (slotOf[b]?.slot ?? 99) || name(a).localeCompare(name(b)));
+  const per = seasons.length * rounds;
+  const held = o => picks.filter(p => seasons.includes(p.season) && p.owner === o).length;
+  const key = p => `${p.season}|${p.round}|${p.orig}`;
+  const fp = (s, r, o) => picks.find(p => p.season === s && p.round === r && p.orig === o);
+
+  const projCard = !proj ? '' : !proj.rows.length
+    ? `<p class="filter-note">The projected ${seasons[0]} order appears once the ${proj.season} season’s first week is played: reverse standings, with the two worst teams flipping a coin for No. 1.</p>`
+    : `
+    <section class="card">
+      <div class="card-head"><h2>${proj.final ? '' : 'Projected '}${seasons[0]} draft order</h2><span class="card-sub">${proj.final ? `Final ${proj.season} standings` : `${proj.season} standings after ${proj.weeks} week${proj.weeks === 1 ? '' : 's'}`} · worst record picks first</span></div>
+      <ol class="dk-order">
+        ${proj.rows.map(r => {
+          const first = fp(seasons[0], 1, r.owner);
+          const holder = first && first.owner !== r.owner ? `<span class="dk-held">held by <b>${esc(name(first.owner))}</b></span>` : '';
+          return `<li>
+            <span class="dk-order-no">${r.coin ? '1–2' : r.slot}</span>
+            <span class="dk-order-team"><b>${esc(teamName(r.owner, cur.season))}</b><small>${esc(name(r.owner))} · ${rec(r.w, r.l, r.t)} · ${num(r.pf)} pts</small></span>
+            ${holder}
+          </li>`;
+        }).join('')}
+      </ol>
+      <p class="hm-foot">The two worst records flip a coin for the No. 1 pick, so both show “1–2”. Ties in record go to points for.</p>
+    </section>`;
+
+  const path = dkPath && picks.find(p => key(p) === dkPath);
+  const pathBox = path ? `
+    <div class="dk-path">
+      <b>${path.season} ${roundName(path.round)}-round pick, originally ${esc(name(path.orig))}’s</b>
+      <p>${path.path.length
+        ? [esc(name(path.path[0].from)), ...path.path.map(x => `<b>${esc(name(x.to))}</b> <small>(${x.s} Wk ${x.w})</small>`)].join(' → ')
+        : `Now held by <b>${esc(name(path.owner))}</b>. The trade isn’t in the league’s transaction history.`}</p>
+    </div>` : '<p class="dk-path-hint">Tap a traded pick to see how it moved.</p>';
+
+  return `
+    ${projCard}
+    <section class="card dk-future">
+      <div class="card-head"><h2>Who owns every pick</h2><span class="card-sub">The next ${seasons.length} rookie drafts · live from Sleeper</span></div>
+      <div class="dk-scroll">
+        <table class="dk-ftable">
+          <thead>
+            <tr><th rowspan="2" class="dk-fman">Original team</th>${seasons.map(s => `<th colspan="${rounds}" class="dk-fyear">${s}</th>`).join('')}<th rowspan="2" class="dk-fheld">Picks held</th></tr>
+            <tr>${seasons.map(() => Array.from({ length: rounds }, (_, r) => `<th class="dk-fround">Rd ${r + 1}</th>`).join('')).join('')}</tr>
+          </thead>
+          <tbody>${managers.map(o => {
+            const h = held(o);
+            return `<tr>
+              <th class="dk-fman"><b>${esc(teamName(o, cur.season))}</b><small>${esc(name(o))}${slotOf[o] && seasons[0] ? ` · ${proj.final ? '' : 'proj. '}${seasons[0]} #${slotOf[o].coin ? '1–2' : slotOf[o].slot}` : ''}</small></th>
+              ${seasons.map(s => Array.from({ length: rounds }, (_, r) => {
+                const p = fp(s, r + 1, o);
+                if (!p) return '<td>—</td>';
+                if (p.owner === o) return '<td class="dk-own">Own</td>';
+                return `<td><button type="button" class="dk-moved${key(p) === dkPath ? ' on' : ''}" data-pick="${esc(key(p))}">${esc(name(p.owner))}</button></td>`;
+              }).join('')).join('')}
+              <td class="dk-fheld"><b>${h}</b>${h !== per ? `<small class="${h > per ? 'v-pos' : 'v-neg'}">${h > per ? '+' : '−'}${Math.abs(h - per)}</small>` : ''}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+      ${pathBox}
+    </section>
+    <p class="pw-foot">Rows are each pick’s original team; “Own” means that team still has its own pick, and a name means that manager holds it now. Picks held counts every pick a manager owns across these ${seasons.length} drafts (${per} each to start). Trade paths come from the league’s transactions.</p>`;
+}
+
+function bindFuture(main) {
+  main.querySelectorAll('.dk-moved').forEach(b => b.addEventListener('click', () => {
+    dkPath = dkPath === b.dataset.pick ? null : b.dataset.pick;
+    const box = $('.dk-future', main);
+    const keep = $('.dk-scroll', box)?.scrollLeft ?? 0;
+    const html = futureDrafts();
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    box.replaceWith($('.dk-future', tmp));
+    const next = $('.dk-future', main);
+    $('.dk-scroll', next).scrollLeft = keep;
+    bindFuture(main);
+    $('.dk-path', next)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }));
+}
+
+// ----- Draft Grades -----
+
+function draftGradesTab(params) {
+  const view = params.get('view') === 'cards' ? 'cards' : 'draft';
+  const rookie = [...new Set(DRAFT_GRADES.picks.filter(p => p.kind === 'rookie').map(p => p.s))].sort().reverse();
+  if (!rookie.length) return '<section class="card soon-card"><p>Grades start after the first rookie draft.</p></section>';
+  const season = rookie.includes(params.get('season')) ? params.get('season') : rookie.find(s => DRAFT_GRADES.picks.some(p => p.s === s && p.tier)) ?? rookie[0];
+  const toggle = `
+    <div class="st-stage dk-view">
+      <a class="${view === 'draft' ? 'on' : ''}" href="#/draft-grades?season=${season}">By draft</a>
+      <a class="${view === 'cards' ? 'on' : ''}" href="#/draft-grades?view=cards">Report cards</a>
+    </div>`;
+  const how = `
+    <section class="lg-behind dk-how">
+      <div class="lg-behind-head"><h2>How grades work</h2><span>Value compared with the draft spot</span></div>
+      <p><b>Each pick is worth the player’s NBA fantasy points per season since he was drafted</b>, under that season’s league scoring, no matter who rostered him later. A manager who drafted well and then traded the player still gets the credit.</p>
+      <p>That’s compared with what the spot is <b>expected</b> to produce: a smooth curve through every rookie pick in league history, so an earlier pick is always expected to produce more. A 1.01 has to be a star to grade well; a late 3rd-rounder who sticks in the league is a steal.</p>
+      <p><b>Steal</b>, <b>Hit</b>, <b>Fair</b>, <b>Miss</b> and <b>Bust</b> show how far a pick landed from its spot’s expectation. A class grade (A+ to F) adds up the manager’s picks in that draft, so two solid picks can match one great one. Report cards average a manager’s class grades (A = 4.0).</p>
+      <p class="lg-fine">The season in progress counts for the share of its regular season played, and a pick is <b>Incomplete</b> until the player is a quarter of the way through an NBA season. Grades move as players develop. With only a few drafts behind the league, the expectation curve will sharpen every year. The ${DATA.drafts?.find(d => d.kind === 'startup')?.s ?? ''} startup draft isn’t graded.</p>
+    </section>`;
+  return `${toggle}${view === 'cards' ? reportCardsView() : classView(season, rookie)}${how}`;
+}
+
+function classView(season, rookie) {
+  const c = draftClasses(DRAFT_GRADES, season);
+  const callout = (p, label, cls) => (p ? `
+    <a class="card dk-call ${cls}" href="${playerLink(p.pid)}">
+      <span class="eyebrow">${label}</span>
+      <b>${esc(playerName(p.pid))}</b>
+      <small>${pickLabel(p)} (#${p.no}) · ${esc(name(p.o))}</small>
+      <span class="dk-call-val">${Math.round(p.value)} <small>pts/season</small></span>
+      <small>Spot expected ${Math.round(p.expected)} · ${perSeason(p.diff)}</small>
+    </a>` : '');
+  const picker = draftSeasonPicker('draft-grades', rookie.map(s => [s, `${s} draft`]), season);
+  const rows = c.rows.map(r => `
+    <div class="dk-crow">
+      ${gradeBadge(r.grade)}
+      <span class="dk-cman"><b>${esc(teamName(r.owner, season))}</b><small>${esc(name(r.owner))} · ${r.picks.length} pick${r.picks.length === 1 ? '' : 's'}</small></span>
+      <span class="dk-cval">${r.grade ? `<b class="${r.diff >= 0 ? 'v-pos' : 'v-neg'}">${perSeason(r.diff)}</b><small>pts/season vs spot</small>` : '<small>Incomplete</small>'}</span>
+      <span class="dk-cbest">${r.best ? `<small>Best pick</small><b>${esc(playerName(r.best.pid))}</b>` : ''}</span>
+    </div>`).join('');
+  const pickRows = [...c.picks].sort((a, b) => a.no - b.no).map(p => `
+    <a class="dk-prow" href="${playerLink(p.pid)}">
+      <span class="dk-no">${pickLabel(p)}</span>
+      <span class="dk-pname"><b>${esc(playerName(p.pid))}</b><small>${esc(DATA.players?.[p.pid]?.pos ?? '')} · ${esc(name(p.o))}${p.orig !== p.o ? ` (via ${esc(name(p.orig))})` : ''}</small></span>
+      <span class="dk-pnum">${p.value != null ? Math.round(p.value) : '—'}<small>pts/season</small></span>
+      <span class="dk-pnum dk-pexp">${p.expected != null ? Math.round(p.expected) : '—'}<small>expected</small></span>
+      ${tierPill(p)}
+    </a>`).join('');
+  return `
+    ${picker}
+    ${c.complete ? `<div class="dk-calls">${callout(c.steal, 'Steal of the draft', 'dk-steal')}${callout(c.bust, 'Biggest bust', 'dk-bust')}</div>`
+      : `<section class="card soon-card"><p><b>The ${season} class is Incomplete.</b> Grades start once these rookies are a quarter of the way through their first NBA season, and keep updating after that.</p></section>`}
+    <section class="card">
+      <div class="card-head"><h2>Class grades</h2><span class="card-sub">${season} rookie draft · by manager</span></div>
+      <div class="dk-classes">${rows}</div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Every pick</h2><span class="card-sub">Fantasy points per season since the draft, against the spot’s expectation</span></div>
+      <div class="dk-picks">${pickRows}</div>
+    </section>`;
+}
+
+function reportCardsView() {
+  const owners = [...new Set([...DATA.seasons.at(-1).teams.map(t => t.owner), ...DRAFT_GRADES.picks.filter(p => p.kind === 'rookie').map(p => p.o)])];
+  const cards = reportCards(DRAFT_GRADES, owners);
+  const cur = DATA.seasons.at(-1).season;
+  const pickLine = (label, p) => (p ? `
+    <li><span>${label}</span><a href="${playerLink(p.pid)}"><b>${esc(playerName(p.pid))}</b> <small>${p.s} ${pickLabel(p)} · ${perSeason(p.diff)}</small></a></li>` : '');
+  return `
+    <div class="dk-cards">
+      ${cards.map(c => `
+        <section class="card dk-card">
+          <div class="dk-card-head">
+            ${gradeBadge(c.grade, true)}
+            <div><b>${esc(teamName(c.owner, cur))}</b><small>${esc(name(c.owner))}${c.gpa != null ? ` · GPA ${c.gpa.toFixed(2)}` : ''}</small></div>
+          </div>
+          <div class="dk-chips">${c.classes.map(x => `<a class="dk-chip" href="#/draft-grades?season=${x.s}"><small>${x.s}</small>${x.picks.length ? (x.grade ?? 'INC') : '—'}</a>`).join('')}</div>
+          <ul class="dk-facts">
+            <li><span>Picks made</span><b>${c.picks}${c.graded !== c.picks ? ` <small>(${c.graded} graded)</small>` : ''}</b></li>
+            <li><span>Beat their spot</span><b>${c.graded ? `${c.beat} of ${c.graded}` : '—'}</b></li>
+            <li><span>Value vs spots</span><b class="${c.diff >= 0 ? 'v-pos' : 'v-neg'}">${c.graded ? `${perSeason(c.diff)} <small>pts/season</small>` : '—'}</b></li>
+            ${pickLine('Best pick', c.best)}
+            ${c.worst && c.worst !== c.best ? pickLine('Worst pick', c.worst) : ''}
+          </ul>
+        </section>`).join('')}
+    </div>
+    <p class="pw-foot">“—” means no picks in that draft (traded away); INC means the class hasn’t played enough to grade. Value vs spots adds up every graded pick’s fantasy points per season above or below what its spot is expected to produce.</p>`;
+}
+
 // ---------- Boot ----------
 
 function route() {
@@ -3111,6 +3436,7 @@ function render() {
   else if (page === 'records') renderRecordBook(main, sub, params);
   else if (page === 'power') renderPower(main, params);
   else if (page === 'standings') renderStandings(main, params);
+  else if (DRAFT_TABS.some(([id]) => id === page)) renderDraftKit(main, page, params);
   else renderSoon(main, page);
   document.body.classList.remove('nav-open');
   window.scrollTo(0, 0);

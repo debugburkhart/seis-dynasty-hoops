@@ -4,6 +4,7 @@
 
 import { CORRECTIONS, DRAFT_CORRECTIONS } from './corrections.js';
 import { ALL_STARS_FROM } from './config.js';
+import { draftedPlayers, seasonPoints } from './draft.js';
 
 const API = 'https://api.sleeper.com/v1';
 
@@ -461,6 +462,15 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     if (rows.length) mvp[lg.season] = rows;
   }
 
+  // Draft grades (assets/draft.js): every drafted player's fantasy points and games
+  // in each season, under that season's league scoring. [points, games] by player.
+  const draftStats = {};
+  const drafted = draftedPlayers({ drafts });
+  for (const lg of chain) {
+    const pts = seasonPoints(await statsFor(lg.season), lg.scoring_settings, drafted);
+    if (Object.keys(pts).length) draftStats[lg.season] = pts;
+  }
+
   // Rookies (Rookie of the Year, All-Rookie Team): each completed season's top 10
   // players with NBA games that season and none in the 10 seasons before.
   // Sleeper's years-of-experience field is wrong for some players, so it isn't used.
@@ -525,6 +535,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     transactions,
     drafts,
     mvp,
+    draftStats,
     rookies,
     allStars,
     warnings,

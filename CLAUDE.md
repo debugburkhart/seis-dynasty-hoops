@@ -80,6 +80,22 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   weeks) for All-Stars, most-points team for Player of the Year. From awards.js ownerAt()
   over frontoffice `stints`. Coach of the Year on
   hold. frontoffice values carry `weeks` ({k: season*100+week, p}) for season-limited sums.
+- `assets/draft.js` + Draft Kit in app.js (#/draft-history, #/future-drafts, #/draft-grades:
+  one page with 3 tabs). History: board per draft (2023 startup = 22-round snake, shown but
+  never graded; rookie drafts 3 rounds, linear), rows = rounds, columns = draft slot, cells
+  colored Steal/Hit/Fair/Miss/Bust, tap -> Player Index search. Future: next 3 drafts from
+  Sleeper traded_picks (live in browser) via commish pickLedger(); "Own" or holder; trade
+  paths; picks held; projected next-draft order = reverse regular-season standings (win %,
+  then PF, median games incl.), bottom 2 coin-flip for #1 (shown "1-2"); verified against
+  the real 2025 and 2026 drafts. Grades (rules from the owner): pick value = NBA fantasy
+  pts per season since the draft under each season's league scoring, whoever rostered him
+  (DATA.draftStats: season -> pid -> [pts, games], built nightly); expected = least-squares
+  a + b*ln(overall pick) per kind (rookie/startup), b <= 0; z = (value - expected)/sd;
+  class grade from sum of z (letterFor thresholds); report card = GPA of class grades;
+  in-progress season counts by share of regular season played; <0.25 season = Incomplete.
+  2024 picks 5 and 11 were filed by Sleeper under "DUPLICATE" entries; fixed site-wide
+  with DRAFT_CORRECTIONS (Matas Buzelis 2835, Ronald Holland 2836). Tested: no change to
+  any Front Office value, record top 5 or GM of the Year, only the pick-11 name.
 - `assets/players.js`: Player Index (#/players, under Hall of Fame): every player's locked
   points with season/manager filters, sort (points, weeks, per start: 5+ starts first),
   search (accent-insensitive), and a breakdown by fantasy team and by season.
@@ -140,6 +156,6 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - Verify numbers against the data before reporting; the owner checks things in the app.
 
 ## Not built yet (sidebar shows "Soon")
-Weekly Props, Trade Court, Timeline,
-Draft History, Cheat Sheet, Draft Grades. The owner shares screenshots of a football
-reference site (fantasyhoff.com) for each feature and wants it adapted for basketball.
+Weekly Props, Trade Court, Timeline. (Cheat Sheet was dropped by the owner.) The owner
+shares screenshots of a football reference site (fantasyhoff.com) for each feature and
+wants it adapted for basketball.

@@ -46,6 +46,11 @@ export const DRAFT_CORRECTIONS = [
   // jimmycooks2's round 3 pick was recorded as "Ron Holland DUPLICATE"; the real
   // Ron Holland went to loganzarvell, and who jimmycooks2 meant to take is unknown.
   { season: '2024', pick: 23, ignore: true },
+  // loganzarvell's picks 5 and 11 were recorded as "Matas Buzelis DUPLICATE" and
+  // "Ron Holland DUPLICATE" (he dropped both entries in week 1). Sleeper lists the
+  // real Ron Holland as "Ronald Holland".
+  { season: '2024', pick: 5, player: 'Matas Buzelis' },
+  { season: '2024', pick: 11, player: 'Ronald Holland' },
 ];
 
 // Player photos Sleeper has wrong (its photo for LeBron James is Bronny James).
