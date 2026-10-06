@@ -22,7 +22,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 ## Architecture (all plain ES modules, no build step)
 - `index.html`: shell + import map. Every module in `assets/` must be listed in the
   import map with `?v=dev` (the Action replaces it with a version fingerprint).
-- `assets/app.js`: all pages (hash routes: home, rivalry, records, power, hype, standings,
+- `assets/rules.js`: the league Rulebook text (#/rules, under Now). Rules grouped by season
+  added (LEAGUE_START 2023 = original); a changed point = today's text + changed: {season,
+  was} (page shows a note + "Rule changes" history). Owner's answers: show current rule +
+  change note; taxi size stays 30 for now (30 -> 15 was only an example); the mid-week
+  trade-lock rule is an original rule (1.3); Awards rule = 2025-26 per its parentheses.
+- `assets/app.js`: all pages (hash routes: home, rules, rivalry, records, power, hype, standings,
   transactions, awards, players), sidebar.
 - Home (#/home, the default page; renderHome in app.js): Main event = top of hypeSlate for
   the week the Hype page opens on (preseason: last season's final week + tip-off note);
@@ -75,7 +80,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   by update.mjs; weekly aggregate endpoints are WRONG: they hold only the last game).
   Positions are Sleeper's current ones saved at computation time; ALL_STAR_POSITIONS in
   corrections.js overrides by season + name. All-Stars start in 2025 (ALL_STARS_FROM in
-  config.js); the owner confirmed the 2025 list. All-Fantasy Team = DATA.mvp top 10.
+  config.js); the owner confirmed the 2025 list. All-Fantasy Team = top 10 of DATA.mvp (now top 60 kept) whose fantasy team at season's
+  end made the playoffs (rulebook rule 4.3, owner chose to fix the site, Oct 2026); League
+  MVP has no playoff rule.
   Rookie of the Year / All-Rookie Team (top 5) = DATA.rookies: total fantasy points, rookie =
   NBA games that season and none in the 10 seasons before (Sleeper's years_exp is wrong for
   some players, e.g. Amen Thompson, Yabusele); computed once per completed season, carried

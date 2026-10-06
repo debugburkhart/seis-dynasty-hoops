@@ -9,17 +9,18 @@ import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions
 import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, ownerAt, playerOfTheYear, rookieClass, seasonEndKey } from './awards.js';
 import { ALL_STAR_POSITIONS, CORRECTIONS, DRAFT_CORRECTIONS, PHOTO_CORRECTIONS } from './corrections.js';
 import { SORTS, playerIndex } from './players.js';
+import { LEAGUE_START, RULES } from './rules.js';
 import { MIN_GAMES, TIERS, draftClasses, draftGrades, draftOfYear, draftedPlayers, projectedOrder, reportCards, seasonPoints } from './draft.js';
 
 // ---------- Navigation ----------
 
 const NAV = [
-  { title: 'Now', items: [['home', 'Home', 'home'], ['standings', 'Standings', 'list'], ['transactions', 'Transactions', 'swap']] },
+  { title: 'Now', items: [['home', 'Home', 'home'], ['standings', 'Standings', 'list'], ['transactions', 'Transactions', 'swap'], ['rules', 'Rulebook', 'clipboard']] },
   { title: 'In Season', items: [['props', 'Weekly Props', 'ticket'], ['trade-court', 'Trade Court', 'scale'], ['power', 'Power Rankings', 'gauge'], ['hype', 'Matchup Hype', 'bolt']] },
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['players', 'Player Index', 'users'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['future-drafts', 'Future Drafts', 'calendar'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['home', 'rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players', 'draft-history', 'future-drafts', 'draft-grades']);
+const READY = new Set(['home', 'rules', 'rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players', 'draft-history', 'future-drafts', 'draft-grades']);
 const DEFAULT_PAGE = 'home';
 
 const ICONS = {
@@ -1772,7 +1773,7 @@ function renderAwards(main) {
                     <div class="aw-label">All-Fantasy Team</div>
                     ${b.allFantasy.length ? `
                       <div class="aw-winner">${b.allFantasy.length} players</div>
-                      <div class="aw-meta">The top ${b.allFantasy.length} in total fantasy points, any position</div>
+                      <div class="aw-meta">The top ${b.allFantasy.length} in total fantasy points on playoff teams, any position</div>
                       <details class="aw-more">
                         <summary>The team ${icon('arrow')}</summary>
                         ${raceList(b.allFantasy, r => `${num(r.fp)}`, r => sub(b.season, r, `${r.gp} games`))}
@@ -1854,7 +1855,7 @@ function renderAwards(main) {
           </article>
           <article class="aw-rule-block">
             <h3><span class="aw-num">06</span> All-Fantasy Team</h3>
-            <p>The 10 players with the most total fantasy points over the NBA regular season, any position: the same season totals as League MVP, so the MVP leads it.</p>
+            <p>The 10 players with the most total fantasy points over the NBA regular season, any position, who were on a fantasy playoff team at the end of the season (league rulebook). The same season totals as League MVP, but the MVP can be on any team, so he doesn’t always lead it.</p>
           </article>
           <article class="aw-rule-block">
             <h3><span class="aw-num">07</span> All-Rookie Team</h3>
@@ -2507,8 +2508,10 @@ async function renderRaces(body, params) {
         `<ol class="aw-race">${gm.rows.map((r, i) => `<li${r === gm.winner ? ' class="win"' : ''}><span>${i + 1}. ${esc(teamName(r.o, season))}${inPlayoffs(r.o) ? ' <i class="cm-in">✓</i>' : ''}<small>${esc(name(r.o))} · trades ${signedPts(r.trades)} · pickups ${signedPts(r.pickups)} · rookies ${signedPts(r.rookies)} · drops ${signedPts(r.drops)}</small></span><b>${signedPts(r.total)}</b></li>`).join('')}</ol>`)}
       ${card('Player of the Year', 'Most locked points this season, every team he started for.',
         list(poy, r => num(r.pts), r => `${teamName(r.team, season)} · ${r.weeks} weeks started`))}
-      ${card('League MVP · All-Fantasy Team', 'Most total fantasy points (every game, rostered or not). The top 10 make the All-Fantasy Team.',
-        list(totals.rows.slice(0, 10), r => num(r.fp), r => [owner(r.pid), r.pos, `${r.gp} games`].filter(Boolean).join(' · ')))}
+      ${card('League MVP', 'Most total fantasy points (every game, rostered or not).',
+        list(totals.rows.slice(0, 5), r => num(r.fp), r => [owner(r.pid), r.pos, `${r.gp} games`].filter(Boolean).join(' · ')))}
+      ${card('All-Fantasy Team', `The top 10 in total fantasy points on a playoff team${done ? '' : ` (today: a team in the top ${spots})`}.`,
+        list(totals.rows.filter(r => { const o = ownerAt(fo, r.pid, key); return o && inPlayoffs(o) !== false; }).slice(0, 10), r => num(r.fp), r => [owner(r.pid), r.pos, `${r.gp} games`].filter(Boolean).join(' · ')))}
       ${card('Rookie of the Year · All-Rookie Team', 'Most total fantasy points by a rookie (no NBA games in the 10 seasons before). The top 5 make the All-Rookie Team.',
         list(totals.rookies.slice(0, 5), r => num(r.fp), r => [owner(r.pid), r.pos, `${r.gp} games`].filter(Boolean).join(' · ')))}
       ${starRace ? card('All-Stars (if named today)', 'Top 5 guards, forwards and centers in total fantasy points so far. The real teams are named at the NBA All-Star break.',
@@ -3115,6 +3118,83 @@ function renderHome(main) {
   });
 }
 
+// ---------- Rulebook ----------
+// The league's rules (assets/rules.js), grouped by the season each was added.
+// A changed point shows today's rule with a note; every addition and change is
+// also listed by season at the bottom.
+
+const seasonSpan = s => `${s}-${String(Number(s) + 1).slice(-2)}`;
+
+function renderRules(main) {
+  const cur = DATA.seasons.at(-1).season;
+  const letter = i => String.fromCharCode(97 + i);
+  const changeNote = c => (c ? `<span class="rl-change">Changed in ${seasonSpan(c.season)} · was ${esc(c.was)}</span>` : '');
+  const addNote = (p, rule) => (p.added && p.added !== rule.added ? `<span class="rl-change rl-added">Added in ${seasonSpan(p.added)}</span>` : '');
+  const point = (p, label, rule, depth) => {
+    const x = typeof p === 'string' ? { text: p } : p;
+    return `
+      <li>
+        <span class="rl-num">${label}</span>
+        <div class="rl-text">${esc(x.text)}${changeNote(x.changed)}${addNote(x, rule)}
+          ${x.items?.length ? `<ol class="rl-sub">${x.items.map((y, i) => point(y, depth ? String(i + 1) : letter(i), rule, depth + 1)).join('')}</ol>` : ''}
+        </div>
+      </li>`;
+  };
+  const eras = [...new Set(RULES.map(r => r.added))].sort();
+  const eraTitle = s => (s === LEAGUE_START ? `Since the league began · ${seasonSpan(s)}` : `Added in ${seasonSpan(s)}`);
+
+  // Every addition and change, by season.
+  const walk = (list, rule, out) => {
+    for (const p of list) {
+      if (typeof p === 'string') continue;
+      if (p.changed) out.push({ s: p.changed.season, text: `${rule.n}. ${rule.title}: now “${p.text}” (was ${p.changed.was})` });
+      if (p.added && p.added !== rule.added) out.push({ s: p.added, text: `${rule.n}. ${rule.title}: added “${p.text}”` });
+      if (p.items) walk(p.items, rule, out);
+    }
+  };
+  const log = [];
+  for (const r of RULES) {
+    if (r.added !== LEAGUE_START) log.push({ s: r.added, text: `New rule: ${r.n}. ${r.title}` });
+    walk(r.items, r, log);
+  }
+  const logSeasons = [...new Set(log.map(x => x.s))].sort().reverse();
+
+  main.innerHTML = `
+    <div class="page">
+      <div class="page-head">
+        <div class="page-icon">${icon('clipboard')}</div>
+        <div><div class="eyebrow">${esc(DATA.name)}</div><h1>Rulebook</h1></div>
+      </div>
+      <p class="page-desc">The league’s rules, grouped by the season each one was added. Changed rules show today’s version with a note; the full history is at the bottom.</p>
+      <nav class="dk-seasons rl-jump" aria-label="Jump to a season">
+        ${eras.map(s => `<a href="#/rules" data-era="${s}">${s === LEAGUE_START ? 'Original rules' : seasonSpan(s)}</a>`).join('')}
+        ${log.length ? '<a href="#/rules" data-era="changes">Rule changes</a>' : ''}
+      </nav>
+      ${eras.map(s => `
+        <section class="rl-era" id="rl-${s}">
+          <div class="rl-era-head"><h2>${eraTitle(s)}</h2>${s === cur ? '<span class="rl-new">New this season</span>' : ''}</div>
+          ${RULES.filter(r => r.added === s).map(r => `
+            <article class="card rl-rule">
+              <h3><span class="rl-badge">${r.n}</span>${esc(r.title)}</h3>
+              <ol class="rl-items">${r.items.map((p, i) => point(p, `${r.n}.${i + 1}`, r, 0)).join('')}</ol>
+            </article>`).join('')}
+        </section>`).join('')}
+      ${log.length ? `
+        <section class="card rl-log" id="rl-changes">
+          <div class="card-head"><h2>Rule changes</h2><span class="card-sub">Every addition and change, newest first</span></div>
+          ${logSeasons.map(s => `
+            <div class="rl-log-season"><b>${seasonSpan(s)}</b>
+              <ul>${log.filter(x => x.s === s).map(x => `<li>${esc(x.text)}</li>`).join('')}</ul>
+            </div>`).join('')}
+        </section>` : ''}
+    </div>`;
+
+  main.querySelectorAll('.rl-jump a').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    document.getElementById(`rl-${a.dataset.era}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+}
+
 // ---------- Draft Kit ----------
 // Three tabs on one page: Draft History (every board, colored by how each pick
 // turned out), Future Drafts (who owns every pick of the next three drafts, plus
@@ -3599,6 +3679,7 @@ function render() {
   else if (page === 'records') renderRecordBook(main, sub, params);
   else if (page === 'power') renderPower(main, params);
   else if (page === 'standings') renderStandings(main, params);
+  else if (page === 'rules') renderRules(main);
   else if (DRAFT_TABS.some(([id]) => id === page)) renderDraftKit(main, page, params);
   else renderSoon(main, page);
   document.body.classList.remove('nav-open');

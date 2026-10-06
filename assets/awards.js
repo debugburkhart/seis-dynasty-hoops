@@ -138,10 +138,15 @@ const withOwners = (DATA, fo, season, rows) => {
   return rows.map(r => ({ ...r, o: ownerAt(fo, r.pid, key) }));
 };
 
-// All-Fantasy Team: the 10 players with the most total fantasy points over the
-// NBA regular season, any position (the same season totals as League MVP).
+// All-Fantasy Team (league rulebook 4.3, the owner's rule): always 10 players.
+// Go down the season's fantasy-points list (total fantasy points over the NBA
+// regular season, any position: the same totals as League MVP) and skip anyone
+// whose fantasy team at season's end missed the playoffs, wherever he ranks
+// (1st, 11th, 12th...), until 10 are in. A tie for 10th puts everyone tied on.
+// DATA.mvp keeps each season's top 60 so there are always enough to fill it.
 export function allFantasy(DATA, fo, season) {
-  return withOwners(DATA, fo, season, topWithTies(DATA.mvp?.[season] ?? [], 10));
+  const playoff = new Set(DATA.seasons.find(s => s.season === season)?.playoffTeams ?? []);
+  return topWithTies(withOwners(DATA, fo, season, DATA.mvp?.[season] ?? []).filter(r => playoff.has(r.o)), 10);
 }
 
 // Rookies, by total fantasy points over the NBA regular season (DATA.rookies:

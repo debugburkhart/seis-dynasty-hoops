@@ -454,10 +454,11 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
       .sort((a, b) => b.fp - a.fp);
   };
 
-  // League MVP and the All-Fantasy Team: each season's top 10.
+  // League MVP and the All-Fantasy Team: each season's top 60 (All-Fantasy only counts
+  // players on a playoff team, so it needs more than the top 10).
   const mvp = {};
   for (const lg of chain) {
-    const rows = (await totalsFor(lg)).slice(0, 10);
+    const rows = (await totalsFor(lg)).slice(0, 60);
     for (const r of rows) usedPlayers.add(r.pid);
     if (rows.length) mvp[lg.season] = rows;
   }
