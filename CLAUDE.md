@@ -45,7 +45,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `assets/frontoffice.js`: trades/waivers/drafts valued by locked points ("stints").
 - `assets/standings.js`: Legacy score + standings table + final finishes.
 - `assets/power.js`: Power Rankings. `assets/freeze.js`: frozen seasons + week guard.
-- `assets/hype.js`: Matchup Hype (hype score, Main event, labels, moments). Uses only games
+- `assets/hype.js`: Matchup Hype (hype score, Main event, labels, moments). TUNING (owner chose
+  "V5", Oct 2026, so 100 is reachable): Quality relative to that week's league (top-2 pair =
+  100, average pair = 50), Closeness free within 2 Power pts then -3.5/pt, History x1.5
+  (capped). 2025 final went 81 -> 91. Uses only games
   before the week. The page (app.js) fetches Sleeper state + live scores in the browser and
   reveals a week only once it's under way (week 1: the Monday of tip-off week). Live scores
   refresh every minute while the page is open (Home's Main event card too); the nightly

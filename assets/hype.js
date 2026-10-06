@@ -5,13 +5,14 @@
 //
 // Every game gets a hype score out of 100 from four parts (each 0-100):
 //
-//   Quality    30%  How strong both teams are (Power Rankings score; early in a
-//                   season it leans on last season's finish).
-//   Closeness  25%  How evenly matched they are.
+//   Quality    30%  How strong both teams are against the rest of the league that
+//                   week (Power Rankings score; early in a season it leans on last
+//                   season's finish): the two best teams = 100, an average pair = 50.
+//   Closeness  25%  How evenly matched they are: within 2 Power points is dead even.
 //   Stakes     25%  What the result means: the playoff race late in the season,
 //                   or the bracket round in the playoffs.
 //   History    20%  The rivalry: a close series, playoff and title meetings,
-//                   a recent nail-biter, a long streak.
+//                   a recent nail-biter, a long streak (boosted 1.5x, capped at 100).
 //
 // The highest score is the Main event (in the playoffs, the Championship always is).
 
@@ -30,6 +31,15 @@ const PLAYOFF_STAKES = { Championship: 100, Semifinal: 85, Quarterfinal: 75, 'La
 
 const MAX_LABELS = 4; // Main event included; the most important come first
 const PEDIGREE_WEEKS = 6; // weeks until this season's results fully replace last season's finish
+// Tuning for the Quality and Closeness parts (exported so variants can be tested).
+//   quality: 'absolute' = 50 + (average Power - 50) x 3;
+//            'relative' = 100 for the two best teams in the league that week, 50 for an average pair.
+//   closeFree: Power gap that still counts as dead even; closePer: points lost per point of gap beyond it.
+//   historyScale: multiplies the History part before it's capped at 100.
+// Chosen with the owner (Oct 2026, "V5") so a 100 is reachable: a title game between the
+// league's two best teams, within 2 Power points, with a deep rivalry. Tested on every past
+// game: the 2025 final went from 81 to 91; regular-season games average about 46.
+export const TUNING = { quality: 'relative', closeFree: 2, closePer: 3.5, historyScale: 1.5 };
 const clamp = x => Math.max(0, Math.min(100, x));
 const mean = xs => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
 const r1 = x => Math.round(x * 10) / 10;
@@ -199,6 +209,10 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
   const owners = s.teams.map(t => t.owner);
   const table = standingsBefore(DATA, season, week);
   const { by: str, weeksIn } = strengthsBefore(DATA, season, week, owners);
+  // League-wide strength this week, for a relative Quality: the average team and the top two.
+  const strs = owners.map(o => str[o]?.str ?? 50).sort((a, b) => b - a);
+  const leagueStr = mean(strs);
+  const top2 = mean(strs.slice(0, 2));
   const spots = playoffSpots(DATA, season);
   const lastRegular = (s.playoffStart ?? 99) - 1;
   const playoffs = week > lastRegular;
@@ -256,8 +270,10 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
     const both = f => f(tA) && f(tB);
 
     // ----- The four parts -----
-    const quality = clamp(50 + (mean([sA, sB]) - 50) * 3);
-    const closeness = clamp(100 - gap * 4);
+    const quality = TUNING.quality === 'relative'
+      ? clamp(50 + (50 * (mean([sA, sB]) - leagueStr)) / Math.max(3, top2 - leagueStr))
+      : clamp(50 + (mean([sA, sB]) - 50) * 3);
+    const closeness = clamp(100 - Math.max(0, gap - TUNING.closeFree) * TUNING.closePer);
     const rel = x => (!x ? 0.5 : x.clinched || x.out ? 0.1 : 1 / (1 + Math.max(0, x.margin) / perWeek));
     const heavy = table.weeks >= 3 && both(r => r.rank <= 3);
     const unbeaten = table.weeks >= 3 && [tA, tB].some(r => r.dec >= 4 && r.l === 0);
@@ -275,7 +291,7 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
       if (lm && lm.t === 'P') history += 10;
       if (series.streak?.n >= 3) history += 10;
     }
-    history = clamp(history);
+    history = clamp(history * TUNING.historyScale);
     const parts = { quality, closeness, stakes, history };
     const hype = Math.round(HYPE_PARTS.reduce((sum, x) => sum + parts[x.id] * x.weight, 0));
 

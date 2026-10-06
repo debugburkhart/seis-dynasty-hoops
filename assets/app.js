@@ -1348,9 +1348,10 @@ async function renderHype(main, params) {
       ${momentsCard}
       ${slateCard}
       <p class="pw-foot">
-        <b>How hype works.</b> Each game gets a hype score out of 100: <b>Quality</b> (30%) is how strong both teams are by their Power Rankings score,
-        <b>Closeness</b> (25%) is how evenly matched they are, <b>Stakes</b> (25%) is what the result means for the playoff race (it grows as the season goes on) or the bracket round,
+        <b>How hype works.</b> Each game gets a hype score out of 100: <b>Quality</b> (30%) is how strong both teams are next to the rest of the league that week, by their Power Rankings score (the two best teams score 100, an average pair 50),
+        <b>Closeness</b> (25%) is how evenly matched they are (within 2 Power points counts as dead even), <b>Stakes</b> (25%) is what the result means for the playoff race (it grows as the season goes on) or the bracket round,
         and <b>History</b> (20%) is the rivalry: a close series, playoff and title meetings, a recent nail-biter, a long streak.
+        A perfect 100 takes a Championship between the league’s two best teams, dead even, with a deep rivalry behind it.
         Until six weeks are played, strength leans on last season’s finish. The top score is the <b>Main event</b>; in title week it’s always the Championship.
         Labels like <b>Trap-game watch</b> (a clear favorite with a reason to slip: the underdog won the last meeting, is hotter lately, or the favorite has a top team on deck next week) come from the same numbers.
         Everything uses only games played before that week, and each week is revealed only once it starts.
