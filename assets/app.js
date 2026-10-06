@@ -1620,6 +1620,9 @@ function renderAwards(main) {
     return;
   }
   const fo = ledger();
+  // Today's grade for a pick (Draft Grades), next to its year-one award numbers.
+  const today = DATA.draftStats ? draftGrades(DATA) : null;
+  const todayPick = p => today?.picks.find(x => x.s === p.s && x.no === p.no && x.kind === p.kind);
   const banners = done.map(s => ({ ...banner(DATA, s), gm: gmOfTheYear(DATA, fo, s), poy: playerOfTheYear(DATA, s), mvp: mvpRace(DATA, fo, s),
     finalsMvp: championshipMvp(DATA, s), stars: allStars(DATA, fo, s, ALL_STAR_POSITIONS, ALL_STARS_FROM),
     allFantasy: allFantasy(DATA, fo, s), rookies: rookieClass(DATA, fo, s), draft: draftOfYear(DATA, s) }));
@@ -1796,12 +1799,13 @@ function renderAwards(main) {
                 <li>
                   <span class="aw-num">08</span>
                   <div class="aw-award">
-                    <div class="aw-label">Draft of the Year</div>
+                    <div class="aw-label">Draft of the Year <span class="aw-y1" title="Judged on the rookies’ first season, as it stood when the season ended">Year-one numbers</span></div>
                     ${b.draft?.none ? `<div class="aw-meta">No rookie draft this season${DATA.drafts?.some(d => d.s === b.season && d.kind === 'startup') ? ': the startup draft built the league' : ''}.</div>`
                       : b.draft ? `
                       <div class="aw-winner">${esc(name(b.draft.winner.owner))} <b class="aw-grade">${b.draft.winner.grade}</b></div>
                       <div class="aw-meta aw-fteam">${esc(teamName(b.draft.winner.owner, b.season))}</div>
                       <div class="aw-meta">${b.draft.winner.picks.length} pick${b.draft.winner.picks.length === 1 ? '' : 's'} · ${perGame(b.draft.winner.diff)} pts/game vs their spots · best: ${esc(playerName(b.draft.winner.best.pid))}</div>
+                      ${(() => { const t = today && draftClasses(today, b.season).rows.find(r => r.owner === b.draft.winner.owner); return t?.grade && (t.grade !== b.draft.winner.grade || perGame(t.diff) !== perGame(b.draft.winner.diff)) ? `<div class="aw-meta aw-today">Today: <b>${t.grade}</b> · ${perGame(t.diff)} pts/game vs their spots · <a href="#/draft-grades?season=${esc(b.season)}">Draft Grades ${icon('arrow')}</a></div>` : ''; })()}
                       <details class="aw-more">
                         <summary>Every class after year one ${icon('arrow')}</summary>
                         <ol class="aw-race">${b.draft.rows.map((r, j) => `<li${j === 0 ? ' class="win"' : ''}><span>${esc(name(r.owner))}<small>${r.picks.length} pick${r.picks.length === 1 ? '' : 's'} · best: ${esc(playerName(r.best.pid))}</small></span><b>${r.grade}</b></li>`).join('')}</ol>
@@ -1812,12 +1816,13 @@ function renderAwards(main) {
                 <li>
                   <span class="aw-num">09</span>
                   <div class="aw-award">
-                    <div class="aw-label">Steal of the Draft</div>
+                    <div class="aw-label">Steal of the Draft <span class="aw-y1" title="Judged on the rookies’ first season, as it stood when the season ended">Year-one numbers</span></div>
                     ${b.draft?.none ? `<div class="aw-meta">No rookie draft this season${DATA.drafts?.some(d => d.s === b.season && d.kind === 'startup') ? ': the startup draft built the league' : ''}.</div>`
                       : b.draft?.steal ? `
                       <div class="aw-winner">${esc(playerName(b.draft.steal.pid))}${pmeta(b.draft.steal.pid) ? ` <small class="aw-pos">${esc(pmeta(b.draft.steal.pid))}</small>` : ''}</div>
                       <div class="aw-meta aw-fteam">Drafted by ${esc(teamName(b.draft.steal.o, b.season))} (${esc(name(b.draft.steal.o))}) · ${pickLabel(b.draft.steal)}, #${b.draft.steal.no} overall</div>
                       <div class="aw-meta">${fpg(b.draft.steal.value)} pts/game vs ${fpg(b.draft.steal.expected)} expected for the spot · ${perGame(pickDiff(b.draft.steal))}</div>
+                      ${(() => { const t = todayPick(b.draft.steal); return t?.value != null && (fpg(t.value) !== fpg(b.draft.steal.value) || fpg(t.expected) !== fpg(b.draft.steal.expected)) ? `<div class="aw-meta aw-today">Today: ${fpg(t.value)} pts/game vs ${fpg(t.expected)} expected · ${perGame(pickDiff(t))}${t.tier ? ` · ${TIERS.find(x => x.id === t.tier).label}` : ''} · <a href="#/draft-grades?season=${esc(b.season)}">Draft Grades ${icon('arrow')}</a></div>` : ''; })()}
                       <details class="aw-more">
                         <summary>The race · top 3 ${icon('arrow')}</summary>
                         <ol class="aw-race">${b.draft.steals.map((p, j) => `<li${j === 0 ? ' class="win"' : ''}><span>${j + 1}. ${esc(playerName(p.pid))}<small>${pickLabel(p)} · ${esc(name(p.o))} · ${fpg(p.value)} vs ${fpg(p.expected)} expected</small></span><b>${perGame(pickDiff(p))}</b></li>`).join('')}</ol>

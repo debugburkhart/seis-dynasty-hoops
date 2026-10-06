@@ -97,6 +97,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   grade from that season's rookie draft judged on year one only, data filtered to seasons/
   drafts/draftStats <= that season so the banner never changes), 09 Steal of the Draft (own
   award since Oct 2026: that draft's pick furthest above its spot after year one, race = top 3;
+  08 and 09 carry a "Year-one numbers" tag and a "Today:" line with the live Draft Grades
+  numbers when they differ (owner chose to keep year-one banners, Oct 2026);
   startup-only seasons say so). Record Book draft records are locked-points based and
   were renamed "(locked points)" with a note pointing to Draft Grades (owner chose to keep
   both views). Awards lists show position only (Sleeper's NBA team is
