@@ -458,21 +458,21 @@ export function buildRecords(DATA) {
       who: p.o, whoText: pname(p.pid), img: img(p.pid), value: p.value, display: est(`−${fmt(p.value)}`, p.active),
       ctx: `dropped by ${name(p.o)} ${p.s} Wk ${p.w} · then ${fmt(p.value)} for ${name(p.to)}`,
     })), F('Waivers & free agents', 'Players dropped who went on to produce for the next team to grab them.', { bad: true })),
-    R('Greatest draft pick', draftable.map(p => ({
+    R('Greatest draft pick (locked points)', draftable.map(p => ({
       who: p.o, whoText: pname(p.pid), img: img(p.pid), value: p.over, display: est(signed(p.over), p.careerActive), ctx: `${name(p.o)} · ${pickCtx(p)}`,
-    })), F('Draft', 'Locked points the rookie has scored since the draft (for any team), compared with the average pick in the same round of that draft.')),
-    R('Biggest draft bust', draftable.map(p => ({
+    })), F('Draft', 'Locked points the rookie has scored since the draft (for any team), compared with the average pick in the same round of that draft. Draft Grades in the Draft Kit judge picks differently: NBA points per game against the draft spot.')),
+    R('Biggest draft bust (locked points)', draftable.map(p => ({
       who: p.o, whoText: pname(p.pid), img: img(p.pid), value: p.over, display: est(signed(p.over), p.careerActive), ctx: `${name(p.o)} · ${pickCtx(p)}`,
-    })), F('Draft', 'The rookie picks that fell furthest short of their round.', { asc: true, bad: true })),
-    A('Best career drafter', byOwner(draftable, ({ o, list }) => (list.length
+    })), F('Draft', 'The rookie picks that fell furthest short of their round, in locked points. (Draft Grades judge pick quality by NBA points per game.)', { asc: true, bad: true })),
+    A('Best career drafter (locked points)', byOwner(draftable, ({ o, list }) => (list.length
       ? { who: o, value: r1(list.reduce((a, p) => a + p.over, 0) / list.length), display: signed(r1(list.reduce((a, p) => a + p.over, 0) / list.length)), ctx: `per pick, ${list.length} picks` }
-      : { who: o, pending: true, display: '—', ctx: 'no scored picks' })), F('Draft', 'Average points above the round average, per rookie pick.', { kind: 'total', keepZero: true })),
-    R('Best draft class', classList.map(c => ({
+      : { who: o, pending: true, display: '—', ctx: 'no scored picks' })), F('Draft', 'Average locked points above the round average, per rookie pick. (Report cards in the Draft Kit grade pick quality by NBA points per game.)', { kind: 'total', keepZero: true })),
+    R('Best draft class (locked points)', classList.map(c => ({
       who: c.o, value: c.over, display: est(signed(c.over), c.est), ctx: `${c.s} ${c.kind} draft · ${c.picks.length} picks · best: ${pname([...c.picks].sort((a, b) => b.over - a.over)[0].pid)}`,
-    })), F('Draft', "A manager's picks in one rookie draft, added up against the round averages.")),
-    R('Worst draft class', classList.map(c => ({
+    })), F('Draft', "A manager's picks in one rookie draft, added up in locked points against the round averages: what the class did for fantasy lineups. Draft Grades in the Draft Kit judge pick quality instead (NBA points per game against the draft spot), so the two can disagree.")),
+    R('Worst draft class (locked points)', classList.map(c => ({
       who: c.o, value: c.over, display: est(signed(c.over), c.est), ctx: `${c.s} ${c.kind} draft · ${c.picks.length} picks`,
-    })), F('Draft', 'The rookie classes that returned the least against the round averages.', { asc: true, bad: true })),
+    })), F('Draft', 'The rookie classes that returned the least locked points against the round averages. (Draft Grades judge pick quality by NBA points per game.)', { asc: true, bad: true })),
     A('Most points from draftees', byOwner(draftable, ({ o, list }) => {
       const v = r1(list.reduce((a, p) => a + p.value, 0));
       return { who: o, value: v, display: fmt(v), ctx: `from ${list.length} picks, while on their team` };

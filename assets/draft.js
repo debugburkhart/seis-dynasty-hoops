@@ -2,13 +2,15 @@
 // projected order of the next rookie draft.
 //
 // Grades (decided with the owner): a pick's value is the player's NBA fantasy
-// points per season since he was drafted, under each season's league scoring,
-// whoever rostered him. It's compared with what that draft spot is expected to
-// produce: a smooth curve fitted to every pick of that kind (rookie or startup),
-// so an earlier pick is always expected to produce more. A class's grade comes
-// from its picks' total above or below expectation. Startup picks get colors on
-// the board but no letter grades. The season in progress counts for the share of
-// its regular season played, and a pick needs a quarter of a season to be graded.
+// points per game since he was drafted, under each season's league scoring,
+// whoever rostered him. Only seasons with at least MIN_GAMES games count, so a
+// season lost to injury (or spent off the court) neither helps nor hurts. A pick
+// with no such season isn't graded: "Barely played" once his first season is a
+// quarter done, "Incomplete" before that. The value is compared with what that
+// draft spot is expected to produce: a smooth curve fitted to every graded pick of
+// that kind (rookie or startup), so an earlier pick is always expected to produce
+// more. A class's grade comes from its picks' total above or below expectation.
+// Startup picks get colors on the board but no letter grades.
 
 const r1 = n => Math.round(n * 10) / 10;
 
@@ -38,7 +40,8 @@ function seasonShare(DATA) {
   return share;
 }
 
-export const MIN_SHARE = 0.25; // a quarter of a season before a pick is graded
+export const MIN_GAMES = 20; // games in a season for it to count toward a grade
+const MIN_SHARE = 0.25; // share of his first season played before "Barely played"
 
 export const TIERS = [
   { id: 'steal', label: 'Steal', min: 1 },
@@ -73,20 +76,24 @@ export function draftGrades(DATA) {
     for (const p of d.picks.filter(x => x.round === 1)) slotOf[p.orig] = p.no;
     for (const p of d.picks) {
       const inRound = p.no - (p.round - 1) * perRound;
-      let pts = 0;
+      let pts = 0; // in the seasons that count
       let gp = 0;
-      let played = 0;
+      let allGp = 0;
+      let played = 0; // seasons elapsed since the draft
+      let skipped = 0; // seasons under MIN_GAMES games
       for (const y of seasons) {
         if (Number(y) < Number(d.s)) continue;
         played += share[y] ?? 0;
-        const line = stats[y]?.[p.pid];
-        if (line) { pts += line[0]; gp += line[1]; }
+        const [p1, g1] = stats[y]?.[p.pid] ?? [0, 0];
+        allGp += g1;
+        if (g1 >= MIN_GAMES) { pts += p1; gp += g1; } else if ((share[y] ?? 0) >= MIN_SHARE) skipped++;
       }
       picks.push({
         s: d.s, kind: d.kind, round: p.round, no: p.no, inRound, slot: slotOf[p.orig] ?? inRound,
         pid: p.pid, o: p.o, orig: ownerOfRoster[p.orig] ?? p.o,
-        pts: r1(pts), gp, played,
-        value: played >= MIN_SHARE ? pts / played : null, // fantasy points per season since the draft
+        pts: r1(pts), gp, allGp, skipped,
+        value: gp ? pts / gp : null, // fantasy points per game in the seasons that count
+        limited: !gp && played >= MIN_SHARE, // "Barely played": no season of MIN_GAMES yet
       });
     }
   }
@@ -148,6 +155,25 @@ export function draftClasses(grades, season) {
     steal: [...graded].sort((a, b) => b.z - a.z)[0] ?? null,
     bust: [...graded].sort((a, b) => a.z - b.z)[0] ?? null,
   };
+}
+
+// Draft of the Year (Awards banner, decided with the owner): the best class grade
+// from that season's rookie draft, judged on the rookies' first season only, with
+// the league's data as it stood when that season ended. Later seasons and drafts
+// are left out, so a banner never changes. The Draft Grades tab keeps the living
+// grade. Steal of the Draft = that class's pick furthest above its spot.
+export function draftOfYear(DATA, season) {
+  if (!(DATA.drafts ?? []).some(d => d.s === season && d.kind === 'rookie')) return { none: true };
+  if (!DATA.draftStats) return null;
+  const asOf = {
+    ...DATA,
+    seasons: DATA.seasons.filter(s => s.season <= season),
+    drafts: DATA.drafts.filter(d => d.s <= season),
+    draftStats: Object.fromEntries(Object.entries(DATA.draftStats).filter(([y]) => y <= season)),
+  };
+  const c = draftClasses(draftGrades(asOf), season);
+  const rows = c.rows.filter(r => r.grade);
+  return rows.length ? { winner: rows[0], rows, steal: c.steal } : null;
 }
 
 // Report card: a manager across every rookie draft.

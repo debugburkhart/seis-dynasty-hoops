@@ -74,7 +74,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   some players, e.g. Amen Thompson, Yabusele); computed once per completed season, carried
   over by update.mjs. Ties at a team's cutoff are all included. Award order on banners:
   01 GM, 02 Player of the Year, 03 League MVP, 04 Rookie of the Year, 05 All-Stars,
-  06 All-Fantasy, 07 All-Rookie. Awards lists show position only (Sleeper's NBA team is
+  06 All-Fantasy, 07 All-Rookie, 08 Draft of the Year (draftOfYear in draft.js: best class
+  grade from that season's rookie draft judged on year one only, data filtered to seasons/
+  drafts/draftStats <= that season so the banner never changes; + Steal of the Draft;
+  startup-only seasons say so). Record Book draft records are locked-points based and
+  were renamed "(locked points)" with a note pointing to Draft Grades (owner chose to keep
+  both views). Awards lists show position only (Sleeper's NBA team is
   today's) plus the FANTASY team that had the player: season's end for season-long
   awards, the All-Star break week (allStars[s].week; Sleeper fantasy weeks = NBA stats
   weeks) for All-Stars, most-points team for Player of the Year. From awards.js ownerAt()
@@ -83,16 +88,25 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `assets/draft.js` + Draft Kit in app.js (#/draft-history, #/future-drafts, #/draft-grades:
   one page with 3 tabs). History: board per draft (2023 startup = 22-round snake, shown but
   never graded; rookie drafts 3 rounds, linear), rows = rounds, columns = draft slot, cells
-  colored Steal/Hit/Fair/Miss/Bust, tap -> Player Index search. Future: next 3 drafts from
+  colored Steal/Hit/Fair/Miss/Bust (Barely played = light red), Rookie of the Year badge
+  ("ROY '25", = DATA.rookies[season][0], also on the Grades pick list), tap -> Player Index;
+  mouse hover card (bindTips, only when (hover: hover), so phone taps still open the player)
+  shows produced vs expected pts/game and the tier. ?manager= highlight fades other managers'
+  picks (dropdown kept across season chips). Rookie boards also render a flipped table
+  (.dk-board-phone: rounds across, picks down) shown under 700px instead of the wide one;
+  the startup board keeps one layout everywhere. Report cards: "See every pick" lists each class
+  (pickRow, shared with Every pick); #/draft-grades?view=cards&manager=ID opens that card. Future: next 3 drafts from
   Sleeper traded_picks (live in browser) via commish pickLedger(); "Own" or holder; trade
   paths; picks held; projected next-draft order = reverse regular-season standings (win %,
   then PF, median games incl.), bottom 2 coin-flip for #1 (shown "1-2"); verified against
   the real 2025 and 2026 drafts. Grades (rules from the owner): pick value = NBA fantasy
-  pts per season since the draft under each season's league scoring, whoever rostered him
-  (DATA.draftStats: season -> pid -> [pts, games], built nightly); expected = least-squares
-  a + b*ln(overall pick) per kind (rookie/startup), b <= 0; z = (value - expected)/sd;
-  class grade from sum of z (letterFor thresholds); report card = GPA of class grades;
-  in-progress season counts by share of regular season played; <0.25 season = Incomplete.
+  pts PER GAME since the draft under each season's league scoring, whoever rostered him
+  (DATA.draftStats: season -> pid -> [pts, games], built nightly). Injury rule (owner,
+  Oct 2026): only seasons with 20+ games (MIN_GAMES) count; a pick with none = "Barely
+  played" (once a quarter of his first season is done; before that "Incomplete"), never a
+  bust. Sleeper can't tell injury from benching, so both are skipped. Expected = least-
+  squares a + b*ln(overall pick) per kind (rookie/startup), b <= 0; z = (value - expected)/sd;
+  class grade from sum of z (letterFor thresholds); report card = GPA of class grades.
   2024 picks 5 and 11 were filed by Sleeper under "DUPLICATE" entries; fixed site-wide
   with DRAFT_CORRECTIONS (Matas Buzelis 2835, Ronald Holland 2836). Tested: no change to
   any Front Office value, record top 5 or GM of the Year, only the pick-11 name.
