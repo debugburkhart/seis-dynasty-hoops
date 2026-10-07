@@ -2514,7 +2514,29 @@ async function renderRaces(body, params) {
   const card = (title, rule, inner) => `
     <section class="card"><div class="card-head"><h2>${title}</h2></div><p class="cm-rule">${rule}</p>${inner}</section>`;
   const groupOf = pos => (/^(PG|SG|G)/.test(pos) ? 'G' : /^(SF|PF|F)/.test(pos) ? 'F' : /^C/.test(pos) ? 'C' : null);
-  const starRace = !done && Number(season) >= Number(ALL_STARS_FROM);
+  // All-Stars: the named teams once the break has passed (they're saved then), the
+  // race so far before it, and nothing for seasons before the league named any.
+  const named = Number(season) >= Number(ALL_STARS_FROM) ? allStars(DATA, fo, season, ALL_STAR_POSITIONS, ALL_STARS_FROM) : null;
+  const starTeams = teams => `<div class="aw-stars">${POSITION_GROUPS.map(([g, label]) => `<div><div class="aw-race-title">${label}</div>${teams(g)}</div>`).join('')}</div>`;
+  const starCard = Number(season) < Number(ALL_STARS_FROM)
+    ? { rule: `The league started naming All-Stars in ${esc(ALL_STARS_FROM)}.`, inner: '' }
+    : named?.awarded
+      ? { rule: `Named at the NBA All-Star break: top 5 guards, forwards and centers in total fantasy points through ${esc(new Date(`${named.through}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }))}.`,
+        inner: starTeams(g => list(named.teams[g], r => num(r.fp), r => [r.o === null ? 'Free agent' : r.o ? teamName(r.o, season) : '', r.pos].filter(Boolean).join(' · '))) }
+      : done
+        ? { rule: 'Added with the next nightly update.', inner: '' }
+        : { rule: 'If named today: top 5 guards, forwards and centers in total fantasy points so far. The real teams are named at the NBA All-Star break.',
+          inner: starTeams(g => list(totals.rows.filter(r => groupOf(r.pos) === g).slice(0, 5), r => num(r.fp), r => [owner(r.pid), r.pos].filter(Boolean).join(' · '))) };
+
+  // Draft of the Year / Steal of the Draft: this season's rookie draft, judged on the
+  // rookies' first season (the same as the banner once the season is over).
+  const draftRace = draftOfYear(DATA, season);
+  const noDraft = draftRace?.none;
+  const draftRule = `The best class grade from the ${esc(season)} rookie draft, in fantasy points per game against each draft spot’s expectation${done ? ', after year one' : ', so far'}.`;
+  const draftEmpty = noDraft
+    ? `No rookie draft in ${esc(season)}${DATA.drafts?.some(d => d.s === season && d.kind === 'startup') ? ': the startup draft built the league' : ''}.`
+    : `Starts once the ${esc(season)} rookies have played ${MIN_GAMES} NBA games.`;
+  const finalsMvp = done ? championshipMvp(DATA, season) : null;
 
   body.innerHTML = `
     <label class="hy-pick cm-pick">
@@ -2527,18 +2549,25 @@ async function renderRaces(body, params) {
     ${noGames ? `<p class="hy-banner">${icon('clock')}<span><b>No games yet in ${esc(season)}.</b> The races fill in once the season tips off${HYPE_NOW.tipoff && !done ? ` on ${esc(prettyDate(HYPE_NOW.tipoff))}` : ''}. Pick ${esc(seasons[1] ?? 'last season')} above to see how the races finished.</span></p>` : ''}
     ${done ? '<p class="filter-note">A finished season: these match its banner on the Awards page.</p>' : '<p class="filter-note">Where each award stands today. Teams are who has the player now.</p>'}
     <div class="cm-races">
-      ${card('GM of the Year', `Locked points added by ${esc(season)} moves. Playoff teams only${done ? '' : `: ✓ = in a playoff spot today (top ${spots})`}.`,
+      ${card('01 · GM of the Year', `Locked points added by ${esc(season)} moves. Playoff teams only${done ? '' : `: ✓ = in a playoff spot today (top ${spots})`}.`,
         `<ol class="aw-race">${gm.rows.map((r, i) => `<li${r === gm.winner ? ' class="win"' : ''}><span>${i + 1}. ${esc(teamName(r.o, season))}${inPlayoffs(r.o) ? ' <i class="cm-in">✓</i>' : ''}<small>${esc(name(r.o))} · trades ${signedPts(r.trades)} · pickups ${signedPts(r.pickups)} · rookies ${signedPts(r.rookies)} · drops ${signedPts(r.drops)}</small></span><b>${signedPts(r.total)}</b></li>`).join('')}</ol>`)}
-      ${card('Player of the Year', 'Most locked points this season, every team he started for.',
+      ${card('02 · Player of the Year', 'Most locked points this season, every team he started for.',
         list(poy, r => num(r.pts), r => `${teamName(r.team, season)} · ${r.weeks} weeks started`))}
-      ${card('League MVP', 'Most total fantasy points (every game, rostered or not).',
+      ${card('03 · League MVP', 'Most total fantasy points (every game, rostered or not).',
         list(totals.rows.slice(0, 5), r => num(r.fp), r => [owner(r.pid), r.pos, `${r.gp} games`].filter(Boolean).join(' · ')))}
-      ${card('All-Fantasy Team', `The top 10 in total fantasy points on a playoff team${done ? '' : ` (today: a team in the top ${spots})`}.`,
-        list(totals.rows.filter(r => { const o = ownerAt(fo, r.pid, key); return o && inPlayoffs(o) !== false; }).slice(0, 10), r => num(r.fp), r => [owner(r.pid), r.pos, `${r.gp} games`].filter(Boolean).join(' · ')))}
-      ${card('Rookie of the Year · All-Rookie Team', 'Most total fantasy points by a rookie (no NBA games in the 10 seasons before). The top 5 make the All-Rookie Team.',
+      ${card('04 · Rookie of the Year', 'Most total fantasy points by a rookie (no NBA games in the 10 seasons before).',
         list(totals.rookies.slice(0, 5), r => num(r.fp), r => [owner(r.pid), r.pos, `${r.gp} games`].filter(Boolean).join(' · ')))}
-      ${starRace ? card('All-Stars (if named today)', 'Top 5 guards, forwards and centers in total fantasy points so far. The real teams are named at the NBA All-Star break.',
-        `<div class="aw-stars">${POSITION_GROUPS.map(([g, label]) => `<div><div class="aw-race-title">${label}</div>${list(totals.rows.filter(r => groupOf(r.pos) === g).slice(0, 5), r => num(r.fp), r => [owner(r.pid), r.pos].filter(Boolean).join(' · '))}</div>`).join('')}</div>`) : ''}
+      ${card('05 · All-Stars', starCard.rule, starCard.inner)}
+      ${card('06 · All-Fantasy Team', `The top 10 in total fantasy points on a playoff team${done ? '' : ` (today: a team in the top ${spots})`}.`,
+        list(totals.rows.filter(r => { const o = ownerAt(fo, r.pid, key); return o && inPlayoffs(o) !== false; }).slice(0, 10), r => num(r.fp), r => [owner(r.pid), r.pos, `${r.gp} games`].filter(Boolean).join(' · ')))}
+      ${card('07 · All-Rookie Team', 'The top 5 rookies in total fantasy points (ties at 5th all make it).',
+        list(totals.rookies.filter((r, i, all) => i < 5 || (all[4] && r.fp === all[4].fp)), r => num(r.fp), r => [owner(r.pid), r.pos, `${r.gp} games`].filter(Boolean).join(' · ')))}
+      ${card('08 · Draft of the Year', draftRule, draftRace && !noDraft ? `<ol class="aw-race">${draftRace.rows.map((r, i) => `<li${i === 0 ? ' class="win"' : ''}><span>${i + 1}. ${esc(teamName(r.owner, season))}<small>${esc(name(r.owner))} · ${r.picks.length} pick${r.picks.length === 1 ? '' : 's'} · ${perGame(r.diff)} pts/game vs spots · best: ${esc(playerName(r.best.pid))}</small></span><b>${r.grade}</b></li>`).join('')}</ol>` : `<p class="empty">${draftEmpty}</p>`)}
+      ${card('09 · Steal of the Draft', `The ${esc(season)} rookie pick furthest above what its draft spot is expected to produce, in fantasy points per game${done ? ' after year one' : ' so far'}.`,
+        draftRace?.steals?.length ? `<ol class="aw-race">${draftRace.steals.map((p, i) => `<li${i === 0 ? ' class="win"' : ''}><span>${i + 1}. ${esc(playerName(p.pid))}<small>${pickLabel(p)} · ${esc(name(p.o))} · ${fpg(p.value)} vs ${fpg(p.expected)} expected</small></span><b>${perGame(pickDiff(p))}</b></li>`).join('')}</ol>` : `<p class="empty">${draftEmpty}</p>`)}
+      ${card('Championship MVP', 'The champion’s player with the most locked points in the title game.',
+        finalsMvp ? `<ol class="aw-race"><li class="win"><span>${esc(playerName(finalsMvp.pid))}<small>${esc(teamName(s.champion, season))} · title game</small></span><b>${num(finalsMvp.pts)}</b></li></ol>`
+          : `<p class="empty">Decided in the championship game${s.playoffStart ? ` (around week ${s.playoffStart + 2})` : ''}.</p>`)}
     </div>`;
   $('#cm-season', body)?.addEventListener('change', e => { location.hash = `#/commish?tab=races&season=${e.target.value}`; });
 }

@@ -155,7 +155,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   risers = last-14-day FP/G vs season, Sleeper trending adds 48h, best available,
   streamers by projected locked pts), Draft picks (future rookie picks from
   /league/{id}/traded_picks + trade paths from DATA.transactions; next 3 drafts), Award races (season picker; live season totals + rookies from
-  Sleeper via seasonTotals(); 2025 matches the Awards page), Early hype (unrevealed
+  Sleeper via seasonTotals(); every award in banner order 01-09 + Championship MVP; finished
+  seasons match the Awards page), Early hype (unrevealed
   regular weeks' hypeSlate, default = next week to be revealed), Health report.
   Health report: GitHub runs, scoring-check.txt, week-guard.json, warnings, corrections,
   lineup check, activity (flag >21 days in season), trade review (750+ net, 4+ trades/pair).
