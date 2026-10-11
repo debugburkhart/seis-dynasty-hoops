@@ -46,6 +46,22 @@ function applyFrozenCorrections(b, season, owners, findPlayer) {
   }
 }
 
+// A season's league settings, for the Timeline's "what changed" entries.
+function settingsOf(lg) {
+  const pos = lg.roster_positions ?? [];
+  const st = lg.settings ?? {};
+  return {
+    starters: pos.filter(p => p !== 'BN'),
+    bench: pos.filter(p => p === 'BN').length,
+    taxi: st.taxi_slots ?? 0,
+    ir: st.reserve_slots ?? 0,
+    teams: lg.total_rosters ?? st.num_teams ?? null,
+    playoffTeams: st.playoff_teams ?? null,
+    median: Boolean(st.league_average_match),
+    scoring: lg.scoring_settings ?? {},
+  };
+}
+
 // ---------- All-Stars ----------
 // Every player's total fantasy points (all his games, under that season's league
 // scoring) through the last regular-season game before the NBA All-Star Game.
@@ -186,7 +202,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
       playerWeeks.push(...copy.playerWeeks);
       transactions.push(...copy.transactions);
       drafts.push(...copy.drafts);
-      seasons.push({ ...copy.seasonInfo, frozen: true });
+      seasons.push({ ...copy.seasonInfo, frozen: true, settings: settingsOf(lg) });
       for (const x of copy.playerWeeks) usedPlayers.add(x.pid);
       for (const x of copy.transactions) for (const pid of [...Object.keys(x.adds), ...Object.keys(x.drops)]) usedPlayers.add(pid);
       for (const d of copy.drafts) for (const p of d.picks) usedPlayers.add(p.pid);
@@ -417,6 +433,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     seasons.push({
       season,
       leagueId: lg.league_id,
+      settings: settingsOf(lg),
       name: lg.name,
       status: lg.status,
       weeksPlayed: lastWeek,

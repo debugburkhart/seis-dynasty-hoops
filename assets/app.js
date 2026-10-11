@@ -10,6 +10,7 @@ import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, champions
 import { ALL_STAR_POSITIONS, CORRECTIONS, DRAFT_CORRECTIONS, PHOTO_CORRECTIONS } from './corrections.js';
 import { SORTS, playerIndex } from './players.js';
 import { LEAGUE_START, RULES } from './rules.js';
+import { buildTimeline } from './timeline.js';
 import { MIN_GAMES, TIERS, draftClasses, draftGrades, draftOfYear, draftedPlayers, projectedOrder, reportCards, seasonPoints } from './draft.js';
 
 // ---------- Navigation ----------
@@ -20,7 +21,7 @@ const NAV = [
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['players', 'Player Index', 'users'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['future-drafts', 'Future Drafts', 'calendar'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['home', 'rules', 'rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players', 'draft-history', 'future-drafts', 'draft-grades']);
+const READY = new Set(['home', 'rules', 'timeline', 'rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players', 'draft-history', 'future-drafts', 'draft-grades']);
 const DEFAULT_PAGE = 'home';
 
 const ICONS = {
@@ -33,6 +34,11 @@ const ICONS = {
   bolt: '<path d="M11 2 4 11h5l-1 7 7-9h-5z"/>',
   trophy: '<path d="M6 3h8v4a4 4 0 0 1-8 0zM6 5H3v1a3 3 0 0 0 3 3M14 5h3v1a3 3 0 0 1-3 3M10 11v3M7 17h6M8 14h4v3H8z"/>',
   book: '<path d="M4 4h5a2 2 0 0 1 2 2v11a1.5 1.5 0 0 0-1.5-1.5H4zM16 4h-5M16 4v11.5h-5.5"/>',
+  pencil: '<path d="M13.5 3.5l3 3L7 16H4v-3zM11.5 5.5l3 3"/>',
+  grid: '<rect x="3.5" y="3.5" width="5" height="5" rx="1"/><rect x="11.5" y="3.5" width="5" height="5" rx="1"/><rect x="3.5" y="11.5" width="5" height="5" rx="1"/><rect x="11.5" y="11.5" width="5" height="5" rx="1"/>',
+  flag: '<path d="M5 17V3.5M5 4h9l-2 3.5 2 3.5H5"/>',
+  calc: '<rect x="4" y="3" width="12" height="14" rx="1.5"/><path d="M7 6.5h6M7 10h.01M10 10h.01M13 10h.01M7 13.5h.01M10 13.5h.01M13 13.5h.01"/>',
+  star: '<path d="M10 3l2.1 4.4 4.9.6-3.6 3.4.9 4.8L10 13.9l-4.3 2.3.9-4.8L3 8l4.9-.6z"/>',
   calendar: '<rect x="3" y="4.5" width="14" height="12.5" rx="1.5"/><path d="M3 8.5h14M7 3v3M13 3v3"/>',
   clock: '<circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.5 2"/>',
   swords: '<path d="M3 3l8 8M3 3h3M3 3v3M17 3l-8 8M17 3h-3M17 3v3M6 14l-2 2 1 1 2-2M14 14l2 2-1 1-2-2M5 12l3 3M15 12l-3 3"/>',
@@ -2213,7 +2219,7 @@ function renderCommish(main, params) {
         <div><div class="eyebrow">For the commish only</div><h1>Commissioner’s office</h1></div>
         <div class="cm-run">
           <a class="btn" href="https://github.com/debugburkhart/seis-dynasty-hoops/actions/workflows/update.yml" target="_blank" rel="noopener">${icon('history')}<span>Run nightly update</span></a>
-          <small>Opens GitHub: tap <b>Run workflow</b>, then the green <b>Run workflow</b>. Done in about 3–5 minutes; then reload the site.</small>
+          <small>Opens GitHub: tap <b>Run workflow</b>, then the green <b>Run workflow</b>. Done in about 3–5 minutes; then reload the site.${(() => { const cur = DATA.seasons.at(-1); return cur && !cur.weeksPlayed && cur.status !== 'complete' ? ' Until Week 1, this also redoes the <b>preseason Power Rankings</b> from today’s rosters (after a trade, for example).' : ''; })()}</small>
         </div>
       </div>
       <div class="st-tabs cm-tabs" role="tablist">
@@ -3367,6 +3373,44 @@ function renderRules(main) {
   }));
 }
 
+// ---------- Timeline ----------
+// Every season's story, newest first (assets/timeline.js).
+
+function renderTimeline(main) {
+  const seasons = buildTimeline(DATA, { rules: RULES, leagueStart: LEAGUE_START, name });
+  const event = e => {
+    const body = `
+      <span class="tl-icon">${icon(e.icon)}</span>
+      <span class="tl-text">
+        <span class="tl-title">${e.who ? `<b>${esc(name(e.who))}</b> ${esc(e.title)}` : `<b>${esc(e.title)}</b>`}</span>
+        ${e.note ? `<small>${esc(e.note)}</small>` : ''}
+      </span>`;
+    return e.link ? `<a class="tl-event tl-k-${e.kind}" href="${e.link}">${body}</a>` : `<div class="tl-event tl-k-${e.kind}">${body}</div>`;
+  };
+  main.innerHTML = `
+    <div class="page">
+      <div class="page-head">
+        <div class="page-icon">${icon('clock')}</div>
+        <div><div class="eyebrow">${esc(DATA.name)}</div><h1>League Timeline</h1></div>
+      </div>
+      <p class="page-desc">Every season’s story: champions, new rules, league changes and drafts, newest first.</p>
+      <section class="card tl-card">
+        ${seasons.map(s => `
+          <div class="tl-season">
+            <div class="tl-when">
+              <b>${seasonSpan(s.season)}</b>
+              <small>Sleeper · ${s.teams} teams${s.current ? ' · in progress' : ''}</small>
+            </div>
+            <div class="tl-rail"><span class="tl-dot${s.current ? ' now' : ''}"></span></div>
+            <div class="tl-events">
+              ${s.events.length ? s.events.map(event).join('') : '<p class="empty">Nothing new this season.</p>'}
+            </div>
+          </div>`).join('')}
+      </section>
+      <p class="pw-foot">Rules come from the Rulebook, league changes from each season’s Sleeper settings, and the champion from the title game. Tap a champion, rule or draft to open it.</p>
+    </div>`;
+}
+
 // ---------- Draft Kit ----------
 // Three tabs on one page: Draft History (every board, colored by how each pick
 // turned out), Future Drafts (who owns every pick of the next three drafts, plus
@@ -3852,6 +3896,7 @@ function render() {
   else if (page === 'power') renderPower(main, params);
   else if (page === 'standings') renderStandings(main, params);
   else if (page === 'rules') renderRules(main);
+  else if (page === 'timeline') renderTimeline(main);
   else if (DRAFT_TABS.some(([id]) => id === page)) renderDraftKit(main, page, params);
   else renderSoon(main, page);
   document.body.classList.remove('nav-open');

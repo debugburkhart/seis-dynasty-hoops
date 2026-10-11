@@ -78,7 +78,7 @@ export const RULES = [
     items: ['A coin flip between the bottom 2 teams of the year decides who gets the first pick.'],
   },
   {
-    n: 8, title: 'League Median Game', added: '2026',
+    n: 8, title: 'League Median Game', added: '2026', covers: 'median', // the Timeline shows this rule instead of the setting change
     items: ['Every team plays an extra game each week against the league median.'],
   },
 ];

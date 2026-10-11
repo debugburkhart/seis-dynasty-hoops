@@ -27,7 +27,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   was} (page shows a note + "Rule changes" history). Owner's answers: show current rule +
   change note; taxi size stays 30 for now (30 -> 15 was only an example); the mid-week
   trade-lock rule is an original rule (1.3); Awards rule = 2025-26 per its parentheses.
-- `assets/app.js`: all pages (hash routes: home, rules, rivalry, records, power, hype, standings,
+- `assets/timeline.js`: League Timeline (#/timeline, Hall of Fame; modeled on the owner's
+  reference screenshot). Per season, newest first: champion (+ final score), Rulebook rules
+  added/changed (rules.js; a rule with covers: 'median' replaces the auto setting entry),
+  league renamed, Sleeper settings changes (DATA.seasons[].settings saved nightly by
+  settingsOf() in build-data: starters, bench, taxi, IR, teams, playoff teams, median,
+  scoring), the draft's 1.01, founding (+ "same N managers"), and hand-added MILESTONES.
+- `assets/app.js`: all pages (hash routes: home, rules, timeline, rivalry, records, power, hype, standings,
   transactions, awards, players), sidebar.
 - Home (#/home, the default page; renderHome in app.js): Main event = top of hypeSlate for
   the week the Hype page opens on (preseason: last season's final week + tip-off note);
@@ -217,6 +223,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - Verify numbers against the data before reporting; the owner checks things in the app.
 
 ## Not built yet (sidebar shows "Soon")
-Weekly Props, Trade Court, Timeline. (Cheat Sheet was dropped by the owner.) The owner
+Weekly Props, Trade Court (planned with Firebase sign-in for the 8 managers; owner to decide
+the open questions first). (Cheat Sheet was dropped by the owner.) The owner
 shares screenshots of a football reference site (fantasyhoff.com) for each feature and
 wants it adapted for basketball.
