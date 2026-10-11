@@ -64,7 +64,7 @@ const GROUPS = {
     ['Careers', ['Best career points per start', 'Most points for one manager, career', 'Most-used players', 'Most-used by one manager', 'Scored for the most teams']],
   ],
   streaks: [
-    ['Streaks', ['Longest winning streak', 'Longest losing streak', 'Longest above-median streak']],
+    ['Streaks', ['Longest winning streak (head-to-head + median)', 'Longest head-to-head winning streak', 'Longest losing streak (head-to-head + median)', 'Longest head-to-head losing streak', 'Longest above-median streak']],
     ['Playoff runs & droughts', ['Longest playoff win streak', 'Most consecutive playoff trips', 'Longest active title drought']],
     ['Milestones', ['400-point club']],
   ],
@@ -75,7 +75,7 @@ const GROUPS = {
 };
 const BAD = new Set(['Most weekly low scores', 'Most last-place finishes', 'Most points against', 'Worst record in a season',
   'Fewest points per game in a season', 'Unluckiest season', 'Lowest score', 'Lowest combined score',
-  'Longest losing streak', 'Longest active title drought']);
+  'Longest losing streak (head-to-head + median)', 'Longest head-to-head losing streak', 'Longest active title drought']);
 
 const r1 = n => Math.round(n * 10) / 10;
 const fmt = n => r1(n).toLocaleString('en-US', { maximumFractionDigits: 1 });
@@ -261,9 +261,9 @@ export function buildRecords(DATA) {
     R('Best all-play record', seasons.map(a => ({ who: a.o, value: a.apPct, display: pct(a.apPct), ctx: `${seasonLabel(a.s)} · ${rec(Math.round(a.apW), Math.round(a.apG - a.apW), 0)} vs everyone` })),
       { note: 'Record if they had played every team every week.' }),
     R('Luckiest season', seasons.map(a => ({ who: a.o, value: a.luck, display: `${signed(a.luck)} W`, ctx: `${sCtx(a)} · all-play ${pct(a.apPct)}` })),
-      { note: 'Actual wins minus the wins their all-play record says they earned.' }),
+      { note: 'Actual head-to-head wins minus the wins their all-play record says they earned (league-median games have no schedule luck, so they don’t count).' }),
     R('Unluckiest season', seasons.map(a => ({ who: a.o, value: a.luck, display: `${signed(a.luck)} W`, ctx: `${sCtx(a)} · all-play ${pct(a.apPct)}` })),
-      { asc: true, note: 'Actual wins minus the wins their all-play record says they earned.' }),
+      { asc: true, note: 'Actual head-to-head wins minus the wins their all-play record says they earned (league-median games have no schedule luck, so they don’t count).' }),
   ];
 
   const games = DATA.games.map(g => {
@@ -318,8 +318,13 @@ export function buildRecords(DATA) {
   const completedSeasons = DATA.seasons.filter(s => complete.has(s.season));
   const current = new Set(DATA.seasons.at(-1).teams.map(t => t.owner));
   byCategory.streaks = [
-    streak(x => x.res === 'W', 'Longest winning streak', { note: `Regular season, carried across seasons.${medianNote ? ` ${medianNote}` : ''}` }, results),
-    streak(x => x.res === 'L', 'Longest losing streak', { note: `Regular season, carried across seasons.${medianNote ? ` ${medianNote}` : ''}` }, results),
+    // Two views of each streak: every result as Sleeper counts it (from 2026-27 a
+    // week is two results, the head-to-head game then the league-median game), and
+    // head-to-head games only, which mean the same thing in every season.
+    streak(x => x.res === 'W', 'Longest winning streak (head-to-head + median)', { note: `Every regular-season result in order, carried across seasons: head-to-head games plus league-median games where the league played them${medians.length ? ` (${[...new Set(medians.map(m => m.s))].join(', ')})` : ''}, as Sleeper counts them. A week split 1–1 ends the streak.` }, results),
+    streak(x => x.res === 'W', 'Longest head-to-head winning streak', { note: 'Head-to-head games only, carried across seasons. League-median games don’t count, so this means the same thing in every season.' }),
+    streak(x => x.res === 'L', 'Longest losing streak (head-to-head + median)', { note: `Every regular-season result in order, carried across seasons: head-to-head games plus league-median games where the league played them${medians.length ? ` (${[...new Set(medians.map(m => m.s))].join(', ')})` : ''}, as Sleeper counts them.` }, results),
+    streak(x => x.res === 'L', 'Longest head-to-head losing streak', { note: 'Head-to-head games only, carried across seasons. League-median games don’t count.' }),
     streak(x => x.p > week[`${x.s}-${x.w}`].median, 'Longest above-median streak', { note: 'Consecutive weeks scoring in the top half of the league.' }),
     A('Most consecutive playoff trips', careers.map(k => {
       let best = 0;

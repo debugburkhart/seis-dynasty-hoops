@@ -66,7 +66,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   build-data with the ROY rookie rule, carried over once a season is complete, current
   season redone nightly; locked points = that season's scoring, so 2023 is 0.5/pt).
   Matchups: Beat the median by the most, Shootout week (league total, not personal).
-  Streaks: Longest playoff win streak; Fastest to 25 wins removed. New Awards category
+  Streaks: Longest playoff win streak; Fastest to 25 wins removed. Win/losing streaks come in
+  two versions (owner): "(head-to-head + median)" = every result as Sleeper counts it (from
+  2026-27 a week is H2H then median; a 1-1 week ends it) and "head-to-head" only. New Awards category
   (from awards.js/draft.js banners): manager awards won (GM, Draft of the Year, Steal),
   winners/All-Stars/All-Fantasy rostered, player All-Fantasy/All-Star/individual awards.
 - `assets/frontoffice.js`: trades/waivers/drafts valued by locked points ("stints").
