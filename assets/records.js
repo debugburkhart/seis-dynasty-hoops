@@ -8,6 +8,8 @@ import { draftOfYear } from './draft.js';
 // Minimum starts for the points-per-start records (easy to change).
 export const MIN_STARTS_SEASON = 10;
 export const MIN_STARTS_CAREER = 40;
+// Career points clubs (Streaks & Milestones): every 5,000 regular-season points from 15,000.
+export const POINT_CLUBS = Array.from({ length: 12 }, (_, i) => 15000 + 5000 * i);
 
 // A player's headshot: Sleeper's, unless corrections.js lists an NBA.com one.
 export function playerPhoto(DATA, pid) {
@@ -67,7 +69,8 @@ const GROUPS = {
   streaks: [
     ['Streaks', ['Longest winning streak (head-to-head + median)', 'Longest head-to-head winning streak', 'Longest losing streak (head-to-head + median)', 'Longest head-to-head losing streak', 'Longest above-median streak']],
     ['Playoff runs & droughts', ['Longest playoff win streak', 'Most consecutive playoff trips', 'Longest active title drought']],
-    ['Milestones', ['400-point club']],
+    ['Milestones', ['400-point club', '450-point club', 'Most 1st-place regular-season finishes', 'Career points clubs', '50 career head-to-head wins', 'Most 2–0 weeks', 'Most 0–2 weeks']],
+    ['Player milestones', ['60-point club', '1,000-point club', 'Most 40-point playoff performances']],
   ],
   awards: [
     ['Managers', ['Most awards won', 'Most GM of the Year awards', 'Most Draft of the Year awards', 'Most award winners rostered', 'Most All-Stars rostered', 'Most All-Fantasy players rostered']],
@@ -76,7 +79,7 @@ const GROUPS = {
 };
 const BAD = new Set(['Most weekly low scores', 'Most last-place finishes', 'Most points against',
   'Worst record in a season (head-to-head + median)', 'Worst head-to-head record in a season', 'Most regular-season head-to-head losses',
-  'Worst record vs the league median', 'Most unlucky head-to-head losses',
+  'Worst record vs the league median', 'Most unlucky head-to-head losses', 'Most 0–2 weeks',
   'Fewest points per game in a season', 'Unluckiest season', 'Lowest score', 'Lowest combined score',
   'Longest losing streak (head-to-head + median)', 'Longest head-to-head losing streak', 'Longest active title drought']);
 
@@ -355,6 +358,31 @@ export function buildRecords(DATA) {
     return { who: k.o, value: best.n, display: best.n, ctx: `${span}${active ? ' · active' : ''}` };
   }), opts);
 
+  // Milestone helpers.
+  // Each completed season's best regular-season record (win %, then points for).
+  const regularSeasonFirsts = [...new Set(done.map(a => a.s))].map(s => done.filter(a => a.s === s)
+    .sort((a, b) => (b.w + b.t / 2) / b.dec - (a.w + a.t / 2) / a.dec || b.pf - a.pf)[0]);
+  // The week a manager's career regular-season points first reached a total.
+  const crossedAt = (o, total) => {
+    let sum = 0;
+    for (const x of reg) {
+      if (x.o !== o) continue;
+      sum += x.p;
+      if (sum >= total) return `${x.s} Wk ${x.w}`;
+    }
+    return '';
+  };
+  // League-median weeks: the head-to-head result and the median result together.
+  const splitWeeks = o => {
+    const out = { both: 0, none: 0 };
+    for (const m of medians.filter(x => x.o === o)) {
+      const h = reg.find(x => x.o === o && x.s === m.s && x.w === m.w);
+      if (!h) continue;
+      if (h.res === 'W' && m.res === 'W') out.both++;
+      if (h.res === 'L' && m.res === 'L') out.none++;
+    }
+    return out;
+  };
   const completedSeasons = DATA.seasons.filter(s => complete.has(s.season));
   const current = new Set(DATA.seasons.at(-1).teams.map(t => t.owner));
   byCategory.streaks = [
@@ -393,6 +421,35 @@ export function buildRecords(DATA) {
       const big = reg.filter(x => x.o === k.o && x.p >= 400);
       return { who: k.o, value: big.length, display: big.length, ctx: big.length ? `best ${fmt(Math.max(...big.map(x => x.p)))}` : '' };
     }), { note: 'Most regular-season weeks with 400+ points.' }),
+    A('450-point club', careers.map(k => {
+      const big = reg.filter(x => x.o === k.o && x.p >= 450);
+      return { who: k.o, value: big.length, display: big.length, ctx: big.length ? big.map(x => `${x.s} Wk ${x.w} (${fmt(x.p)})`).join(', ') : '' };
+    }), { keepZero: true, note: 'Most regular-season weeks with 450+ points.' }),
+    A('Most 1st-place regular-season finishes', careers.map(k => {
+      const won = regularSeasonFirsts.filter(a => a.o === k.o).map(a => a.s);
+      return { who: k.o, value: won.length, display: won.length, ctx: won.join(', ') };
+    }), { keepZero: true, note: 'Best regular-season record in a completed season: win % (league-median games included, as Sleeper counts them), then points for.' }),
+    A('Career points clubs', careers.map(k => {
+      const club = [...POINT_CLUBS].reverse().find(c => k.pf >= c);
+      const next = POINT_CLUBS.find(c => k.pf < c);
+      const crossed = club && crossedAt(k.o, club);
+      return club
+        ? { who: k.o, value: k.pf, display: `${club / 1000}K`, ctx: `${fmt(k.pf)} career points · crossed ${club.toLocaleString('en-US')} in ${crossed}${next ? ` · ${fmt(next - k.pf)} to ${next.toLocaleString('en-US')}` : ''}` }
+        : { who: k.o, pending: true, display: '—', ctx: `${fmt(k.pf)} career points · ${fmt((next ?? 0) - k.pf)} to ${(next ?? 0).toLocaleString('en-US')}` };
+    }), { allTime: true, note: `Regular-season points, career. Clubs at every ${(POINT_CLUBS[1] - POINT_CLUBS[0]).toLocaleString('en-US')} points from ${POINT_CLUBS[0].toLocaleString('en-US')}; ranked by career points.` }),
+    A('50 career head-to-head wins', [...careers].sort((a, b) => b.hw - a.hw).map(k => { // closest first while pending
+      const mine = reg.filter(x => x.o === k.o);
+      let wins = 0;
+      for (const x of mine) {
+        if (x.res === 'W') wins++;
+        if (wins === 50) return { who: k.o, value: Number(x.s) * 100 + x.w, display: `${x.s} Wk ${x.w}`, ctx: `50th head-to-head win, in game ${mine.indexOf(x) + 1}` };
+      }
+      return { who: k.o, pending: true, display: '—', ctx: `${wins} head-to-head wins so far · ${50 - wins} to go` };
+    }), { asc: true, allTime: true, note: 'When each manager reached 50 regular-season head-to-head wins, first to get there on top. League-median games don’t count.' }),
+    A('Most 2–0 weeks', careers.map(k => ({ who: k.o, value: splitWeeks(k.o).both, display: splitWeeks(k.o).both, ctx: 'won head-to-head and beat the median' })),
+      { keepZero: true, note: 'Weeks with a head-to-head win and a league-median win. From 2026-27, when the league added the median game.' }),
+    A('Most 0–2 weeks', careers.map(k => ({ who: k.o, value: splitWeeks(k.o).none, display: splitWeeks(k.o).none, ctx: 'lost head-to-head and fell below the median' })),
+      { keepZero: true, note: 'Weeks with a head-to-head loss and a league-median loss. From 2026-27.' }),
   ];
 
   // ---------- Players ----------
@@ -493,6 +550,25 @@ export function buildRecords(DATA) {
       ctx: `for ${forList(d.by)}`,
     })), { ...P, kind: 'total', note: 'Different managers he scored locked points for.' }),
   ];
+
+  // Player milestones (Streaks & Milestones): how often each manager's lineup hit a
+  // big locked-points number.
+  const pw = DATA.playerWeeks ?? [];
+  const bigWeeks = (o, test) => pw.filter(x => x.o === o && test(x)).sort((a, b) => b.p - a.p);
+  byCategory.streaks.push(
+    A('60-point club', careers.map(k => {
+      const list = bigWeeks(k.o, x => x.p >= 60);
+      return { who: k.o, value: list.length, display: list.length, ctx: list.length ? `best: ${pname(list[0].pid)} ${fmt(list[0].p)} (${list[0].s} Wk ${list[0].w})` : '' };
+    }), { ...P, keepZero: true, note: 'Player weeks with 60+ locked points in their lineup, playoffs included.' }),
+    A('1,000-point club', careers.map(k => {
+      const list = Object.values(pms).filter(a => a.o === k.o && a.p >= 1000).sort((a, b) => b.p - a.p);
+      return { who: k.o, value: list.length, display: list.length, ctx: list.map(a => `${pname(a.pid)} ${fmt(a.p)} (${a.s})`).join(', ') };
+    }), { ...P, keepZero: true, note: 'Player seasons with 1,000+ locked points for that manager, playoffs included.' }),
+    A('Most 40-point playoff performances', careers.map(k => {
+      const list = bigWeeks(k.o, x => x.t === 'P' && x.p >= 40);
+      return { who: k.o, value: list.length, display: list.length, ctx: list.length ? `best: ${pname(list[0].pid)} ${fmt(list[0].p)} (${list[0].s} Wk ${list[0].w})` : '' };
+    }), { ...P, stage: 'playoffs', keepZero: true, note: 'Player weeks with 40+ locked points in a championship-bracket game.' }),
+  );
 
   // ---------- Front office ----------
   // Valued from the whole league history (a move made in 2024 keeps earning
@@ -646,7 +722,9 @@ export function buildRecords(DATA) {
     }
   }
 
-  const runningTotals = new Set(['Most consecutive playoff trips', 'Longest active title drought', '400-point club']);
+  const runningTotals = new Set(['Most consecutive playoff trips', 'Longest active title drought', '400-point club',
+    '450-point club', 'Most 1st-place regular-season finishes', 'Career points clubs', '50 career head-to-head wins',
+    'Most 2–0 weeks', 'Most 0–2 weeks', '60-point club', '1,000-point club', 'Most 40-point playoff performances']);
   for (const r of byCategory.careers) r.kind = 'total';
   // Every Front Office value keeps growing as players score, so only a different
   // move or manager taking #1 counts as a record changing hands.

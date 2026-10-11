@@ -71,7 +71,11 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   2026-27 a week is H2H then median; a 1-1 week ends it) and "head-to-head" only; same split
   for career wins/win %, season wins and worst season record (+ H2H losses). Careers "Vs the
   median": best/worst record vs the weekly league median (all seasons), most lucky H2H wins
-  (won below the median) / unlucky H2H losses (lost above it). New Awards category
+  (won below the median) / unlucky H2H losses (lost above it). Milestones (owner): 400 and
+  450-point clubs, 1st-place regular-season finishes, career points clubs (POINT_CLUBS every
+  5,000 from 15,000, all-time only), 50 career H2H wins (date reached; all-time only), 2-0 and
+  0-2 median-era weeks; Player milestones: 60-point club, 1,000-point club (player-season for
+  one manager), 40-point playoff performances. New Awards category
   (from awards.js/draft.js banners): manager awards won (GM, Draft of the Year, Steal),
   winners/All-Stars/All-Fantasy rostered, player All-Fantasy/All-Star/individual awards.
 - `assets/frontoffice.js`: trades/waivers/drafts valued by locked points ("stints").
