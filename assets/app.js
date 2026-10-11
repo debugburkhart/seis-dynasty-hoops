@@ -204,7 +204,7 @@ function renderSidebar(page) {
   });
   $('#sidebar').innerHTML = `
     <div class="brand">
-      <span class="logo-mark">SD</span>
+      <img class="logo-img" src="assets/logo.svg" alt="Seis Dynasty Basketball logo">
       <span class="brand-text">Fantasy<br>Hall of Fame</span>
     </div>
     <div class="league-chip" title="${esc(DATA.name)}">

@@ -35,6 +35,9 @@ button { font: inherit; }
 
 .ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
+/* The league logo (assets/logo.svg, the Hex Ball). */
+.logo-img { display: block; flex: none; width: 34px; height: 34px; }
+.topbar .logo-img { width: 26px; height: 26px; }
 .logo-mark {
   display: inline-grid; place-items: center;
   width: 28px; height: 28px; border-radius: 7px;

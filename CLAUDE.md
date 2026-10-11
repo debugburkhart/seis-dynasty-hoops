@@ -20,6 +20,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   raw.githubusercontent.com and the live site (github.io is blocked in the Browser pane).
 
 ## Architecture (all plain ES modules, no build step)
+- League logo (owner chose the "Hex Ball", Oct 2026): assets/logo.svg (sidebar, top bar,
+  favicon), assets/icon-180.png (iPhone home screen) and icon-512.png, all drawn from the same
+  shapes; downloadable copies in brand/ (SVG, 512/1024 PNG, 1024 avatar on navy). PNGs are
+  drawn with PowerShell System.Drawing (no Node locally), matching the SVG geometry.
 - `index.html`: shell + import map. Every module in `assets/` must be listed in the
   import map with `?v=dev` (the Action replaces it with a version fingerprint).
 - `assets/rules.js`: the league Rulebook text (#/rules, under Now). Rules grouped by season
