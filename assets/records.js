@@ -65,6 +65,7 @@ const GROUPS = {
     ['Single week', ['Most points in a week']],
     ['Seasons', ['Most points by a player in a season', 'Most points for one manager in a season', 'Best points per start in a season', 'Most points as a rookie', /^Best (PG|SG|SF|PF|C) season$/]],
     ['Careers', ['Best career points per start', 'Most points for one manager, career', 'Most-used players', 'Most-used by one manager', 'Scored for the most teams']],
+    ['Milestones', ['Most 60-point weeks', 'Most 1,000-point seasons', 'Most 40-point playoff games']],
   ],
   streaks: [
     ['Streaks', ['Longest winning streak (head-to-head + median)', 'Longest head-to-head winning streak', 'Longest losing streak (head-to-head + median)', 'Longest head-to-head losing streak', 'Longest above-median streak']],
@@ -550,6 +551,44 @@ export function buildRecords(DATA) {
       ctx: `for ${forList(d.by)}`,
     })), { ...P, kind: 'total', note: 'Different managers he scored locked points for.' }),
   ];
+
+  // Player milestones, by player (Players & Lineups → Milestones): how often a player
+  // hit a big locked-points number, whichever team he was on. The Manager filter
+  // counts only what he did for that manager (managerRows).
+  const playerCounts = (title, rows, opts) => {
+    const by = {}; // pid -> { n, byO: {o: n}, best }
+    for (const x of rows) {
+      const d = (by[x.pid] ??= { pid: x.pid, n: 0, byO: {}, best: x });
+      d.n++;
+      d.byO[x.o] = (d.byO[x.o] ?? 0) + 1;
+      if (x.p > d.best.p) d.best = x;
+    }
+    const split = d => Object.entries(d.byO).sort((a, b) => b[1] - a[1]).map(([o, n]) => `${name(o)} ${n}`).join(', ');
+    const record = R(title, Object.values(by).map(d => ({
+      who: topOwner(d.byO), whos: Object.keys(d.byO), whoText: pname(d.pid), img: img(d.pid), value: d.n, display: d.n,
+      ctx: `${opts.best(d.best)} · ${split(d)}`,
+    })), { ...P, kind: 'total', ...opts.extra });
+    record.managerRows = R(title, Object.values(by).flatMap(d => Object.entries(d.byO).map(([o, n]) => ({
+      who: o, whoText: pname(d.pid), img: img(d.pid), value: n, display: n, ctx: `for ${name(o)}${Object.keys(d.byO).length > 1 ? ` (of ${d.n})` : ''}`,
+    }))), P).rows;
+    record.managerNote = 'Only what he did for this manager counts here.';
+    return record;
+  };
+  const allPw = DATA.playerWeeks ?? [];
+  byCategory.players.push(
+    playerCounts('Most 60-point weeks', allPw.filter(x => x.p >= 60), {
+      best: b => `best ${fmt(b.p)} (${b.s} Wk ${b.w})`,
+      extra: { note: 'Weeks a player put up 60+ locked points, for any team, playoffs included.' },
+    }),
+    playerCounts('Most 1,000-point seasons', Object.values(psn).filter(s => s.p >= 1000).map(s => ({ pid: s.pid, o: topOwner(s.by), p: s.p, s: s.s })), {
+      best: b => `best ${fmt(b.p)} (${b.s})`,
+      extra: { note: 'Seasons a player put up 1,000+ locked points, every team he started for added together. Each season counts for the team he scored the most for.' },
+    }),
+    playerCounts('Most 40-point playoff games', allPw.filter(x => x.t === 'P' && x.p >= 40), {
+      best: b => `best ${fmt(b.p)} (${b.s} Wk ${b.w})`,
+      extra: { stage: 'playoffs', note: 'Championship-bracket games where a player put up 40+ locked points, for any team.' },
+    }),
+  );
 
   // Player milestones (Streaks & Milestones): how often each manager's lineup hit a
   // big locked-points number.

@@ -75,7 +75,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   450-point clubs, 1st-place regular-season finishes, career points clubs (POINT_CLUBS every
   5,000 from 15,000, all-time only), 50 career H2H wins (date reached; all-time only), 2-0 and
   0-2 median-era weeks; Player milestones: 60-point club, 1,000-point club (player-season for
-  one manager), 40-point playoff performances. New Awards category
+  one manager), 40-point playoff performances; the same three by PLAYER in Players & Lineups
+  → Milestones (playerCounts(), with managerRows for the Manager filter). New Awards category
   (from awards.js/draft.js banners): manager awards won (GM, Draft of the Year, Steal),
   winners/All-Stars/All-Fantasy rostered, player All-Fantasy/All-Star/individual awards.
 - `assets/frontoffice.js`: trades/waivers/drafts valued by locked points ("stints").
