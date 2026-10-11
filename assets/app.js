@@ -3160,11 +3160,35 @@ function homeTicker() {
   const list = items.map(e => item(e)).join('');
   return `
     <section class="hm-ticker" aria-label="Recently broken records">
-      <a class="hm-tk-label" href="#/records">${icon('flame')}<span>Record<br>watch</span></a>
+      <a class="hm-tk-label" href="#/records">${icon('flame')}<span>Record <br>watch</span></a>
       <div class="hm-tk-view">
         <div class="hm-tk-track" style="--hm-dur:${items.length * 5}s">${list}<span class="hm-tk-copy">${items.map(e => item(e, true)).join('')}</span></div>
       </div>
+      <div class="hm-tk-nav" aria-hidden="true">
+        <span class="hm-tk-dots">${items.map((_, i) => `<i${i ? '' : ' class="on"'}></i>`).join('')}</span>
+        <span class="hm-tk-count"><b>1</b> of ${items.length} · Swipe ${icon('arrow')}</span>
+      </div>
     </section>`;
+}
+
+// Phones: Record watch is a swipeable row of cards, one at a time; the dots and
+// counter follow the swipe. (Desktop keeps the auto-scrolling strip.)
+function bindTicker(main) {
+  const view = $('.hm-tk-view', main);
+  if (!view) return;
+  const items = [...view.querySelectorAll('.hm-tk-track > .hm-tk-item')];
+  const dots = [...main.querySelectorAll('.hm-tk-dots i')];
+  const count = $('.hm-tk-count b', main);
+  let shown = 0;
+  view.addEventListener('scroll', () => {
+    const step = items[1] ? items[1].offsetLeft - items[0].offsetLeft : view.clientWidth;
+    const i = Math.max(0, Math.min(items.length - 1, Math.round(view.scrollLeft / step)));
+    if (i === shown) return;
+    dots[shown]?.classList.remove('on');
+    dots[i]?.classList.add('on');
+    if (count) count.textContent = i + 1;
+    shown = i;
+  }, { passive: true });
 }
 
 function homePower() {
@@ -3287,6 +3311,7 @@ function renderHome(main) {
   }));
   // While a week is being played, refresh the Main event's scores every minute.
   const box = $('#hm-hype', main);
+  bindTicker(main);
   homeHype(box).then(live => {
     if (!live || !box.isConnected) return;
     HYPE_TIMER = setInterval(() => {

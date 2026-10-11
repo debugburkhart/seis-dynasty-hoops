@@ -41,7 +41,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   transactions, awards, players), sidebar.
 - Home (#/home, the default page; renderHome in app.js): Main event = top of hypeSlate for
   the week the Hype page opens on (preseason: last season's final week + tip-off note);
-  "Record watch" auto-scrolling ticker (newest 8 league + 6 personal record events; plain
+  "Record watch" ticker (newest 8 league + 6 personal record events): desktop auto-scrolls;
+  phones (<=560px, owner's request) get a swipe row, one card + next peeking, dots and
+  "1 of N · Swipe" (bindTicker); plain
   swipe strip when the device has Reduce Motion on); Power top 3 (latest edition); all-time
   standings top 5 with Wins/Titles/Median %/Total points/Pts per season buttons (regular
   season, same numbers as the Standings table); 6 newest transactions. Every item links to

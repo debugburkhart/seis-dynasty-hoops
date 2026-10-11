@@ -1519,6 +1519,14 @@ a.tx-row.tx-link:hover { background: #fbf6e6; }
 .hm-tk-title small { display: block; margin-top: 2px; font: 700 9px/1 var(--font); letter-spacing: .1em; color: var(--brass); }
 .hm-tk-who { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hm-tk-who .amp { color: var(--brass); }
+/* Swipe dots and counter: phones only (see the 560px block). */
+.hm-tk-nav { display: none; }
+.hm-tk-dots { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.hm-tk-dots i { width: 6px; height: 6px; border-radius: 99px; background: #ddd6c5; transition: width .2s ease, background .2s ease; }
+.hm-tk-dots i.on { width: 16px; background: var(--gold); }
+.hm-tk-count { display: inline-flex; align-items: center; gap: 4px; flex: none; font: 800 9.5px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--gold-ink); }
+.hm-tk-count b { font-weight: 900; }
+.hm-tk-count .ic { width: 12px; height: 12px; }
 @media (prefers-reduced-motion: reduce) {
   .hm-tk-view { overflow-x: auto; -webkit-mask-image: none; mask-image: none; }
   .hm-tk-track { animation: none; }
@@ -1576,8 +1584,19 @@ a.tx-row.tx-link:hover { background: #fbf6e6; }
   .hm-side .hy-av { width: 40px; height: 40px; }
   .hm-score { font-size: 22px; gap: 4px; }
   .hm-vs { width: 38px; height: 38px; font-size: 13px; }
-  .hm-tk-label { width: 64px; font-size: 9.5px; padding: 8px 4px; }
-  .hm-tk-item { width: 220px; padding: 10px 12px; }
+  /* Record watch: a swipeable row, one card at a time, the next one peeking in. */
+  .hm-ticker { flex-direction: column; }
+  .hm-tk-label { flex-direction: row; justify-content: flex-start; gap: 6px; width: auto; padding: 10px 14px; font-size: 10.5px; }
+  .hm-tk-label br { display: none; }
+  .hm-tk-label .ic { width: 15px; height: 15px; }
+  .hm-tk-view { overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 0 14px; -webkit-mask-image: none; mask-image: none; padding: 12px 14px 10px; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .hm-tk-view::-webkit-scrollbar { display: none; }
+  .hm-tk-track { animation: none; gap: 10px; }
+  .hm-tk-copy { display: none; }
+  .hm-tk-item { width: calc(100vw - 96px); padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: #fbfaf6; scroll-snap-align: start; }
+  .hm-tk-item.rb-personal { box-shadow: inset 3px 0 0 var(--gold); }
+  .hm-tk-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px 12px; }
+
   .hm-tx { grid-template-columns: 1fr auto; gap: 4px 10px; }
   .hm-tx .tx-pill { grid-column: 1; grid-row: 1; justify-self: start; padding: 5px 8px; }
   .hm-tx-date { grid-column: 2; grid-row: 1; }
