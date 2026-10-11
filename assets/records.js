@@ -43,12 +43,13 @@ const GROUPS = {
   careers: [
     ['Hardware', ['Most championships', 'Most finals appearances', 'Most playoff appearances']],
     ['Playoffs', ['Most playoff wins', 'Best playoff win %']],
-    ['Winning', ['Most regular-season wins', 'Best regular-season win %']],
+    ['Winning', ['Most regular-season wins (head-to-head + median)', 'Most regular-season head-to-head wins', 'Best regular-season win % (head-to-head + median)', 'Best regular-season head-to-head win %', 'Most regular-season head-to-head losses']],
+    ['Vs the median', ['Best record vs the league median', 'Worst record vs the league median', 'Most lucky head-to-head wins', 'Most unlucky head-to-head losses']],
     ['Scoring', ['Most regular-season points', 'Most points per game', 'Most weekly high scores', 'Most points against']],
     ['Rock bottom', ['Most weekly low scores', 'Most last-place finishes']],
   ],
   seasons: [
-    ['Winning', ['Most wins in a season', 'Worst record in a season']],
+    ['Winning', ['Most wins in a season (head-to-head + median)', 'Most head-to-head wins in a season', 'Worst record in a season (head-to-head + median)', 'Worst head-to-head record in a season']],
     ['Scoring', ['Most points in a season', 'Most points per game in a season', 'Fewest points per game in a season', 'Most weekly high scores in a season', 'Most above-median weeks in a season']],
     ['Schedule & luck', ['Toughest schedule', 'Friendliest schedule', 'Best all-play record', 'Luckiest season', 'Unluckiest season']],
   ],
@@ -73,7 +74,9 @@ const GROUPS = {
     ['Players', ['Most All-Fantasy selections', 'Most All-Star selections', 'Most individual awards']],
   ],
 };
-const BAD = new Set(['Most weekly low scores', 'Most last-place finishes', 'Most points against', 'Worst record in a season',
+const BAD = new Set(['Most weekly low scores', 'Most last-place finishes', 'Most points against',
+  'Worst record in a season (head-to-head + median)', 'Worst head-to-head record in a season', 'Most regular-season head-to-head losses',
+  'Worst record vs the league median', 'Most unlucky head-to-head losses',
   'Fewest points per game in a season', 'Unluckiest season', 'Lowest score', 'Lowest combined score',
   'Longest losing streak (head-to-head + median)', 'Longest head-to-head losing streak', 'Longest active title drought']);
 
@@ -105,6 +108,9 @@ export function buildRecords(DATA) {
   const medianNote = medians.length
     ? `Includes league-median games (${[...new Set(medians.map(m => m.s))].join(', ')}), as Sleeper counts them.`
     : undefined;
+  // Notes for the records that come in two versions (owner's request, Oct 2026).
+  const bothNote = `Regular season, every result as Sleeper counts it: head-to-head games plus league-median games where the league played them${medians.length ? ` (${[...new Set(medians.map(m => m.s))].join(', ')})` : ' (from 2026-27)'}.`;
+  const h2hNote = 'Regular season, head-to-head games only. League-median games don’t count, so this means the same thing in every season.';
   // Every regular-season result in order: each week's head-to-head game, then its median game.
   const results = [...reg, ...medians].sort((a, b) => chrono(a, b) || (a.t === 'M') - (b.t === 'M'));
 
@@ -154,10 +160,10 @@ export function buildRecords(DATA) {
 
   // Career totals.
   const career = {};
-  const c = o => (career[o] ??= { o, seasons: 0, titles: [], finals: 0, playoffs: 0, pw: 0, pl: 0, w: 0, l: 0, t: 0, dec: 0, g: 0, pf: 0, pa: 0, highs: 0, lows: 0, basement: [] });
+  const c = o => (career[o] ??= { o, seasons: 0, titles: [], finals: 0, playoffs: 0, pw: 0, pl: 0, w: 0, l: 0, t: 0, hw: 0, hl: 0, ht: 0, dec: 0, g: 0, pf: 0, pa: 0, highs: 0, lows: 0, basement: [] });
   for (const a of seasons) {
     const k = c(a.o);
-    for (const f of ['w', 'l', 't', 'dec', 'g', 'pf', 'pa', 'highs', 'lows']) k[f] += a[f];
+    for (const f of ['w', 'l', 't', 'hw', 'hl', 'ht', 'dec', 'g', 'pf', 'pa', 'highs', 'lows']) k[f] += a[f];
   }
   // Teams that made the playoffs: the bracket field (byes included), or for
   // data saved before that was recorded, everyone who played a playoff game.
@@ -216,6 +222,21 @@ export function buildRecords(DATA) {
   // A single season has at most 3 playoff games, so one season only needs 1.
   const oneSeason = DATA.view?.season && DATA.view.season !== 'all';
   const minPlayoffGames = oneSeason ? 1 : 3;
+  // Each manager against the weekly league median (regular season, every season),
+  // and head-to-head results that went against it.
+  const medTally = {};
+  for (const x of reg) {
+    const md = week[`${x.s}-${x.w}`].median;
+    const m = (medTally[x.o] ??= { w: 0, l: 0, t: 0, lucky: 0, unlucky: 0 });
+    m[x.p > md ? 'w' : x.p < md ? 'l' : 't']++;
+    if (x.res === 'W' && x.p < md) m.lucky++;
+    if (x.res === 'L' && x.p > md) m.unlucky++;
+  }
+  const vsMed = o => {
+    const m = medTally[o] ?? { w: 0, l: 0, t: 0, lucky: 0, unlucky: 0 };
+    const n = m.w + m.l + m.t;
+    return { ...m, pct: n ? (m.w + m.t / 2) / n : 0 };
+  };
   byCategory.careers = [
     A('Most championships', careers.map(k => ({ who: k.o, value: k.titles.length, display: k.titles.length, ctx: k.titles.join(', ') })), PO),
     A('Most finals appearances', careers.map(k => ({ who: k.o, value: k.finals, display: k.finals, ctx: `${k.titles.length} won` })), PO),
@@ -226,9 +247,25 @@ export function buildRecords(DATA) {
       ? { who: k.o, value: k.pw / (k.pw + k.pl), display: pct(k.pw / (k.pw + k.pl)), ctx: rec(k.pw, k.pl, 0) }
       : { who: k.o, pending: true, display: '—', ctx: k.pw + k.pl ? `${rec(k.pw, k.pl, 0)} · not enough games` : 'no playoff games' })),
       { ...PO, note: `Minimum ${minPlayoffGames} championship bracket game${minPlayoffGames === 1 ? '' : 's'}.`, keepZero: true }),
-    A('Most regular-season wins', careers.map(k => ({ who: k.o, value: k.w, display: k.w, ctx: rec(k.w, k.l, k.t) })), { note: medianNote }),
-    A('Best regular-season win %', careers.map(k => ({ who: k.o, value: (k.w + k.t / 2) / k.dec, display: pct((k.w + k.t / 2) / k.dec), ctx: rec(k.w, k.l, k.t) })),
-      { keepZero: true, note: medianNote }),
+    // Wins two ways: every result as Sleeper counts it (league-median games
+    // included where the league played them) and head-to-head games only.
+    A('Most regular-season wins (head-to-head + median)', careers.map(k => ({ who: k.o, value: k.w, display: k.w, ctx: rec(k.w, k.l, k.t) })), { note: bothNote }),
+    A('Most regular-season head-to-head wins', careers.map(k => ({ who: k.o, value: k.hw, display: k.hw, ctx: rec(k.hw, k.hl, k.ht) })), { note: h2hNote }),
+    A('Best regular-season win % (head-to-head + median)', careers.map(k => ({ who: k.o, value: (k.w + k.t / 2) / k.dec, display: pct((k.w + k.t / 2) / k.dec), ctx: rec(k.w, k.l, k.t) })),
+      { keepZero: true, note: bothNote }),
+    A('Best regular-season head-to-head win %', careers.map(k => ({ who: k.o, value: (k.hw + k.ht / 2) / k.g, display: pct((k.hw + k.ht / 2) / k.g), ctx: rec(k.hw, k.hl, k.ht) })),
+      { keepZero: true, note: h2hNote }),
+    A('Most regular-season head-to-head losses', careers.map(k => ({ who: k.o, value: k.hl, display: k.hl, ctx: rec(k.hw, k.hl, k.ht) })), { note: h2hNote }),
+    // Against the league median every week (every season, whether or not the league
+    // played a median game), and where the head-to-head result went against it.
+    A('Best record vs the league median', careers.map(k => ({ who: k.o, value: vsMed(k.o).pct, display: pct(vsMed(k.o).pct), ctx: `${rec(vsMed(k.o).w, vsMed(k.o).l, vsMed(k.o).t)} vs the median` })),
+      { keepZero: true, note: 'Every regular-season week: a win for scoring above that week’s league median, a loss below it. Counts every season, including those before the league played median games.' }),
+    A('Worst record vs the league median', careers.map(k => ({ who: k.o, value: vsMed(k.o).pct, display: pct(vsMed(k.o).pct), ctx: `${rec(vsMed(k.o).w, vsMed(k.o).l, vsMed(k.o).t)} vs the median` })),
+      { asc: true, keepZero: true, note: 'Every regular-season week: a win for scoring above that week’s league median, a loss below it.' }),
+    A('Most lucky head-to-head wins', careers.map(k => ({ who: k.o, value: vsMed(k.o).lucky, display: vsMed(k.o).lucky, ctx: 'won while scoring below the week’s median' })),
+      { keepZero: true, note: 'Head-to-head wins in weeks they scored below the league median: the opponent had an off week.' }),
+    A('Most unlucky head-to-head losses', careers.map(k => ({ who: k.o, value: vsMed(k.o).unlucky, display: vsMed(k.o).unlucky, ctx: 'lost while scoring above the week’s median' })),
+      { keepZero: true, note: 'Head-to-head losses in weeks they scored above the league median: beaten by a hot opponent.' }),
     A('Most regular-season points', careers.map(k => ({ who: k.o, value: k.pf, display: fmt(k.pf), ctx: `${k.g} games` }))),
     A('Most points per game', careers.map(k => ({ who: k.o, value: k.pf / k.g, display: fmt(k.pf / k.g), ctx: `${fmt(k.pf)} in ${k.g} games` })),
       { note: 'Regular season.' }),
@@ -247,9 +284,12 @@ export function buildRecords(DATA) {
   const fullLength = Math.max(0, ...done.map(a => a.g));
   const shortSeasons = [...new Set(done.map(a => a.s))].filter(s => gamesIn(s) < fullLength).map(s => `${s} had ${gamesIn(s)} games`);
   byCategory.seasons = [
-    R('Most wins in a season', seasons.map(a => ({ who: a.o, value: a.w, display: a.w, ctx: sCtx(a) })), { note: medianNote }),
-    R('Worst record in a season', done.map(a => ({ who: a.o, value: (a.w + a.t / 2) / a.dec, display: pct((a.w + a.t / 2) / a.dec), ctx: sCtx(a) })),
-      { asc: true, keepZero: true, note: `Lowest win %. Completed seasons.${medianNote ? ` ${medianNote}` : ''}` }),
+    R('Most wins in a season (head-to-head + median)', seasons.map(a => ({ who: a.o, value: a.w, display: a.w, ctx: sCtx(a) })), { note: bothNote }),
+    R('Most head-to-head wins in a season', seasons.map(a => ({ who: a.o, value: a.hw, display: a.hw, ctx: `${seasonLabel(a.s)} · ${rec(a.hw, a.hl, a.ht)} head-to-head` })), { note: h2hNote }),
+    R('Worst record in a season (head-to-head + median)', done.map(a => ({ who: a.o, value: (a.w + a.t / 2) / a.dec, display: pct((a.w + a.t / 2) / a.dec), ctx: sCtx(a) })),
+      { asc: true, keepZero: true, note: `Lowest win %. Completed seasons. ${bothNote}` }),
+    R('Worst head-to-head record in a season', done.map(a => ({ who: a.o, value: (a.hw + a.ht / 2) / a.g, display: pct((a.hw + a.ht / 2) / a.g), ctx: `${seasonLabel(a.s)} · ${rec(a.hw, a.hl, a.ht)} head-to-head` })),
+      { asc: true, keepZero: true, note: `Lowest head-to-head win %. Completed seasons. ${h2hNote}` }),
     R('Most points in a season', seasons.map(a => ({ who: a.o, value: a.pf, display: fmt(a.pf), ctx: `${sCtx(a)} · ${a.g} games` })),
       { note: shortSeasons.length ? `Season lengths differ (${shortSeasons.join(', ')}), so see points per game too.` : undefined }),
     R('Most points per game in a season', seasons.map(a => ({ who: a.o, value: a.ppg, display: fmt(a.ppg), ctx: sCtx(a) }))),

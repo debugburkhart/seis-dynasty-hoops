@@ -68,7 +68,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Matchups: Beat the median by the most, Shootout week (league total, not personal).
   Streaks: Longest playoff win streak; Fastest to 25 wins removed. Win/losing streaks come in
   two versions (owner): "(head-to-head + median)" = every result as Sleeper counts it (from
-  2026-27 a week is H2H then median; a 1-1 week ends it) and "head-to-head" only. New Awards category
+  2026-27 a week is H2H then median; a 1-1 week ends it) and "head-to-head" only; same split
+  for career wins/win %, season wins and worst season record (+ H2H losses). Careers "Vs the
+  median": best/worst record vs the weekly league median (all seasons), most lucky H2H wins
+  (won below the median) / unlucky H2H losses (lost above it). New Awards category
   (from awards.js/draft.js banners): manager awards won (GM, Draft of the Year, Steal),
   winners/All-Stars/All-Fantasy rostered, player All-Fantasy/All-Star/individual awards.
 - `assets/frontoffice.js`: trades/waivers/drafts valued by locked points ("stints").
