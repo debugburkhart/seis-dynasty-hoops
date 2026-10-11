@@ -60,7 +60,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   30 kept). The Record Book page shows the 6 newest under "Personal records"; league
   "Recently broken", badges and the weekly recap ignore personal events. Oct 2026 additions
   (owner): Players: Most points by a player in a season (all teams), Best points per start
-  in a season (MIN_STARTS_SEASON 10) and career (MIN_STARTS_CAREER 40; both constants at the
+  in a season (MIN_STARTS_SEASON 10) and career (MIN_STARTS_CAREER 40; Playoffs stage view:
+  MIN_STARTS_CAREER_PLAYOFFS 3, owner Oct 2026; constants at the
   top of records.js, scaled down for playoff/one-season filters; owner may change them),
   Most points as a rookie (DATA.rookiePool: rookies with locked points per season, built in
   build-data with the ROY rookie rule, carried over once a season is complete, current

@@ -8,6 +8,8 @@ import { draftOfYear } from './draft.js';
 // Minimum starts for the points-per-start records (easy to change).
 export const MIN_STARTS_SEASON = 10;
 export const MIN_STARTS_CAREER = 40;
+// Career minimum when the Stage filter is Playoffs (owner, Oct 2026).
+export const MIN_STARTS_CAREER_PLAYOFFS = 3;
 // Career points clubs (Streaks & Milestones): every 5,000 regular-season points from 15,000.
 export const POINT_CLUBS = Array.from({ length: 12 }, (_, i) => 15000 + 5000 * i);
 
@@ -483,7 +485,7 @@ export function buildRecords(DATA) {
   // (the playoffs are at most 3 games a season; one season can't reach 40 starts).
   const playoffsOnly = DATA.view?.stage === 'playoffs';
   const minSeason = playoffsOnly ? 2 : MIN_STARTS_SEASON;
-  const minCareer = playoffsOnly ? (oneSeason ? 2 : 6) : oneSeason ? MIN_STARTS_SEASON : MIN_STARTS_CAREER;
+  const minCareer = playoffsOnly ? (oneSeason ? 2 : MIN_STARTS_CAREER_PLAYOFFS) : oneSeason ? MIN_STARTS_SEASON : MIN_STARTS_CAREER;
   const rookiePool = Object.fromEntries(Object.entries((DATA.all ?? DATA).rookiePool ?? {}).map(([s, ids]) => [s, new Set(ids)]));
 
   const weekLabel = x => (x.t === 'P' || x.t === 'X') ? ` · ${gameLabel[`${x.s}|${x.w}|${x.o}`] ?? 'Playoffs'}` : '';
