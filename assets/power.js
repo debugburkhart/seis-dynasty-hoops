@@ -1,3 +1,5 @@
+import { finishes } from './standings.js';
+
 // Power Rankings. Each edition ranks the league as it stood after one week of
 // the regular season, from four parts scored 0-100 (50 = league average):
 //
@@ -132,4 +134,95 @@ export function scheduleLabel(r) {
   if (r.ros >= 53) return 'Easier schedule ahead';
   if (r.ros <= 47) return 'Tougher schedule ahead';
   return 'Balanced schedule';
+}
+
+// ---------- Preseason edition ----------
+// Before any games, teams are ranked on paper (owner's request, Oct 2026):
+//
+//   LINEUP  60%  The best starting lineup today's roster can field, from Sleeper's
+//                per-game projections for the season under the league's scoring.
+//   DEPTH   10%  The next 4 best players: injury and rest insurance.
+//   LAST YR 20%  Last season's final finish.
+//   SCHED   10%  How strong the whole regular-season schedule is, by opponents' LINEUP.
+//
+// The lineup is saved nightly by build-data.js until the season starts, then kept
+// as it stood (DATA.preseason[season]), so the edition never changes afterwards.
+
+export const PRESEASON_PARTS = [
+  { id: 'lineup', name: 'Projected lineup', short: 'LINEUP', weight: 0.60 },
+  { id: 'depth', name: 'Bench depth', short: 'DEPTH', weight: 0.10 },
+  { id: 'last', name: 'Last season', short: 'LAST YR', weight: 0.20 },
+  { id: 'sched', name: 'Schedule', short: 'SCHED', weight: 0.10 },
+];
+
+// The projected weekly score is calibrated to real results (owner's choice, Oct
+// 2026): each lineup's per-game projections are added up, then scaled so the
+// league's average team matches last season's real average weekly score. The gaps
+// between teams come from the projections; the level comes from what teams really
+// scored. (Season projections assume a healthy lineup every week, so unscaled they
+// ran about 17% high.)
+export function calibrate(rows, games, season) {
+  const prev = String(Number(season) - 1);
+  const scores = games.filter(g => g.s === prev && g.t === 'R').flatMap(g => [g.ap, g.bp]);
+  const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+  const base = mean(rows.map(r => r.base));
+  const factor = avg && base ? avg / base : 1;
+  for (const r of rows) r.proj = Math.round(r.base * factor * 10) / 10;
+  return { season: prev, avg: avg && Math.round(avg * 10) / 10, factor: Math.round(factor * 1000) / 1000 };
+}
+
+// Fill the league's starting slots from a roster: best players first, each into the
+// most specific open slot he qualifies for. players: [{ pid, fp, pos: [...] }].
+export function bestLineup(players, slots) {
+  const fits = (slot, pos) => slot === 'UTIL' || pos.includes(slot)
+    || (slot === 'G' && pos.some(p => p === 'PG' || p === 'SG'))
+    || (slot === 'F' && pos.some(p => p === 'SF' || p === 'PF'));
+  const order = s => (s === 'UTIL' ? 2 : s === 'G' || s === 'F' ? 1 : 0); // specific slots first
+  const open = slots.map((slot, i) => ({ slot, i })).sort((a, b) => order(a.slot) - order(b.slot));
+  const starters = [];
+  const bench = [];
+  for (const p of [...players].sort((a, b) => b.fp - a.fp)) {
+    const k = open.findIndex(o => fits(o.slot, p.pos));
+    if (k >= 0) starters.push({ ...p, slot: open.splice(k, 1)[0].slot });
+    else bench.push(p);
+  }
+  return { starters, bench };
+}
+
+// The saved lineup for a season turned into an edition like the weekly ones.
+export function preseasonRankings(DATA, season) {
+  const pre = DATA.preseason?.[season];
+  const s = DATA.seasons.find(x => x.season === season);
+  if (!pre?.rows?.length || !s) return null;
+  const z = vals => {
+    const m = mean(vals);
+    const sd = Math.sqrt(mean(vals.map(v => (v - m) ** 2))) || 1;
+    return v => clamp(50 + 15 * ((v - m) / sd));
+  };
+  const lineupZ = z(pre.rows.map(r => r.proj));
+  const depthZ = z(pre.rows.map(r => r.depth));
+  const prev = DATA.seasons.filter(x => x.status === 'complete' && Number(x.season) < Number(season)).at(-1);
+  const place = prev ? finishes(DATA)[prev.season] ?? {} : {};
+  const n = prev?.teams.length ?? pre.rows.length;
+  const rows = pre.rows.map(r => ({
+    ...r,
+    team: DATA.owners[r.owner]?.teams?.[season] ?? DATA.owners[r.owner]?.name,
+    lineup: lineupZ(r.proj),
+    depth: depthZ(r.depth),
+    lastPlace: place[r.owner] ?? null,
+    last: place[r.owner] ? 50 + 25 * (1 - (2 * (place[r.owner] - 1)) / Math.max(1, n - 1)) : 50,
+  }));
+  // Schedule: opponents' average LINEUP over the whole regular season (weak = above 50).
+  const lineupOf = Object.fromEntries(rows.map(r => [r.owner, r.lineup]));
+  const lastRegular = (s.playoffStart ?? 99) - 1;
+  for (const r of rows) {
+    const opp = (DATA.schedule ?? []).filter(g => g.s === season && g.w <= lastRegular && (g.a === r.owner || g.b === r.owner))
+      .map(g => lineupOf[g.a === r.owner ? g.b : g.a]).filter(v => v != null);
+    r.games = opp.length;
+    r.sched = opp.length ? clamp(50 + (50 - mean(opp)) * 2) : 50;
+    r.power = PRESEASON_PARTS.reduce((sum, p) => sum + r[p.id] * p.weight, 0);
+  }
+  rows.sort((a, b) => b.power - a.power || b.proj - a.proj);
+  rows.forEach((r, i) => { r.rank = i + 1; });
+  return { season, at: pre.at, rows };
 }

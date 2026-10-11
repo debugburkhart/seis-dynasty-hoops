@@ -705,6 +705,17 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
 .pw-name { min-width: 0; }
 .pw-team-name { font: 900 17px/1.1 var(--display); text-transform: uppercase; letter-spacing: .01em; overflow-wrap: anywhere; }
 .pw-owner { margin-top: 3px; font-size: 11.5px; color: var(--muted); }
+/* Preseason edition: the projected lineup under each team */
+.pw-lineup { margin-top: 6px; }
+.pw-lineup > summary { display: inline-flex; align-items: center; gap: 3px; list-style: none; cursor: pointer; font: 800 9.5px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--gold-ink); }
+.pw-lineup > summary::-webkit-details-marker { display: none; }
+.pw-lineup > summary .ic { width: 11px; height: 11px; transition: transform .15s ease; }
+.pw-lineup[open] > summary .ic { transform: rotate(90deg); }
+.pw-lineup ol { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 3px; }
+.pw-lineup li { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 8px; font-size: 12px; }
+.pw-lineup li b { font-variant-numeric: tabular-nums; }
+.pw-slot { font: 800 9.5px/1.6 var(--display); letter-spacing: .06em; color: var(--muted); }
+.pw-lineup-sub { margin-top: 6px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
 .pw-parts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: center; padding: 12px 16px; border-left: 1px solid var(--line); }
 .pw-part { display: grid; grid-template-columns: 1fr auto; row-gap: 5px; column-gap: 8px; align-items: center; }
 .pw-part-label { grid-column: 1 / -1; font: 800 9px/1 var(--display); letter-spacing: .12em; color: var(--ink); }
@@ -938,6 +949,13 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
 }
 .tx-week-head + .tx-row { border-top: 0; }
 .tx-row.tx-desk { grid-template-columns: 72px minmax(0, 1fr) minmax(170px, 230px) 120px 48px; }
+a.tx-row.tx-link { color: inherit; text-decoration: none; cursor: pointer; }
+a.tx-row.tx-link:hover { background: #fbf6e6; }
+.tx-open { display: flex; align-items: center; gap: 2px; margin-top: 4px; font: 800 9px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--gold-ink); white-space: nowrap; }
+.tx-open .ic { width: 10px; height: 10px; }
+.tr { scroll-margin-top: 72px; }
+.tr.tr-flash { animation: tr-flash 2.4s ease-out; border-radius: 8px; }
+@keyframes tr-flash { from { background: #fbf0d3; } to { background: transparent; } }
 .tx-pill {
   display: grid; place-items: center; padding: 5px 0; border-radius: 6px;
   font: 800 9.5px/1 var(--display); letter-spacing: .12em; text-transform: uppercase;

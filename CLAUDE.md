@@ -59,7 +59,15 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   winners/All-Stars/All-Fantasy rostered, player All-Fantasy/All-Star/individual awards.
 - `assets/frontoffice.js`: trades/waivers/drafts valued by locked points ("stints").
 - `assets/standings.js`: Legacy score + standings table + final finishes.
-- `assets/power.js`: Power Rankings. `assets/freeze.js`: frozen seasons + week guard.
+- `assets/power.js`: Power Rankings. Preseason edition (owner, Oct 2026; week=0 in the URL):
+  LINEUP 60% (best lineup from current roster: PG,SG,G,SF,PF,F,C,UTIL,UTIL, Sleeper season
+  per-game projections api.sleeper.com/projections/nba/{season}?season_type=regular under
+  league scoring; taxi/IR/Out excluded; pts/week = per-game sum scaled by calibrate() so the
+  average team = last season's real average weekly score, owner's choice), DEPTH 10% (next 4), LAST YR
+  20% (last finish), SCHED 10% (opponents' LINEUP). build-data saves DATA.preseason[season]
+  nightly until week 1 is played, then update.mjs carries it over unchanged. Default edition
+  while a season has no games; Home's Power card uses it too; Week 1 arrows = vs preseason.
+  No preseason editions for 2023-2025 (no saved projections). `assets/freeze.js`: frozen seasons + week guard.
 - `assets/hype.js`: Matchup Hype (hype score, Main event, labels, moments). TUNING (owner chose
   "V5", Oct 2026, so 100 is reachable): Quality relative to that week's league (top-2 pair =
   100, average pair = 50), Closeness free within 2 Power pts then -3.5/pt, History x1.5
@@ -77,7 +85,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Action stays once a day (GitHub won't run more often than every 5 min and runs late).
 - `assets/transactions.js`: Transactions page data (move kinds, Ledger totals); values come
   from frontoffice.js (trades/pickups/letGo carry `tx` = index into DATA.transactions).
-  Players carry `t` = current NBA team (added Oct 2026; older data files lack it).
+  Players carry `t` = current NBA team (added Oct 2026; older data files lack it). Trade rows
+  are links to #/rivalry?a=&b=&trade=<DATA.transactions index> (first two teams of a 3-team
+  deal); the Rivalry trade card has id tr-<tx> and is scrolled to and highlighted.
 - `assets/awards.js`: Awards page: season banners + GM of the Year (rules decided with the
   owner: moves made that season, locked points that season incl. playoffs, trade net like
   the Value Desk, pickups/drops count only if the player started 3+ weeks, rookies count,

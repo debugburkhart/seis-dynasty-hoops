@@ -41,7 +41,7 @@ const previous = await readJson('data/league.json'); // last night's data, for t
 // are worked out once, then carried forward from last night's data.
 const pulled = await buildLeagueData(LEAGUE_ID, undefined, {
   frozen, allStars: previous?.allStars ?? {}, rookies: previous?.rookies ?? {}, rookiesScoring: previous?.rookiesScoring ?? {},
-  rookiePool: previous?.rookiePool ?? {},
+  rookiePool: previous?.rookiePool ?? {}, preseason: previous?.preseason ?? {},
 });
 
 // Week guard: finished weeks of the season in progress that come back from

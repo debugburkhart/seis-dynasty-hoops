@@ -5,6 +5,7 @@
 import { CORRECTIONS, DRAFT_CORRECTIONS } from './corrections.js';
 import { ALL_STARS_FROM, AWARD_SCORING } from './config.js';
 import { draftedPlayers, seasonPoints } from './draft.js';
+import { bestLineup, calibrate } from './power.js';
 
 const API = 'https://api.sleeper.com/v1';
 
@@ -95,7 +96,7 @@ export async function allStarPool(season, scoring, fetchImpl = globalThis.fetch.
 // frozen: { season: saved season } for completed seasons to load instead of downloading.
 // allStars, rookies: last night's results ({ season: ... }) to keep. Without them
 // (the browser's live fallback), both are skipped: they're too heavy to fetch there.
-export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {}, allStars: knownAllStars = null, rookies: knownRookies = null, rookiesScoring: knownRookiesScoring = {}, rookiePool: knownRookiePool = {} } = {}) {
+export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {}, allStars: knownAllStars = null, rookies: knownRookies = null, rookiesScoring: knownRookiesScoring = {}, rookiePool: knownRookiePool = {}, preseason: knownPreseason = {} } = {}) {
   // Sleeper's cache can serve stale matchup scores for weeks after the fact
   // (2025 week 17 came back 290-315 instead of the real 355-352), so every
   // request carries a unique value to force a fresh copy.
@@ -132,6 +133,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
 
   // Walk back through previous seasons, oldest first.
   const chain = [];
+  let latestRosters = null; // the newest season's rosters, for the preseason Power Rankings
   for (let id = newest; id && id !== '0';) {
     const lg = await get(`/league/${id}`);
     chain.unshift(lg);
@@ -201,6 +203,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     // Owners are tracked by Sleeper user ID so they carry across seasons.
     const userById = Object.fromEntries(users.map(u => [u.user_id, u]));
     const ownerOf = {};
+    if (lg === chain.at(-1)) latestRosters = { lg, rosters, ownerOf };
     for (const r of rosters) {
       const oid = r.owner_id || `open-${r.roster_id}`;
       ownerOf[r.roster_id] = oid;
@@ -530,6 +533,52 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     }
   }
 
+  // Preseason Power Rankings (assets/power.js): each team's best starting lineup
+  // from Sleeper's per-game projections for the season, under the league's
+  // scoring. Redone nightly until the season's first week is played, then kept
+  // from last night so the edition stays as it was at tip-off. Taxi, IR and
+  // "Out" players don't start.
+  const preseason = { ...knownPreseason };
+  const nowSeason = latestRosters && seasons.find(x => x.season === latestRosters.lg.season);
+  if (nowSeason && !nowSeason.weeksPlayed && nowSeason.status !== 'complete') {
+    const { lg, rosters, ownerOf } = latestRosters;
+    const res = await fetchImpl(`https://api.sleeper.com/projections/nba/${lg.season}?season_type=regular&t=${bust}`).catch(() => null);
+    const proj = res?.ok ? await res.json() : [];
+    const rules = Object.entries(lg.scoring_settings ?? {});
+    const byPid = {};
+    for (const x of proj ?? []) {
+      if (!x?.player_id || !x.stats) continue;
+      const fp = rules.reduce((sum, [k, v]) => sum + (Number(x.stats[k]) || 0) * v, 0) / (x.stats.gp || 1);
+      byPid[x.player_id] = { fp, out: x.player?.injury_status === 'Out', pos: x.player?.fantasy_positions ?? allPlayers[x.player_id]?.fantasy_positions ?? [] };
+    }
+    const slots = (lg.roster_positions ?? []).filter(p => !['BN', 'IR', 'TAXI'].includes(p));
+    if (Object.keys(byPid).length && slots.length) {
+      const rows = rosters.map(r => {
+        const skip = new Set([...(r.taxi ?? []), ...(r.reserve ?? [])]);
+        const players = (r.players ?? []).filter(pid => !skip.has(pid) && byPid[pid]);
+        const avail = players.filter(pid => !byPid[pid].out).map(pid => ({ pid, fp: round1(byPid[pid].fp), pos: byPid[pid].pos }));
+        const { starters, bench } = bestLineup(avail, slots);
+        const depthList = bench.slice(0, 4);
+        for (const p of [...starters, ...depthList]) usedPlayers.add(p.pid);
+        const out = players.filter(pid => byPid[pid].out && byPid[pid].fp > 0).sort((a, b) => byPid[b].fp - byPid[a].fp).slice(0, 3);
+        for (const pid of out) usedPlayers.add(pid);
+        return {
+          owner: ownerOf[r.roster_id],
+          base: round1(starters.reduce((sum, p) => sum + p.fp, 0)), // per-game projections added up
+          depth: round1(depthList.length ? depthList.reduce((sum, p) => sum + p.fp, 0) / depthList.length : 0),
+          starters: starters.map(p => ({ pid: p.pid, fp: p.fp, slot: p.slot })),
+          bench: depthList.map(p => ({ pid: p.pid, fp: p.fp })),
+          out,
+        };
+      }).filter(r => r.owner);
+      const calib = calibrate(rows, games, lg.season);
+      preseason[lg.season] = { at: new Date().toISOString().slice(0, 10), calib, rows };
+    }
+  }
+  for (const pre of Object.values(preseason)) {
+    for (const r of pre.rows ?? []) for (const p of [...(r.starters ?? []), ...(r.bench ?? [])]) usedPlayers.add(p.pid);
+  }
+
   // Names, positions and current NBA teams for every player who has scored locked
   // points or moved in a transaction here. Sleeper's full list is ~2.5 MB, so only
   // those players are kept.
@@ -561,6 +610,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     rookies,
     rookiesScoring,
     rookiePool,
+    preseason,
     allStars,
     warnings,
   };

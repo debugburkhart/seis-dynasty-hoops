@@ -1,6 +1,6 @@
 import { ALL_STARS_FROM, LEAGUE_ID, RIVALRIES, RIVALRIES_FROM } from './config.js';
 import { CATEGORIES, CHANGE_LABELS, buildRecords, playerPhoto, recordHistory, recordVisible, viewData } from './records.js';
-import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
+import { PARTS, PRESEASON_PARTS, powerRankings, powerSeasons, preseasonRankings, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, seriesBefore, standingsBefore, weekPairs } from './hype.js';
@@ -388,7 +388,7 @@ function tradeHistory(A, B) {
         ? `${trades.length} trade${trades.length === 1 ? '' : 's'} · ${netA === 0 ? 'dead even on value' : `${esc(name(netA > 0 ? A : B))} ${anyEst ? 'is' : 'came out'} ahead by ${num(Math.abs(netA))}`}`
         : 'No trades yet'}</span></div>
       ${trades.length ? trades.map(t => `
-        <div class="tr">
+        <div class="tr" id="tr-${t.tx}">
           <div class="tr-head">
             <span class="tr-when">${t.s} · Wk ${t.w}${t.owners.length > 2 ? ` · 3-team trade with ${esc(t.owners.filter(o => o !== A && o !== B).map(name).join(' & '))}` : ''}</span>
             <span class="tr-verdict">${verdict(t)}</span>
@@ -529,6 +529,13 @@ function renderRivalry(main, params) {
     showAll = !showAll;
     setPair(A, B);
   });
+
+  // ?trade= (from the Transactions page): scroll to that trade and highlight it.
+  const trade = params.get('trade') && document.getElementById(`tr-${params.get('trade')}`);
+  if (trade) {
+    trade.classList.add('tr-flash');
+    setTimeout(() => trade.scrollIntoView({ block: 'start' })); // after render() scrolls to the top
+  }
 }
 
 // ---------- Record Book ----------
@@ -897,18 +904,29 @@ const initials = s => String(s ?? '').replace(/[^A-Za-z0-9 ]/g, '').split(/\s+/)
 
 function renderPower(main, params) {
   const seasons = powerSeasons(DATA);
-  const withWeeks = seasons.filter(s => s.weeks.length);
+  // A season has editions once it has a preseason edition or a week played.
+  const hasPre = s => !!DATA.preseason?.[s.season]?.rows?.length;
+  const withWeeks = seasons.filter(s => s.weeks.length || hasPre(s));
   if (!withWeeks.length) {
     main.innerHTML = `<div class="page"><section class="card soon-card"><p>The first edition comes out after week 1.</p></section></div>`;
     return;
   }
-  // Default: the latest edition of the latest season with games.
+  // Default: the latest edition of the latest season (its preseason edition
+  // before any games). Week 0 = the preseason edition.
   const pick = withWeeks.find(s => s.season === params.get('season')) ?? withWeeks.at(-1);
-  const wanted = Number(params.get('week'));
-  const week = pick.weeks.includes(wanted) ? wanted : pick.weeks.at(-1);
-  const ed = powerRankings(DATA, pick.season, week);
-  const upcoming = seasons.filter(s => !s.weeks.length && s.season > withWeeks.at(-1).season);
+  const editions = [...(hasPre(pick) ? [0] : []), ...pick.weeks];
+  const wanted = params.get('week') == null ? NaN : Number(params.get('week'));
+  const week = editions.includes(wanted) ? wanted : editions.at(-1);
+  const upcoming = seasons.filter(s => !s.weeks.length && !hasPre(s) && s.season > withWeeks.at(-1).season);
   const isFinal = pick.complete && week === pick.weeks.at(-1);
+  const pre = hasPre(pick) ? preseasonRankings(DATA, pick.season) : null;
+  const ed = week === 0 ? null : powerRankings(DATA, pick.season, week);
+  // Week 1's arrows compare with the preseason edition.
+  if (ed && pre && week === pick.weeks[0]) {
+    const was = Object.fromEntries(pre.rows.map(r => [r.owner, r.rank]));
+    for (const r of ed.rows) if (was[r.owner]) r.move = was[r.owner] - r.rank;
+  }
+  const editionLabel = w => (w === 0 ? 'Preseason' : `After Week ${w}`);
 
   const seasonSelect = `
     <label class="ed-select">
@@ -921,12 +939,16 @@ function renderPower(main, params) {
     </label>`;
   const weekSelect = `
     <label class="ed-select ed-week">
-      <span>After Week ${week}${isFinal ? ' · Final' : ''}</span>
+      <span>${editionLabel(week)}${isFinal ? ' · Final' : ''}</span>
       <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
       <select data-p="week" aria-label="Week">
-        ${[...pick.weeks].reverse().map(w => `<option value="${w}"${w === week ? ' selected' : ''}>After Week ${w}${pick.complete && w === pick.weeks.at(-1) ? ' (final regular season)' : ''}</option>`).join('')}
+        ${[...editions].reverse().map(w => `<option value="${w}"${w === week ? ' selected' : ''}>${editionLabel(w)}${pick.complete && w === pick.weeks.at(-1) ? ' (final regular season)' : ''}</option>`).join('')}
       </select>
     </label>`;
+  if (week === 0) {
+    renderPreseason(main, pre, seasonSelect, weekSelect, pick);
+    return;
+  }
 
   const bar = (label, v) => `
     <div class="pw-part">
@@ -990,13 +1012,90 @@ function renderPower(main, params) {
         <b>FORM</b> is the same scoring measure over the last three weeks.
         <b>ROS</b> rates the opponents still to play: above 50 means a softer road ahead; it settles at 50 once the regular season is done.
         Every part starts near 50 and separates as weeks are played, and record needs more weeks than scoring to count fully.
-        Arrows show movement since the previous week's edition.
+        Arrows show movement since the previous week's edition (Week 1: since the preseason edition).
       </p>
     </div>`;
 
   main.querySelectorAll('select[data-p]').forEach(sel => sel.addEventListener('change', () => {
     const p = new URLSearchParams();
     if (sel.dataset.p === 'season') p.set('season', sel.value); // newest week of that season
+    else { p.set('season', pick.season); p.set('week', sel.value); }
+    location.hash = `#/power?${p}`;
+  }));
+}
+
+// The preseason edition (assets/power.js): ranked on paper before any games.
+function renderPreseason(main, pre, seasonSelect, weekSelect, pick) {
+  const pl = pid => DATA.players?.[pid]?.n ?? `Player ${pid}`;
+  const bar = (label, v) => `
+    <div class="pw-part">
+      <div class="pw-part-label">${label}</div>
+      <div class="pw-track"><span style="width:${Math.max(2, v)}%"></span></div>
+      <div class="pw-part-val">${Math.round(v)}</div>
+    </div>`;
+  const prevSeason = DATA.seasons.filter(x => x.status === 'complete' && Number(x.season) < Number(pick.season)).at(-1)?.season;
+  const asOf = pre.at ? new Date(`${pre.at}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }) : '';
+  main.innerHTML = `
+    <div class="page page-wide">
+      <div class="page-head">
+        <div class="page-icon">${icon('gauge')}</div>
+        <div><div class="eyebrow">The table is only part of the story.</div><h1>Power Rankings</h1></div>
+        <div class="archive">
+          <div class="archive-main"><div class="archive-kicker">Season</div><div class="pw-season">${esc(pick.season)}</div></div>
+          <div class="archive-stat"><b>PRE</b><span>Preseason</span></div>
+        </div>
+      </div>
+
+      <div class="pw-edition">
+        <span class="pw-ed-label">Edition</span>
+        ${seasonSelect}
+        ${weekSelect}
+        <div class="pw-weights">
+          ${PRESEASON_PARTS.map(p => `<span class="pw-weight"><b>${Math.round(p.weight * 100)}%</b> ${esc(p.name)}</span>`).join('')}
+        </div>
+      </div>
+
+      <p class="filter-note">On paper only: no games yet.${pick.complete || pick.weeks.length ? ' This is how the league looked before tip-off.' : ` Updated nightly until tip-off${asOf ? ` (last update ${esc(asOf)})` : ''}, then kept as the season’s starting point.`}</p>
+
+      <ol class="pw-list">
+        ${pre.rows.map(r => `
+          <li class="pw-row${r.rank === 1 ? ' pw-top' : ''}">
+            <div class="pw-rank">${r.rank}</div>
+            <div class="pw-team">
+              <span class="pw-badge">${esc(initials(r.team))}</span>
+              <div class="pw-name">
+                <div class="pw-team-name">${esc(r.team)}</div>
+                <div class="pw-owner">${esc(name(r.owner))} · ~${Math.round(r.proj)} pts/week projected</div>
+                <details class="pw-lineup">
+                  <summary>Projected lineup ${icon('arrow')}</summary>
+                  <ol>${r.starters.map(p => `<li><span class="pw-slot">${esc(p.slot)}</span><span>${esc(pl(p.pid))}</span><b>${num(p.fp)}</b></li>`).join('')}</ol>
+                  ${r.bench?.length ? `<div class="pw-lineup-sub">Depth: ${r.bench.map(p => `${esc(pl(p.pid))} ${num(p.fp)}`).join(' · ')}</div>` : ''}
+                  ${r.out?.length ? `<div class="pw-lineup-sub">Out: ${r.out.map(pid => esc(pl(pid))).join(', ')}</div>` : ''}
+                </details>
+              </div>
+            </div>
+            <div class="pw-parts">
+              ${bar('LINEUP', r.lineup)}${bar('DEPTH', r.depth)}${bar('LAST YR', r.last)}${bar('SCHED', r.sched)}
+            </div>
+            <div class="pw-score">
+              <b>${r.power.toFixed(1)}</b>
+              <span class="pw-score-label">Power</span>
+              <span class="pw-sched">${r.lastPlace ? `${esc(prevSeason)} finish: ${ordinalPlace(r.lastPlace)}` : 'New to the league'}</span>
+            </div>
+          </li>`).join('')}
+      </ol>
+
+      <p class="pw-foot">
+        The preseason edition ranks every team on paper, out of 100 with 50 as league average.
+        <b>LINEUP</b> is the best starting lineup the roster can field (PG, SG, G, SF, PF, F, C and two UTIL), from Sleeper’s per-game projections for the season under this league’s scoring. The weekly number is calibrated to real results: the lineup’s per-game projections are added up, then scaled so the average team matches ${pre.calib?.avg ? `last season’s real average weekly score (${num(pre.calib.avg)} in ${esc(pre.calib.season)})` : 'last season’s real average weekly score'}. Projections assume a healthy lineup every week, so unscaled they run high; the gaps between teams still come from the projections. Taxi, IR and players listed Out don’t start.
+        <b>DEPTH</b> is the next 4 best players, for injuries and rest. <b>LAST YR</b> is last season’s final finish. <b>SCHED</b> rates the whole regular-season schedule: above 50 means weaker opponents (by their LINEUP).
+        Once Week 1 is played, the weekly editions take over, and Week 1’s arrows show the move from here.
+      </p>
+    </div>`;
+
+  main.querySelectorAll('select[data-p]').forEach(sel => sel.addEventListener('change', () => {
+    const p = new URLSearchParams();
+    if (sel.dataset.p === 'season') p.set('season', sel.value);
     else { p.set('season', pick.season); p.set('week', sel.value); }
     location.hash = `#/power?${p}`;
   }));
@@ -1475,14 +1574,19 @@ function txRow(m, desk) {
   const body = m.kind === 'trades' ? tradeBody(m)
     : [...m.adds.map(a => `<span class="tx-item"><i class="tx-in">→</i>${playerTag(a.pid)}</span>`),
       ...m.drops.map(d => `<span class="tx-item"><i class="tx-out">←</i>${playerTag(d.pid)}</span>`)].join('');
+  // A trade opens on the Rivalry page between its teams (the first two in a
+  // 3-team deal), scrolled to that trade, where each side's value is broken down.
+  const sides = [...new Set(m.owners)];
+  const tag = m.kind === 'trades' && sides.length >= 2 ? 'a' : 'div';
+  const link = tag === 'a' ? ` href="#/rivalry?a=${encodeURIComponent(sides[0])}&b=${encodeURIComponent(sides[1])}&trade=${m.i}" title="Open this trade on the Rivalry page"` : '';
   return `
-    <div class="tx-row${desk ? ' tx-desk' : ''}">
+    <${tag} class="tx-row${desk ? ' tx-desk' : ''}${tag === 'a' ? ' tx-link' : ''}"${link}>
       <span class="tx-pill ${cls}">${label}</span>
       <div class="tx-body">${body}</div>
       <div class="tx-flow">${txFlow(m)}</div>
       ${desk ? `<div class="tx-val">${txValue(m)}</div>` : ''}
-      <div class="tx-date">${shortDate(m.ts)}</div>
-    </div>`;
+      <div class="tx-date">${shortDate(m.ts)}${tag === 'a' ? `<span class="tx-open">Details ${icon('arrow')}</span>` : ''}</div>
+    </${tag}>`;
 }
 
 function renderTransactions(main, params) {
@@ -3058,13 +3162,17 @@ function homeTicker() {
 }
 
 function homePower() {
-  const withWeeks = powerSeasons(DATA).filter(s => s.weeks.length);
-  const pick = withWeeks.at(-1);
+  const all = powerSeasons(DATA);
+  const latest = all.at(-1);
+  // Before the newest season's first week: its preseason edition, if saved.
+  const pre = latest && !latest.weeks.length ? preseasonRankings(DATA, latest.season) : null;
+  const withWeeks = all.filter(s => s.weeks.length);
+  const pick = pre ? latest : withWeeks.at(-1);
   if (!pick) return '';
-  const week = pick.weeks.at(-1);
-  const ed = powerRankings(DATA, pick.season, week);
+  const week = pre ? 0 : pick.weeks.at(-1);
+  const ed = pre ?? powerRankings(DATA, pick.season, week);
   const href = `#/power?season=${pick.season}&week=${week}`;
-  const edition = pick.complete ? `${pick.season} · Final edition` : `${pick.season} · After week ${week}`;
+  const edition = pre ? `${pick.season} · Preseason edition` : pick.complete ? `${pick.season} · Final edition` : `${pick.season} · After week ${week}`;
   const move = m => (!m ? '' : m > 0 ? `<span class="pw-move pw-up">↑ ${m}</span>` : `<span class="pw-move pw-down">↓ ${-m}</span>`);
   return `
     <section class="card hm-card">
@@ -3075,7 +3183,7 @@ function homePower() {
           <li><a class="hm-row${r.rank === 1 ? ' hm-first' : ''}" href="${href}">
             <span class="hm-rank">${r.rank}</span>
             <span class="pw-badge">${esc(initials(r.team))}</span>
-            <span class="hm-name"><b>${esc(r.team)}</b><small>${esc(name(r.owner))} · ${rec(r.w, r.l, r.t)} ${move(r.move)}</small></span>
+            <span class="hm-name"><b>${esc(r.team)}</b><small>${esc(name(r.owner))} · ${pre ? `~${Math.round(r.proj)} pts/week projected` : `${rec(r.w, r.l, r.t)} ${move(r.move)}`}</small></span>
             <span class="hm-val"><b>${r.power.toFixed(1)}</b><small>Power</small></span>
           </a></li>`).join('')}
       </ol>
