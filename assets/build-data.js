@@ -95,7 +95,7 @@ export async function allStarPool(season, scoring, fetchImpl = globalThis.fetch.
 // frozen: { season: saved season } for completed seasons to load instead of downloading.
 // allStars, rookies: last night's results ({ season: ... }) to keep. Without them
 // (the browser's live fallback), both are skipped: they're too heavy to fetch there.
-export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {}, allStars: knownAllStars = null, rookies: knownRookies = null, rookiesScoring: knownRookiesScoring = {} } = {}) {
+export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {}, allStars: knownAllStars = null, rookies: knownRookies = null, rookiesScoring: knownRookiesScoring = {}, rookiePool: knownRookiePool = {} } = {}) {
   // Sleeper's cache can serve stale matchup scores for weeks after the fact
   // (2025 week 17 came back 290-315 instead of the real 355-352), so every
   // request carries a unique value to force a fresh copy.
@@ -480,15 +480,30 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   // Worked out once a season is complete, then kept from last night.
   const rookies = {};
   const rookiesScoring = {}; // season -> the season whose scoring its rookie list used
+  // Every rookie who scored locked points that season (Record Book: most locked
+  // points as a rookie). Kept from last night once a season is complete; the
+  // season in progress is redone nightly (a rookie can enter a lineup any week).
+  const rookiePool = {};
+  const lockedIn = {};
+  for (const x of playerWeeks) (lockedIn[x.s] ??= new Set()).add(x.pid);
   if (knownRookies) {
+    const latestSeason = chain.at(-1)?.season;
+    const priorFor = season => Promise.all(Array.from({ length: 10 }, (_, k) => statsFor(String(Number(season) - 1 - k))));
     for (const lg of chain) {
       // Redone once if the scoring it was worked out under has changed since (AWARD_SCORING).
       const scoredWith = AWARD_SCORING[lg.season] ?? lg.season;
       let result = (knownRookiesScoring[lg.season] ?? lg.season) === scoredWith ? knownRookies[lg.season] : null;
       if (!result && lg.status === 'complete') {
-        const prior = await Promise.all(Array.from({ length: 10 }, (_, k) => statsFor(String(Number(lg.season) - 1 - k))));
+        const prior = await priorFor(lg.season);
         result = (await totalsFor(lg)).filter(r => !prior.some(p => (p[r.pid]?.gp ?? 0) > 0)).slice(0, 10);
       }
+      let pool = lg.status === 'complete' ? knownRookiePool[lg.season] : null;
+      if (!pool && (lg.status === 'complete' || lg.season === latestSeason) && lockedIn[lg.season]) {
+        const prior = await priorFor(lg.season);
+        const now = await statsFor(lg.season);
+        pool = [...lockedIn[lg.season]].filter(pid => (now[pid]?.gp ?? 0) > 0 && !prior.some(p => (p[pid]?.gp ?? 0) > 0));
+      }
+      if (pool) rookiePool[lg.season] = pool;
       if (!result?.length) continue;
       rookies[lg.season] = result;
       rookiesScoring[lg.season] = scoredWith;
@@ -545,6 +560,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     draftStats,
     rookies,
     rookiesScoring,
+    rookiePool,
     allStars,
     warnings,
   };

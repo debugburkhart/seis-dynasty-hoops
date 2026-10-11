@@ -1,6 +1,13 @@
 import { frontOffice } from './frontoffice.js';
 import { finishes } from './standings.js';
-import { PHOTO_CORRECTIONS } from './corrections.js';
+import { ALL_STAR_POSITIONS, PHOTO_CORRECTIONS } from './corrections.js';
+import { ALL_STARS_FROM } from './config.js';
+import { allFantasy, allStars, championshipMvp, gmOfTheYear, mvpRace, playerOfTheYear, rookieClass } from './awards.js';
+import { draftOfYear } from './draft.js';
+
+// Minimum starts for the points-per-start records (easy to change).
+export const MIN_STARTS_SEASON = 10;
+export const MIN_STARTS_CAREER = 40;
 
 // A player's headshot: Sleeper's, unless corrections.js lists an NBA.com one.
 export function playerPhoto(DATA, pid) {
@@ -27,6 +34,8 @@ export const CATEGORIES = [
     desc: 'Hot hands, cold spells, playoff runs that kept going and the long wait for a first banner.' },
   { id: 'front-office', title: 'Front Office', icon: 'gauge', noStage: true,
     desc: 'Draft hauls, trade verdicts and waiver-wire finds, judged by the points they actually produced.' },
+  { id: 'awards', title: 'Awards', icon: 'trophy', noStage: true,
+    desc: 'The banners by the numbers: managers who keep collecting hardware and players who keep making the teams.' },
 ];
 
 // Sections within each category, in display order.
@@ -44,19 +53,24 @@ const GROUPS = {
     ['Schedule & luck', ['Toughest schedule', 'Friendliest schedule', 'Best all-play record', 'Luckiest season', 'Unluckiest season']],
   ],
   matchups: [
-    ['Big scores', ['Highest score', 'Highest playoff score', 'Highest combined score', 'Highest score in a loss']],
+    ['Big scores', ['Highest score', 'Highest playoff score', 'Highest combined score', 'Highest score in a loss', 'Beat the median by the most']],
     ['Low scores', ['Lowest score', 'Lowest combined score', 'Lowest score in a win']],
     ['Margins', ['Biggest blowout', 'Closest win']],
+    ['League-wide', ['Shootout week']],
   ],
   players: [
     ['Single week', ['Most points in a week']],
-    ['Seasons', ['Most points for one manager in a season', /^Best (PG|SG|SF|PF|C) season$/]],
-    ['Careers', ['Most points for one manager, career', 'Most-used players', 'Most-used by one manager', 'Scored for the most teams']],
+    ['Seasons', ['Most points by a player in a season', 'Most points for one manager in a season', 'Best points per start in a season', 'Most points as a rookie', /^Best (PG|SG|SF|PF|C) season$/]],
+    ['Careers', ['Best career points per start', 'Most points for one manager, career', 'Most-used players', 'Most-used by one manager', 'Scored for the most teams']],
   ],
   streaks: [
     ['Streaks', ['Longest winning streak', 'Longest losing streak', 'Longest above-median streak']],
-    ['Playoff runs & droughts', ['Most consecutive playoff trips', 'Longest active title drought']],
-    ['Milestones', ['Fastest to 25 wins', '400-point club']],
+    ['Playoff runs & droughts', ['Longest playoff win streak', 'Most consecutive playoff trips', 'Longest active title drought']],
+    ['Milestones', ['400-point club']],
+  ],
+  awards: [
+    ['Managers', ['Most awards won', 'Most GM of the Year awards', 'Most Draft of the Year awards', 'Most award winners rostered', 'Most All-Stars rostered', 'Most All-Fantasy players rostered']],
+    ['Players', ['Most All-Fantasy selections', 'Most All-Star selections', 'Most individual awards']],
   ],
 };
 const BAD = new Set(['Most weekly low scores', 'Most last-place finishes', 'Most points against', 'Worst record in a season',
@@ -271,6 +285,18 @@ export function buildRecords(DATA) {
     R('Highest score in a loss', lines.filter(x => x.res === 'L').map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: `${vs(x)} · lost ${fmt(x.p)}–${fmt(x.op)}` })), { stage: 'all' }),
     R('Lowest score in a win', lines.filter(x => x.res === 'W').map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: `${vs(x)} · won ${fmt(x.p)}–${fmt(x.op)}` })), { stage: 'all', asc: true }),
     R('Highest playoff score', lines.filter(x => x.t === 'P').map(x => ({ who: x.o, value: x.p, display: fmt(x.p), ctx: vs(x) })), { ...PO, note: 'Championship bracket games.' }),
+    R('Beat the median by the most', reg.map(x => {
+      const md = week[`${x.s}-${x.w}`].median;
+      return { who: x.o, value: x.p - md, display: `+${fmt(x.p - md)}`, ctx: `${x.s} Wk ${x.w} · ${fmt(x.p)} vs a league median of ${fmt(md)}` };
+    }), { note: 'Regular season: how far above that week’s league median score.' }),
+    // The whole league's scoring in one regular-season week. Listed under the
+    // week's top scorer, so the manager filter shows the shootouts he led.
+    R('Shootout week', Object.entries(week).map(([k, wk]) => {
+      const [s, w] = k.split('-');
+      const top = reg.filter(x => x.s === s && x.w === Number(w)).sort((a, b) => b.p - a.p)[0];
+      const total = wk.ps.reduce((a, b) => a + b, 0);
+      return { who: top.o, whoText: `${s} Week ${w}`, value: total, display: fmt(total), ctx: `${wk.ps.length} teams · ${fmt(total / wk.ps.length)} average · top score ${name(top.o)} ${fmt(top.p)}` };
+    }), { note: 'Regular season: every team’s score that week, added together.' }),
   ];
 
   // Streaks: best run per manager over their regular-season games in order (runs carry across seasons).
@@ -316,15 +342,8 @@ export function buildRecords(DATA) {
       const since = mine.filter(s => !last || s.season > last).length;
       return { who: k.o, value: since, display: since, ctx: last ? `last title ${last}` : 'still chasing banner #1' };
     }), { ...PO, allTime: true, note: 'Completed seasons since their last championship. Current managers.' }),
-    A('Fastest to 25 wins', careers.map(k => {
-      const mine = results.filter(x => x.o === k.o);
-      let wins = 0;
-      for (let i = 0; i < mine.length; i++) {
-        if (mine[i].res === 'W') wins++;
-        if (wins === 25) return { who: k.o, value: i + 1, display: i + 1, ctx: `games · reached ${mine[i].s} Wk ${mine[i].w}` };
-      }
-      return { who: k.o, pending: true, display: '—', ctx: `${wins} wins in ${mine.length} games so far` };
-    }), { asc: true, note: `Fewest regular-season games needed to reach 25 wins.${medianNote ? ` ${medianNote}` : ''}` }),
+    streak(x => x.res === 'W', 'Longest playoff win streak',
+      { ...PO, note: 'Consecutive championship-bracket wins, carried across seasons.' }, lines.filter(x => x.t === 'P')),
     A('400-point club', careers.map(k => {
       const big = reg.filter(x => x.o === k.o && x.p >= 400);
       return { who: k.o, value: big.length, display: big.length, ctx: big.length ? `best ${fmt(Math.max(...big.map(x => x.p)))}` : '' };
@@ -347,15 +366,22 @@ export function buildRecords(DATA) {
     a.p += x.p; a.wks++;
     const b = (pmc[`${x.pid}|${x.o}`] ??= { pid: x.pid, o: x.o, p: 0, wks: 0, seasons: new Set() });
     b.p += x.p; b.wks++; b.seasons.add(x.s);
-    const s = (psn[`${x.pid}|${x.s}`] ??= { pid: x.pid, s: x.s, p: 0, by: {} });
-    s.p += x.p; s.by[x.o] = (s.by[x.o] ?? 0) + x.p;
-    const d = (pall[x.pid] ??= { pid: x.pid, weeks: new Set(), by: {}, wksBy: {} });
-    d.weeks.add(`${x.s}-${x.w}`); d.by[x.o] = (d.by[x.o] ?? 0) + x.p; d.wksBy[x.o] = (d.wksBy[x.o] ?? 0) + 1;
+    const s = (psn[`${x.pid}|${x.s}`] ??= { pid: x.pid, s: x.s, p: 0, wks: 0, by: {} });
+    s.p += x.p; s.wks++; s.by[x.o] = (s.by[x.o] ?? 0) + x.p;
+    const d = (pall[x.pid] ??= { pid: x.pid, weeks: new Set(), seasons: new Set(), p: 0, by: {}, wksBy: {} });
+    d.weeks.add(`${x.s}-${x.w}`); d.seasons.add(x.s); d.p += x.p;
+    d.by[x.o] = (d.by[x.o] ?? 0) + x.p; d.wksBy[x.o] = (d.wksBy[x.o] ?? 0) + 1;
   }
   const topOwner = by => Object.entries(by).sort((a, b) => b[1] - a[1])[0]?.[0];
   const span = set => { const s = [...set].sort(); return s.length > 1 ? `${s[0]}–${s.at(-1)}` : s[0]; };
   const LOCKED = 'Locked points only: scored while in a starting lineup.';
   const P = { stage: 'all', note: LOCKED };
+  // Points-per-start minimums, smaller when the filters leave fewer weeks to play
+  // (the playoffs are at most 3 games a season; one season can't reach 40 starts).
+  const playoffsOnly = DATA.view?.stage === 'playoffs';
+  const minSeason = playoffsOnly ? 2 : MIN_STARTS_SEASON;
+  const minCareer = playoffsOnly ? (oneSeason ? 2 : 6) : oneSeason ? MIN_STARTS_SEASON : MIN_STARTS_CAREER;
+  const rookiePool = Object.fromEntries(Object.entries((DATA.all ?? DATA).rookiePool ?? {}).map(([s, ids]) => [s, new Set(ids)]));
 
   const weekLabel = x => (x.t === 'P' || x.t === 'X') ? ` · ${gameLabel[`${x.s}|${x.w}|${x.o}`] ?? 'Playoffs'}` : '';
   const gameLabel = {};
@@ -366,10 +392,28 @@ export function buildRecords(DATA) {
       who: x.o, whoText: pname(x.pid), img: img(x.pid), value: x.p, display: fmt(x.p),
       ctx: `${x.s} Wk ${x.w} · for ${name(x.o)}${weekLabel(x)}`,
     })), P),
+    R('Most points by a player in a season', Object.values(psn).map(s => ({
+      who: topOwner(s.by), whos: Object.keys(s.by), whoText: pname(s.pid), img: img(s.pid), value: s.p, display: fmt(s.p),
+      ctx: `${seasonLabel(s.s)} · ${s.wks} starts · for ${forList(s.by)}`,
+    })), { ...P, note: `${LOCKED} Every team he started for that season, added together.` }),
+    R('Best points per start in a season', Object.values(psn).filter(s => s.wks >= minSeason).map(s => ({
+      who: topOwner(s.by), whos: Object.keys(s.by), whoText: pname(s.pid), img: img(s.pid), value: s.p / s.wks, display: fmt(s.p / s.wks),
+      ctx: `${seasonLabel(s.s)} · ${fmt(s.p)} in ${s.wks} starts · for ${forList(s.by)}`,
+    })), { ...P, note: `Locked points per week in a starting lineup. Minimum ${minSeason} starts that season.` }),
+    // A rookie: NBA games that season and none in the 10 seasons before (the same
+    // rule as Rookie of the Year); the nightly update saves each season's rookies.
+    R('Most points as a rookie', Object.values(psn).filter(s => rookiePool[s.s]?.has(s.pid)).map(s => ({
+      who: topOwner(s.by), whos: Object.keys(s.by), whoText: pname(s.pid), img: img(s.pid), value: s.p, display: fmt(s.p),
+      ctx: `${seasonLabel(s.s)} · ${s.wks} starts · for ${forList(s.by)}`,
+    })), { ...P, note: `${LOCKED} His NBA rookie season, every team he started for. Scored the way the league scored that season.` }),
     R('Most points for one manager in a season', Object.values(pms).map(a => ({
       who: a.o, whoText: pname(a.pid), img: img(a.pid), value: a.p, display: fmt(a.p),
       ctx: `${seasonLabel(a.s)} · for ${name(a.o)} · ${a.wks} week${a.wks === 1 ? '' : 's'}`,
     })), P),
+    R('Best career points per start', Object.values(pall).filter(d => d.weeks.size >= minCareer).map(d => ({
+      who: topOwner(d.by), whos: Object.keys(d.by), whoText: pname(d.pid), img: img(d.pid), value: d.p / d.weeks.size, display: fmt(d.p / d.weeks.size),
+      ctx: `${fmt(d.p)} in ${d.weeks.size} starts · ${span(d.seasons)} · for ${forList(d.by)}`,
+    })), { ...P, kind: 'total', note: `Locked points per week in a starting lineup, every team. Minimum ${minCareer} starts.` }),
     R('Most points for one manager, career', Object.values(pmc).map(b => ({
       who: b.o, whoText: pname(b.pid), img: img(b.pid), value: b.p, display: fmt(b.p),
       ctx: `for ${name(b.o)} · ${span(b.seasons)} · ${b.wks} weeks`,
@@ -477,6 +521,75 @@ export function buildRecords(DATA) {
       const v = r1(list.reduce((a, p) => a + p.value, 0));
       return { who: o, value: v, display: fmt(v), ctx: `from ${list.length} picks, while on their team` };
     }), F('Draft', 'Total locked points from rookies they drafted, while on their team.', { kind: 'total', keepZero: true })),
+  ];
+
+  // ---------- Awards ----------
+  // Counted from the season banners (assets/awards.js and draft.js, the same rules
+  // as the Awards page), for completed seasons in the Timeframe filter. A player's
+  // manager is the one the banner names: who had him at the end of the season (at
+  // the All-Star break for All-Stars, most points for Player of the Year).
+  const ALL = DATA.all ?? DATA;
+  const foAll = oneSeason ? frontOffice(ALL, 'all') : fo;
+  const bannerSeasons = ALL.seasons.filter(s => s.status === 'complete' && s.champion
+    && DATA.seasons.some(x => x.season === s.season)).map(s => s.season);
+  const mgr = {}; // manager -> award lists
+  const ply = {}; // player -> award lists
+  const mgrOf = o => (mgr[o] ??= { gm: [], draft: [], steal: [], winners: [], stars: [], fantasy: [] });
+  const plyOf = pid => (ply[pid] ??= { pid, stars: [], fantasy: [], indiv: [], by: {} });
+  const credit = (pid, o, s) => { if (o) plyOf(pid).by[o] = (plyOf(pid).by[o] ?? 0) + 1; };
+  for (const s of bannerSeasons) {
+    const gm = gmOfTheYear(ALL, foAll, s).winner;
+    if (gm) mgrOf(gm.o).gm.push(s);
+    const dy = draftOfYear(ALL, s);
+    if (dy?.winner) mgrOf(dy.winner.owner).draft.push(s);
+    if (dy?.steal) mgrOf(dy.steal.o).steal.push(s);
+    const indiv = [
+      ['Player of the Year', playerOfTheYear(ALL, s)[0], x => x.team],
+      ['League MVP', mvpRace(ALL, foAll, s, 1)[0], x => x.o],
+      ['Rookie of the Year', rookieClass(ALL, foAll, s).roy, x => x.o],
+      ['Championship MVP', championshipMvp(ALL, s), () => ALL.seasons.find(x => x.season === s).champion],
+    ];
+    for (const [label, x, ownerOf] of indiv) {
+      if (!x) continue;
+      const o = ownerOf(x);
+      plyOf(x.pid).indiv.push(`${s} ${label}`);
+      credit(x.pid, o, s);
+      if (o) mgrOf(o).winners.push(`${s} ${label}: ${pname(x.pid)}`);
+    }
+    const stars = allStars(ALL, foAll, s, ALL_STAR_POSITIONS, ALL_STARS_FROM);
+    for (const x of stars?.awarded ? Object.values(stars.teams).flat() : []) {
+      plyOf(x.pid).stars.push(s);
+      credit(x.pid, x.o, s);
+      if (x.o) mgrOf(x.o).stars.push(`${s} ${pname(x.pid)}`);
+    }
+    for (const x of allFantasy(ALL, foAll, s)) {
+      plyOf(x.pid).fantasy.push(s);
+      credit(x.pid, x.o, s);
+      if (x.o) mgrOf(x.o).fantasy.push(`${s} ${pname(x.pid)}`);
+    }
+  }
+  const few = list => (list.length > 4 ? `${list.slice(0, 4).join(', ')} +${list.length - 4} more` : list.join(', '));
+  const AW = { stage: 'all', kind: 'total' };
+  const mgrRecord = (title, f, note) => A(title, careers.map(k => {
+    const list = f(mgr[k.o] ?? mgrOf(k.o));
+    return { who: k.o, value: list.length, display: list.length, ctx: few(list) };
+  }), { ...AW, keepZero: true, note });
+  const playerRecord = (title, f, note) => R(title, Object.values(ply).filter(x => f(x).length).map(x => ({
+    who: topOwner(x.by), whos: Object.keys(x.by), whoText: pname(x.pid), img: img(x.pid), value: f(x).length, display: f(x).length,
+    ctx: f(x).join(', '),
+  })), { ...AW, note });
+  byCategory.awards = [
+    mgrRecord('Most awards won', a => [...a.gm.map(s => `${s} GM of the Year`), ...a.draft.map(s => `${s} Draft of the Year`), ...a.steal.map(s => `${s} Steal of the Draft`)].sort(),
+      'Manager awards: GM of the Year, Draft of the Year and Steal of the Draft (the manager who made the pick).'),
+    mgrRecord('Most GM of the Year awards', a => a.gm),
+    mgrRecord('Most Draft of the Year awards', a => a.draft),
+    mgrRecord('Most award winners rostered', a => a.winners,
+      'Player of the Year, League MVP, Rookie of the Year and Championship MVP, counted for the team the banner names.'),
+    mgrRecord('Most All-Stars rostered', a => a.stars, 'All-Stars on his team at the All-Star break.'),
+    mgrRecord('Most All-Fantasy players rostered', a => a.fantasy, 'All-Fantasy players on his team at the end of the season.'),
+    playerRecord('Most All-Fantasy selections', x => x.fantasy),
+    playerRecord('Most All-Star selections', x => x.stars, `All-Stars are named from ${ALL_STARS_FROM} on.`),
+    playerRecord('Most individual awards', x => x.indiv, 'Player of the Year, League MVP, Rookie of the Year and Championship MVP.'),
   ];
 
   // Sections within each category (Front Office records set theirs above), and
@@ -600,7 +713,8 @@ const involves = (x, m) => x.who === m || x.also === m;
 // Personal records are achievements: the bad kind (worst, lowest) and schedule or
 // luck trivia aren't announced as a manager's new personal best.
 const NOT_PERSONAL = new Set(['Toughest schedule', 'Friendliest schedule', 'Luckiest season', 'Unluckiest season',
-  'Lowest score in a win', 'Highest score in a loss', 'Closest win', 'Lowest combined score']);
+  'Lowest score in a win', 'Highest score in a loss', 'Closest win', 'Lowest combined score',
+  'Shootout week']); // the whole league's week, not one manager's performance
 function personalChanges(before, now) {
   const rowsOf = r => r.managerRows ?? r.rows;
   const out = [];

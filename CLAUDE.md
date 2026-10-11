@@ -46,7 +46,17 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   personal events ({personal, owner, order}: a manager beating his own best in a "mark"
   record; bad and schedule/luck records excluded; same performance announced once; last
   30 kept). The Record Book page shows the 6 newest under "Personal records"; league
-  "Recently broken", badges and the weekly recap ignore personal events.
+  "Recently broken", badges and the weekly recap ignore personal events. Oct 2026 additions
+  (owner): Players: Most points by a player in a season (all teams), Best points per start
+  in a season (MIN_STARTS_SEASON 10) and career (MIN_STARTS_CAREER 40; both constants at the
+  top of records.js, scaled down for playoff/one-season filters; owner may change them),
+  Most points as a rookie (DATA.rookiePool: rookies with locked points per season, built in
+  build-data with the ROY rookie rule, carried over once a season is complete, current
+  season redone nightly; locked points = that season's scoring, so 2023 is 0.5/pt).
+  Matchups: Beat the median by the most, Shootout week (league total, not personal).
+  Streaks: Longest playoff win streak; Fastest to 25 wins removed. New Awards category
+  (from awards.js/draft.js banners): manager awards won (GM, Draft of the Year, Steal),
+  winners/All-Stars/All-Fantasy rostered, player All-Fantasy/All-Star/individual awards.
 - `assets/frontoffice.js`: trades/waivers/drafts valued by locked points ("stints").
 - `assets/standings.js`: Legacy score + standings table + final finishes.
 - `assets/power.js`: Power Rankings. `assets/freeze.js`: frozen seasons + week guard.
