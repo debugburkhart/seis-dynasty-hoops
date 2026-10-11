@@ -281,6 +281,14 @@ h2 { margin: 0; font: 900 16px/1.2 var(--display); font-stretch: 92%; text-trans
 }
 .btn:hover { background: var(--navy-600); }
 .btn:disabled { opacity: .5; cursor: default; }
+.cm-run { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; max-width: 280px; }
+.cm-run .btn { text-decoration: none; background: var(--gold); color: var(--navy-900); }
+.cm-run .btn:hover { background: var(--brass); }
+.cm-run small { font-size: 11px; line-height: 1.35; color: var(--muted); text-align: right; }
+@media (max-width: 560px) {
+  .cm-run { margin-left: 0; width: 100%; max-width: none; align-items: flex-start; }
+  .cm-run small { text-align: left; }
+}
 .all-list { margin-top: 12px; }
 
 /* ---------- Record Book ---------- */

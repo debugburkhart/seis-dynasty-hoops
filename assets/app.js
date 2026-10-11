@@ -1,4 +1,4 @@
-import { ALL_STARS_FROM, LEAGUE_ID, RIVALRIES } from './config.js';
+import { ALL_STARS_FROM, LEAGUE_ID, RIVALRIES, RIVALRIES_FROM } from './config.js';
 import { CATEGORIES, CHANGE_LABELS, buildRecords, playerPhoto, recordHistory, recordVisible, viewData } from './records.js';
 import { PARTS, powerRankings, powerSeasons, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
@@ -1044,11 +1044,17 @@ async function hypeNow() {
   const out = { season: cur.season, week: 0, done: cur.status === 'complete', tipoff: state?.season_start_date ?? null };
   if (out.tipoff) out.reveal = mondayOf(out.tipoff);
   if (out.done) return out;
+  // Week 1 shows as soon as the season's schedule is set (the owner wants the site
+  // to look live all preseason); later weeks still show once they start.
+  const scheduled = weekPairs(DATA, cur.season, 1).length > 0;
   if (state && state.league_season === cur.season) {
-    if (state.season_type === 'pre') out.week = out.reveal && ctToday() >= out.reveal ? 1 : 0;
+    if (state.season_type === 'pre') { out.week = scheduled ? 1 : 0; out.pre = true; }
     else if (state.season_type === 'regular' || state.season_type === 'post') out.week = Math.max(state.week || 0, state.leg || 0);
   } else if (cur.weeksPlayed) {
     out.week = cur.weeksPlayed + 1;
+  } else if (scheduled) {
+    out.week = 1;
+    out.pre = true;
   }
   if (out.week > lastWeekOf(cur)) { out.week = lastWeekOf(cur); out.over = true; }  return out;
 }
@@ -1151,7 +1157,7 @@ async function renderHype(main, params) {
       <span>${esc(season)}</span>
       <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
       <select data-h="season" aria-label="Season">
-        ${!curOpen ? `<option disabled>${cur.season} season (hype starts ${now.reveal ? prettyDate(now.reveal) : 'week 1'})</option>` : ''}
+        ${!curOpen ? `<option disabled>${cur.season} season (hype starts once the schedule is set)</option>` : ''}
         ${[...seasons].reverse().map(s => `<option value="${s.season}"${s.season === season ? ' selected' : ''}>${s.season} season${s.season === cur.season && !now.done ? ' (in progress)' : ''}</option>`).join('')}
       </select>
     </label>`;
@@ -1184,12 +1190,13 @@ async function renderHype(main, params) {
       <div><div class="eyebrow">The weekly matchup desk</div><h1>Matchup Hype</h1></div>
       <div class="archive">
         <div class="archive-main"><div class="archive-kicker">Season</div><div class="pw-season">${esc(season)}</div></div>
-        <div class="archive-stat"><b>W${week}</b><span>${live ? 'This week' : 'Week'}</span></div>
+        <div class="archive-stat"><b>W${week}</b><span>${live && now.pre ? 'Opening week' : live ? 'This week' : 'Week'}</span></div>
       </div>
     </div>
     <div class="hy-controls">${seasonSelect}${weekSelect}${matchSelect}</div>
     ${slate.rivalryWeek ? rivalryBanner() : ''}
-    ${!curOpen && now.tipoff ? `<p class="hy-banner">${icon('clock')}<span><b>The ${esc(cur.season)} season tips off ${esc(prettyDate(now.tipoff))}.</b> Week 1’s Main event and labels drop ${esc(prettyDate(now.reveal))}, the start of tip-off week. Each week stays under wraps until it starts. Until then, look back at past weeks.</span></p>` : ''}`;
+    ${!curOpen && now.tipoff ? `<p class="hy-banner">${icon('clock')}<span><b>The ${esc(cur.season)} season tips off ${esc(prettyDate(now.tipoff))}.</b> Week 1’s Main event and labels appear as soon as Sleeper sets the schedule; every later week appears when it starts. Until then, look back at past weeks.</span></p>` : ''}
+    ${isCur && now.pre && week === 1 ? `<p class="hy-banner">${icon('clock')}<span><b>Opening week preview.</b> The ${esc(cur.season)} season tips off ${now.tipoff ? esc(prettyDate(now.tipoff)) : 'soon'}. Scores go live once the games start; Week 2 appears when it begins.</span></p>` : ''}`;
 
   if (!g) {
     main.innerHTML = `<div class="page page-wide">${head}<section class="card soon-card"><p>${isPlayoffWeek ? 'The bracket matchups show up here once Sleeper sets them.' : 'No matchups found for this week.'}</p></section></div>`;
@@ -1358,7 +1365,8 @@ async function renderHype(main, params) {
         A perfect 100 takes a Championship between the league’s two best teams, dead even, with a deep rivalry behind it.
         Until six weeks are played, strength leans on last season’s finish. The top score is the <b>Main event</b>; in title week it’s always the Championship.
         Labels like <b>Trap-game watch</b> (a clear favorite with a reason to slip: the underdog won the last meeting, is hotter lately, or the favorite has a top team on deck next week) come from the same numbers.
-        Everything uses only games played before that week, and each week is revealed only once it starts.
+        <b>League rivalries</b> (since ${seasonSpan(RIVALRIES_FROM)}): ${RIVALRIES.map(([a, b]) => `${esc(name(a))} vs ${esc(name(b))}`).join(", ")}. A rivalry game gets a <b>Rivalry</b> tag and up to 5 extra hype, and a week when every rivalry plays is <b>Rivalry Week</b>.
+        Everything uses only games played before that week. Week 1 appears as soon as the schedule is set; every later week appears once it starts.
       </p>
     </div>`;
 
@@ -2099,6 +2107,10 @@ function renderCommish(main, params) {
       <div class="page-head">
         <div class="page-icon">${icon('lock')}</div>
         <div><div class="eyebrow">For the commish only</div><h1>Commissioner’s office</h1></div>
+        <div class="cm-run">
+          <a class="btn" href="https://github.com/debugburkhart/seis-dynasty-hoops/actions/workflows/update.yml" target="_blank" rel="noopener">${icon('history')}<span>Run nightly update</span></a>
+          <small>Opens GitHub: tap <b>Run workflow</b>, then the green <b>Run workflow</b>. Done in about 3–5 minutes; then reload the site.</small>
+        </div>
       </div>
       <div class="st-tabs cm-tabs" role="tablist">
         ${TABS.map(([id, label]) => `<a role="tab" class="${tab === id ? 'on' : ''}" href="#/commish${id === 'scout' ? '' : `?tab=${id}`}">${label}</a>`).join('')}
@@ -2973,7 +2985,7 @@ async function homeHype(box, refresh = false) {
       </div>`;
   };
   const waiting = !(now.done || now.week >= 1) && now.tipoff && cur.season !== season;
-  const when = waiting ? `Last Main event · ${season} Week ${week}` : live ? `This week · Week ${week}` : `${season} · Week ${week}`;
+  const when = waiting ? `Last Main event · ${season} Week ${week}` : live && now.pre ? `Opening week${now.tipoff ? ` · tips off ${prettyDate(now.tipoff)}` : ''}` : live ? `This week · Week ${week}` : `${season} · Week ${week}`;
   const status = g.final ? 'Final' : live && hasScore ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : live ? 'Tip-off pending' : '';
   const why = g.labels.find(l => l.id === 'main')?.why ?? g.labels[0]?.why;
   box.innerHTML = `
@@ -2994,8 +3006,8 @@ async function homeHype(box, refresh = false) {
       ${why ? `<p class="hm-why">${esc(why)}</p>` : ''}
       <span class="hm-go">Full matchup ${icon('arrow')}</span>
     </a>
-    ${waiting ? `<p class="hm-note">${icon('clock')}<span>The ${esc(cur.season)} season tips off ${esc(prettyDate(now.tipoff))}. Week 1’s Main event drops ${esc(prettyDate(now.reveal))}.</span></p>` : ''}`;
-  return live;
+    ${waiting ? `<p class="hm-note">${icon('clock')}<span>The ${esc(cur.season)} season tips off ${esc(prettyDate(now.tipoff))}. Week 1’s Main event appears once Sleeper sets the schedule.</span></p>` : ''}`;
+  return live && !now.pre; // no point refreshing scores before tip-off
 }
 
 // Newest record changes, league and personal together.

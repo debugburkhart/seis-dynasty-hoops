@@ -67,9 +67,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   owner IDs; owner chose 2026+ only, earlier seasons untouched): "Rivalry" tag (red) and
   +25 History after the boost, capped (= up to +5 hype); a regular week where every game is
   a rivalry gets a "Rivalry Week" banner (2026: weeks 7, 14, 21). Public "How hype works"
-  text doesn't mention rivalries yet (owner wanted it seen only in Early hype for now). Uses only games
+  lists the rivalries (owner made them public Oct 2026).
+  Uses only games
   before the week. The page (app.js) fetches Sleeper state + live scores in the browser and
-  reveals a week only once it's under way (week 1: the Monday of tip-off week). Live scores
+  reveals a week only once it's under way, except week 1, which shows as soon as the season's
+  schedule is saved (owner, Oct 2026: every season; HYPE_NOW.pre = preseason, labeled "Opening
+  week", no live refresh before tip-off). Live scores
   refresh every minute while the page is open (Home's Main event card too); the nightly
   Action stays once a day (GitHub won't run more often than every 5 min and runs late).
 - `assets/transactions.js`: Transactions page data (move kinds, Ledger totals); values come
@@ -146,7 +149,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   points with season/manager filters, sort (points, weeks, per start: 5+ starts first),
   search (accent-insensitive), and a breakdown by fantasy team and by season.
 - `assets/commish.js`: Commissioner's office (#/commish, lock button under the menu, not in
-  NAV). Passcode asked every time (in-memory flag, reset when leaving the route); only its
+  NAV). Header button "Run nightly update" opens GitHub's workflow page (owner taps Run
+  workflow; no token is stored, the repo is public). Passcode asked every time (in-memory flag, reset when leaving the route); only its
   SHA-256 is stored (the owner knows the code; never write it in files). Scouting report
   (default team bigdaddyburk = Parma John Wall; any team selectable) uses live Sleeper data
   in the browser: rosters, /schedule/nba/regular/{season}, per-game projections
