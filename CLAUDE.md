@@ -207,6 +207,39 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   regular weeks' hypeSlate, default = next week to be revealed), Health report.
   Health report: GitHub runs, scoring-check.txt, week-guard.json, warnings, corrections,
   lineup check, activity (flag >21 days in season), trade review (750+ net, 4+ trades/pair).
+- `assets/gm.js` + "My GM" tabs in the commish office (Assistant GM, owner's plan Oct 2026).
+  The commish tab bar has two groups: My GM (Briefing = default tab, Lock-in coach) and League
+  office (the 8 older tabs; Scouting now needs ?tab=scout). Every GM tab has a team picker
+  (default COMMISH). Planned next, in order (owner agreed): dynasty value model (3 seasons,
+  this one weighted most) -> Dynasty + Managers tabs, Trade finder (Sleeper's trade block is NOT
+  in the public API; owner keeps his own block in localStorage), Playoff odds INSIDE the Playoff
+  picture tab (Monte Carlo + "root for"), Draft helper last (before the 2027 rookie draft).
+  Lock-in coach: optimal stopping per starter. One game ~ normal(mu = Sleeper per-game projection
+  over games it projects > 0 (loadWeek perPlay) x LOCK_CAL 1.04, sd = 0.30 mu); lock bar with k
+  games left: V1 = mu, Vk = E[max(X, V(k-1))]; risk Safe/Balanced/Bold shifts bars -0.25/0/+0.25 sd
+  (owner chose Balanced default; saved in localStorage gm-risk). Backtest 2025-26, all starts:
+  coach 65,348 vs managers' real 62,199 (last game 53,052, hindsight 68,250); bigdaddyburk 8,707 vs
+  8,402, flips weeks 6 and 18 losses + week 12 tie to wins. Sleeper's public API doesn't show
+  locks: players_points = score counting now; if it differs from his latest game and equals an
+  earlier one, he's locked; else the "I locked him" button (localStorage gm-locks-{season}-{week}).
+  Box scores per game from /stats/nba/{season}/{week}. Assumes a DNP doesn't replace the counted
+  score (not verified yet: check in week 1 of 2026, along with the schedule's in-game status name).
+  Modes (localStorage gm-risk): "Play to win" = DEFAULT (owner asked for opponent-aware calls),
+  plus Safe/Balanced/Bold points modes. gameCoach(): builds every team's lockCoach rows -> sim
+  states (simState: {fixed} or {cur,k,mu,sd}); winChance() plays out the week (seeded RNG, 3,000
+  runs, other unsettled players follow Balanced bars; opponents' locks inferred the same way);
+  for each unlocked score compares lock vs keep playing on P(H2H win) + P(beat median) (owner's
+  goal: both), diff < 1% -> keep the points call. Backtest 2025-26 regular season vs opponents'
+  real scores (H2H+median wins, 168 team-weeks): managers 167, Balanced 195, Play to win 196-201
+  over 4 runs (~199): small but never worse. Bench swaps (owner's Sleeper rules): a bench player
+  earns only games AFTER he's moved in; locked starters can't be moved; a benched starter's score
+  is lost. Swap if bench worth (Balanced value of his future games) beats the starter's keep value
+  (settled score, or max(current, bars[k])) by 3+, slot eligibility via fantasy_positions
+  (teamRoster `elig`), top 3, each with win chance before -> after.
+  Briefing: lock calls, this week (gameCoach's expected finals + win/median chances), lineup tips
+  (swaps), tonight's games, injury news (localStorage gm-inj-{owner}, rolls over daily), top 3
+  waiver risers.
+  scoutWeek().started is false in preseason (HYPE_NOW.pre), fixed Oct 2026.
 - `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has
   wrong; Sleeper's LeBron James photo (id 1362) is Bronny). All player photos go through

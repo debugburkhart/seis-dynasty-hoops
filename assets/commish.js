@@ -32,7 +32,7 @@ const ctToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chic
 
 const API = 'https://api.sleeper.com';
 const CACHE = {};
-async function get(path, fallback) {
+export async function get(path, fallback) {
   const hit = CACHE[path];
   if (hit && Date.now() - hit.at < 120_000) return hit.data;
   try {
@@ -73,12 +73,18 @@ export async function loadWeek(DATA, season, week) {
   const projBy = {};
   const info = {};
   for (const x of proj ?? []) {
-    const p = (projBy[x.player_id] ??= { total: 0, games: 0 });
-    p.total += fantasy(x.stats, scoring);
+    const p = (projBy[x.player_id] ??= { total: 0, games: 0, playTotal: 0, playGames: 0 });
+    const f = fantasy(x.stats, scoring);
+    p.total += f;
     p.games++;
+    // Games Sleeper expects him to play (it projects 0 for games he'll likely miss).
+    if (f > 0) { p.playTotal += f; p.playGames++; }
     if (x.player) info[x.player_id] = { ...x.player, team: x.team ?? x.player.team };
   }
-  for (const p of Object.values(projBy)) p.perGame = p.games ? p.total / p.games : 0;
+  for (const p of Object.values(projBy)) {
+    p.perGame = p.games ? p.total / p.games : 0;
+    p.perPlay = p.playGames ? p.playTotal / p.playGames : 0;
+  }
   const perGame = stats => {
     const out = {};
     for (const [pid, x] of Object.entries(stats ?? {})) if (x?.gp) out[pid] = { fpg: fantasy(x, scoring) / x.gp, gp: x.gp };
@@ -115,9 +121,10 @@ export function teamRoster(DATA, ctx, owner) {
       pid,
       name: i ? `${i.first_name} ${i.last_name}` : DATA.players?.[pid]?.n ?? `Player ${pid}`,
       pos: i?.position ?? DATA.players?.[pid]?.pos ?? '',
+      elig: i?.fantasy_positions ?? [],
       team,
       injury: i?.injury_status ?? null,
-      games, left, proj, projNow, perGame: r1(perGame),
+      games, left, proj, projNow, perGame: r1(perGame), perPlay: r1(pr?.perPlay ?? 0),
       fpg: ctx.now[pid] ? r1(ctx.now[pid].fpg) : null,
       fpgLast: ctx.last[pid] ? r1(ctx.last[pid].fpg) : null,
       livePts,
