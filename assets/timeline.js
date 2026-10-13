@@ -20,7 +20,8 @@ const scoringName = k => SCORING_NAMES[k] ?? k.replace(/_/g, ' ');
 const n = x => (Number.isInteger(x) ? String(x) : String(Math.round(x * 100) / 100));
 
 // What changed in Sleeper's settings from one season to the next.
-function settingChanges(before, now) {
+// `covered`: keys a Rulebook change already shows (e.g. 'taxi' drops the taxi part).
+function settingChanges(before, now, covered = new Set()) {
   if (!before || !now) return [];
   const out = [];
   const count = list => list.reduce((m, p) => ({ ...m, [p]: (m[p] ?? 0) + 1 }), {});
@@ -31,7 +32,7 @@ function settingChanges(before, now) {
   const roster = [
     ...slotDiff,
     ...(before.bench !== now.bench ? [`Bench ${before.bench} → ${now.bench}`] : []),
-    ...(before.taxi !== now.taxi ? [`Taxi ${before.taxi} → ${now.taxi}`] : []),
+    ...(before.taxi !== now.taxi && !covered.has('taxi') ? [`Taxi ${before.taxi} → ${now.taxi}`] : []),
     ...(before.ir !== now.ir ? [`IR ${before.ir} → ${now.ir}`] : []),
   ];
   if (roster.length) out.push({ key: 'roster', icon: 'grid', title: 'Roster slots changed', note: roster.join(' · ') });
@@ -103,6 +104,7 @@ export function buildTimeline(DATA, { rules = [], leagueStart, name }) {
     const walk = (list, r) => {
       for (const p of list ?? []) {
         if (typeof p === 'string') continue;
+        if (p.changed?.season === s.season && p.covers) covered.add(p.covers);
         if (p.changed?.season === s.season) events.push({ icon: 'scale', kind: 'rule', title: `Rule changed: ${r.title}`, note: `Now: ${p.text} (was ${p.changed.was})`, link: '#/rules' });
         if (p.added && p.added === s.season && p.added !== r.added) events.push({ icon: 'scale', kind: 'rule', title: `Rule added: ${r.title}`, note: p.text, link: '#/rules' });
         walk(p.items, r);
@@ -114,7 +116,7 @@ export function buildTimeline(DATA, { rules = [], leagueStart, name }) {
       events.push({ icon: 'pencil', kind: 'setting', title: 'League renamed', note: `“${prev.name.trim()}” → “${s.name.trim()}”` });
     }
     // Sleeper settings that changed (a rule that covers one replaces it).
-    for (const c of settingChanges(prev?.settings, s.settings)) if (!covered.has(c.key)) events.push({ ...c, kind: 'setting' });
+    for (const c of settingChanges(prev?.settings, s.settings, covered)) if (!covered.has(c.key)) events.push({ ...c, kind: 'setting' });
     // The draft: who went first.
     const draft = (DATA.drafts ?? []).find(d => d.s === s.season && d.kind === 'rookie') ?? (DATA.drafts ?? []).find(d => d.s === s.season);
     const top = draft?.picks.find(p => p.no === 1);

@@ -34,7 +34,8 @@ export const RULES = [
     items: [
       'Duration is 2 years.',
       'The taxi squad deadline is the start of the regular season.',
-      'Taxi squad size is 30 players.',
+      // covers: the Timeline shows this change instead of Sleeper's "Taxi 30 → 15" setting change.
+      { text: 'Taxi squad size is 15 players.', changed: { season: '2026', was: '30 players' }, covers: 'taxi' },
     ],
   },
   {

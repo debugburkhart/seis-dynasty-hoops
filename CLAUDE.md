@@ -29,7 +29,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `assets/rules.js`: the league Rulebook text (#/rules, under Now). Rules grouped by season
   added (LEAGUE_START 2023 = original); a changed point = today's text + changed: {season,
   was} (page shows a note + "Rule changes" history). Owner's answers: show current rule +
-  change note; taxi size stays 30 for now (30 -> 15 was only an example); the mid-week
+  change note; taxi size changed 30 -> 15 for 2026-27 (owner, Oct 2026; point has covers:
+  'taxi' so the Timeline drops Sleeper's "Taxi 30 → 15" slot change); the mid-week
   trade-lock rule is an original rule (1.3); Awards rule = 2025-26 per its parentheses.
 - `assets/timeline.js`: League Timeline (#/timeline, Hall of Fame; modeled on the owner's
   reference screenshot). Per season, newest first: champion (+ final score), Rulebook rules
