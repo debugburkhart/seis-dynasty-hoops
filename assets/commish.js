@@ -279,6 +279,8 @@ export function pickLedger(DATA, traded) {
 // 2 and isn't what the league uses.) NBA seasons are counted from real games played,
 // since Sleeper's years-of-experience field is wrong for some players.
 export const TAXI_SEASONS = 3;
+// Taxi squad size: 15 players from 2026-27 (was 30; Rulebook rule 2.3).
+export const TAXI_SIZE = 15;
 export async function taxiCheck(DATA, rosters, league, season) {
   const years = TAXI_SEASONS;
   const prior = await Promise.all(Array.from({ length: 10 }, (_, k) => get(`/v1/stats/nba/regular/${Number(season) - 1 - k}`, {})));
@@ -290,7 +292,9 @@ export async function taxiCheck(DATA, rosters, league, season) {
       if (played.length >= years) out.push({ owner: r.owner_id, pid, seasons: played.sort() });
     }
   }
-  return { years, flagged: out };
+  // Squad sizes, biggest first.
+  const sizes = (rosters ?? []).map(r => ({ owner: r.owner_id, n: (r.taxi ?? []).length })).sort((a, b) => b.n - a.n);
+  return { years, flagged: out, size: TAXI_SIZE, sizes };
 }
 
 // ---------- Playoff picture ----------

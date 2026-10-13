@@ -48,7 +48,17 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   swipe strip when the device has Reduce Motion on); Power top 3 (latest edition); all-time
   standings top 5 with Wins/Titles/Median %/Total points/Pts per season buttons (regular
   season, same numbers as the Standings table); 6 newest transactions. Every item links to
-  its page. Record links use `#/records/{cat}?rec={slug}` (+ `manager=` for personal),
+  its page. Wager Weeks tracker (homeWager, below the standings; WAGER in config.js): shown
+  in the 2026 season until the week after week 14; per week 8-14 the payer (lowest score, or
+  next-lowest under the 2-time cap), live "on the hook" during a wager week (liveWeek once on
+  load), a tie for the payer spot = "commish decides" and nobody charged, tally dots + pot.
+  Bet results: wager.json at the repo ROOT ({ parlays: { week: { result: won|lost, amount } } },
+  amount = total ticket payout, per manager = amount / teams). Entered in Commish → League
+  office → Wager Weeks (renderWagerAdmin): Copy results + "Open wager.json on GitHub" (edit
+  URL), owner pastes and commits (push redeploys, ~3-5 min); last save kept 20 min in
+  localStorage wager-saved so the form shows it until GitHub publishes. Card stays up after
+  week 15 until every paid week has a result.
+  Record links use `#/records/{cat}?rec={slug}` (+ `manager=` for personal),
   which opens and scrolls to that leaderboard.
 - `assets/build-data.js`: pulls everything from Sleeper (`api.sleeper.com`, cache-busted),
   applies `corrections.js`, loads frozen seasons. Output = `data/league.json`.
@@ -198,7 +208,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   limit check. LEAGUE TAXI RULE (from the owner): a player may stay on taxi until he
   completes his 3rd NBA season (TAXI_SEASONS = 3 in commish.js; Sleeper's taxi_years=2
   setting is NOT the league rule). Flagged once he played 3 NBA seasons before this one,
-  counted from real games.
+  counted from real games. Taxi SIZE check (owner, Oct 2026): TAXI_SIZE = 15 in commish.js
+  (rule 2.3), "Taxi squad size" card lists every team's count, flags any over 15.
+  Rule 9 Wager Weeks (rules.js, 2026-27 only, weeks 8-14): lowest score funds a $5 parlay, max 2
+  times per manager, then next-lowest manager not at the limit (owner's wording made official).
   Tabs: Scouting report, Waiver wire (unrostered players with an NBA team, Out hidden:
   risers = last-14-day FP/G vs season, Sleeper trending adds 48h, best available,
   streamers by projected locked pts), Draft picks (future rookie picks from

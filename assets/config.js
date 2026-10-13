@@ -30,3 +30,9 @@ export const RIVALRIES = [
   ['1035995054579617792', '1035999704737259520'], // loganzarvell vs bigtrey5456
   ['866760756052537344', '1038192436067016704'], // simeoncampbell7 vs BenDoverPlz123
 ];
+
+// Wager Weeks (Rulebook rule 9, 2026-27 only): in weeks `from` to `to`, the lowest
+// weekly score puts up `stake` dollars for the league parlay; nobody pays more than
+// `cap` times (then it passes to the next-lowest manager under the cap). Home shows
+// the tracker from now until the week after `to`.
+export const WAGER = { season: '2026', from: 8, to: 14, stake: 5, cap: 2 };

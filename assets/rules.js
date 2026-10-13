@@ -82,4 +82,20 @@ export const RULES = [
     n: 8, title: 'League Median Game', added: '2026', covers: 'median', // the Timeline shows this rule instead of the setting change
     items: ['Every team plays an extra game each week against the league median.'],
   },
+  {
+    n: 9, title: 'Wager Weeks (2026-27 Season Only)', added: '2026',
+    items: [
+      'During Weeks 8 through 14 of the regular season, the manager with the lowest weekly score must put up $5 to fund an NBA parlay.',
+      'This is a temporary rule for the 2026-27 season only. It expires at the end of the season unless the league renews it.',
+      'Every manager in the league selects one leg of the parlay.',
+      'If the parlay hits, the winnings are split evenly among all managers.',
+      {
+        text: 'Funding limit:',
+        items: [
+          'No manager is required to fund the parlay more than 2 times.',
+          'If a manager who has already funded it 2 times has the lowest score again, the obligation passes to the manager with the next-lowest score who has not yet reached the limit.',
+        ],
+      },
+    ],
+  },
 ];

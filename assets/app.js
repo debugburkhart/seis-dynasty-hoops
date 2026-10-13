@@ -1,4 +1,4 @@
-import { ALL_STARS_FROM, LEAGUE_ID, RIVALRIES, RIVALRIES_FROM } from './config.js';
+import { ALL_STARS_FROM, LEAGUE_ID, RIVALRIES, RIVALRIES_FROM, WAGER } from './config.js';
 import { CATEGORIES, CHANGE_LABELS, buildRecords, playerPhoto, recordHistory, recordVisible, viewData } from './records.js';
 import { PARTS, PRESEASON_PARTS, powerRankings, powerSeasons, preseasonRankings, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
@@ -2214,7 +2214,7 @@ function renderCommish(main, params) {
   // Two groups: the Assistant GM tools, then the league office reports.
   const GROUPS = [
     ['My GM', [['brief', 'Briefing'], ['coach', 'Lock-in coach']]],
-    ['League office', [['scout', 'Scouting report'], ['waivers', 'Waiver wire'], ['playoffs', 'Playoff picture'], ['recap', 'Weekly recap'], ['picks', 'Draft picks'], ['races', 'Award races'], ['hype', 'Early hype'], ['health', 'Health report']]],
+    ['League office', [['scout', 'Scouting report'], ['waivers', 'Waiver wire'], ['playoffs', 'Playoff picture'], ['recap', 'Weekly recap'], ['picks', 'Draft picks'], ['races', 'Award races'], ['hype', 'Early hype'], ['wager', 'Wager Weeks'], ['health', 'Health report']]],
   ];
   const TABS = GROUPS.flatMap(([, tabs]) => tabs);
   const tab = TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : 'brief';
@@ -2241,7 +2241,7 @@ function renderCommish(main, params) {
       <div id="cm-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
     </div>`;
   const body = $('#cm-body', main);
-  const show = { brief: renderBriefing, coach: renderCoach, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, health: renderHealth }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, health: renderHealth }[tab];
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
   });
@@ -3074,6 +3074,13 @@ async function renderHealth(body) {
     </section>
 
     <section class="card">
+      <div class="card-head"><h2>Taxi squad size</h2><span class="card-sub">${taxi ? `Limit: ${taxi.size} players` : ''}</span></div>
+      ${!taxi ? '<p class="empty">Couldn’t load taxi squads from Sleeper.</p>'
+        : `<ul class="cm-checks">${taxi.sizes.map(t => `<li>${ok(t.n <= taxi.size, `<b>${esc(teamName(t.owner, at.season))}</b> <small>${esc(name(t.owner))} · ${t.n} on taxi${t.n > taxi.size ? `: ${t.n - taxi.size} over the limit` : ''}</small>`)}</li>`).join('')}</ul>`}
+      <p class="cm-rule">League rule (from 2026–27, was 30): a taxi squad holds at most ${taxi?.size ?? 15} players. Counts come from Sleeper’s current rosters.</p>
+    </section>
+
+    <section class="card">
       <div class="card-head"><h2>Activity watch</h2><span class="card-sub">Last move by each manager (commissioner moves aside)</span></div>
       <ul class="cm-checks">${acts.map(a => `<li>${ok(!inSeason || (a.days ?? 99) <= 21, `<b>${esc(name(a.owner))}</b> <small>${a.last ? `${esc(when(a.last))} · ${a.days} day${a.days === 1 ? '' : 's'} ago` : 'no moves yet'} · ${a.season} move${a.season === 1 ? '' : 's'} this season</small>`)}</li>`).join('')}</ul>
       <p class="filter-note">${inSeason ? 'Flagged: no move in more than 3 weeks during the season.' : 'Flags start once the season tips off.'}</p>
@@ -3548,6 +3555,179 @@ function homeWire() {
     </section>`;
 }
 
+// ---- Wager Weeks tracker (Rulebook rule 9; settings in config.js WAGER) ----
+
+// Who pays each Wager Week: the lowest score, unless he has already paid `cap` times,
+// then the next-lowest manager under the cap. A tie for that spot is left to the
+// commissioner (nobody is charged until it's settled). `live` = { week, scores } for a
+// week being played, to show who's on the hook right now.
+function wagerWeeks(live) {
+  const s = DATA.seasons.find(x => x.season === WAGER.season);
+  if (!s) return null;
+  const paid = Object.fromEntries(s.teams.map(t => [t.owner, 0]));
+  const weeks = [];
+  for (let w = WAGER.from; w <= WAGER.to; w++) {
+    const games = DATA.games.filter(g => g.s === WAGER.season && g.w === w && g.t === 'R');
+    const final = games.length > 0;
+    const scores = final ? Object.fromEntries(games.flatMap(g => [[g.a, g.ap], [g.b, g.bp]])) : live?.week === w ? live.scores : null;
+    if (!scores || !Object.keys(scores).length) { weeks.push({ w, state: 'upcoming' }); continue; }
+    const order = Object.entries(scores).sort((a, b) => a[1] - b[1]);
+    const lowest = order[0];
+    const eligible = order.filter(([o]) => paid[o] < WAGER.cap);
+    const pick = eligible[0];
+    const tied = pick ? eligible.filter(([, p]) => p === pick[1]).map(([o]) => o) : [];
+    const row = { w, state: final ? 'final' : 'live', payer: pick?.[0], score: pick?.[1], lowest: lowest[0], lowScore: lowest[1], tied: tied.length > 1 ? tied : null };
+    if (final && row.payer && !row.tied) paid[row.payer]++;
+    weeks.push(row);
+  }
+  const lastWeek = s.weeksPlayed ?? 0;
+  // Bet results entered by the commissioner (wager.json): { week: { result, amount } }.
+  const managers = s.teams.length;
+  for (const r of weeks) {
+    const x = WAGER_RESULTS?.[r.w];
+    if (x?.result === 'won' || x?.result === 'lost') r.bet = { result: x.result, amount: Number(x.amount) || 0, each: (Number(x.amount) || 0) / managers };
+  }
+  const won = weeks.filter(r => r.bet?.result === 'won');
+  const total = won.reduce((a, r) => a + r.bet.amount, 0);
+  // Stays up after week 14 until every paid week's bet has a result (and a week has passed).
+  const unsettled = weeks.some(r => r.state === 'final' && !r.bet);
+  return {
+    weeks, paid, managers, pot: weeks.filter(r => r.state === 'final' && r.payer && !r.tied).length * WAGER.stake,
+    won: won.length, lost: weeks.filter(r => r.bet?.result === 'lost').length, total, each: total / managers,
+    over: lastWeek > WAGER.to + 1 && !unsettled,
+  };
+}
+
+// The commissioner's bet results, from wager.json in the repo (edited on GitHub).
+let WAGER_RESULTS = null;
+async function loadWagerResults() {
+  try {
+    const res = await fetch(`wager.json?t=${Date.now()}`, { cache: 'no-store' });
+    WAGER_RESULTS = res.ok ? (await res.json()).parlays ?? {} : {};
+  } catch { WAGER_RESULTS = {}; }
+  return WAGER_RESULTS;
+}
+const money = n => `$${(Math.round(n * 100) / 100).toFixed(2).replace(/\.00$/, '')}`;
+
+function homeWager(live) {
+  const t = wagerWeeks(live);
+  if (!t || t.over || DATA.seasons.at(-1).season !== WAGER.season) return '';
+  const started = t.weeks.some(r => r.state !== 'upcoming');
+  const row = r => {
+    if (r.state === 'upcoming') return `<li class="wg-row wg-up"><span class="wg-wk">Wk ${r.w}</span><span class="wg-who"><small>Not played yet</small></span><b>–</b></li>`;
+    const who = r.tied ? `Tie: ${r.tied.map(o => esc(name(o))).join(' & ')}` : esc(name(r.payer));
+    const note = r.tied ? 'Tied for lowest: commish decides' : r.payer !== r.lowest ? `${esc(name(r.lowest))} had the low score but already paid ${WAGER.cap} times` : r.state === 'live' ? 'Lowest score right now' : 'Lowest score';
+    const bet = r.bet ? (r.bet.result === 'won'
+      ? `<span class="wg-bet won">Parlay hit: ${money(r.bet.amount)} · ${money(r.bet.each)} each</span>`
+      : '<span class="wg-bet lost">Parlay missed</span>') : '';
+    return `<li class="wg-row${r.state === 'live' ? ' wg-live' : ''}"><span class="wg-wk">Wk ${r.w}</span><span class="wg-who"><b>${who}</b><small>${r.state === 'live' ? '<i class="wg-dot"></i>Live · ' : ''}${note}</small>${bet}</span><b>${num(r.score)}</b></li>`;
+  };
+  const payers = Object.entries(t.paid).filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
+  return `
+    <section class="card hm-card wg">
+      <div class="hm-head"><h2>${icon('ticket')} Wager Weeks</h2><a class="hm-all" href="#/rules">Rule 9 ${icon('arrow')}</a></div>
+      <p class="wg-sub">${started ? `Weeks ${WAGER.from}–${WAGER.to}: the lowest score each week puts up $${WAGER.stake} for the league parlay. Max ${WAGER.cap} times per manager.` : `<b>Starts in Week ${WAGER.from}.</b> In weeks ${WAGER.from}–${WAGER.to}, the lowest score each week puts up $${WAGER.stake} for an NBA parlay; every manager picks a leg and a winning ticket is split evenly. Nobody pays more than ${WAGER.cap} times.`}</p>
+      <ol class="wg-list">${t.weeks.map(row).join('')}</ol>
+      ${payers.length ? `<div class="wg-tally">${payers.map(([o, n]) => `<span class="${n >= WAGER.cap ? 'max' : ''}">${esc(name(o))} <b>${'●'.repeat(n)}${'○'.repeat(WAGER.cap - n)}</b>${n >= WAGER.cap ? ' maxed out' : ''}</span>`).join('')}</div>` : ''}
+      ${t.pot || t.won || t.lost ? `<p class="wg-sub">${[t.pot ? `Put up so far: ${money(t.pot)}` : '', t.won || t.lost ? `Parlays: ${t.won} hit, ${t.lost} missed` : '', t.won ? `<b>won ${money(t.total)}, ${money(t.each)} per manager</b>` : ''].filter(Boolean).join(' · ')}.</p>` : ''}
+    </section>`;
+}
+
+// Commissioner's office → Wager Weeks: mark each week's parlay won or lost and enter the
+// winnings. The site has no server, so saving = copy the new wager.json and paste it
+// into GitHub's editor; the upload redeploys the site (about 3-5 minutes).
+const WAGER_EDIT_URL = 'https://github.com/debugburkhart/seis-dynasty-hoops/edit/main/wager.json';
+async function renderWagerAdmin(body) {
+  const live = await loadWagerResults();
+  if (route().page !== 'commish') return;
+  // A save that GitHub hasn't published yet: start from it (for 20 minutes).
+  const pending = gmLoad('wager-saved', null);
+  const usePending = pending && Date.now() - pending.at < 20 * 60_000 && JSON.stringify(pending.parlays) !== JSON.stringify(live);
+  const draft = structuredClone(usePending ? pending.parlays : live);
+  const t = wagerWeeks();
+  if (!t) {
+    body.innerHTML = '<section class="card soon-card"><p>Wager Weeks are for the 2026-27 season.</p></section>';
+    return;
+  }
+  const fileText = () => `${JSON.stringify({ parlays: Object.fromEntries(Object.entries(draft).sort((a, b) => a[0] - b[0])) }, null, 2)}\n`;
+  const row = r => {
+    const d = draft[r.w] ?? {};
+    const who = r.state === 'upcoming' ? 'Not played yet' : r.tied ? `Tie: ${r.tied.map(o => name(o)).join(' & ')}` : `${name(r.payer)} paid`;
+    return `
+      <div class="wa-row" data-w="${r.w}">
+        <div class="wa-wk"><b>Week ${r.w}</b><small>${esc(who)}</small></div>
+        <div class="st-stage wa-result" role="group" aria-label="Week ${r.w} result">
+          ${[['', 'Pending'], ['won', 'Won'], ['lost', 'Lost']].map(([v, l]) => `<a href="#" data-v="${v}" class="${(d.result ?? '') === v ? 'on' : ''}">${l}</a>`).join('')}
+        </div>
+        <label class="wa-amount${d.result === 'won' ? '' : ' off'}"><span>$</span><input type="number" inputmode="decimal" min="0" step="0.01" placeholder="Total won" value="${d.result === 'won' && d.amount ? d.amount : ''}" aria-label="Week ${r.w} total won"></label>
+        <div class="wa-each">${d.result === 'won' && d.amount ? `${money(d.amount / t.managers)} each` : ''}</div>
+      </div>`;
+  };
+  const draw = () => {
+    body.innerHTML = `
+      <section class="card">
+        <div class="card-head"><h2>Wager Weeks results</h2></div>
+        ${usePending ? '<p class="gm-alert">Showing your last save: GitHub hasn’t published it yet (it takes about 3–5 minutes).</p>' : ''}
+        <p class="cm-rule">Mark each week’s parlay. For a win, enter the total the ticket paid out; the site divides it by ${t.managers} for each manager’s share.</p>
+        <div class="wa-rows">${t.weeks.map(row).join('')}</div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Save to the site</h2></div>
+        <ol class="wa-steps">
+          <li><button class="btn" type="button" id="wa-copy">Copy results</button> <span class="cm-copy" id="wa-copied" hidden>Copied ✓</span></li>
+          <li><a class="btn" href="${WAGER_EDIT_URL}" target="_blank" rel="noopener">Open wager.json on GitHub</a></li>
+          <li>On GitHub, select all the text in the file (tap in it, then Select All), paste, and tap <b>Commit changes</b> (then <b>Commit changes</b> again).</li>
+        </ol>
+        <p class="cm-rule">Home shows the results about 3–5 minutes later. If copying doesn’t work on your phone, copy the text below instead.</p>
+        <textarea class="cm-recap wa-text" rows="6" readonly>${esc(fileText())}</textarea>
+      </section>`;
+    body.querySelectorAll('.wa-row').forEach(el => {
+      const w = el.dataset.w;
+      el.querySelectorAll('.wa-result a').forEach(a => a.addEventListener('click', e => {
+        e.preventDefault();
+        if (!a.dataset.v) delete draft[w];
+        else draft[w] = { result: a.dataset.v, ...(a.dataset.v === 'won' ? { amount: draft[w]?.amount ?? 0 } : {}) };
+        draw();
+        if (a.dataset.v === 'won') $(`.wa-row[data-w="${w}"] input`, body)?.focus();
+      }));
+      const input = $('input', el);
+      input.addEventListener('input', () => {
+        if (draft[w]?.result !== 'won') return;
+        draft[w].amount = Math.max(0, Math.round((Number(input.value) || 0) * 100) / 100);
+        $('.wa-each', el).textContent = draft[w].amount ? `${money(draft[w].amount / t.managers)} each` : '';
+        $('.wa-text', body).value = fileText();
+      });
+    });
+    $('#wa-copy', body).addEventListener('click', async () => {
+      const text = fileText();
+      try { await navigator.clipboard.writeText(text); } catch {
+        const ta = $('.wa-text', body);
+        ta.select();
+        document.execCommand('copy');
+      }
+      gmSave('wager-saved', { at: Date.now(), parlays: JSON.parse(text).parlays });
+      $('#wa-copied', body).hidden = false;
+    });
+  };
+  draw();
+}
+
+// During a Wager Week, refresh the tracker with live scores.
+async function homeWagerLive(main) {
+  const box = $('#hm-wager', main);
+  if (!box) return;
+  await loadWagerResults();
+  if (box.isConnected) box.innerHTML = homeWager();
+  try {
+    HYPE_NOW ??= await hypeNow();
+    const w = HYPE_NOW.week;
+    if (HYPE_NOW.pre || HYPE_NOW.season !== WAGER.season || w < WAGER.from || w > WAGER.to) return;
+    if (DATA.games.some(g => g.s === WAGER.season && g.w === w)) return; // already final in the data
+    const d = await liveWeek(WAGER.season, w);
+    if (box.isConnected && Object.values(d.scores).some(p => p > 0)) box.innerHTML = homeWager({ week: w, scores: d.scores });
+  } catch { /* keep the nightly version */ }
+}
+
 function renderHome(main) {
   main.innerHTML = `
     <div class="page page-wide hm">
@@ -3561,8 +3741,10 @@ function renderHome(main) {
         ${homePower()}
         ${homeStandings()}
       </div>
+      <div id="hm-wager">${homeWager()}</div>
       ${homeWire()}
     </div>`;
+  homeWagerLive(main);
 
   main.querySelectorAll('.hm-tabs button').forEach(b => b.addEventListener('click', () => {
     homeBy = b.dataset.by;
