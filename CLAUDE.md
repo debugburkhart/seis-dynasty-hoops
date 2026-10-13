@@ -254,6 +254,35 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (swaps), tonight's games, injury news (localStorage gm-inj-{owner}, rolls over daily), top 3
   waiver risers.
   scoutWeek().started is false in preseason (HYPE_NOW.pre), fixed Oct 2026.
+  STEP 2 (built Oct 2026): `assets/dynasty.js` dynasty values (owner: weights 50/30/20, 0-100 score,
+  blunt Managers tone). Per player: v1 = Sleeper season per-game projection (league scoring;
+  Out = x0.5; no projection -> last season 10+ gp), v2/v3 = AGE_CURVE (fitted 2015-2025, 3,017
+  player pairs, centered; beat flat on 2019-23 checks). worth = E[max(0, raw - floor)] with
+  uncertainty 4 (6 if age <= 22), floor = 5th-best free agent; score = 100 x worth / top. Picks:
+  Draft Grades rookie curve expect(no) +- curve sd, x hit rate, valued as a 20-year-old, x0.9 per
+  year away; unknown slot = round average (avg 1st ~12). Ages: DATA.birth (build-data saves birth
+  dates for rostered + used players; fallback /v1/players/nba in the browser). Transactions now
+  keep `bid` (waiver_bid) when Sleeper has it. Dynasty tab: outlook (label from now/2-yr ranks,
+  meter), league map SVG (labels avoid dots/labels) + table, roster by score with 2-season
+  trend, taxi clock (taxiLeft from NBA seasons in the last 3), picks. Managers tab: per manager
+  trades (Front Office net, partners, net with you), waiver/FA adds (+FAAB), draft report card,
+  positions, draft age, dynasty ranks, H2H vs you (all games), last move, blunt summary
+  (inactivity line in season only). Prospect grade (owner asked, for low-score young guys):
+  players <= 24 get chances in 3 seasons of rotation (top 120), starter (top 72), star (top 24),
+  logistic fits on x = (ppg carried 3 yrs on AGE_CURVE) / last season's 72nd-best ppg, 1,777
+  NBA players <= 24 with 20+ gp 2012-2022 (busts out of the NBA count as misses; TEAM_ rows in
+  Sleeper stats must be skipped), holdout 2019-22 calibrated. Grade A+..F (GRADES in dynasty.js);
+  shown as chips in the roster + taxi clock and a Prospects card. Waiver wire tab (owner asked)
+  also loads dynasty values: "Dynasty pickups" (unrostered with an NBA team, by 3-season raw,
+  Out included) and "Prospects on the wire" (unrostered <= 24 by chances), plus grade chips +
+  "dynasty N" on every waiver row (prospectChip shared). Role test (owner asked, Oct 2026): adding
+  per-minute production (per 36, overall or bench-only <20 mpg) or minutes trend to the prospect
+  model did NOT help on the 2019-22 holdout (log loss / AUC equal or worse, also for low-minute
+  players), so the per-game model stays. Managers tab also has "Startup draft: still on the team"
+  (owner asked): each manager's own 2023 startup picks (p.o = who made the pick) on his live roster
+  today incl. taxi/IR, %, league total, tap for kept (+ "came back" if he ever dropped/traded him)
+  and gone (current holder or not on a roster); also a "Startup picks" line on each card.
+  Next: step 3 Trade finder.
 - `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has
   wrong; Sleeper's LeBron James photo (id 1362) is Bronny). All player photos go through

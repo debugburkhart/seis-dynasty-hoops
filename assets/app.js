@@ -6,6 +6,7 @@ import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, seriesBefore, standingsBefore, weekPairs } from './hype.js';
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
 import { LOCK_CAL, gameCoach, injuryNews, loadBoxes, loadSlate } from './gm.js';
+import { PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, taxiLeft } from './dynasty.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
 import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, ownerAt, playerOfTheYear, rookieClass, seasonEndKey } from './awards.js';
 import { ALL_STAR_POSITIONS, CORRECTIONS, DRAFT_CORRECTIONS, PHOTO_CORRECTIONS } from './corrections.js';
@@ -2213,7 +2214,7 @@ function renderCommish(main, params) {
   }
   // Two groups: the Assistant GM tools, then the league office reports.
   const GROUPS = [
-    ['My GM', [['brief', 'Briefing'], ['coach', 'Lock-in coach']]],
+    ['My GM', [['brief', 'Briefing'], ['coach', 'Lock-in coach'], ['dynasty', 'Dynasty'], ['managers', 'Managers']]],
     ['League office', [['scout', 'Scouting report'], ['waivers', 'Waiver wire'], ['playoffs', 'Playoff picture'], ['recap', 'Weekly recap'], ['picks', 'Draft picks'], ['races', 'Award races'], ['hype', 'Early hype'], ['wager', 'Wager Weeks'], ['health', 'Health report']]],
   ];
   const TABS = GROUPS.flatMap(([, tabs]) => tabs);
@@ -2241,7 +2242,7 @@ function renderCommish(main, params) {
       <div id="cm-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
     </div>`;
   const body = $('#cm-body', main);
-  const show = { brief: renderBriefing, coach: renderCoach, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, health: renderHealth }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, health: renderHealth }[tab];
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
   });
@@ -2656,14 +2657,270 @@ async function renderBriefing(body, params) {
   gmAutoRefresh(body, params, renderBriefing, w);
 }
 
+// ---- My GM: Dynasty and Managers (dynasty values in assets/dynasty.js) ----
+
+// Prospect grade tag (players 24 and under), shared by Dynasty and the Waiver wire.
+const prospectChip = p => (p?.prospect ? `<span class="pg pg-${p.prospect.grade[0]}" title="Prospect grade">${p.prospect.grade}</span>` : '');
+
+async function gmDynasty(params) {
+  const cur = DATA.seasons.at(-1);
+  const me = cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH;
+  const f = await loadDynasty(DATA);
+  return { season: cur.season, me, f, v: dynastyValues(DATA, f) };
+}
+const scoreBar = s => `<span class="dy-bar" aria-hidden="true"><i style="width:${s}%"></i></span><b class="dy-score">${s}</b>`;
+const trendOf = p => {
+  if (!p.v[0]) return '';
+  const pct = Math.round((p.v[2] / p.v[0] - 1) * 100);
+  return pct >= 5 ? `<span class="dy-up">↑ ${pct}%</span>` : pct <= -5 ? `<span class="dy-down">↓ ${-pct}%</span>` : '<span class="dy-flat">steady</span>';
+};
+const LABEL_CLS = { Contender: 'good', 'Win now': 'good', Rising: 'good', Fading: 'bad', Rebuilding: 'bad' };
+
+// League map: every team's strength now (x) vs in 2 years (y), lines at the league average.
+function dynastyMap(v, me, season) {
+  const list = Object.values(v.outlook);
+  const W = 440, H = 320, P = { l: 30, r: 12, t: 20, b: 34 };
+  const xs = list.map(t => t.now), ys = list.map(t => t.later);
+  const pad = (lo, hi) => [lo - (hi - lo) * 0.12, hi + (hi - lo) * 0.12];
+  const [x0, x1] = pad(Math.min(...xs), Math.max(...xs));
+  const [y0, y1] = pad(Math.min(...ys), Math.max(...ys));
+  const X = x => P.l + (x - x0) / (x1 - x0) * (W - P.l - P.r);
+  const Y = y => H - P.b - (y - y0) / (y1 - y0) * (H - P.t - P.b);
+  const ax = xs.reduce((a, b) => a + b, 0) / xs.length, ay = ys.reduce((a, b) => a + b, 0) / ys.length;
+  // Labels: right of the dot (left near the right edge), nudged down or up when two would overlap.
+  // Every dot is an obstacle too.
+  const placed = list.map(t => ({ x0: X(t.now) - 8, x1: X(t.now) + 8, y: Y(t.later) + 4 }));
+  const labelW = s => s.length * 7.4;
+  const dots = [...list].sort((a, b) => Y(a.later) - Y(b.later)).map(t => {
+    const x = X(t.now), y = Y(t.later), label = name(t.owner);
+    const right = x + 10 + labelW(label) < W - 2;
+    const box = ly => ({ x0: right ? x + 10 : x - 10 - labelW(label), x1: right ? x + 10 + labelW(label) : x - 10, y: ly });
+    let ly = y + 5;
+    for (const step of [0, 15, -15, 30, -30]) {
+      const b = box(y + 5 + step);
+      if (!placed.some(p => Math.abs(p.y - b.y) < 14 && b.x0 < p.x1 && p.x0 < b.x1)) { ly = b.y; break; }
+    }
+    placed.push(box(ly));
+    return `<g class="dy-dot${t.owner === me ? ' me' : ''}" tabindex="0">
+      <title>${esc(label)}: ${esc(t.label)}. Now ${num(t.now)} (No. ${t.nowRank}), in 2 years ${num(t.later)} (No. ${t.laterRank})</title>
+      <circle cx="${x}" cy="${y}" r="14" class="dy-hit"/><circle cx="${x}" cy="${y}" r="6"/>
+      <text x="${right ? x + 10 : x - 10}" y="${ly}" text-anchor="${right ? 'start' : 'end'}">${esc(label)}</text></g>`;
+  }).join('');
+  return `<svg class="dy-map" viewBox="0 0 ${W} ${H}" role="img" aria-label="Team strength now versus in two years">
+    <line class="dy-avg" x1="${X(ax)}" x2="${X(ax)}" y1="${P.t}" y2="${H - P.b}"/><line class="dy-avg" x1="${P.l}" x2="${W - P.r}" y1="${Y(ay)}" y2="${Y(ay)}"/>
+    <text class="dy-q" x="${W - P.r - 4}" y="${P.t + 12}" text-anchor="end">Strong now and later</text>
+    <text class="dy-q" x="${P.l + 4}" y="${P.t + 12}">Built for later</text>
+    <text class="dy-q" x="${W - P.r - 4}" y="${H - P.b - 6}" text-anchor="end">Win now</text>
+    <text class="dy-q" x="${P.l + 4}" y="${H - P.b - 6}">Rebuild</text>
+    <text class="dy-axis" x="${(P.l + W - P.r) / 2}" y="${H - 10}" text-anchor="middle">Stronger this season →</text>
+    <text class="dy-axis" transform="translate(14 ${(P.t + H - P.b) / 2}) rotate(-90)" text-anchor="middle">Stronger in 2 years →</text>
+    ${dots}</svg>`;
+}
+
+async function renderDynasty(body, params) {
+  const { season, me, f, v } = await gmDynasty(params);
+  if (route().page !== 'commish') return;
+  const t = v.outlook[me];
+  if (!t) {
+    body.innerHTML = `<div class="gm-page">${gmTeamPick(me, season, 'dynasty')}<section class="card soon-card"><p>No roster found for this team.</p></section></div>`;
+    bindTeamPick(body);
+    return;
+  }
+  const roster = Object.values(v.players).filter(p => p.owner === me || (f.rosters.find(r => r.owner_id === me)?.taxi ?? []).includes(p.pid)).sort((a, b) => b.worth - a.worth);
+  const taxi = roster.filter(p => p.where === 'taxi').sort((a, b) => taxiLeft(a) - taxiLeft(b) || b.worth - a.worth);
+  const picks = v.picks.filter(p => p.owner === me).sort((a, b) => a.season - b.season || a.round - b.round);
+  const tag = p => (p.where === 'taxi' ? '<span class="cm-pill">Taxi</span>' : p.where === 'ir' ? '<span class="cm-pill bad">IR</span>' : '');
+  const grade = prospectChip;
+  const pct = x => `${Math.round(x * 100)}%`;
+  const chances = q => `Rotation ${pct(q.rotation)} · Starter ${pct(q.starter)} · Star ${pct(q.star)}`;
+  const prospects = roster.filter(p => p.prospect).sort((a, b) => (b.prospect.star + b.prospect.starter + b.prospect.rotation) - (a.prospect.star + a.prospect.starter + a.prospect.rotation));
+  const taxiText = n => (n < 0 ? 'Over the limit' : n === 0 ? 'Last year' : `${n} more yr${n === 1 ? '' : 's'}`);
+  const list = Object.values(v.outlook).sort((a, b) => b.total - a.total);
+  const meter = Math.round((t.lean + 1) * 50);
+
+  body.innerHTML = `<div class="gm-page">
+    ${gmTeamPick(me, season, 'dynasty')}
+    <section class="card dy-head">
+      <div class="card-head"><h2>${esc(teamName(me, season))}</h2><span class="cm-pill ${LABEL_CLS[t.label] ?? ''}">${esc(t.label)}</span></div>
+      <div class="dy-meter" aria-label="Win now versus built for later"><span>Win now</span><div><i style="left:${meter}%"></i></div><span>Built for later</span></div>
+      <div class="dy-stats">
+        <span><b>No. ${t.nowRank}</b> strength now</span>
+        <span><b>No. ${t.laterRank}</b> in 2 years</span>
+        <span><b>No. ${t.totalRank}</b> total dynasty value</span>
+        <span><b>${t.age ?? '–'}</b> avg age (by value)</span>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>League map</h2><span class="card-sub">Best 9 players now vs in 2 years (with the next two drafts’ picks)</span></div>
+      ${dynastyMap(v, me, season)}
+      <details class="cm-group"><summary>As a table</summary>
+        <div class="cm-scroll"><table class="cm-table dy-table"><thead><tr><th>Team</th><th>Now</th><th>In 2 yrs</th><th>Total</th><th>Outlook</th></tr></thead>
+        <tbody>${list.map(x => `<tr class="${x.owner === me ? 'cm-me' : ''}"><td>${esc(name(x.owner))}</td><td>No. ${x.nowRank}</td><td>No. ${x.laterRank}</td><td>${x.total}</td><td>${esc(x.label)}</td></tr>`).join('')}</tbody></table></div>
+      </details>
+    </section>
+    <div class="cm-races">
+      <section class="card">
+        <div class="card-head"><h2>Roster by dynasty score</h2><span class="card-sub">${roster.length} players</span></div>
+        <ol class="aw-race dy-list">${roster.map(p => `<li><span>${esc(p.name)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))} · ${trendOf(p)}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small></span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
+      </section>
+      <div class="dy-side">
+        <section class="card">
+          <div class="card-head"><h2>Prospects</h2><span class="card-sub">Age ${PROSPECT_MAX_AGE} and under · in 3 seasons</span></div>
+          ${prospects.length ? `<ol class="aw-race dy-pros">${prospects.map(p => `<li><span>${esc(p.name)} ${tag(p)}<small>${esc([p.pos, `age ${p.age}`].join(' · '))} · ${chances(p.prospect)}</small></span>${grade(p)}</li>`).join('')}</ol>` : '<p class="empty">No players 24 or younger.</p>'}
+          <p class="cm-rule">Chances he’s a <b>rotation</b> player (top 120, about bench level here), a weekly <b>starter</b> (top 72) or a <b>star</b> (top 24) three seasons from now.</p>
+        </section>
+        <section class="card">
+          <div class="card-head"><h2>Taxi clock</h2><span class="card-sub">${taxi.length} of 15</span></div>
+          ${taxi.length ? `<ol class="aw-race">${taxi.map(p => `<li><span>${esc(p.name)} ${grade(p)}<small>${p.nbaSeasons} NBA season${p.nbaSeasons === 1 ? '' : 's'} before this one · score ${p.score}${p.prospect ? ` · starter ${pct(p.prospect.starter)}` : ''}</small></span><b class="cm-pill ${taxiLeft(p) <= 0 ? 'bad' : ''}">${esc(taxiText(taxiLeft(p)))}</b></li>`).join('')}</ol>` : '<p class="empty">Nobody on taxi.</p>'}
+          <p class="cm-rule">A player can stay on taxi through his 3rd NBA season (seasons counted from real games). <b>Last year</b> = this is his last season on taxi; <b>1 more yr</b> = he can stay one more season after this.${taxi.length > 15 ? ` <b>${taxi.length - 15} over the 15-player limit.</b>` : ''}</p>
+        </section>
+        <section class="card">
+          <div class="card-head"><h2>Picks</h2><span class="card-sub">Next 3 drafts</span></div>
+          ${picks.length ? `<ol class="aw-race">${picks.map(p => `<li><span>${esc(p.label)}<small>${p.orig === me ? 'Own pick' : `From ${esc(name(p.orig))}`}</small></span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>` : '<p class="empty">No picks in the next 3 drafts.</p>'}
+          <p class="cm-rule">${v.orderKnown ? `${v.nextDraft} slots are projected from the standings.` : `Slots aren’t known until games are played, so each pick is valued as the middle of its round.`}</p>
+        </section>
+      </div>
+    </div>
+    <section class="card">
+      <div class="card-head"><h2>How dynasty scores work</h2></div>
+      <p class="cm-rule"><b>0–100</b>: 0 is what you could pick up off waivers, 100 is the league’s most valuable player (now ${esc(Object.values(v.players).sort((a, b) => b.worth - a.worth)[0]?.name ?? '')}). It blends three seasons of fantasy points per game, ${SEASON_WEIGHTS.map(w => `${w * 100}%`).join(' / ')}: this season is Sleeper’s projection under league scoring (players listed Out count half), and the next two follow an age curve fitted on 10 seasons of NBA stats: players improve about 10–15% a year up to 22, level off around 24–25, and lose about 5% a year by 29 and 10% by 31. The arrow is his value in 2 seasons vs this one.</p>
+      <p class="cm-rule">Each value carries some uncertainty, so a young player just below waiver level keeps a little value for his upside. <b>Picks</b>: what a rookie at that spot has produced in this league’s drafts (Draft Grades), with the same upside, 10% off per year until the draft. Picks only count their first 3 seasons, so dynasty markets that look further ahead value them higher.</p>
+      <p class="cm-rule"><b>Prospect grade</b> (players ${PROSPECT_MAX_AGE} and under, A+ to F): the score above looks 3 seasons ahead, which undersells young players, so the grade asks where he’ll be in 3 seasons. His points per game are carried forward on the age curve and compared with how ${'1,777'} young NBA players since 2012 actually turned out (counting the ones who fell out of the league). Checked on players the model never saw (2019–2022): when it said about 21% would become starters, 15% did; about 59%, 67% did; about 83%, 86% did. A+ = 50%+ star chance; A = 30%+ star or 85%+ starter; A– to B– = 70% down to 25% starter; C+ to D = mostly his rotation chance; F = under 12% to even be a rotation player.</p>
+    </section></div>`;
+  bindTeamPick(body);
+}
+
+async function renderManagers(body, params) {
+  const { season, me, f, v } = await gmDynasty(params);
+  if (route().page !== 'commish') return;
+  const fo = ledger();
+  const grades = draftGrades(DATA);
+  const owners = DATA.seasons.at(-1).teams.map(t => t.owner);
+  const cards = reportCards(grades, owners);
+  const acts = Object.fromEntries(activity(DATA).map(a => [a.owner, a]));
+  const birth = f.birth ?? {};
+  const stats = owners.map(o => {
+    const trades = fo.trades.filter(x => x.owners.includes(o));
+    const sides = trades.map(x => x.sides.find(sd => sd.o === o)).filter(Boolean);
+    const net = sides.reduce((a, sd) => a + sd.net, 0);
+    const won = sides.filter(sd => sd.net > 0).length;
+    const partners = {};
+    for (const x of trades) for (const p of new Set(x.owners)) if (p !== o) partners[p] = (partners[p] ?? 0) + 1;
+    const withMe = trades.filter(x => x.owners.includes(me) && o !== me).map(x => x.sides.find(sd => sd.o === o)?.net ?? 0);
+    const moves = (DATA.transactions ?? []).filter(x => ['waiver', 'free_agent'].includes(x.type) && Object.values(x.adds ?? {}).includes(o));
+    const faab = moves.filter(x => x.s === season && x.bid != null).reduce((a, x) => a + x.bid, 0);
+    const myPicks = grades.picks.filter(p => p.kind === 'rookie' && p.o === o);
+    const pos = {};
+    for (const p of myPicks) { const g = (DATA.players?.[p.pid]?.pos ?? '').replace(/^(PG|SG)$/, 'G').replace(/^(SF|PF)$/, 'F'); if (g) pos[g] = (pos[g] ?? 0) + 1; }
+    const ages = myPicks.map(p => (birth[p.pid] ? (new Date(`${p.s}-06-25`) - new Date(birth[p.pid])) / (365.25 * 864e5) : null)).filter(x => x != null);
+    const games = DATA.games.filter(g => (g.a === o && g.b === me) || (g.a === me && g.b === o));
+    const h2h = games.reduce((r, g) => { const mine = g.a === o ? g.ap : g.bp; const theirs = g.a === o ? g.bp : g.ap; r[mine > theirs ? 0 : mine < theirs ? 1 : 2]++; return r; }, [0, 0, 0]);
+    return {
+      o, trades: trades.length, tradesNow: trades.filter(x => x.s === season).length, net: Math.round(net), won, lost: sides.filter(sd => sd.net < 0).length,
+      partners: Object.entries(partners).sort((a, b) => b[1] - a[1]), withMe: Math.round(withMe.reduce((a, b) => a + b, 0)), withMeN: withMe.length,
+      moves: moves.length, movesNow: moves.filter(x => x.s === season).length, faab,
+      card: cards.find(c => c.owner === o), pos, draftAge: ages.length ? ages.reduce((a, b) => a + b, 0) / ages.length : null,
+      act: acts[o], out: v.outlook[o], h2h,
+    };
+  });
+  const rankOf = (key, o) => [...stats].sort((a, b) => b[key] - a[key]).findIndex(s => s.o === o) + 1;
+
+  // Startup draft: how many of each manager's own startup picks are on his roster today
+  // (taxi and IR count). "Came back" = he traded or dropped the player at some point.
+  const startup = (DATA.drafts ?? []).find(d => d.kind === 'startup');
+  const onRoster = Object.fromEntries((f.rosters ?? []).map(r => [r.owner_id, new Set([...(r.players ?? []), ...(r.taxi ?? []), ...(r.reserve ?? [])])]));
+  const holderOf = pid => (f.rosters ?? []).find(r => onRoster[r.owner_id].has(pid))?.owner_id ?? null;
+  const pname = pid => v.players[pid]?.name ?? DATA.players?.[pid]?.n ?? `Player ${pid}`;
+  const loyalty = startup ? owners.map(o => {
+    const picks = startup.picks.filter(p => p.o === o).sort((a, b) => a.no - b.no);
+    const kept = picks.filter(p => onRoster[o]?.has(p.pid)).map(p => ({ ...p, back: (DATA.transactions ?? []).some(x => x.drops?.[p.pid] === o) }));
+    const gone = picks.filter(p => !onRoster[o]?.has(p.pid)).map(p => ({ ...p, now: holderOf(p.pid) }));
+    return { o, picks: picks.length, kept, gone, pct: picks.length ? kept.length / picks.length : 0 };
+  }).sort((a, b) => b.pct - a.pct || b.kept.length - a.kept.length) : [];
+  const loyaltyOf = Object.fromEntries(loyalty.map(l => [l.o, l]));
+  const leagueKept = loyalty.reduce((a, l) => a + l.kept.length, 0);
+  const leaguePicks = loyalty.reduce((a, l) => a + l.picks, 0);
+  const pctText = x => `${Math.round(x * 100)}%`;
+  const loyaltyCard = startup ? `
+    <section class="card">
+      <div class="card-head"><h2>Startup draft: still on the team</h2><span class="card-sub">${startup.s} startup · league: ${leagueKept} of ${leaguePicks} (${pctText(leagueKept / (leaguePicks || 1))})</span></div>
+      <ol class="aw-race mg-loyal">${loyalty.map(l => `
+        <li class="${l.o === me ? 'cm-me' : ''}">
+          <details>
+            <summary><span><b>${esc(name(l.o))}</b><small>${l.kept.length} of ${l.picks} startup picks still on his roster</small></span><span class="dy-val"><span class="dy-bar" aria-hidden="true"><i style="width:${Math.round(l.pct * 100)}%"></i></span><b class="dy-score">${pctText(l.pct)}</b></span></summary>
+            <p class="mg-kept"><b>Still there:</b> ${l.kept.length ? l.kept.map(p => `${esc(pname(p.pid))} <small>(${p.round}.${String(p.no - (p.round - 1) * 8).padStart(2, '0')}${p.back ? ', came back' : ''})</small>`).join(', ') : 'nobody'}</p>
+            <p class="mg-kept"><b>Gone:</b> ${l.gone.length ? l.gone.map(p => `${esc(pname(p.pid))} <small>(${p.now ? `now ${esc(name(p.now))}` : 'not on a roster'})</small>`).join(', ') : 'nobody'}</p>
+          </details>
+        </li>`).join('')}</ol>
+      <p class="cm-rule">Each manager’s own picks in the ${startup.s} startup draft (picks traded during the draft go with whoever made them) that are on his roster today, taxi and IR included. “Came back” = he moved the player at some point and got him back. Tap a manager for the list.</p>
+    </section>` : '';
+
+  // Blunt one-liners (the owner asked for blunt).
+  const summary = s => {
+    const bits = [];
+    if (!s.trades) bits.push('Has never made a trade.');
+    else {
+      const busy = rankOf('trades', s.o);
+      bits.push(`${busy === 1 ? 'The league’s busiest trader' : busy <= 3 ? 'Trades a lot' : busy >= 7 ? 'Barely trades' : 'Trades now and then'} (${s.trades})${s.partners[0] ? `, mostly with ${name(s.partners[0][0])}` : ''}.`);
+      bits.push(s.net > 150 ? `Usually wins trades on value (+${num(s.net)} locked points).` : s.net < -150 ? `Usually loses trades on value (${num(s.net)} locked points).` : 'Breaks about even on trades.');
+    }
+    const wire = rankOf('moves', s.o);
+    if (wire <= 2) bits.push('Lives on the waiver wire.');
+    else if (wire >= 7) bits.push('Rarely touches the waiver wire.');
+    if (s.card?.grade) bits.push(`Draft report card: ${s.card.grade}.`);
+    const lab = s.out?.label;
+    if (lab === 'Contender' || lab === 'Win now') bits.push('Built to win now: a buyer for proven players, will pay in picks and prospects.');
+    else if (lab === 'Rising' || lab === 'Rebuilding') bits.push('Building for later: likely to sell veterans for picks and young players.');
+    else if (lab === 'Fading') bits.push('Roster is aging out: could cash in veterans before they slide.');
+    if (DATA.seasons.at(-1).weeksPlayed && s.act?.days != null && s.act.days > 21) bits.push(`Hasn’t made a move in ${s.act.days} days.`); // in season only
+    return bits.join(' ');
+  };
+  const card = s => `
+    <section class="card mg-card${s.o === me ? ' mg-me' : ''}">
+      <div class="card-head"><h2>${esc(name(s.o))}${s.o === me ? ' <small>(you)</small>' : ''}</h2><span class="cm-pill ${LABEL_CLS[s.out?.label] ?? ''}">${esc(s.out?.label ?? '')}</span></div>
+      <p class="card-sub">${esc(teamName(s.o, season))}</p>
+      <p class="mg-sum">${esc(summary(s))}</p>
+      <dl class="mg-stats">
+        <div><dt>Trades</dt><dd>${s.trades} <small>${s.tradesNow} this season · ${s.won} won, ${s.lost} lost on value</small></dd></div>
+        <div><dt>Trade value</dt><dd>${s.net > 0 ? '+' : ''}${num(s.net)} <small>locked points, all trades</small></dd></div>
+        ${s.o !== me ? `<div><dt>With you</dt><dd>${s.withMeN ? `${s.withMe > 0 ? '+' : ''}${num(s.withMe)}` : '–'} <small>${s.withMeN ? `their net in ${s.withMeN} trade${s.withMeN === 1 ? '' : 's'} with you` : 'never traded with you'}</small></dd></div>` : ''}
+        <div><dt>Waiver/FA adds</dt><dd>${s.moves} <small>${s.movesNow} this season${s.faab ? ` · $${s.faab} FAAB spent` : ''}</small></dd></div>
+        <div><dt>Drafting</dt><dd>${s.card?.grade ?? '–'} <small>${Object.entries(s.pos).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${n} ${p}`).join(', ') || 'no rookie picks'}${s.draftAge ? ` · avg age ${num(s.draftAge)} at the draft` : ''}</small></dd></div>
+        ${loyaltyOf[s.o] ? `<div><dt>Startup picks</dt><dd>${pctText(loyaltyOf[s.o].pct)} <small>${loyaltyOf[s.o].kept.length} of ${loyaltyOf[s.o].picks} still on the team · No. ${loyalty.indexOf(loyaltyOf[s.o]) + 1} in the league</small></dd></div>` : ''}
+        <div><dt>Roster</dt><dd>No. ${s.out?.totalRank ?? '–'} <small>dynasty value · avg age ${s.out?.age ?? '–'} · now No. ${s.out?.nowRank ?? '–'}, in 2 yrs No. ${s.out?.laterRank ?? '–'}</small></dd></div>
+        ${s.o !== me ? `<div><dt>Vs you</dt><dd>${s.h2h[0]}–${s.h2h[1]}${s.h2h[2] ? `–${s.h2h[2]}` : ''} <small>their record against you, all games</small></dd></div>` : ''}
+        <div><dt>Last move</dt><dd>${s.act?.days == null ? '–' : s.act.days === 0 ? 'Today' : `${s.act.days} day${s.act.days === 1 ? '' : 's'} ago`}${s.act?.days == null ? ' <small>no moves yet</small>' : ''}</dd></div>
+      </dl>
+    </section>`;
+  const order = [...stats].sort((a, b) => (a.o === me) - (b.o === me) || (b.out?.total ?? 0) - (a.out?.total ?? 0));
+  body.innerHTML = `<div class="gm-page">
+    ${gmTeamPick(me, season, 'managers')}
+    ${loyaltyCard}
+    <div class="mg-grid">${order.map(card).join('')}</div>
+    <p class="filter-note">Trade value is the Front Office’s: locked points each side got from the players (and picks) in a trade, so recent trades are still changing. Waiver numbers count adds through waivers and free agency. FAAB spending shows once Sleeper records waiver bids (saved from 2026–27 on). Outlook labels and roster ranks come from the Dynasty tab.</p>
+  </div>`;
+  bindTeamPick(body);
+}
+
 // ---- Waiver wire: players on no roster worth a look ----
 
 async function renderWaivers(body, params) {
   const at = (await scoutWeek()) ?? { season: DATA.seasons.at(-1).season, week: 1, started: false };
-  const [ctx, extra] = await Promise.all([loadWeek(DATA, at.season, at.week), loadWaivers(at.season, at.week, at.started)]);
+  const [ctx, extra, dyn] = await Promise.all([
+    loadWeek(DATA, at.season, at.week), loadWaivers(at.season, at.week, at.started),
+    loadDynasty(DATA).then(f => dynastyValues(DATA, f)).catch(() => null),
+  ]);
   if (route().page !== 'commish') return;
   const pos = ['G', 'F', 'C'].includes(params.get('pos')) ? params.get('pos') : 'all';
   const all = waiverWire(DATA, ctx, extra).filter(p => !p.out && (pos === 'all' || p.group === pos));
+  const dy = p => dyn?.players[p.pid];
+  // Dynasty pickups and prospects: every unrostered player (Out ones too: they can be stashed).
+  const posGroup = x => (/^(PG|SG|G)/.test(x) ? 'G' : /^(SF|PF|F)/.test(x) ? 'F' : /^C/.test(x) ? 'C' : null);
+  const free = dyn ? Object.values(dyn.players).filter(p => !p.owner && (pos === 'all' || posGroup(p.pos) === pos)) : [];
+  const stash = free.filter(p => p.team).sort((a, b) => b.raw - a.raw).slice(0, 10);
+  const chanceSum = q => q.rotation + q.starter + q.star;
+  const prospects = free.filter(p => p.prospect).sort((a, b) => chanceSum(b.prospect) - chanceSum(a.prospect)).slice(0, 10);
+  const pct = x => `${Math.round(x * 100)}%`;
   const top = (rows, n = 10) => rows.slice(0, n);
   const risers = top(all.filter(p => p.recentGames >= 2 && p.recent >= 20 && p.jump >= 5).sort((a, b) => b.jump - a.jump));
   const trending = top(all.filter(p => p.adds > 0).sort((a, b) => b.adds - a.adds));
@@ -2671,8 +2928,11 @@ async function renderWaivers(body, params) {
   const streams = top(all.filter(p => p.proj > 0).sort((a, b) => b.proj - a.proj));
   const meta = p => [p.pos, p.team || 'No team', p.games ? `${p.games} game${p.games === 1 ? '' : 's'} this week` : 'no games this week'].join(' · ');
   const rows = (list, value, extraLine) => (list.length ? `<ol class="aw-race">${list.map((p, i) => `
-    <li><span>${i + 1}. ${esc(p.name)} ${injuryTag(p)}<small>${esc(meta(p))}${extraLine ? ` · ${esc(extraLine(p))}` : ''}</small></span><b>${value(p)}</b></li>`).join('')}</ol>`
+    <li><span>${i + 1}. ${esc(p.name)} ${prospectChip(dy(p))} ${injuryTag(p)}<small>${esc(meta(p))}${extraLine ? ` · ${esc(extraLine(p))}` : ''}${dy(p) ? ` · dynasty ${dy(p).score}` : ''}</small></span><b>${value(p)}</b></li>`).join('')}</ol>`
     : '<p class="empty">Nobody fits right now.</p>');
+  const dynRows = (list, value, line) => (list.length ? `<ol class="aw-race">${list.map((p, i) => `
+    <li><span>${i + 1}. ${esc(p.name)} ${prospectChip(p)} ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No NBA team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))} · ${line(p)}</small></span>${value(p)}</li>`).join('')}</ol>`
+    : `<p class="empty">${dyn ? 'Nobody fits right now.' : 'Couldn’t load dynasty values.'}</p>`);
   const chips = [['all', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']].map(([id, label]) =>
     `<a class="${id === pos ? 'on' : ''}" href="#/commish?tab=waivers${id === 'all' ? '' : `&pos=${id}`}">${label}</a>`).join('');
 
@@ -2680,6 +2940,14 @@ async function renderWaivers(body, params) {
     <div class="st-stage cm-pos">${chips}</div>
     <p class="filter-note">Players on no roster in this league, ${at.started ? `week ${at.week}` : `before week ${at.week}`}. Players listed Out are hidden. Recently dropped players stay on waivers for ${ctx.league?.settings?.waiver_clear_days ?? 2} days before they’re free agents.</p>
     <div class="cm-races">
+      <section class="card"><div class="card-head"><h2>Dynasty pickups</h2><a class="gm-more" href="#/commish?tab=dynasty">Dynasty →</a></div>
+        <p class="cm-rule">Best unrostered players by 3-season value (this season 50%, next 30%, the one after 20%; players listed Out included, they can be stashed). Big number = dynasty score.</p>
+        ${dynRows(stash, p => `<span class="dy-val">${scoreBar(p.score)}</span>`, p => `${num(p.raw)} a game over 3 seasons · ${trendOf(p) || 'no projection'}`)}
+      </section>
+      <section class="card"><div class="card-head"><h2>Prospects on the wire</h2></div>
+        <p class="cm-rule">Unrostered players 24 and under with the best chances, 3 seasons from now, of being a rotation player (top 120), a starter (top 72) or a star (top 24). Taxi-eligible: worth a look when you clear a spot.</p>
+        ${dynRows(prospects, p => prospectChip(p), p => `Rotation ${pct(p.prospect.rotation)} · Starter ${pct(p.prospect.starter)} · Star ${pct(p.prospect.star)}`)}
+      </section>
       <section class="card"><div class="card-head"><h2>Risers</h2></div>
         <p class="cm-rule">Fantasy points per game over the last 14 days vs his season average (2+ recent games, 20+ a game).</p>
         ${at.started ? rows(risers, p => `+${num(p.jump)}`, p => `${num(p.recent)} a game lately vs ${num(p.fpg)}`) : '<p class="empty">Risers show up after the first week of games.</p>'}

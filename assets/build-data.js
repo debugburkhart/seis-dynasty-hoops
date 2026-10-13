@@ -407,6 +407,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
         owners: (x.roster_ids ?? []).map(r => ownerOf[r]),
         adds: toOwners(x.adds), drops: toOwners(x.drops),
         picks: (x.draft_picks ?? []).map(p => ({ season: p.season, round: p.round, orig: p.roster_id, from: ownerOf[p.previous_owner_id], to: ownerOf[p.owner_id] })),
+        ...(x.settings?.waiver_bid != null ? { bid: x.settings.waiver_bid } : {}), // FAAB spent (waiver claims)
       });
     }
     for (const d of await get(`/league/${lg.league_id}/drafts`, [])) {
@@ -607,6 +608,13 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
       : { n: `Player ${pid}`, pos: '', t: '' };
   }
 
+  // Birth dates (for ages in the commish's Dynasty tools): everyone on a roster now,
+  // plus every player above.
+  const birth = {};
+  for (const pid of new Set([...usedPlayers, ...(latestRosters?.rosters ?? []).flatMap(r => [...(r.players ?? []), ...(r.taxi ?? []), ...(r.reserve ?? [])])])) {
+    if (allPlayers[pid]?.birth_date) birth[pid] = allPlayers[pid].birth_date;
+  }
+
   const latest = chain.at(-1);
   return {
     generatedAt: new Date().toISOString(),
@@ -620,6 +628,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
     schedule,
     playerWeeks,
     players,
+    birth,
     transactions,
     drafts,
     mvp,
