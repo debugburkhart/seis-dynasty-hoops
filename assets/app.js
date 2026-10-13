@@ -4487,8 +4487,11 @@ function draftHistory(params) {
     const via = p.orig !== p.o ? `<small class="dk-via">via ${esc(name(p.orig))}</small>` : '';
     const pos = DATA.players?.[p.pid]?.pos;
     const hl = manager === 'all' ? '' : p.o === manager ? ' dk-hit' : ' dk-dim';
+    // The startup draft isn't graded (owner): plain squares, and the hover card only says what he produced.
+    const tone = startup ? 'dk-plain' : `t-${p.tier ?? (p.limited ? 'limited' : 'none')}`;
+    const tip = startup ? tipLines(p).filter(l => !/Expected|vs the spot/.test(l)) : tipLines(p);
     return `
-      <td class="t-${p.tier ?? (p.limited ? 'limited' : 'none')}${hl}"><a class="dk-cell" href="${playerLink(p.pid)}" data-tip="${esc(tipLines(p).join('|'))}">
+      <td class="${tone}${hl}"><a class="dk-cell" href="${playerLink(p.pid)}" data-tip="${esc(tip.join('|'))}">
         <span class="dk-no"><span>${pickLabel(p)}</span><i>#${p.no}</i></span>
         <b>${esc(playerName(p.pid))}</b>
         <small>${pos ? `${esc(pos)} · ` : ''}${esc(name(p.o))}</small>
@@ -4506,14 +4509,14 @@ function draftHistory(params) {
       ? `Showing ${esc(name(manager))}’s ${mineCount} pick${mineCount === 1 ? '' : 's'} in this draft; everyone else’s are faded. <a href="#/draft-grades?view=cards&manager=${encodeURIComponent(manager)}">${esc(name(manager))}’s report card</a>`
       : `${esc(name(manager))} made no picks in this draft.`} · <a href="#/draft-history?season=${d.s}">Show everyone</a></p>`}
     <p class="page-desc">${startup
-      ? `The ${d.s} startup draft that built the league: ${rounds} rounds, snake order. Colors show how each pick turned out against other startup picks; startup picks aren’t graded.`
+      ? `The ${d.s} startup draft that built the league: ${rounds} rounds, snake order. Startup picks aren’t graded (grades are for rookie drafts). Tap a pick to open the player.`
       : `The ${d.s} rookie draft: ${rounds} rounds, ${picks.length} picks. Tap a pick to open the player.`}</p>
-    <div class="dk-legend">
+    ${startup ? '' : `<div class="dk-legend">
       ${TIERS.map(t => `<span class="dk-key t-${t.id}">${t.label}</span>`).join('')}
       <span class="dk-key t-limited">Barely played</span>
       <span class="dk-key t-none">Not graded yet</span>
-    </div>
-    ${graded ? '' : `<p class="filter-note">The ${d.s} class hasn’t played enough NBA games yet. Colors start once a player has a season of ${MIN_GAMES}+ games.</p>`}
+    </div>`}
+    ${graded || startup ? '' : `<p class="filter-note">The ${d.s} class hasn’t played enough NBA games yet. Colors start once a player has a season of ${MIN_GAMES}+ games.</p>`}
     ${startup ? '' : `
     <section class="dk-board-wrap dk-board-phone">
       <table class="dk-board dk-flip">

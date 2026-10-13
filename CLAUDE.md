@@ -166,6 +166,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   hold. frontoffice values carry `weeks` ({k: season*100+week, p}) for season-limited sums.
 - `assets/draft.js` + Draft Kit in app.js (#/draft-history, #/future-drafts, #/draft-grades:
   one page with 3 tabs). History: board per draft (2023 startup = 22-round snake, shown but
+  with NO tier colors at all (owner, Oct 2026: plain .dk-plain squares, no legend, hover card =
+  production only; rookie boards keep colors), and
   never graded; rookie drafts 3 rounds, linear), rows = rounds, columns = draft slot, cells
   colored Steal/Hit/Fair/Miss/Bust (Barely played = light red), Rookie of the Year badge
   ("ROY '25", = DATA.rookies[season][0], also on the Grades pick list), tap -> Player Index;
