@@ -229,6 +229,51 @@ const winsOf = w => (w.h2h ?? 0) + (w.median ?? 0);
 const SLOT_FITS = { PG: ['PG'], SG: ['SG'], G: ['PG', 'SG'], SF: ['SF'], PF: ['PF'], F: ['SF', 'PF'], C: ['C'] };
 const fits = (slot, positions) => !SLOT_FITS[slot] || (positions ?? []).some(p => SLOT_FITS[slot].includes(p));
 
+// Injury tags that keep a player out of an assumed lineup.
+const SITS = /^(out|ir|suspension|inactive|doubtful)$/i;
+// A bench player's games still to come (only games after he's moved in count), as a sim state.
+function benchState(b, slate, today) {
+  const games = (slate[b.team] ?? []).filter(g => (g.status !== 'complete' && g.date > today) || (g.date === today && g.status === 'pre_game'));
+  const perGame = b.perPlay || b.perGame || b.fpg || b.fpgLast || 0;
+  if (!games.length || !perGame) return null;
+  return { state: { mu: perGame * LOCK_CAL, sd: Math.max(1, perGame * LOCK_CAL * LOCK_SPREAD), cur: null, k: games.length }, games };
+}
+// What a starter is worth to keep: his settled score, or the better of locking now and playing on.
+const keepOf = s => (s.fixed != null ? s.fixed : Math.max(s.cur ?? 0, barsOf(s)[s.k] ?? 0));
+// Slot order for placing players: the pickiest slots first, UTIL last.
+const SLOT_RANK = { C: 0, PG: 0, SG: 0, SF: 0, PF: 0, G: 1, F: 1 };
+
+// Another team's best available lineup from now on (the owner: assume opponents start their
+// best healthy players, not just today's lineup). Locked and in-progress starters stay put;
+// a starter listed Out/Doubtful keeps only what he already has; healthy bench players with
+// games left can take any open slot they fit. Greedy: most valuable first, pickiest slot first.
+export function bestLineup(c, slate, today) {
+  const rows = c.rows;
+  const placed = rows.map(r => (!r.empty && ['locked', 'live'].includes(r.call) ? { ...r, state: r.state } : null));
+  const cands = [];
+  rows.forEach((r, i) => {
+    if (r.empty || placed[i]) return;
+    const hurt = SITS.test(r.injury ?? '') && r.state.fixed == null;
+    const state = hurt ? { fixed: r.state.cur ?? 0 } : r.state;
+    cands.push({ row: r, state, value: keepOf(state), elig: r.elig, fromBench: false });
+  });
+  for (const b of c.team.bench) {
+    if (SITS.test(b.injury ?? '')) continue;
+    const bs = benchState(b, slate, today);
+    if (bs) cands.push({ row: { ...b, call: 'plan', sched: (slate[b.team] ?? []) }, state: bs.state, value: barsOf(bs.state)[bs.state.k], elig: b.elig, fromBench: true });
+  }
+  for (const cand of cands.sort((a, b) => b.value - a.value)) {
+    const open = rows.map((r, i) => i).filter(i => !placed[i] && fits(rows[i].slot, cand.elig))
+      .sort((a, b) => (SLOT_RANK[rows[a].slot] ?? 2) - (SLOT_RANK[rows[b].slot] ?? 2));
+    if (!open.length) continue;
+    const i = open[0];
+    placed[i] = { ...cand.row, slot: rows[i].slot, state: cand.state, fromBench: cand.fromBench, sitting: cand.state !== cand.row.state && !cand.fromBench };
+  }
+  const lineup = placed.map((p, i) => p ?? { slot: rows[i].slot, empty: true, state: { fixed: 0 } });
+  const inLineup = new Set(lineup.filter(p => !p.empty).map(p => p.pid));
+  return { lineup, states: lineup.map(p => p.state), benched: rows.filter(r => !r.empty && !inLineup.has(r.pid)) };
+}
+
 // Lock calls that go after wins instead of points: for each unlocked score, the week is
 // played out both ways (lock it now / keep playing) and the coach picks whichever gives
 // the better chance of beating the opponent plus the chance of beating the median.
@@ -245,7 +290,11 @@ export function gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode = 'win', ma
   }
   const mine = all[me];
   if (!mine) return null;
-  const teams = Object.fromEntries(Object.entries(all).map(([o, c]) => [o, c.rows.map(r => r.state)]));
+  // You: your lineup as set (the bench tips below cover changes). Everyone else: their best
+  // available lineup, for the head-to-head and the median.
+  const best = {};
+  for (const [o, c] of Object.entries(all)) if (o !== me) best[o] = bestLineup(c, slate, ctx.today);
+  const teams = Object.fromEntries(Object.entries(all).map(([o, c]) => [o, o === me ? c.rows.map(r => r.state) : best[o].states]));
   const now = winChance(teams, me, opp, medianOn);
   const swapTeam = (i, state) => ({ ...teams, [me]: teams[me].map((s, j) => (j === i ? state : s)) });
 
@@ -278,18 +327,14 @@ export function gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode = 'win', ma
   // whose spot he fits. Worth = what his games are worth with the Balanced bars.
   const swaps = [];
   const benchOk = mine.team.bench.filter(b => !OUT.test(b.injury ?? ''));
-  const today = ctx.today;
   for (const b of benchOk) {
-    const games = (slate[b.team] ?? []).filter(g => g.status !== 'complete' && g.date > today || (g.date === today && g.status === 'pre_game'));
-    if (!games.length) continue;
-    const perGame = b.perPlay || b.perGame || b.fpg || b.fpgLast || 0;
-    if (!perGame) continue;
-    const state = { mu: perGame * LOCK_CAL, sd: Math.max(1, perGame * LOCK_CAL * LOCK_SPREAD), cur: null, k: games.length };
+    const bs = benchState(b, slate, ctx.today);
+    if (!bs) continue;
+    const { state, games } = bs;
     const worth = barsOf(state)[games.length];
     mine.rows.forEach((r, i) => {
       if (r.empty || ['locked', 'live'].includes(r.call) || !fits(r.slot, b.elig)) return;
-      const s = r.state;
-      const keep = s.fixed != null ? s.fixed : Math.max(s.cur ?? 0, barsOf(s)[s.k] ?? 0);
+      const keep = keepOf(r.state);
       if (worth - keep >= 3) swaps.push({ b, r, i, state, games, worth: r1(worth), keep: r1(keep), gain: r1(worth - keep) });
     });
   }
@@ -304,7 +349,7 @@ export function gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode = 'win', ma
     picked.push(s);
     if (picked.length === 3) break;
   }
-  return { ...mine, opp, oppCoach: opp ? all[opp] : null, now, swaps: picked, medianOn };
+  return { ...mine, opp, oppCoach: opp ? all[opp] : null, oppBest: opp ? best[opp] : null, now, swaps: picked, medianOn };
 }
 
 // ---------- Daily briefing ----------

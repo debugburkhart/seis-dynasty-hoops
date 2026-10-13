@@ -251,7 +251,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   earns only games AFTER he's moved in; locked starters can't be moved; a benched starter's score
   is lost. Swap if bench worth (Balanced value of his future games) beats the starter's keep value
   (settled score, or max(current, bars[k])) by 3+, slot eligibility via fantasy_positions
-  (teamRoster `elig`), top 3, each with win chance before -> after.
+  (teamRoster `elig`), top 3, each with win chance before -> after. Opponents (owner, Oct 2026): every
+  team but yours is simulated with bestLineup() = its best healthy lineup from now on (locked /
+  in-progress starters stay; Out/IR/Suspension/Inactive/Doubtful starters keep only their current
+  score; healthy bench players with games left fill slots they fit; greedy by value, pickiest slot
+  first). Your lineup stays as set. Coach shows "Their best lineup" (From bench tags + assumed-out
+  list); Briefing odds/expected finals use the same.
   Briefing: lock calls, this week (gameCoach's expected finals + win/median chances), lineup tips
   (swaps), tonight's games, injury news (localStorage gm-inj-{owner}, rolls over daily), top 3
   waiver risers.

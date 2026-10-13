@@ -2514,7 +2514,18 @@ async function renderCoach(body, params) {
     </div>`);
   const riskBtns = GM_MODES.map(([k, label]) => `<a href="#" data-risk="${k}" class="${k === w.mode ? 'on' : ''}">${label}</a>`).join('');
   const opp = coach.opp;
-  const oppRow = r => (r.empty ? '' : `<li><span>${esc(r.name)}<small>${esc(r.slot)} · ${esc(r.call === 'locked' ? `locked at ${num(r.score)}` : r.call === 'final' ? `done: ${num(r.score)} counts` : r.call === 'none' ? 'no games' : r.call === 'live' ? 'playing now' : r.state.cur != null ? `${num(r.state.cur)} so far, ${r.state.k} game${r.state.k === 1 ? '' : 's'} left` : `${r.state.k} game${r.state.k === 1 ? '' : 's'} to play`)}</small></span><b class="gm-badge-s gm-${r.call === 'lock' || r.call === 'wait' ? 'wait' : r.call}">${r.call === 'locked' || r.call === 'final' ? num(r.score) : r.call === 'none' ? '0' : 'Open'}</b></li>`);
+  // The opponent's lineup as the coach assumes it: their best healthy players (fromBench = moved in).
+  const oppRow = r => {
+    if (r.empty) return `<li><span>Empty spot<small>${esc(r.slot)} · nobody healthy with games left to fill it</small></span><b class="gm-badge-s gm-none">0</b></li>`;
+    const s = r.state;
+    const what = s.fixed != null
+      ? (r.call === 'locked' ? `locked at ${num(s.fixed)}` : r.sitting ? `listed ${r.injury}: keeps ${num(s.fixed)}` : r.call === 'none' ? 'no games' : `done: ${num(s.fixed)} counts`)
+      : r.call === 'live' ? 'playing now'
+        : s.cur != null ? `${num(s.cur)} so far, ${s.k} game${s.k === 1 ? '' : 's'} left` : `${s.k} game${s.k === 1 ? '' : 's'} to play`;
+    const badge = s.fixed != null ? num(s.fixed) : 'Open';
+    return `<li><span>${esc(r.name)}${r.fromBench ? ' <span class="cm-pill good">From bench</span>' : ''} ${injuryTag(r)}<small>${esc(r.slot)} · ${esc(what)}</small></span><b class="gm-badge-s gm-${s.fixed != null ? 'locked' : 'wait'}">${badge}</b></li>`;
+  };
+  const benchedOpp = coach.oppBest?.benched ?? [];
 
   body.innerHTML = `<div class="gm-page">
     <div class="cm-pickers gm-tools">
@@ -2536,13 +2547,15 @@ async function renderCoach(body, params) {
         ${swapList(w, coach.swaps)}
       </section>
       ${opp ? `<section class="card">
-        <div class="card-head"><h2>Their lineup</h2><span class="card-sub">${esc(teamName(opp, w.season))}</span></div>
-        <ol class="aw-race">${coach.oppCoach.rows.map(oppRow).join('')}</ol>
+        <div class="card-head"><h2>Their best lineup</h2><span class="card-sub">${esc(teamName(opp, w.season))}</span></div>
+        <p class="cm-rule">The coach assumes they’ll start their best healthy players from here on, not just today’s lineup: locked players stay, anyone listed Out or Doubtful keeps only what he already has, and healthy bench players with games left move in.</p>
+        <ol class="aw-race">${coach.oppBest.lineup.map(oppRow).join('')}</ol>
+        ${benchedOpp.length ? `<p class="cm-rule">Assumed out of their lineup: ${benchedOpp.map(r => `${esc(r.name)}${r.injury ? ` (${esc(r.injury)})` : ''}`).join(', ')}.</p>` : ''}
       </section>` : ''}
     </div>
     <section class="card">
       <div class="card-head"><h2>How the coach decides</h2></div>
-      <p class="cm-rule">Each starter counts one game a week: the one you lock, or else his last game. <b>Play to win</b> (the default) plays out the rest of the week a few thousand times, every team’s remaining games, both ways (lock his score now, or keep playing), and picks whichever gives the better chance of beating your opponent plus the chance of beating the league median. It knows which of their players are already locked or done. Ahead, it locks more to protect the lead; behind, it waits for a bigger night.</p>
+      <p class="cm-rule">Each starter counts one game a week: the one you lock, or else his last game. <b>Play to win</b> (the default) plays out the rest of the week a few thousand times, every team’s remaining games, both ways (lock his score now, or keep playing), and picks whichever gives the better chance of beating your opponent plus the chance of beating the league median. It knows which of their players are already locked or done, and assumes every other team starts its best healthy players from here on (not just today’s lineup). Ahead, it locks more to protect the lead; behind, it waits for a bigger night.</p>
       <p class="cm-rule"><b>Safe</b>, <b>Balanced</b> and <b>Bold</b> ignore the matchup and chase points: after each game they compare his score with a <b>lock bar</b>, what waiting is worth on average. Balanced scores the most points; Safe locks more often, Bold chases big games.</p>
       <p class="cm-rule">Tested on the 2025–26 regular season (every team, against opponents’ real scores): managers’ real locks won 167 games (head-to-head plus median), Balanced would have won 195, Play to win about 199 (196 to 201 across test runs). About half an extra win per team per season: small, but it never did worse. Balanced alone would have locked about 3,100 more points than managers did; for ${esc(name(COMMISH))}, about 300 more.</p>
       <p class="cm-rule">“About N a game” is Sleeper’s projection for this week under league scoring, for games he’s expected to play, plus 4% (the test’s best fit). Sleeper doesn’t share which game a manager locked: the coach can tell once a later game replaces the score that counts, and otherwise you can tap <b>I locked him</b> (saved on this device). Opponents are read the same way, so one of their players may show as open until a later game shows the lock.</p>
@@ -2633,7 +2646,7 @@ async function renderBriefing(body, params) {
           </div>
           ${gmOdds(w, coach.now)}`
         : '<p class="empty">No matchup this week.</p>'}
-        <p class="cm-rule">The rest of the week played out 3,000 times for all 8 lineups as set right now, with locks and finished games counted.</p>
+        <p class="cm-rule">The rest of the week played out 3,000 times: your lineup as set, every other team with its best healthy lineup, locks and finished games counted.</p>
       </section>
       <section class="card">
         <div class="card-head"><h2>Lineup tips</h2>${link('coach', 'Lock-in coach')}</div>
