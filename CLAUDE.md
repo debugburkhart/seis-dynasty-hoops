@@ -282,7 +282,22 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (owner asked): each manager's own 2023 startup picks (p.o = who made the pick) on his live roster
   today incl. taxi/IR, %, league total, tap for kept (+ "came back" if he ever dropped/traded him)
   and gone (current holder or not on a roster); also a "Startup picks" line on each card.
-  Next: step 3 Trade finder.
+  STEP 3 Trade finder (built Oct 2026, My GM tab "trades"; logic assets/tradefinder.js): modes
+  get a player / fill a need (G/F/C: other teams' players better this season than your weakest
+  starter there) / sell a player. Package value = (sum score^1.6)^(1/1.6) (two 30s ~ 46), +5% per
+  extra player a side must take on; windows give 95-120% (get), take 90-115% (sell); partner must
+  not lose more than 2 on THEIR timeline (VIEWS in dynasty.js: now 70/20/10 for Contender/Win now,
+  later 20/30/50 for Rising/Rebuilding, else standard); up to 3 pieces from each side's top 28.
+  "Why they'd say yes": fairness, their timeline gain, thin/deep positions, picks for builders,
+  prospects, trade history, roster spots. Trade block in localStorage gm-block-{owner} (+15 rank
+  per block player). Need offers sorted by your-timeline gain; sell shows each team's best first.
+  Guide: dynastyGuide() on the Dynasty tab (#dy-guide, opened/scrolled by ?guide=1, linked from the
+  Trade finder): SCORE_TIERS with live counts + examples, arrows, prospect grade, picks, trade math.
+  Tier tags (owner asked): tierTag(score) in app.js = SCORE_TIERS short names (Cornerstone, Star,
+  High-end starter, Starter, Flex, Depth, Stash, Replaceable; classes .tier-0..7) next to player
+  names in the Dynasty roster + taxi clock, Trade finder offers and Waiver wire rows; also on each
+  guide row.
+  Next: step 4 Playoff odds (after 3-4 weeks of games), step 5 Draft helper.
 - `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has
   wrong; Sleeper's LeBron James photo (id 1362) is Bronny). All player photos go through

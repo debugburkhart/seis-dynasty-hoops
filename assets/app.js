@@ -7,6 +7,7 @@ import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, seriesBefore, standingsBef
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
 import { LOCK_CAL, gameCoach, injuryNews, loadBoxes, loadSlate } from './gm.js';
 import { PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, taxiLeft } from './dynasty.js';
+import { offersFor, offersForNeed, offersToSell, packageValue, tradeContext } from './tradefinder.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
 import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, ownerAt, playerOfTheYear, rookieClass, seasonEndKey } from './awards.js';
 import { ALL_STAR_POSITIONS, CORRECTIONS, DRAFT_CORRECTIONS, PHOTO_CORRECTIONS } from './corrections.js';
@@ -2214,7 +2215,7 @@ function renderCommish(main, params) {
   }
   // Two groups: the Assistant GM tools, then the league office reports.
   const GROUPS = [
-    ['My GM', [['brief', 'Briefing'], ['coach', 'Lock-in coach'], ['dynasty', 'Dynasty'], ['managers', 'Managers']]],
+    ['My GM', [['brief', 'Briefing'], ['coach', 'Lock-in coach'], ['dynasty', 'Dynasty'], ['trades', 'Trade finder'], ['managers', 'Managers']]],
     ['League office', [['scout', 'Scouting report'], ['waivers', 'Waiver wire'], ['playoffs', 'Playoff picture'], ['recap', 'Weekly recap'], ['picks', 'Draft picks'], ['races', 'Award races'], ['hype', 'Early hype'], ['wager', 'Wager Weeks'], ['health', 'Health report']]],
   ];
   const TABS = GROUPS.flatMap(([, tabs]) => tabs);
@@ -2242,7 +2243,7 @@ function renderCommish(main, params) {
       <div id="cm-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
     </div>`;
   const body = $('#cm-body', main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, health: renderHealth }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, health: renderHealth }[tab];
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
   });
@@ -2661,6 +2662,9 @@ async function renderBriefing(body, params) {
 
 // Prospect grade tag (players 24 and under), shared by Dynasty and the Waiver wire.
 const prospectChip = p => (p?.prospect ? `<span class="pg pg-${p.prospect.grade[0]}" title="Prospect grade">${p.prospect.grade}</span>` : '');
+// Dynasty tier tag from a 0-100 score (tiers and their meaning: SCORE_TIERS, shown in the guide).
+const TIER_SHORT = ['Cornerstone', 'Star', 'High-end starter', 'Starter', 'Flex', 'Depth', 'Stash', 'Replaceable'];
+const tierTag = score => { const i = SCORE_TIERS.findIndex(([min]) => score >= min); return i < 0 ? '' : `<span class="tier tier-${i}" title="Dynasty tier: ${SCORE_TIERS[i][1]}">${TIER_SHORT[i]}</span>`; };
 
 async function gmDynasty(params) {
   const cur = DATA.seasons.at(-1);
@@ -2761,7 +2765,7 @@ async function renderDynasty(body, params) {
     <div class="cm-races">
       <section class="card">
         <div class="card-head"><h2>Roster by dynasty score</h2><span class="card-sub">${roster.length} players</span></div>
-        <ol class="aw-race dy-list">${roster.map(p => `<li><span>${esc(p.name)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))} · ${trendOf(p)}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small></span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
+        <ol class="aw-race dy-list">${roster.map(p => `<li><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))} · ${trendOf(p)}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small></span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
       </section>
       <div class="dy-side">
         <section class="card">
@@ -2771,7 +2775,7 @@ async function renderDynasty(body, params) {
         </section>
         <section class="card">
           <div class="card-head"><h2>Taxi clock</h2><span class="card-sub">${taxi.length} of 15</span></div>
-          ${taxi.length ? `<ol class="aw-race">${taxi.map(p => `<li><span>${esc(p.name)} ${grade(p)}<small>${p.nbaSeasons} NBA season${p.nbaSeasons === 1 ? '' : 's'} before this one · score ${p.score}${p.prospect ? ` · starter ${pct(p.prospect.starter)}` : ''}</small></span><b class="cm-pill ${taxiLeft(p) <= 0 ? 'bad' : ''}">${esc(taxiText(taxiLeft(p)))}</b></li>`).join('')}</ol>` : '<p class="empty">Nobody on taxi.</p>'}
+          ${taxi.length ? `<ol class="aw-race">${taxi.map(p => `<li><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)}<small>${p.nbaSeasons} NBA season${p.nbaSeasons === 1 ? '' : 's'} before this one · score ${p.score}${p.prospect ? ` · starter ${pct(p.prospect.starter)}` : ''}</small></span><b class="cm-pill ${taxiLeft(p) <= 0 ? 'bad' : ''}">${esc(taxiText(taxiLeft(p)))}</b></li>`).join('')}</ol>` : '<p class="empty">Nobody on taxi.</p>'}
           <p class="cm-rule">A player can stay on taxi through his 3rd NBA season (seasons counted from real games). <b>Last year</b> = this is his last season on taxi; <b>1 more yr</b> = he can stay one more season after this.${taxi.length > 15 ? ` <b>${taxi.length - 15} over the 15-player limit.</b>` : ''}</p>
         </section>
         <section class="card">
@@ -2781,6 +2785,7 @@ async function renderDynasty(body, params) {
         </section>
       </div>
     </div>
+    ${dynastyGuide(v, params.get('guide') === '1')}
     <section class="card">
       <div class="card-head"><h2>How dynasty scores work</h2></div>
       <p class="cm-rule"><b>0–100</b>: 0 is what you could pick up off waivers, 100 is the league’s most valuable player (now ${esc(Object.values(v.players).sort((a, b) => b.worth - a.worth)[0]?.name ?? '')}). It blends three seasons of fantasy points per game, ${SEASON_WEIGHTS.map(w => `${w * 100}%`).join(' / ')}: this season is Sleeper’s projection under league scoring (players listed Out count half), and the next two follow an age curve fitted on 10 seasons of NBA stats: players improve about 10–15% a year up to 22, level off around 24–25, and lose about 5% a year by 29 and 10% by 31. The arrow is his value in 2 seasons vs this one.</p>
@@ -2788,6 +2793,134 @@ async function renderDynasty(body, params) {
       <p class="cm-rule"><b>Prospect grade</b> (players ${PROSPECT_MAX_AGE} and under, A+ to F): the score above looks 3 seasons ahead, which undersells young players, so the grade asks where he’ll be in 3 seasons. His points per game are carried forward on the age curve and compared with how ${'1,777'} young NBA players since 2012 actually turned out (counting the ones who fell out of the league). Checked on players the model never saw (2019–2022): when it said about 21% would become starters, 15% did; about 59%, 67% did; about 83%, 86% did. A+ = 50%+ star chance; A = 30%+ star or 85%+ starter; A– to B– = 70% down to 25% starter; C+ to D = mostly his rotation chance; F = under 12% to even be a rotation player.</p>
     </section></div>`;
   bindTeamPick(body);
+  if (params.get('guide') === '1') $('#dy-guide', body)?.scrollIntoView({ block: 'start' });
+}
+
+// Guide to the dynasty numbers (Dynasty tab, linked from the Trade finder and Waiver wire):
+// score tiers with how many players are in each right now and league examples.
+const SCORE_TIERS = [
+  [90, 'Franchise cornerstone', 'The rare build-around player. Almost never worth trading.'],
+  [70, 'Star', 'A top-10 type asset: only for a huge return.'],
+  [50, 'High-end starter', 'Locks in big numbers most weeks.'],
+  [30, 'Starter', 'A solid weekly starter (roughly the top 70).'],
+  [15, 'Flex / bench starter', 'Starts some weeks; good depth.'],
+  [5, 'Depth', 'Bench piece or a reasonable dart throw.'],
+  [1, 'Stash', 'About waiver level now, with a little upside.'],
+  [0, 'Replaceable', 'No better than what’s on the waiver wire.'],
+];
+function dynastyGuide(v, open = false) {
+  const all = Object.values(v.players).filter(p => p.team || p.owner);
+  const tierOf = s => SCORE_TIERS.find(([min]) => s >= min);
+  const rows = SCORE_TIERS.map(([min, label, text], i) => {
+    const max = i ? SCORE_TIERS[i - 1][0] - 1 : 100;
+    const inTier = all.filter(p => tierOf(p.score) === SCORE_TIERS[i]).sort((a, b) => b.score - a.score);
+    const ex = inTier.filter(p => p.owner).slice(0, 2).map(p => `${p.name} ${p.score}`).join(', ');
+    return `<tr><td><b>${min === 0 ? '0' : `${min}–${max}`}</b></td><td>${tierTag(min)} <b>${label}</b><small>${text}${ex ? ` E.g. ${esc(ex)}.` : ''}</small></td><td>${inTier.length}</td></tr>`;
+  }).join('');
+  const pick = r => { const ps = v.picks.filter(p => p.round === r); return ps.length ? Math.round(ps.reduce((a, p) => a + p.score, 0) / ps.length) : 0; };
+  return `
+    <section class="card" id="dy-guide">
+      <details${open ? ' open' : ''}><summary class="dy-guide-sum"><h2>Guide: what the numbers mean</h2><span class="card-sub">Tap to open or close</span></summary>
+        <table class="cm-table dy-tiers"><thead><tr><th>Score</th><th>What it means</th><th>Players</th></tr></thead><tbody>${rows}</tbody></table>
+        <ul class="cm-list dy-guide-list">
+          <li><b>Dynasty score (0–100)</b>: value over the next 3 seasons (50% this season, 30% next, 20% the one after). 0 = waiver level, 100 = the league’s most valuable player. Scores compare players across positions and ages.</li>
+          <li><b>Arrow (↑ / ↓)</b>: his value two seasons from now vs this season, from the age curve. “Steady” = within 5%.</li>
+          <li><b>Prospect grade (A+ to F)</b>: players 24 and under. His chances in 3 seasons of being a rotation player (top 120), a starter (top 72) or a star (top 24). A score says what he’s worth now; the grade says where he’s headed.</li>
+          <li><b>Picks</b>: an average 1st is worth about ${pick(1)}, a 2nd about ${pick(2)}, a 3rd about ${pick(3)} (10% less for each year until the draft).</li>
+          <li><b>Adding up a trade</b>: scores don’t simply add. Two 30s are worth about one ${Math.round(packageValue([30, 30]))}, three 20s about one ${Math.round(packageValue([20, 20, 20]))}, so one star beats a pile of role players.</li>
+          <li><b>Outlook labels</b> (Contender, Win now, Rising, Fading, Rebuilding, Middle): from a team’s rank now vs in 2 years on the Dynasty tab. Win-now teams value this season more; building teams value later seasons and picks more.</li>
+        </ul>
+      </details>
+    </section>`;
+}
+
+// ---- Trade finder (logic in assets/tradefinder.js) ----
+
+async function renderTrades(body, params) {
+  const { season, me, f, v } = await gmDynasty(params);
+  if (route().page !== 'commish') return;
+  const c = tradeContext(DATA, v, f.rosters, me);
+  if (!c.assets[me]) {
+    body.innerHTML = `<div class="gm-page">${gmTeamPick(me, season, 'trades')}<section class="card soon-card"><p>No roster found for this team.</p></section></div>`;
+    bindTeamPick(body);
+    return;
+  }
+  const blockKey = `gm-block-${me}`;
+  const block = gmLoad(blockKey, []);
+  const mode = ['get', 'need', 'sell'].includes(params.get('mode')) ? params.get('mode') : 'get';
+  const hash = extra => `#/commish?${new URLSearchParams({ tab: 'trades', ...(me === COMMISH ? {} : { team: me }), mode, ...extra })}`;
+  const owners = Object.keys(c.assets).filter(o => o !== me).sort((a, b) => name(a).localeCompare(name(b)));
+  const assetName = a => `${a.name} · ${a.score}`;
+  const findAsset = id => Object.values(c.assets).flat().find(a => a.id === id);
+
+  // Pickers for each mode.
+  let picker = '';
+  let offers = [];
+  let note = '';
+  if (mode === 'get') {
+    const target = findAsset(params.get('target'));
+    picker = `<label class="hy-pick cm-pick"><span class="hy-pick-label">Get</span><span class="ed-select"><span class="hy-pick-val">${target ? esc(target.name) : 'Choose a player'}</span>
+      <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+      <select class="tf-select" data-key="target"><option value="">Choose a player…</option>${owners.map(o => `<optgroup label="${esc(name(o))}">${c.assets[o].map(a => `<option value="${esc(a.id)}"${target?.id === a.id ? ' selected' : ''}>${esc(assetName(a))}</option>`).join('')}</optgroup>`).join('')}</select></span></label>`;
+    if (target) offers = offersFor(c, target, { block, limit: 4 });
+    note = target ? (offers.length ? `Offers from your roster for ${esc(target.name)} (${target.score}).` : `No fair offer from your roster for ${esc(target.name)}: you’d have to give more than 3 pieces, or he’s worth more than your best package.`) : 'Pick any player (or pick) on another team to see what it would take.';
+  } else if (mode === 'need') {
+    const pos = ['G', 'F', 'C'].includes(params.get('pos')) ? params.get('pos') : 'G';
+    picker = `<div class="st-stage tf-pos">${[['G', 'Guard'], ['F', 'Forward'], ['C', 'Center']].map(([id, l]) => `<a href="${hash({ pos: id })}" class="${id === pos ? 'on' : ''}">${l}</a>`).join('')}</div>`;
+    const r = offersForNeed(c, pos, { block });
+    offers = r.offers;
+    note = `Players on other teams who’d start for you at ${pos === 'G' ? 'guard' : pos === 'F' ? 'forward' : 'center'} (better this season than your weakest starter there, ${num(r.bar)} a game), each with its best fair offer, best for you first.${offers.length ? '' : ' None found.'}`;
+  } else {
+    const sell = c.assets[me].find(a => a.id === params.get('sell'));
+    picker = `<label class="hy-pick cm-pick"><span class="hy-pick-label">Sell</span><span class="ed-select"><span class="hy-pick-val">${sell ? esc(sell.name) : 'Choose one of yours'}</span>
+      <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+      <select class="tf-select" data-key="sell"><option value="">Choose one of yours…</option>${c.assets[me].map(a => `<option value="${esc(a.id)}"${sell?.id === a.id ? ' selected' : ''}>${esc(assetName(a))}</option>`).join('')}</select></span></label>`;
+    if (sell) offers = offersToSell(c, sell).slice(0, 8);
+    note = sell ? (offers.length ? `The best fair returns for ${esc(sell.name)} (${sell.score}) from each team, best for your timeline first.` : `No fair return found for ${esc(sell.name)}.`) : 'Pick one of your players (or picks) to see what other teams could give.';
+  }
+
+  const assetRow = a => `<li><span>${esc(a.name)} ${a.kind === 'player' ? tierTag(a.score) : ''} ${a.prospect ? prospectChip({ prospect: a.prospect }) : ''}${a.where === 'taxi' ? ' <span class="cm-pill">Taxi</span>' : ''}<small>${a.kind === 'pick' ? 'Rookie pick' : esc([a.pos, a.age != null ? `age ${a.age}` : ''].filter(Boolean).join(' · '))}</small></span><b>${a.score}</b></li>`;
+  const card = o => {
+    const share = Math.round(100 * o.giveTV / (o.giveTV + o.getTV));
+    return `
+    <section class="card tf-offer">
+      <div class="card-head"><h2>${esc(name(o.partner))}</h2><span class="cm-pill ${LABEL_CLS[o.lab] ?? ''}">${esc(o.lab)}</span>${o.upgrade != null ? `<span class="card-sub">+${o.upgrade} a game at the spot</span>` : ''}</div>
+      <div class="tf-sides">
+        <div><div class="tf-side-head">You give <b>${Math.round(o.giveTV)}</b></div><ol class="aw-race">${o.give.map(assetRow).join('')}</ol></div>
+        <div><div class="tf-side-head">You get <b>${Math.round(o.getTV)}</b></div><ol class="aw-race">${o.get.map(assetRow).join('')}</ol></div>
+      </div>
+      <div class="tf-balance" aria-label="Value given vs received"><i style="width:${share}%"></i></div>
+      <ul class="tf-why">${o.why.map(w => `<li>${esc(w)}</li>`).join('')}</ul>
+      <p class="tf-mine">On your timeline: <b class="${o.myGain >= 0 ? 'dy-up' : 'dy-down'}">${o.myGain >= 0 ? '+' : ''}${num(o.myGain)}</b>${o.onBlock ? ` · uses ${o.onBlock} player${o.onBlock === 1 ? '' : 's'} from your trade block` : ''}</p>
+    </section>`;
+  };
+  const blockList = c.assets[me].filter(a => a.kind === 'player').slice(0, 30);
+
+  body.innerHTML = `<div class="gm-page">
+    ${gmTeamPick(me, season, 'trades')}
+    <div class="st-stage tf-modes">${[['get', 'Get a player'], ['need', 'Fill a need'], ['sell', 'Sell a player']].map(([id, l]) => `<a href="#/commish?${new URLSearchParams({ tab: 'trades', ...(me === COMMISH ? {} : { team: me }), mode: id })}" class="${id === mode ? 'on' : ''}">${l}</a>`).join('')}</div>
+    ${picker}
+    <p class="filter-note">${note} <a href="#/commish?tab=dynasty&guide=1${me === COMMISH ? '' : `&team=${me}`}">What do the scores mean?</a></p>
+    ${offers.length ? `<div class="mg-grid tf-grid">${offers.map(card).join('')}</div>` : ''}
+    <section class="card">
+      <details${block.length ? '' : ' open'}><summary class="dy-guide-sum"><h2>Your trade block</h2><span class="card-sub">${block.length} player${block.length === 1 ? '' : 's'} · saved on this device</span></summary>
+        <p class="cm-rule">Sleeper’s trade block isn’t public, so keep yours here. Offers use these players first.</p>
+        <div class="tf-block">${blockList.map(a => `<label class="${block.includes(a.id) ? 'on' : ''}"><input type="checkbox" value="${esc(a.id)}"${block.includes(a.id) ? ' checked' : ''}> ${esc(a.name)} <b>${a.score}</b></label>`).join('')}</div>
+      </details>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>How offers are built</h2></div>
+      <p class="cm-rule">Each offer is fair on the standard dynasty value (within about 5–20%), counting that scores don’t simply add: a package is worth less than its total (two 30s ≈ one ${Math.round(packageValue([30, 30]))}), and a team taking on extra players needs 5% more per player. It also has to work for the other team on <b>their</b> timeline: a win-now team counts this season 70%, a building team counts the later seasons 80%. That gap is where trades both sides like come from. Up to 3 pieces a side, from each team’s ${28} most valuable assets.</p>
+      <p class="cm-rule">“On your timeline” is the same check from your side (${esc(v.outlook[me]?.label ?? '')}). These are starting points: injuries, roster spots and personalities still matter.</p>
+    </section></div>`;
+
+  bindTeamPick(body);
+  body.querySelectorAll('.tf-select').forEach(sel => sel.addEventListener('change', () => { location.hash = hash({ [sel.dataset.key]: sel.value }); }));
+  body.querySelectorAll('.tf-block input').forEach(cb => cb.addEventListener('change', () => {
+    const now = [...body.querySelectorAll('.tf-block input:checked')].map(x => x.value);
+    gmSave(blockKey, now);
+    renderTrades(body, params).catch(() => {});
+  }));
 }
 
 async function renderManagers(body, params) {
@@ -2928,10 +3061,10 @@ async function renderWaivers(body, params) {
   const streams = top(all.filter(p => p.proj > 0).sort((a, b) => b.proj - a.proj));
   const meta = p => [p.pos, p.team || 'No team', p.games ? `${p.games} game${p.games === 1 ? '' : 's'} this week` : 'no games this week'].join(' · ');
   const rows = (list, value, extraLine) => (list.length ? `<ol class="aw-race">${list.map((p, i) => `
-    <li><span>${i + 1}. ${esc(p.name)} ${prospectChip(dy(p))} ${injuryTag(p)}<small>${esc(meta(p))}${extraLine ? ` · ${esc(extraLine(p))}` : ''}${dy(p) ? ` · dynasty ${dy(p).score}` : ''}</small></span><b>${value(p)}</b></li>`).join('')}</ol>`
+    <li><span>${i + 1}. ${esc(p.name)} ${dy(p) ? tierTag(dy(p).score) : ''} ${prospectChip(dy(p))} ${injuryTag(p)}<small>${esc(meta(p))}${extraLine ? ` · ${esc(extraLine(p))}` : ''}${dy(p) ? ` · dynasty ${dy(p).score}` : ''}</small></span><b>${value(p)}</b></li>`).join('')}</ol>`
     : '<p class="empty">Nobody fits right now.</p>');
   const dynRows = (list, value, line) => (list.length ? `<ol class="aw-race">${list.map((p, i) => `
-    <li><span>${i + 1}. ${esc(p.name)} ${prospectChip(p)} ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No NBA team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))} · ${line(p)}</small></span>${value(p)}</li>`).join('')}</ol>`
+    <li><span>${i + 1}. ${esc(p.name)} ${tierTag(p.score)} ${prospectChip(p)} ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No NBA team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))} · ${line(p)}</small></span>${value(p)}</li>`).join('')}</ol>`
     : `<p class="empty">${dyn ? 'Nobody fits right now.' : 'Couldn’t load dynasty values.'}</p>`);
   const chips = [['all', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']].map(([id, label]) =>
     `<a class="${id === pos ? 'on' : ''}" href="#/commish?tab=waivers${id === 'all' ? '' : `&pos=${id}`}">${label}</a>`).join('');

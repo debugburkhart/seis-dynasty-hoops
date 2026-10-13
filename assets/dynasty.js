@@ -8,6 +8,8 @@ import { standingsBefore } from './hype.js';
 
 // The owner chose 50% this season, 30% next, 20% the one after.
 export const SEASON_WEIGHTS = [0.5, 0.3, 0.2];
+// Other timelines, for the Trade finder: how a win-now team and a building team see value.
+export const VIEWS = { std: SEASON_WEIGHTS, now: [0.7, 0.2, 0.1], later: [0.2, 0.3, 0.5] };
 
 // How a player's fantasy points per game change from one season to the next, by his
 // age at the start of the first one. Fitted on every NBA player with 30+ games in
@@ -170,18 +172,28 @@ export function dynastyValues(DATA, f) {
   const top = Math.max(...Object.values(players).map(p => p.worth), 1);
   const score = worth => Math.max(0, Math.min(100, Math.round(100 * worth / top)));
   for (const p of Object.values(players)) p.score = score(p.worth);
+  // The same value on other timelines (Trade finder): win-now teams and building teams weigh
+  // the three seasons differently. Same 0-100 units, not capped.
+  const viewOf = (v, s) => Object.fromEntries(Object.entries(VIEWS).map(([id, w]) =>
+    [id, 100 * abovePart(w[0] * v[0] + w[1] * v[1] + w[2] * v[2] - floor, s) / top]));
+  for (const p of Object.values(players)) p.view = viewOf(p.v, spread(p));
 
   // A pick at overall spot `no`: his 3-season value is k x his points per game.
-  const k = SEASON_WEIGHTS[0] + SEASON_WEIGHTS[1] * ageMult(PICK_AGE) + SEASON_WEIGHTS[2] * ageMult(PICK_AGE) * ageMult(PICK_AGE + 1);
-  const pickWorth = no => (curve ? hitRate * abovePart(k * curve.expect(no) - floor, k * curve.sd) : 0);
+  const kOf = w => w[0] + w[1] * ageMult(PICK_AGE) + w[2] * ageMult(PICK_AGE) * ageMult(PICK_AGE + 1);
+  const pickWorth = (no, w = SEASON_WEIGHTS) => (curve ? hitRate * abovePart(kOf(w) * curve.expect(no) - floor, kOf(w) * curve.sd) : 0);
   const picks = ledger.picks.map(p => {
     const away = Math.max(1, Number(p.season) - Number(season));
     const slot = p.season === nextDraft ? slotOf[p.orig] ?? null : null;
     // Known slot: that pick. Unknown: the average pick of the round.
     const spots = (slot ? [slot] : Array.from({ length: teams }, (_, i) => i + 1)).map(s => (p.round - 1) * teams + s);
-    const worth = spots.reduce((a, no) => a + pickWorth(no), 0) / spots.length * PICK_YEARLY_DISCOUNT ** away;
+    const avgWorth = w => spots.reduce((a, no) => a + pickWorth(no, w), 0) / spots.length * PICK_YEARLY_DISCOUNT ** away;
+    const worth = avgWorth(SEASON_WEIGHTS);
     const v3 = curve ? hitRate * spots.reduce((a, no) => a + curve.expect(no), 0) / spots.length * ageMult(PICK_AGE) * ageMult(PICK_AGE + 1) : 0;
-    return { ...p, slot, worth, score: score(worth), v3: r1(v3), label: `${p.season} ${['1st', '2nd', '3rd'][p.round - 1] ?? `${p.round}th`}${slot ? ` (No. ${slot}, projected)` : ''}` };
+    return {
+      ...p, slot, worth, score: score(worth), v3: r1(v3),
+      view: Object.fromEntries(Object.entries(VIEWS).map(([id, w]) => [id, 100 * avgWorth(w) / top])),
+      label: `${p.season} ${['1st', '2nd', '3rd'][p.round - 1] ?? `${p.round}th`}${slot ? ` (No. ${slot}, projected)` : ''}`,
+    };
   });
 
   // Team outlook: "now" = the best 9 this season (taxi can't play), "in 2 years" = the best
