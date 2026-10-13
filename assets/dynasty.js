@@ -110,8 +110,10 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
     if (!/^\d+$/.test(x.player_id)) continue;
     if (x.player) info[x.player_id] = { ...x.player, team: x.team ?? x.player.team };
     const fp = fantasy(x.stats, scoring) / (x.stats?.gp || 1);
-    if (fp > 0) projPg[x.player_id] = fp;
+    if (!f.projPg && fp > 0) projPg[x.player_id] = fp;
   }
+  // Past weeks (backfill): per-game projections and who was out are given directly.
+  if (f.projPg) Object.assign(projPg, f.projPg);
   const lastPg = pid => {
     const x = f.last?.[pid];
     return x?.gp >= 10 ? fantasy(x, scoring) / x.gp : null;
@@ -126,7 +128,7 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
     const i = info[pid];
     const base = projPg[pid] ?? lastPg(pid) ?? 0;
     const age = ageOn(f.birth?.[pid], season);
-    const out = /^out$/i.test(i?.injury_status ?? '');
+    const out = f.outSet ? f.outSet.has(pid) : /^out$/i.test(i?.injury_status ?? '');
     const v1 = base * (out && !fullInjured ? OUT_THIS_SEASON : 1);
     const v2 = base * ageMult(age);
     const v3 = v2 * ageMult(age == null ? null : age + 1);
@@ -170,7 +172,9 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
   const floor = free[REPLACEMENT_RANK - 1]?.raw ?? 0;
   const spread = p => (p.age != null && p.age <= 22 ? UNCERTAINTY_YOUNG : UNCERTAINTY);
   for (const p of Object.values(players)) p.worth = abovePart(p.raw - floor, spread(p));
-  const top = Math.max(...Object.values(players).map(p => p.worth), 1);
+  // 100 = the most valuable player at full health, so one star listed Out doesn't move everyone.
+  const healthy = p => (p.outCut ? abovePart(SEASON_WEIGHTS[0] * p.v[0] * 2 + SEASON_WEIGHTS[1] * p.v[1] + SEASON_WEIGHTS[2] * p.v[2] - floor, spread(p)) : p.worth);
+  const top = Math.max(...Object.values(players).map(healthy), 1);
   const score = worth => Math.max(0, Math.min(100, Math.round(100 * worth / top)));
   for (const p of Object.values(players)) p.score = score(p.worth);
   // The same value on other timelines (Trade finder): win-now teams and building teams weigh
@@ -230,3 +234,73 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
 // Taxi clock for one player: the league lets a player stay on taxi through his 3rd NBA season.
 // Seasons he can stay on taxi after this one: 0 = this is his last, below 0 = past the limit.
 export const taxiLeft = (p, limit = 3) => limit - 1 - p.nbaSeasons;
+
+// ---------- Score history ----------
+
+// One night's entry for data/dynasty-history.json: players on a roster or with a score above
+// 0; a player listed Out is saved as [discounted score, full-value score].
+export function historyDay(cut, full) {
+  const day = {};
+  for (const p of Object.values(cut.players)) {
+    if (!p.owner && !(p.score > 0)) continue;
+    day[p.pid] = p.out ? [p.score, full.players[p.pid]?.score ?? p.score] : p.score;
+  }
+  return day;
+}
+
+// Rebuild a finished season's scores week by week (regular season), dated the last day of each
+// week. Sleeper doesn't keep old season-long projections, so "this season" is that week's
+// per-game projection (games it projects above 0). A player with none that week (almost always
+// hurt) keeps his last known number and is treated like a player listed Out. Rosters come from
+// that week's lineups (they list every rostered player). Returns { date: day }.
+// SMOOTH: how much each new week moves the running projection (the rest is the weeks before).
+export const BACKFILL_SMOOTH = 0.3;
+export async function backfillSeason(DATA, season, smooth = BACKFILL_SMOOTH) {
+  const s = DATA.seasons.find(x => x.season === season);
+  if (!s) return {};
+  const prev = n => String(Number(season) - n);
+  const [league, rosters, schedule, last, prev2, prev3] = await Promise.all([
+    get(`/v1/league/${s.leagueId}`, {}),
+    get(`/v1/league/${s.leagueId}/rosters`, []),
+    get(`/schedule/nba/regular/${season}`, []),
+    get(`/v1/stats/nba/regular/${prev(1)}`, {}),
+    get(`/v1/stats/nba/regular/${prev(2)}`, {}),
+    get(`/v1/stats/nba/regular/${prev(3)}`, {}),
+  ]);
+  let birth = DATA.birth;
+  if (!birth || !Object.keys(birth).length) {
+    const all = await get('/v1/players/nba', {});
+    birth = Object.fromEntries(Object.entries(all ?? {}).filter(([, p]) => p?.birth_date).map(([pid, p]) => [pid, p.birth_date]));
+  }
+  const scoring = league.scoring_settings ?? {};
+  const ownerOf = Object.fromEntries((rosters ?? []).map(r => [r.roster_id, r.owner_id]));
+  const endOf = {};
+  for (const g of schedule ?? []) if (!endOf[g.week] || g.date > endOf[g.week]) endOf[g.week] = g.date;
+  const lastRegular = (s.playoffStart ?? 22) - 1;
+  const known = {};
+  const out = {};
+  for (let w = 1; w <= lastRegular; w++) {
+    const [proj, matchups] = await Promise.all([
+      get(`/projections/nba/${season}/${w}?season_type=regular`, []),
+      get(`/v1/league/${s.leagueId}/matchups/${w}`, []),
+    ]);
+    if (!endOf[w] || !(matchups ?? []).length) continue;
+    const sum = {};
+    for (const x of proj ?? []) {
+      if (!/^\d+$/.test(x.player_id)) continue;
+      const fp = fantasy(x.stats, scoring);
+      if (fp <= 0) continue;
+      const a = (sum[x.player_id] ??= { t: 0, n: 0 });
+      a.t += fp; a.n++;
+    }
+    const projPg = {};
+    // Running blend of the weekly per-game projections, like a season-long projection.
+    for (const [pid, a] of Object.entries(sum)) { const x = a.t / a.n; projPg[pid] = known[pid] = known[pid] == null ? x : known[pid] + smooth * (x - known[pid]); }
+    const weekRosters = (matchups ?? []).map(m => ({ owner_id: ownerOf[m.roster_id], players: m.players ?? [] })).filter(r => r.owner_id);
+    const outSet = new Set();
+    for (const r of weekRosters) for (const pid of r.players) if (projPg[pid] == null && known[pid] != null) { projPg[pid] = known[pid]; outSet.add(pid); }
+    const f = { season, league, rosters: weekRosters, proj: proj ?? [], projPg, outSet, last, prior: [last, prev2, prev3], traded: [], birth };
+    out[endOf[w]] = historyDay(dynastyValues(DATA, f), dynastyValues(DATA, f, { fullInjured: true }));
+  }
+  return out;
+}

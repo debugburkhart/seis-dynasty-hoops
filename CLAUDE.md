@@ -274,7 +274,20 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   data/dynasty-history.json nightly ({ days: { date: { pid: score | [score, fullValueScore] } } },
   rostered or score > 0, ~3 KB/night; in try/catch so it never breaks the run); tapping a Dynasty
   roster row (.dy-row) opens an SVG line chart (bindScoreCharts: nightly points + today live, tier
-  lines, high/low summary). No backfill possible (Sleeper keeps no past projections). Picks:
+  lines, high/low summary). Backfill (owner chose option 2, Oct 2026): backfillSeason() in dynasty.js
+  rebuilds the last finished season's regular weeks once (update.mjs, hist.backfilled; only marked
+  done with 10+ weeks): per week, rosters from matchups, "this season" = running blend of that
+  week's per-game projections (BACKFILL_SMOOTH 0.3; avg weekly move ~2 pts), no projection that
+  week = last known value + treated as Out; dated the week's last day. Chart is one panel per NBA
+  season (seasonOfDate: Aug+ = that year; scoreSeasons/bindSeasonStrip): scroll-snap strip, swipe on
+  touch (hint + dots), ‹ › arrows only with a mouse (hover:hover), opens on the current season,
+  same y-range across a player's seasons. Risers & fallers card (owner, Oct 2026; fillMovers): biggest
+  score changes per season from the history (past season: first -> last saved point; current season:
+  first saved point, or 30/7 days back, -> today's live scores), League / My team, top 10 each way,
+  missing day = 0, team shown = current holder, follows the injury toggle. Same-day check vs the
+  season-long method: avg 3 pts apart (median 2, 90th pct 8), no bias. Chart: offseason drawn as a
+  short dashed gap, years on old dates. Scale fix: 100 = most valuable player at FULL health
+  (healthy() in dynastyValues), so a star listed Out no longer shifts everyone. Picks:
   Draft Grades rookie curve expect(no) +- curve sd, x hit rate, valued as a 20-year-old, x0.9 per
   year away; unknown slot = round average (avg 1st ~12). Ages: DATA.birth (build-data saves birth
   dates for rostered + used players; fallback /v1/players/nba in the browser). Transactions now

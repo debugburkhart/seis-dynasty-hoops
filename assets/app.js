@@ -2708,7 +2708,8 @@ async function loadDynHistory() {
   return DYN_HISTORY;
 }
 const ctDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
-const shortMd = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+// Month and day, plus the year when it isn't this year ("Mar 15 '26").
+const shortMd = d => { const t = new Date(`${d}T12:00:00`); const md = t.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); return t.getFullYear() === new Date().getFullYear() ? md : `${md} '${String(t.getFullYear()).slice(2)}`; };
 
 function scoreSeries(hist, p, full) {
   const pts = Object.entries(hist.days ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([d, day]) => {
@@ -2722,25 +2723,26 @@ function scoreSeries(hist, p, full) {
 }
 
 const CHART_TIER = ['Cornerstone', 'Star', 'High-end', 'Starter', 'Flex', 'Depth', 'Stash', 'Waiver'];
-function scoreChart(p, pts) {
+// NBA season a date belongs to: from August on it's that year's season ("2025" = 2025-26).
+const seasonOfDate = d => { const [y, m] = d.split('-').map(Number); return String(m >= 8 ? y : y - 1); };
+
+// One season's chart. range = { lo, hi }: the same for every season of a player, so seasons compare.
+function scoreChart(p, pts, range) {
   const W = 380, H = 170, P = { l: 26, r: 84, t: 14, b: 24 };
-  const vals = pts.map(x => x.s);
-  let lo = Math.max(0, Math.floor(Math.min(...vals) - 6));
-  let hi = Math.min(100, Math.ceil(Math.max(...vals) + 6));
-  if (hi - lo < 12) { const mid = (hi + lo) / 2; lo = Math.max(0, Math.round(mid - 6)); hi = Math.min(100, lo + 12); }
+  const { lo, hi } = range;
   const day = d => new Date(`${d}T12:00:00`).getTime() / 864e5;
   const d0 = day(pts[0].d), d1 = Math.max(day(pts.at(-1).d), d0 + 1);
-  const X = d => P.l + (day(d) - d0) / (d1 - d0) * (W - P.l - P.r);
+  const X = d => (pts.length < 2 ? (P.l + W - P.r) / 2 : P.l + (day(d) - d0) / (d1 - d0) * (W - P.l - P.r));
   const Y = s => H - P.b - (s - lo) / (hi - lo) * (H - P.t - P.b);
   // Tier lines inside the range give the numbers meaning (same tiers as the guide).
-  const tiers = SCORE_TIERS.filter(([min]) => min > lo && min < hi).map(([min], i) => {
+  const tiers = SCORE_TIERS.filter(([min]) => min > lo && min < hi).map(([min]) => {
     const idx = SCORE_TIERS.findIndex(t => t[0] === min);
     return `<line class="sc-tier" x1="${P.l}" x2="${W - P.r}" y1="${Y(min)}" y2="${Y(min)}"/><text class="sc-tier-l" x="${W - P.r + 6}" y="${Y(min) + 3}">${CHART_TIER[idx]} ${min}</text>`;
   }).join('');
   const path = pts.map((x, i) => `${i ? 'L' : 'M'}${X(x.d).toFixed(1)},${Y(x.s).toFixed(1)}`).join(' ');
   const dots = pts.map(x => `<g class="sc-pt${x.live ? ' now' : ''}"><title>${shortMd(x.d)}${x.live ? ' (now)' : ''}: ${x.s}</title><circle cx="${X(x.d)}" cy="${Y(x.s)}" r="12" class="sc-hit"/><circle cx="${X(x.d)}" cy="${Y(x.s)}" r="${x.live ? 5 : 3}"/></g>`).join('');
   const last = pts.at(-1);
-  return `<svg class="sc-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(p.name)} dynasty score over time">
+  return `<svg class="sc-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(p.name)} dynasty score, ${seasonSpan(seasonOfDate(last.d))}">
     <text class="sc-ax" x="${P.l - 6}" y="${Y(hi) + 4}" text-anchor="end">${hi}</text>
     <text class="sc-ax" x="${P.l - 6}" y="${Y(lo) + 4}" text-anchor="end">${lo}</text>
     <line class="sc-base" x1="${P.l}" x2="${W - P.r}" y1="${Y(lo)}" y2="${Y(lo)}"/>
@@ -2748,17 +2750,130 @@ function scoreChart(p, pts) {
     ${pts.length > 1 ? `<path class="sc-line" d="${path}"/>` : ''}
     ${dots}
     <text class="sc-val" x="${X(last.d) - 8}" y="${Y(last.s) - 9}" text-anchor="end">${last.s}</text>
-    <text class="sc-ax" x="${P.l}" y="${H - 6}">${shortMd(pts[0].d)}</text>
-    ${pts.length > 1 ? `<text class="sc-ax" x="${W - P.r}" y="${H - 6}" text-anchor="end">${shortMd(last.d)}</text>` : ''}
+    <text class="sc-ax" x="${P.l}" y="${H - 6}">${pts.length > 1 ? shortMd(pts[0].d) : ''}</text>
+    <text class="sc-ax" x="${pts.length > 1 ? W - P.r : X(last.d)}" y="${H - 6}" text-anchor="${pts.length > 1 ? 'end' : 'middle'}">${shortMd(last.d)}</text>
   </svg>`;
 }
 
-function scoreSummary(pts) {
-  if (pts.length < 2) return 'History starts with tonight’s nightly update and adds a point every night from there. This dot is today’s score.';
+function scoreSummary(pts, current) {
+  // Weekly points (a rebuilt past season) are 5+ days apart; nightly points are 1 day apart.
+  const weekly = pts.slice(1).some((x, i) => (new Date(x.d) - new Date(pts[i].d)) / 864e5 >= 5);
+  const how = weekly
+    ? 'One point a week, rebuilt from each week’s Sleeper projections (within about 3 points of the nightly method).'
+    : 'One point a night.';
+  if (pts.length < 2) return current ? 'This season’s history starts with tonight’s nightly update, then adds a point every night. The gold dot is today.' : how;
   const first = pts[0], last = pts.at(-1);
   const hi = pts.reduce((a, x) => (x.s > a.s ? x : a)), lo = pts.reduce((a, x) => (x.s < a.s ? x : a));
   const ch = last.s - first.s;
-  return `Since ${shortMd(first.d)}: ${first.s} → ${last.s} (${ch > 0 ? '+' : ''}${ch}). High ${hi.s} (${shortMd(hi.d)}), low ${lo.s} (${shortMd(lo.d)}). One point per night; the last dot is now.`;
+  return `${shortMd(first.d)} → ${shortMd(last.d)}: ${first.s} → ${last.s} (${ch > 0 ? '+' : ''}${ch}). High ${hi.s} (${shortMd(hi.d)}), low ${lo.s} (${shortMd(lo.d)}). ${how}${current ? ' The gold dot is now.' : ''}`;
+}
+
+// The charts, one season per panel: swipe on phones, arrows with a mouse. Opens on this season.
+function scoreSeasons(p, pts) {
+  const bySeason = {};
+  for (const x of pts) (bySeason[seasonOfDate(x.d)] ??= []).push(x);
+  const seasons = Object.keys(bySeason).sort();
+  const vals = pts.map(x => x.s);
+  let lo = Math.max(0, Math.floor(Math.min(...vals) - 6));
+  let hi = Math.min(100, Math.ceil(Math.max(...vals) + 6));
+  if (hi - lo < 12) { const mid = (hi + lo) / 2; lo = Math.max(0, Math.round(mid - 6)); hi = Math.min(100, lo + 12); }
+  const cur = seasons.at(-1);
+  return `
+    <div class="sc-head"><b>${esc(p.name)}</b> · dynasty score by season</div>
+    <div class="sc-nav">
+      <button type="button" class="sc-arrow sc-prev" aria-label="Previous season">‹</button>
+      <span class="sc-label">${seasonSpan(cur)}</span>
+      <button type="button" class="sc-arrow sc-next" aria-label="Next season">›</button>
+    </div>
+    <div class="sc-strip">${seasons.map(s => `
+      <div class="sc-slide" data-season="${s}">
+        ${scoreChart(p, bySeason[s], { lo, hi })}
+        <p class="cm-rule">${esc(scoreSummary(bySeason[s], s === cur))}</p>
+      </div>`).join('')}</div>
+    ${seasons.length > 1 ? `<div class="sc-dots">${seasons.map(s => `<i data-season="${s}"></i>`).join('')}<span class="sc-swipe">Swipe for other seasons</span></div>` : ''}`;
+}
+
+function bindSeasonStrip(box) {
+  const strip = $('.sc-strip', box);
+  const slides = [...box.querySelectorAll('.sc-slide')];
+  const at = () => Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth));
+  const show = () => {
+    const i = Math.min(slides.length - 1, Math.max(0, at()));
+    $('.sc-label', box).textContent = seasonSpan(slides[i].dataset.season);
+    $('.sc-prev', box).disabled = i === 0;
+    $('.sc-next', box).disabled = i === slides.length - 1;
+    box.querySelectorAll('.sc-dots i').forEach((d, j) => d.classList.toggle('on', j === i));
+  };
+  const go = step => strip.scrollTo({ left: (at() + step) * strip.clientWidth, behavior: 'smooth' });
+  $('.sc-prev', box).addEventListener('click', e => { e.stopPropagation(); go(-1); });
+  $('.sc-next', box).addEventListener('click', e => { e.stopPropagation(); go(1); });
+  strip.addEventListener('scroll', () => requestAnimationFrame(show), { passive: true });
+  strip.scrollLeft = strip.scrollWidth; // open on this season
+  show();
+}
+
+// ---- Risers & fallers: biggest dynasty score changes over a season (Dynasty tab) ----
+// From data/dynasty-history.json. A past season runs from its first saved point to its last; the
+// current season ends with today's live scores and can be narrowed to the last 30 or 7 days.
+// Players missing from a saved day count as 0 (not rostered and no value).
+async function fillMovers(card, v, me) {
+  if (!card) return;
+  const hist = await loadDynHistory();
+  if (!card.isConnected) return;
+  const full = Boolean(gmLoad('gm-dyn-full', false));
+  const val = x => (x == null ? 0 : Array.isArray(x) ? (full ? x[1] : x[0]) : x);
+  const today = ctDate();
+  const cur = seasonOfDate(today);
+  const days = Object.keys(hist.days ?? {}).sort().filter(d => d < today);
+  const seasons = [...new Set([...days.map(seasonOfDate), cur])].sort().reverse();
+  const st = { season: cur, period: 'season', scope: 'league' };
+  const pname = pid => v.players[pid]?.name ?? DATA.players?.[pid]?.n ?? `Player ${pid}`;
+  const chips = (key, opts) => `<div class="st-stage dy-mv-chips" role="group">${opts.map(([id, l]) => `<a href="#" data-k="${key}" data-v="${id}" class="${st[key] === id ? 'on' : ''}">${l}</a>`).join('')}</div>`;
+  const row = r => `<li><span>${esc(pname(r.pid))} ${tierTag(r.b)}<small>${esc(v.players[r.pid]?.owner ? `now ${name(v.players[r.pid].owner)}` : 'not on a roster')} · ${r.a} → ${r.b}</small></span><b class="${r.d > 0 ? 'dy-up' : 'dy-down'}">${r.d > 0 ? '+' : ''}${r.d}</b></li>`;
+
+  const draw = () => {
+    const inSeason = days.filter(d => seasonOfDate(d) === st.season);
+    const live = st.season === cur;
+    let start = inSeason[0];
+    if (live && st.period !== 'season') {
+      const back = new Date(`${today}T12:00:00`); back.setDate(back.getDate() - (st.period === 'd7' ? 7 : 30));
+      const cutoff = back.toISOString().slice(0, 10);
+      start = inSeason.find(d => d >= cutoff) ?? inSeason[0];
+    }
+    const end = live ? null : inSeason.at(-1);
+    const endScore = pid => (live ? v.players[pid]?.score ?? 0 : val(hist.days[end]?.[pid]));
+    let body = '';
+    if (!start || (!live && start === end)) {
+      body = `<p class="empty">${live ? 'This season’s movement shows once a few nights of history are saved (the nightly update adds one a night).' : 'Not enough saved points for this season.'}</p>`;
+    } else {
+      const pids = new Set([...Object.keys(hist.days[start] ?? {}), ...(live ? Object.values(v.players).filter(p => p.owner || p.score > 0).map(p => p.pid) : Object.keys(hist.days[end] ?? {}))]);
+      let rows = [...pids].map(pid => { const a = val(hist.days[start]?.[pid]); const b = endScore(pid); return { pid, a, b, d: b - a }; }).filter(r => r.d);
+      if (st.scope === 'mine') rows = rows.filter(r => v.players[r.pid]?.owner === me);
+      const up = [...rows].filter(r => r.d > 0).sort((x, y) => y.d - x.d).slice(0, 10);
+      const down = [...rows].filter(r => r.d < 0).sort((x, y) => x.d - y.d).slice(0, 10);
+      body = `
+        <p class="cm-rule">${shortMd(start)} → ${live ? 'today' : shortMd(end)}${st.scope === 'mine' ? ` · ${esc(teamName(me, DATA.seasons.at(-1).season))} only` : ''}. Team shown is where the player is now.</p>
+        <div class="cm-races dy-mv-cols">
+          <div><div class="tf-side-head">Biggest risers</div>${up.length ? `<ol class="aw-race">${up.map(row).join('')}</ol>` : '<p class="empty">Nobody rose.</p>'}</div>
+          <div><div class="tf-side-head">Biggest fallers</div>${down.length ? `<ol class="aw-race">${down.map(row).join('')}</ol>` : '<p class="empty">Nobody fell.</p>'}</div>
+        </div>`;
+    }
+    card.innerHTML = `
+      <div class="card-head"><h2>Risers &amp; fallers</h2><span class="card-sub">Dynasty score change</span></div>
+      <div class="dy-mv-bar">
+        ${chips('season', seasons.map(s => [s, seasonSpan(s)]))}
+        ${st.season === cur ? chips('period', [['season', 'Season'], ['d30', '30 days'], ['d7', '7 days']]) : ''}
+        ${chips('scope', [['league', 'League'], ['mine', 'My team']])}
+      </div>
+      ${body}`;
+    card.querySelectorAll('[data-k]').forEach(a => a.addEventListener('click', e => {
+      e.preventDefault();
+      st[a.dataset.k] = a.dataset.v;
+      if (a.dataset.k === 'season') st.period = 'season';
+      draw();
+    }));
+  };
+  draw();
 }
 
 function bindScoreCharts(body, v) {
@@ -2773,7 +2888,9 @@ function bindScoreCharts(body, v) {
     li.after(row);
     li.setAttribute('aria-expanded', 'true');
     const pts = scoreSeries(await loadDynHistory(), p, Boolean(gmLoad('gm-dyn-full', false)));
-    row.innerHTML = `<div class="sc-box"><div class="sc-head"><b>${esc(p.name)}</b> · dynasty score over time</div>${scoreChart(p, pts)}<p class="cm-rule">${esc(scoreSummary(pts))}</p></div>`;
+    const box = $('.sc-box', row);
+    box.innerHTML = scoreSeasons(p, pts);
+    bindSeasonStrip(box);
   };
   body.querySelectorAll('.dy-row').forEach(li => {
     li.addEventListener('click', () => toggle(li));
@@ -2866,6 +2983,7 @@ async function renderDynasty(body, params) {
         <tbody>${list.map(x => `<tr class="${x.owner === me ? 'cm-me' : ''}"><td>${esc(name(x.owner))}</td><td>No. ${x.nowRank}</td><td>No. ${x.laterRank}</td><td>${x.total}</td><td>${esc(x.label)}</td></tr>`).join('')}</tbody></table></div>
       </details>
     </section>
+    <section class="card" id="dy-movers"><div class="card-head"><h2>Risers &amp; fallers</h2></div><p class="cm-rule">Loading score history…</p></section>
     <div class="cm-races">
       <section class="card">
         <div class="card-head"><h2>Roster by dynasty score</h2><span class="card-sub">${roster.length} players · tap one for his score over time</span></div>
@@ -2899,6 +3017,7 @@ async function renderDynasty(body, params) {
   bindTeamPick(body);
   if (params.get('guide') === '1') $('#dy-guide', body)?.scrollIntoView({ block: 'start' });
   bindScoreCharts(body, v);
+  fillMovers($('#dy-movers', body), v, me).catch(() => {});
   body.querySelectorAll('[data-inj]').forEach(a => a.addEventListener('click', e => {
     e.preventDefault();
     gmSave('gm-dyn-full', a.dataset.inj === 'full');

@@ -83,17 +83,20 @@ await writeFile(`data/snapshots/${today}.json`, JSON.stringify({ date: today, se
 // per night: { days: { date: { pid: score, or [score, fullValueScore] when he's listed Out } } }.
 // Players on a roster or with a score above 0. A problem here never stops the nightly update.
 try {
-  const { loadDynasty, dynastyValues } = await import('../assets/dynasty.js');
+  const { loadDynasty, dynastyValues, historyDay, backfillSeason } = await import('../assets/dynasty.js');
   const feeds = await loadDynasty(data);
-  const cut = dynastyValues(data, feeds);
-  const full = dynastyValues(data, feeds, { fullInjured: true });
-  const day = {};
-  for (const p of Object.values(cut.players)) {
-    if (!p.owner && !(p.score > 0)) continue;
-    day[p.pid] = p.out ? [p.score, full.players[p.pid]?.score ?? p.score] : p.score;
-  }
+  const day = historyDay(dynastyValues(data, feeds), dynastyValues(data, feeds, { fullInjured: true }));
   const hist = (await readJson('data/dynasty-history.json')) ?? { days: {} };
   hist.days[today] = day;
+  // Once: last season rebuilt week by week (the owner asked, Oct 2026), so charts start there.
+  hist.backfilled ??= [];
+  const lastSeason = String(Number(current.season) - 1);
+  if (!hist.backfilled.includes(lastSeason) && data.seasons.some(s => s.season === lastSeason)) {
+    const weeks = await backfillSeason(data, lastSeason);
+    Object.assign(hist.days, weeks);
+    if (Object.keys(weeks).length >= 10) hist.backfilled.push(lastSeason); // else try again tomorrow
+    console.log(`Dynasty history: rebuilt ${lastSeason}, ${Object.keys(weeks).length} weeks.`);
+  }
   await writeFile('data/dynasty-history.json', JSON.stringify(hist));
   console.log(`Dynasty history: saved ${Object.keys(day).length} players for ${today} (${Object.keys(hist.days).length} days).`);
 } catch (e) {
