@@ -265,7 +265,16 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   blunt Managers tone). Per player: v1 = Sleeper season per-game projection (league scoring;
   Out = x0.5; no projection -> last season 10+ gp), v2/v3 = AGE_CURVE (fitted 2015-2025, 3,017
   player pairs, centered; beat flat on 2019-23 checks). worth = E[max(0, raw - floor)] with
-  uncertainty 4 (6 if age <= 22), floor = 5th-best free agent; score = 100 x worth / top. Picks:
+  uncertainty 4 (6 if age <= 22), floor = 5th-best free agent; score = 100 x worth / top. Injury
+  toggle (owner, Oct 2026): dynastyValues(DATA, f, { fullInjured }) from localStorage gm-dyn-full
+  ("Injured: discounted / full value" on the Dynasty tab; applies to Dynasty, Trade finder, Managers,
+  Waiver wire). Discount = Out players' v1 x0.5 (p.outCut); above-floor scoring makes it big for
+  mid-level players (Ingram 35 -> 11). Rows say "listed Out: this season at half / full value";
+  trend arrow compares v3 with the undiscounted v1. Score history (owner, Oct 2026): update.mjs saves
+  data/dynasty-history.json nightly ({ days: { date: { pid: score | [score, fullValueScore] } } },
+  rostered or score > 0, ~3 KB/night; in try/catch so it never breaks the run); tapping a Dynasty
+  roster row (.dy-row) opens an SVG line chart (bindScoreCharts: nightly points + today live, tier
+  lines, high/low summary). No backfill possible (Sleeper keeps no past projections). Picks:
   Draft Grades rookie curve expect(no) +- curve sd, x hit rate, valued as a 20-year-old, x0.9 per
   year away; unknown slot = round average (avg 1st ~12). Ages: DATA.birth (build-data saves birth
   dates for rostered + used players; fallback /v1/players/nba in the browser). Transactions now

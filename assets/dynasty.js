@@ -93,7 +93,8 @@ export async function loadDynasty(DATA) {
 
 // Values for every player with a projection or on a roster, every future rookie pick,
 // and each team's outlook.
-export function dynastyValues(DATA, f) {
+// opts.fullInjured: count players listed Out at full value (the commish's toggle).
+export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
   const scoring = f.league?.scoring_settings ?? {};
   const season = f.season;
   const ownerOf = {};
@@ -126,7 +127,7 @@ export function dynastyValues(DATA, f) {
     const base = projPg[pid] ?? lastPg(pid) ?? 0;
     const age = ageOn(f.birth?.[pid], season);
     const out = /^out$/i.test(i?.injury_status ?? '');
-    const v1 = base * (out ? OUT_THIS_SEASON : 1);
+    const v1 = base * (out && !fullInjured ? OUT_THIS_SEASON : 1);
     const v2 = base * ageMult(age);
     const v3 = v2 * ageMult(age == null ? null : age + 1);
     // NBA seasons played before this one (last 3), for the taxi clock.
@@ -137,7 +138,7 @@ export function dynastyValues(DATA, f) {
       pos: i?.position ?? DATA.players?.[pid]?.pos ?? '',
       team: i?.team ?? DATA.players?.[pid]?.t ?? '',
       injury: i?.injury_status ?? null,
-      age, out, nbaSeasons,
+      age, out, nbaSeasons, outCut: out && !fullInjured,
       owner: ownerOf[pid] ?? null,
       where: where[pid] ?? null,
       source: projPg[pid] ? 'projection' : lastPg(pid) != null ? 'last season' : 'none',

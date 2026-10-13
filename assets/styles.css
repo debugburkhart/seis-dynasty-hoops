@@ -2114,3 +2114,25 @@ a.tl-event:hover { background: #fbf6e6; }
 .tier-5 { background: #efece3; color: #5b6070; }
 .tier-6 { background: #f4f2ec; color: var(--muted); }
 .tier-7 { background: transparent; color: #b7b2a4; border: 1px solid var(--line); padding: 1px 5px; }
+.dy-inj { grid-template-columns: 1fr 1fr; min-width: min(360px, 100%); }
+.dy-inj a { padding: 9px 12px; }
+@media (max-width: 560px) { .gm-tools .dy-inj { width: 100%; } }
+
+/* Dynasty: score over time (tap a roster row) */
+.dy-row { cursor: pointer; }
+.dy-row:hover, .dy-row:focus-visible { background: #fbfaf6; outline: none; }
+.dy-row[aria-expanded="true"] { background: #fbf6e6; }
+.aw-race li.sc-row { display: block; padding: 0 0 8px; border-top: 0; }
+.sc-box { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fbfaf6; }
+.sc-head { font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+.sc-head b { color: var(--ink); }
+.sc-svg { width: 100%; height: auto; display: block; }
+.sc-line { fill: none; stroke: var(--navy-700); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.sc-pt circle:not(.sc-hit) { fill: var(--navy-700); stroke: #fbfaf6; stroke-width: 2; }
+.sc-pt.now circle:not(.sc-hit) { fill: var(--gold); stroke: var(--navy-800); }
+.sc-hit { fill: transparent; }
+.sc-base { stroke: var(--line); stroke-width: 1; }
+.sc-tier { stroke: #d9cfb4; stroke-width: 1; stroke-dasharray: 3 4; }
+.sc-tier-l { font: 700 10px var(--font); fill: var(--muted); }
+.sc-ax { font: 600 10.5px var(--font); fill: var(--muted); }
+.sc-val { font: 900 14px var(--display); fill: var(--navy-800); }

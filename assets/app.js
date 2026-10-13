@@ -2683,15 +2683,103 @@ async function gmDynasty(params) {
   const cur = DATA.seasons.at(-1);
   const me = cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH;
   const f = await loadDynasty(DATA);
-  return { season: cur.season, me, f, v: dynastyValues(DATA, f) };
+  return { season: cur.season, me, f, v: dynastyValues(DATA, f, { fullInjured: gmLoad('gm-dyn-full', false) }) };
 }
 const scoreBar = s => `<span class="dy-bar" aria-hidden="true"><i style="width:${s}%"></i></span><b class="dy-score">${s}</b>`;
 const trendOf = p => {
-  if (!p.v[0]) return '';
-  const pct = Math.round((p.v[2] / p.v[0] - 1) * 100);
+  // Compare with his real per-game level (the injury discount only cuts this season's value).
+  const base = p.outCut ? p.v[0] * 2 : p.v[0];
+  if (!base) return '';
+  const pct = Math.round((p.v[2] / base - 1) * 100);
   return pct >= 5 ? `<span class="dy-up">↑ ${pct}%</span>` : pct <= -5 ? `<span class="dy-down">↓ ${-pct}%</span>` : '<span class="dy-flat">steady</span>';
 };
 const LABEL_CLS = { Contender: 'good', 'Win now': 'good', Rising: 'good', Fading: 'bad', Rebuilding: 'bad' };
+
+// ---- Dynasty score over time (tap a player on the Dynasty tab) ----
+// data/dynasty-history.json is written by the nightly update: { days: { date: { pid: score,
+// or [score, fullValueScore] when he's listed Out } } }. Today's live score is added at the end.
+let DYN_HISTORY = null;
+async function loadDynHistory() {
+  if (DYN_HISTORY) return DYN_HISTORY;
+  try {
+    const res = await fetch(`data/dynasty-history.json?t=${Date.now()}`, { cache: 'no-store' });
+    DYN_HISTORY = res.ok ? await res.json() : { days: {} };
+  } catch { DYN_HISTORY = { days: {} }; }
+  return DYN_HISTORY;
+}
+const ctDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+const shortMd = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+function scoreSeries(hist, p, full) {
+  const pts = Object.entries(hist.days ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([d, day]) => {
+    const x = day[p.pid];
+    return { d, s: x == null ? 0 : Array.isArray(x) ? (full ? x[1] : x[0]) : x };
+  });
+  const today = ctDate();
+  if (pts.at(-1)?.d === today) pts.pop();
+  pts.push({ d: today, s: p.score, live: true });
+  return pts;
+}
+
+const CHART_TIER = ['Cornerstone', 'Star', 'High-end', 'Starter', 'Flex', 'Depth', 'Stash', 'Waiver'];
+function scoreChart(p, pts) {
+  const W = 380, H = 170, P = { l: 26, r: 84, t: 14, b: 24 };
+  const vals = pts.map(x => x.s);
+  let lo = Math.max(0, Math.floor(Math.min(...vals) - 6));
+  let hi = Math.min(100, Math.ceil(Math.max(...vals) + 6));
+  if (hi - lo < 12) { const mid = (hi + lo) / 2; lo = Math.max(0, Math.round(mid - 6)); hi = Math.min(100, lo + 12); }
+  const day = d => new Date(`${d}T12:00:00`).getTime() / 864e5;
+  const d0 = day(pts[0].d), d1 = Math.max(day(pts.at(-1).d), d0 + 1);
+  const X = d => P.l + (day(d) - d0) / (d1 - d0) * (W - P.l - P.r);
+  const Y = s => H - P.b - (s - lo) / (hi - lo) * (H - P.t - P.b);
+  // Tier lines inside the range give the numbers meaning (same tiers as the guide).
+  const tiers = SCORE_TIERS.filter(([min]) => min > lo && min < hi).map(([min], i) => {
+    const idx = SCORE_TIERS.findIndex(t => t[0] === min);
+    return `<line class="sc-tier" x1="${P.l}" x2="${W - P.r}" y1="${Y(min)}" y2="${Y(min)}"/><text class="sc-tier-l" x="${W - P.r + 6}" y="${Y(min) + 3}">${CHART_TIER[idx]} ${min}</text>`;
+  }).join('');
+  const path = pts.map((x, i) => `${i ? 'L' : 'M'}${X(x.d).toFixed(1)},${Y(x.s).toFixed(1)}`).join(' ');
+  const dots = pts.map(x => `<g class="sc-pt${x.live ? ' now' : ''}"><title>${shortMd(x.d)}${x.live ? ' (now)' : ''}: ${x.s}</title><circle cx="${X(x.d)}" cy="${Y(x.s)}" r="12" class="sc-hit"/><circle cx="${X(x.d)}" cy="${Y(x.s)}" r="${x.live ? 5 : 3}"/></g>`).join('');
+  const last = pts.at(-1);
+  return `<svg class="sc-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(p.name)} dynasty score over time">
+    <text class="sc-ax" x="${P.l - 6}" y="${Y(hi) + 4}" text-anchor="end">${hi}</text>
+    <text class="sc-ax" x="${P.l - 6}" y="${Y(lo) + 4}" text-anchor="end">${lo}</text>
+    <line class="sc-base" x1="${P.l}" x2="${W - P.r}" y1="${Y(lo)}" y2="${Y(lo)}"/>
+    ${tiers}
+    ${pts.length > 1 ? `<path class="sc-line" d="${path}"/>` : ''}
+    ${dots}
+    <text class="sc-val" x="${X(last.d) - 8}" y="${Y(last.s) - 9}" text-anchor="end">${last.s}</text>
+    <text class="sc-ax" x="${P.l}" y="${H - 6}">${shortMd(pts[0].d)}</text>
+    ${pts.length > 1 ? `<text class="sc-ax" x="${W - P.r}" y="${H - 6}" text-anchor="end">${shortMd(last.d)}</text>` : ''}
+  </svg>`;
+}
+
+function scoreSummary(pts) {
+  if (pts.length < 2) return 'History starts with tonight’s nightly update and adds a point every night from there. This dot is today’s score.';
+  const first = pts[0], last = pts.at(-1);
+  const hi = pts.reduce((a, x) => (x.s > a.s ? x : a)), lo = pts.reduce((a, x) => (x.s < a.s ? x : a));
+  const ch = last.s - first.s;
+  return `Since ${shortMd(first.d)}: ${first.s} → ${last.s} (${ch > 0 ? '+' : ''}${ch}). High ${hi.s} (${shortMd(hi.d)}), low ${lo.s} (${shortMd(lo.d)}). One point per night; the last dot is now.`;
+}
+
+function bindScoreCharts(body, v) {
+  const toggle = async li => {
+    const next = li.nextElementSibling;
+    if (next?.classList.contains('sc-row')) { next.remove(); li.setAttribute('aria-expanded', 'false'); return; }
+    const p = v.players[li.dataset.pid];
+    if (!p) return;
+    const row = document.createElement('li');
+    row.className = 'sc-row';
+    row.innerHTML = '<div class="sc-box"><p class="cm-rule">Loading history…</p></div>';
+    li.after(row);
+    li.setAttribute('aria-expanded', 'true');
+    const pts = scoreSeries(await loadDynHistory(), p, Boolean(gmLoad('gm-dyn-full', false)));
+    row.innerHTML = `<div class="sc-box"><div class="sc-head"><b>${esc(p.name)}</b> · dynasty score over time</div>${scoreChart(p, pts)}<p class="cm-rule">${esc(scoreSummary(pts))}</p></div>`;
+  };
+  body.querySelectorAll('.dy-row').forEach(li => {
+    li.addEventListener('click', () => toggle(li));
+    li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(li); } });
+  });
+}
 
 // League map: every team's strength now (x) vs in 2 years (y), lines at the league average.
 function dynastyMap(v, me, season) {
@@ -2756,7 +2844,10 @@ async function renderDynasty(body, params) {
   const meter = Math.round((t.lean + 1) * 50);
 
   body.innerHTML = `<div class="gm-page">
-    ${gmTeamPick(me, season, 'dynasty')}
+    <div class="cm-pickers gm-tools">
+      ${gmTeamPick(me, season, 'dynasty')}
+      <div class="st-stage dy-inj" role="group" aria-label="Injured players">${[['cut', 'Injured: discounted'], ['full', 'Injured: full value']].map(([id, l]) => `<a href="#" data-inj="${id}" class="${(id === 'full') === Boolean(gmLoad('gm-dyn-full', false)) ? 'on' : ''}">${l}</a>`).join('')}</div>
+    </div>
     <section class="card dy-head">
       <div class="card-head"><h2>${esc(teamName(me, season))}</h2><span class="cm-pill ${LABEL_CLS[t.label] ?? ''}">${esc(t.label)}</span></div>
       <div class="dy-meter" aria-label="Win now versus built for later"><span>Win now</span><div><i style="left:${meter}%"></i></div><span>Built for later</span></div>
@@ -2777,8 +2868,8 @@ async function renderDynasty(body, params) {
     </section>
     <div class="cm-races">
       <section class="card">
-        <div class="card-head"><h2>Roster by dynasty score</h2><span class="card-sub">${roster.length} players</span></div>
-        <ol class="aw-race dy-list">${roster.map(p => `<li><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))} · ${trendOf(p)}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small></span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
+        <div class="card-head"><h2>Roster by dynasty score</h2><span class="card-sub">${roster.length} players · tap one for his score over time</span></div>
+        <ol class="aw-race dy-list">${roster.map(p => `<li class="dy-row" data-pid="${esc(p.pid)}" tabindex="0" role="button" aria-expanded="false"><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))} · ${trendOf(p)}${p.out ? ` · <span class="${p.outCut ? 'dy-down' : 'dy-flat'}">listed Out: ${p.outCut ? 'this season at half' : 'full value'}</span>` : ''}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small></span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
       </section>
       <div class="dy-side">
         <section class="card">
@@ -2801,12 +2892,18 @@ async function renderDynasty(body, params) {
     ${dynastyGuide(v, params.get('guide') === '1')}
     <section class="card">
       <div class="card-head"><h2>How dynasty scores work</h2></div>
-      <p class="cm-rule"><b>0–100</b>: 0 is what you could pick up off waivers, 100 is the league’s most valuable player (now ${esc(Object.values(v.players).sort((a, b) => b.worth - a.worth)[0]?.name ?? '')}). It blends three seasons of fantasy points per game, ${SEASON_WEIGHTS.map(w => `${w * 100}%`).join(' / ')}: this season is Sleeper’s projection under league scoring (players listed Out count half), and the next two follow an age curve fitted on 10 seasons of NBA stats: players improve about 10–15% a year up to 22, level off around 24–25, and lose about 5% a year by 29 and 10% by 31. The arrow is his value in 2 seasons vs this one.</p>
+      <p class="cm-rule"><b>0–100</b>: 0 is what you could pick up off waivers, 100 is the league’s most valuable player (now ${esc(Object.values(v.players).sort((a, b) => b.worth - a.worth)[0]?.name ?? '')}). It blends three seasons of fantasy points per game, ${SEASON_WEIGHTS.map(w => `${w * 100}%`).join(' / ')}: this season is Sleeper’s projection under league scoring (players listed Out count half for this season; since the score measures value above waiver level, that can cut a mid-level player’s score a lot, e.g. 35 to 11; the “Injured: full value” switch at the top turns that off, and the setting also applies to the Trade finder, Managers and Waiver wire), and the next two follow an age curve fitted on 10 seasons of NBA stats: players improve about 10–15% a year up to 22, level off around 24–25, and lose about 5% a year by 29 and 10% by 31. The arrow is his value in 2 seasons vs this one.</p>
       <p class="cm-rule">Each value carries some uncertainty, so a young player just below waiver level keeps a little value for his upside. <b>Picks</b>: what a rookie at that spot has produced in this league’s drafts (Draft Grades), with the same upside, 10% off per year until the draft. Picks only count their first 3 seasons, so dynasty markets that look further ahead value them higher.</p>
       <p class="cm-rule"><b>Prospect grade</b> (players ${PROSPECT_MAX_AGE} and under, A+ to F): the score above looks 3 seasons ahead, which undersells young players, so the grade asks where he’ll be in 3 seasons. His points per game are carried forward on the age curve and compared with how ${'1,777'} young NBA players since 2012 actually turned out (counting the ones who fell out of the league). Checked on players the model never saw (2019–2022): when it said about 21% would become starters, 15% did; about 59%, 67% did; about 83%, 86% did. A+ = 50%+ star chance; A = 30%+ star or 85%+ starter; A– to B– = 70% down to 25% starter; C+ to D = mostly his rotation chance; F = under 12% to even be a rotation player.</p>
     </section></div>`;
   bindTeamPick(body);
   if (params.get('guide') === '1') $('#dy-guide', body)?.scrollIntoView({ block: 'start' });
+  bindScoreCharts(body, v);
+  body.querySelectorAll('[data-inj]').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    gmSave('gm-dyn-full', a.dataset.inj === 'full');
+    renderDynasty(body, params).catch(() => {});
+  }));
 }
 
 // Guide to the dynasty numbers (Dynasty tab, linked from the Trade finder and Waiver wire):
@@ -3054,7 +3151,7 @@ async function renderWaivers(body, params) {
   const at = (await scoutWeek()) ?? { season: DATA.seasons.at(-1).season, week: 1, started: false };
   const [ctx, extra, dyn] = await Promise.all([
     loadWeek(DATA, at.season, at.week), loadWaivers(at.season, at.week, at.started),
-    loadDynasty(DATA).then(f => dynastyValues(DATA, f)).catch(() => null),
+    loadDynasty(DATA).then(f => dynastyValues(DATA, f, { fullInjured: gmLoad('gm-dyn-full', false) })).catch(() => null),
   ]);
   if (route().page !== 'commish') return;
   const pos = ['G', 'F', 'C'].includes(params.get('pos')) ? params.get('pos') : 'all';

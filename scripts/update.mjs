@@ -79,6 +79,27 @@ const standings = [...current.teams]
   .map((t, i) => ({ rank: i + 1, owner: t.owner, team: t.team, w: t.w, l: t.l, t: t.t, pf: t.pf }));
 await writeFile(`data/snapshots/${today}.json`, JSON.stringify({ date: today, season: current.season, standings }, null, 1));
 
+// Dynasty score history (commish → My GM → Dynasty: tap a player for his chart). One entry
+// per night: { days: { date: { pid: score, or [score, fullValueScore] when he's listed Out } } }.
+// Players on a roster or with a score above 0. A problem here never stops the nightly update.
+try {
+  const { loadDynasty, dynastyValues } = await import('../assets/dynasty.js');
+  const feeds = await loadDynasty(data);
+  const cut = dynastyValues(data, feeds);
+  const full = dynastyValues(data, feeds, { fullInjured: true });
+  const day = {};
+  for (const p of Object.values(cut.players)) {
+    if (!p.owner && !(p.score > 0)) continue;
+    day[p.pid] = p.out ? [p.score, full.players[p.pid]?.score ?? p.score] : p.score;
+  }
+  const hist = (await readJson('data/dynasty-history.json')) ?? { days: {} };
+  hist.days[today] = day;
+  await writeFile('data/dynasty-history.json', JSON.stringify(hist));
+  console.log(`Dynasty history: saved ${Object.keys(day).length} players for ${today} (${Object.keys(hist.days).length} days).`);
+} catch (e) {
+  console.log(`Dynasty history skipped tonight: ${e.message}`);
+}
+
 console.log(`Saved ${data.seasons.length} seasons, ${data.games.length} games, snapshot ${today}.`);
 
 // ---------- Scoring check ----------
