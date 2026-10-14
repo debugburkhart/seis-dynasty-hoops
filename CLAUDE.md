@@ -255,7 +255,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   team but yours is simulated with bestLineup() = its best healthy lineup from now on (locked /
   in-progress starters stay; Out/IR/Suspension/Inactive/Doubtful starters keep only their current
   score; healthy bench players with games left fill slots they fit; greedy by value, pickiest slot
-  first). Your lineup stays as set. Coach shows "Their best lineup" (From bench tags + assumed-out
+  first). Your lineup stays as set. SCORE_CAL (owner asked why Briefing ≠ Scouting, Oct 2026): the
+  sim draws games around 1.082 x projection (the measured average game) while lock bars keep
+  LOCK_CAL 1.04 (gameDist: mu/sd for draws, barMu/barSd for bars); before, scores ran ~6% low.
+  Scouting report also shows the opponent's "Best lineup" projection (bestLineup() players scored
+  with the report's projNow) + a note naming who moves in/out; now within ~3% of the Briefing.
+  Coach shows "Their best lineup" (From bench tags + assumed-out
   list); Briefing odds/expected finals use the same.
   Briefing: lock calls, this week (gameCoach's expected finals + win/median chances), lineup tips
   (swaps), tonight's games, injury news (localStorage gm-inj-{owner}, rolls over daily), top 3

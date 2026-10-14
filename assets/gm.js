@@ -16,6 +16,10 @@ const fantasy = (stats, scoring) => Object.entries(scoring).reduce((sum, [k, v])
 // 53,100; perfect hindsight: 68,300). bigdaddyburk: 8,700 vs 8,400.
 export const LOCK_CAL = 1.04;
 export const LOCK_SPREAD = 0.3;
+// Simulated SCORES use the measured average game instead: 1.082 x the projection (same test,
+// 4,965 games). LOCK_CAL stays the setting for lock decisions (it made the best calls); using
+// it for scores ran projected team totals about 6% low vs the Scouting report.
+export const SCORE_CAL = 1.082;
 // Risk setting: moves every lock bar by a quarter of the spread. Balanced = the most
 // points on average (same test: Safe 64,800, Bold 64,900).
 export const RISK = { safe: -0.25, balanced: 0, bold: 0.25 };
@@ -147,12 +151,18 @@ export function lockCoach(DATA, ctx, boxes, slate, owner, risk = 'balanced', mar
 // A starter's situation for the simulator: a score that's settled ({ fixed }), or games
 // still to come ({ cur, k, mu, sd }: cur = the unlocked score counting now, k = games left).
 // A game in progress counts as a game to come that can't finish under what he has so far.
+// One game for the simulator: draws around the average game (SCORE_CAL); the lock bars that
+// simulated players follow use the decision setting (LOCK_CAL), like the coach's own calls.
+const gameDist = pg => ({
+  mu: pg * SCORE_CAL, sd: Math.max(1, pg * SCORE_CAL * LOCK_SPREAD),
+  barMu: pg * LOCK_CAL, barSd: Math.max(1, pg * LOCK_CAL * LOCK_SPREAD),
+});
 export function simState(r) {
   if (r.empty || r.call === 'none') return { fixed: 0 };
   if (r.call === 'locked' || r.call === 'final' || r.out) return { fixed: r.score ?? 0 };
   const up = r.sched.filter(g => !g.done && !g.playing).length;
-  const mu = (r.perGame || 0) * LOCK_CAL;
-  const s = { mu, sd: Math.max(1, mu * LOCK_SPREAD) };
+  const pg = r.perGame || 0;
+  const s = gameDist(pg);
   if (r.call === 'live') return { ...s, cur: null, k: up + 1, floor: r.score ?? 0 };
   return { ...s, cur: r.score ?? null, k: up };
 }
@@ -160,8 +170,9 @@ export function simState(r) {
 // Points-mode lock bars (Balanced) for a state, cached on it: what waiting is worth with k left.
 function barsOf(s) {
   if (!s.bars) {
-    s.bars = [null, s.mu];
-    for (let k = 2; k <= (s.k || 0); k++) s.bars[k] = expectedMax(s.mu, s.sd, s.bars[k - 1]);
+    const mu = s.barMu ?? s.mu, sd = s.barSd ?? s.sd;
+    s.bars = [null, mu];
+    for (let k = 2; k <= (s.k || 0); k++) s.bars[k] = expectedMax(mu, sd, s.bars[k - 1]);
   }
   return s.bars;
 }
@@ -236,7 +247,7 @@ function benchState(b, slate, today) {
   const games = (slate[b.team] ?? []).filter(g => (g.status !== 'complete' && g.date > today) || (g.date === today && g.status === 'pre_game'));
   const perGame = b.perPlay || b.perGame || b.fpg || b.fpgLast || 0;
   if (!games.length || !perGame) return null;
-  return { state: { mu: perGame * LOCK_CAL, sd: Math.max(1, perGame * LOCK_CAL * LOCK_SPREAD), cur: null, k: games.length }, games };
+  return { state: { ...gameDist(perGame), cur: null, k: games.length }, games };
 }
 // What a starter is worth to keep: his settled score, or the better of locking now and playing on.
 const keepOf = s => (s.fixed != null ? s.fixed : Math.max(s.cur ?? 0, barsOf(s)[s.k] ?? 0));

@@ -5,7 +5,7 @@ import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from '.
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, seriesBefore, standingsBefore, weekPairs } from './hype.js';
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
-import { LOCK_CAL, gameCoach, injuryNews, loadBoxes, loadSlate } from './gm.js';
+import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach } from './gm.js';
 import { PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, taxiLeft } from './dynasty.js';
 import { evaluateTrade, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, tradeContext } from './tradefinder.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
@@ -2314,10 +2314,18 @@ async function renderScouting(body, params) {
     return;
   }
   const opp = pair.a === me ? pair.b : pair.a;
-  const [ctx] = await Promise.all([loadWeek(DATA, season, week)]);
+  const ctx = await loadWeek(DATA, season, week);
+  const [boxes, nbaSlate] = await Promise.all([loadBoxes(season, week, ctx.scoring), loadSlate(season, week)]);
   if (route().page !== 'commish') return;
   const A = teamRoster(DATA, ctx, me);
   const B = teamRoster(DATA, ctx, opp);
+  // Their best healthy lineup (the same one the Lock-in coach and Briefing assume), scored the
+  // way this report scores lineups: who plays from bestLineup(), each player's projection here.
+  const oppBest = bestLineup(lockCoach(DATA, ctx, boxes, nbaSlate, opp), nbaSlate, ctx.today);
+  const oppAll = [...B.starters, ...B.bench, ...B.ir, ...B.taxi].filter(p => !p.empty);
+  const bestProjB = r1(oppBest.lineup.reduce((a, p) => a + (p.empty ? 0 : p.sitting ? p.state.fixed : oppAll.find(x => x.pid === p.pid)?.projNow ?? 0), 0));
+  const bestIn = oppBest.lineup.filter(p => p.fromBench).map(p => p.name);
+  const bestOut = oppBest.benched.map(p => `${p.name}${p.injury ? ` (${p.injury})` : ''}`);
   const table = standingsBefore(DATA, season, week);
   const slate = hypeSlate(DATA, season, week, pairs);
   const g = slate.games.find(x => (x.a === me && x.b === opp) || (x.a === opp && x.b === me));
@@ -2338,6 +2346,10 @@ async function renderScouting(body, params) {
   const notes = [];
   const diff = r1(projA - projB);
   notes.push(`${live ? 'Projected final' : 'Sleeper’s projections with the current lineups'}: ${esc(teamName(me, season))} ${num(projA)}, ${esc(teamName(opp, season))} ${num(projB)}. ${diff === 0 ? 'Dead even.' : `${diff > 0 ? 'You’re' : 'They’re'} ahead by ${num(Math.abs(diff))}.`}`);
+  if (Math.abs(bestProjB - projB) >= 0.5) {
+    const bd = r1(projA - bestProjB);
+    notes.push(`If ${esc(teamName(opp, season))} starts its best healthy lineup${bestIn.length ? ` (${esc(bestIn.join(', '))} in${bestOut.length ? `; ${esc(bestOut.join(', '))} out` : ''})` : ''}: ${num(bestProjB)}, and ${bd === 0 ? 'it’s dead even' : bd > 0 ? `you’re still ahead by ${num(bd)}` : `they’re ahead by ${num(-bd)}`}. The Briefing and Lock-in coach plan against this lineup.`);
+  }
   notes.push(`Your starters have ${gamesOf(A)} game${gamesOf(A) === 1 ? '' : 's'}${ctx.live ? ' left' : ''} this week; theirs have ${gamesOf(B)}. Each starter locks one game, so more games mean more chances at a big night.`);
   const outs = t => t.starters.filter(p => !p.empty && p.injury).map(p => `${p.name} (${p.injury})`);
   if (outs(B).length) notes.push(`Their starters on the injury report: ${esc(outs(B).join(', '))}.`);
@@ -2363,7 +2375,8 @@ async function renderScouting(body, params) {
       <div class="hy-owner">${esc(name(o))}</div>
       <div class="hy-rec">${t ? rec(t.w, t.l, t.t) : ''}${strength(o) != null ? ` · strength ${Math.round(strength(o))}` : ''}</div>
       <div class="hy-pts">${num(live ? team.liveScore : proj)}</div>
-      <div class="hy-pts-label">${live ? `Live · proj. ${num(proj)}` : 'Projected'}</div>
+      <div class="hy-pts-label">${live ? `Live · proj. ${num(proj)}` : 'Projected (as set)'}</div>
+      ${o === opp && Math.abs(bestProjB - projB) >= 0.5 ? `<div class="hy-pts-label sc-best">Best lineup: <b>${num(bestProjB)}</b></div>` : ''}
     </div>`;
   const tape = (label, a, b, ca, cb) => tapeRow(label, a, b, ca, cb);
   const lastMeet = [...series.meetings].reverse().slice(0, 5);
