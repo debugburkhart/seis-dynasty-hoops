@@ -7,7 +7,7 @@ import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, seriesBefore, standingsBef
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
 import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach } from './gm.js';
 import { PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, taxiLeft } from './dynasty.js';
-import { evaluateTrade, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, tradeContext } from './tradefinder.js';
+import { evaluateTrade, moveImpacts, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, teamSnapshot, tradeContext, unpackTeam } from './tradefinder.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
 import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, ownerAt, playerOfTheYear, rookieClass, seasonEndKey } from './awards.js';
 import { ALL_STAR_POSITIONS, CORRECTIONS, DRAFT_CORRECTIONS, PHOTO_CORRECTIONS } from './corrections.js';
@@ -2215,7 +2215,7 @@ function renderCommish(main, params) {
   }
   // Two groups: the Assistant GM tools, then the league office reports.
   const GROUPS = [
-    ['My GM', [['brief', 'Briefing'], ['coach', 'Lock-in coach'], ['dynasty', 'Dynasty'], ['trades', 'Trade finder'], ['managers', 'Managers']]],
+    ['My GM', [['brief', 'Briefing'], ['coach', 'Lock-in coach'], ['dynasty', 'Dynasty'], ['tracker', 'Team tracker'], ['trades', 'Trade finder'], ['managers', 'Managers']]],
     ['League office', [['scout', 'Scouting report'], ['waivers', 'Waiver wire'], ['playoffs', 'Playoff picture'], ['recap', 'Weekly recap'], ['picks', 'Draft picks'], ['races', 'Award races'], ['hype', 'Early hype'], ['wager', 'Wager Weeks'], ['health', 'Health report']]],
   ];
   const TABS = GROUPS.flatMap(([, tabs]) => tabs);
@@ -2243,7 +2243,7 @@ function renderCommish(main, params) {
       <div id="cm-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
     </div>`;
   const body = $('#cm-body', main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, health: renderHealth }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, health: renderHealth }[tab];
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
   });
@@ -2643,6 +2643,11 @@ async function renderBriefing(body, params) {
       <h2>${esc(longDay(ctx.today))}</h2>
       <p class="card-sub">${esc(teamName(me, season))} · Week ${week}${w.started ? '' : ` starts ${esc(longDay(Object.values(w.slate).flat().map(g => g.date).sort()[0] ?? ctx.today))}`}</p>
     </section>
+    ${(() => {
+      const seenTs = trackerSeen(me);
+      const fresh = movesOf(me).filter(x => (x.ts ?? 0) > seenTs);
+      return fresh.length ? `<section class="card tk-alert"><div class="card-head"><h2>Team tracker</h2>${link('tracker', 'See the effect')}</div><p><b class="tk-new">${fresh.length} new roster move${fresh.length === 1 ? '' : 's'}</b> since you last looked: ${fresh.slice(0, 3).map(x => esc(MOVE_KIND[x.type] ?? x.type)).join(', ')}${fresh.length > 3 ? '…' : ''}. The Team tracker shows how each one changed your strength, value, age and positions.</p></section>` : '';
+    })()}
     <div class="cm-races gm-brief">
       <section class="card">
         <div class="card-head"><h2>Lock calls</h2>${link('coach', 'Lock-in coach')}</div>
@@ -3131,6 +3136,195 @@ function dynastyGuide(v, open = false) {
 }
 
 // ---- Trade finder (logic in assets/tradefinder.js) ----
+
+// ---- Team tracker (My GM): roster-move alerts, drift and charts (owner's design, Oct 2026) ----
+// Moves: moveImpacts() in tradefinder.js (each team just before vs just after a move, at today's
+// values). Drift: change over the last 7 days not explained by moves. Charts: nightly team
+// snapshots (dynasty-history.json "teams", rebuilt weekly for last season) + today live.
+const TRACK_METRICS = [
+  ['now', 'This season', 'pts/game (best 9)'], ['later', 'In 2 years', 'pts/game (best 9)'], ['total', 'Total value', 'dynasty points'],
+  ['age', 'Avg age', 'years, by value'], ['G', 'Guards', '100 = league avg'], ['F', 'Forwards', '100 = league avg'], ['C', 'Centers', '100 = league avg'],
+];
+const MOVE_KIND = { trade: 'Trade', waiver: 'Waiver', free_agent: 'Free agent', commissioner: 'Commish' };
+const trackerSeenKey = o => `gm-tracker-seen-${o}`;
+// When a team was last looked at; on a first visit, moves from the last 7 days count as new.
+const trackerSeen = o => Number(gmLoad(trackerSeenKey(o), 0)) || Date.now() - 7 * 864e5;
+// This season's moves involving a team, newest first (for the Briefing's heads-up too).
+const movesOf = o => (DATA.transactions ?? []).filter(x => x.s === DATA.seasons.at(-1).season && (x.owners ?? []).includes(o)).sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
+
+function deltaChip(label, a, b, { digits = 1, better = 'up', rankA, rankB } = {}) {
+  if (a == null || b == null) return '';
+  const d = Math.round((b - a) * 10 ** digits) / 10 ** digits;
+  const rank = rankA != null && rankA !== rankB ? ` · No. ${rankA} → ${rankB}` : '';
+  if (!d && !rank) return '';
+  const good = better === 'up' ? d > 0 || (rankB < rankA) : d < 0;
+  return `<span class="tk-d ${d === 0 ? '' : good ? 'up' : 'down'}"><small>${label}</small> ${d > 0 ? '+' : ''}${num(d)}${rank}</span>`;
+}
+function moveCard(m, o, v, seen) {
+  const x = m.x, b = m.before[o], a = m.after[o];
+  const pname = pid => v.players[pid]?.name ?? DATA.players?.[pid]?.n ?? `Player ${pid}`;
+  const pickName = p => `${p.season} ${['1st', '2nd', '3rd'][p.round - 1] ?? `R${p.round}`}`;
+  const ins = [...Object.entries(x.adds ?? {}).filter(([, w]) => w === o).map(([p]) => `${esc(pname(p))} ${v.players[p] ? tierTag(v.players[p].score) : ''}`), ...(x.picks ?? []).filter(p => p.to === o).map(p => esc(pickName(p)))];
+  const outs = [...Object.entries(x.drops ?? {}).filter(([, w]) => w === o).map(([p]) => `${esc(pname(p))} ${v.players[p] ? tierTag(v.players[p].score) : ''}`), ...(x.picks ?? []).filter(p => p.from === o).map(p => esc(pickName(p)))];
+  const chips = [
+    deltaChip('Now', b.now, a.now, { rankA: b.nowRank, rankB: a.nowRank }),
+    deltaChip('2 yrs', b.later, a.later, { rankA: b.laterRank, rankB: a.laterRank }),
+    deltaChip('Total', b.total, a.total, { digits: 0, rankA: b.totalRank, rankB: a.totalRank }),
+    deltaChip('Age', b.age, a.age, { better: 'down' }),
+    ...['G', 'F', 'C'].map(g => deltaChip(g, b[g], a[g], { digits: 0 })),
+  ].filter(Boolean);
+  const big = b.nowRank !== a.nowRank || b.laterRank !== a.laterRank || b.totalRank !== a.totalRank || ['G', 'F', 'C'].some(g => Math.abs(a[g] - b[g]) >= 5) || Math.abs(a.total - b.total) >= 10 || Math.abs(a.now - b.now) >= 5;
+  const kind = x.type === 'free_agent' && !ins.length ? 'Drop' : MOVE_KIND[x.type] ?? x.type;
+  const others = x.type === 'trade' ? [...new Set(x.owners)].filter(w => w !== o).map(w => name(w)).join(' & ') : '';
+  return `
+    <li class="tk-move${big ? ' big' : ''}${(x.ts ?? 0) > seen ? ' new' : ''}">
+      <div class="tk-top"><span class="cm-pill ${x.type === 'trade' ? 'good' : ''}">${esc(kind)}</span>${others ? `<small>with ${esc(others)}</small>` : ''}${(x.ts ?? 0) > seen ? '<span class="tk-new">New</span>' : ''}<span class="tk-date">${shortMd(new Date(x.ts).toISOString().slice(0, 10))}</span></div>
+      ${ins.length ? `<p class="tk-io"><b class="dy-up">In</b> ${ins.join(', ')}</p>` : ''}
+      ${outs.length ? `<p class="tk-io"><b class="dy-down">Out</b> ${outs.join(', ')}</p>` : ''}
+      <div class="tk-chips">${chips.length ? chips.join('') : '<span class="tk-d"><small>No change to strength, value or positions</small></span>'}</div>
+    </li>`;
+}
+
+// Line chart for one team metric: the team (solid) and the league average (dashed), one panel
+// per season (swipe / arrows, same strip as the player charts), move markers along the bottom.
+function trackerSeasons(pts, metric, markers, fmt) {
+  const bySeason = {};
+  for (const x of pts) (bySeason[seasonOfDate(x.d)] ??= []).push(x);
+  const seasons = Object.keys(bySeason).sort();
+  const vals = pts.flatMap(x => [x.me, x.avg]).filter(n => n != null);
+  const pad = Math.max(1, (Math.max(...vals) - Math.min(...vals)) * 0.12);
+  const lo = Math.floor(Math.min(...vals) - pad), hi = Math.ceil(Math.max(...vals) + pad);
+  const chart = list => {
+    const W = 380, H = 170, P = { l: 34, r: 14, t: 14, b: 26 };
+    const day = d => new Date(`${d}T12:00:00`).getTime() / 864e5;
+    const d0 = day(list[0].d), d1 = Math.max(day(list.at(-1).d), d0 + 1);
+    const X = d => (list.length < 2 ? (P.l + W - P.r) / 2 : P.l + (day(d) - d0) / (d1 - d0) * (W - P.l - P.r));
+    const Y = s => H - P.b - (s - lo) / ((hi - lo) || 1) * (H - P.t - P.b);
+    const line = (key, cls) => list.length > 1 ? `<path class="${cls}" d="${list.map((x, i) => `${i ? 'L' : 'M'}${X(x.d).toFixed(1)},${Y(x[key]).toFixed(1)}`).join(' ')}"/>` : '';
+    const dots = list.map(x => `<g class="sc-pt${x.live ? ' now' : ''}"><title>${shortMd(x.d)}${x.live ? ' (now)' : ''}: ${fmt(x.me)} (league avg ${fmt(x.avg)})</title><circle cx="${X(x.d)}" cy="${Y(x.me)}" r="10" class="sc-hit"/><circle cx="${X(x.d)}" cy="${Y(x.me)}" r="${x.live ? 5 : 2.5}"/></g>`).join('');
+    const marks = markers.filter(mk => mk.d >= list[0].d && mk.d <= list.at(-1).d)
+      .map(mk => `<g class="tk-mark"><title>${esc(mk.title)}</title><path d="M${X(mk.d)},${H - P.b + 2} l4,7 h-8 z"/></g>`).join('');
+    const last = list.at(-1);
+    return `<svg class="sc-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(metric)} over time">
+      <text class="sc-ax" x="${P.l - 6}" y="${Y(hi) + 4}" text-anchor="end">${fmt(hi)}</text>
+      <text class="sc-ax" x="${P.l - 6}" y="${Y(lo) + 4}" text-anchor="end">${fmt(lo)}</text>
+      <line class="sc-base" x1="${P.l}" x2="${W - P.r}" y1="${Y(lo)}" y2="${Y(lo)}"/>
+      ${line('avg', 'tk-avg')}${line('me', 'sc-line')}${dots}${marks}
+      <text class="sc-val" x="${X(last.d) - 8}" y="${Y(last.me) - 9}" text-anchor="end">${fmt(last.me)}</text>
+      <text class="sc-ax" x="${P.l}" y="${H - 6}">${list.length > 1 ? shortMd(list[0].d) : ''}</text>
+      <text class="sc-ax" x="${list.length > 1 ? W - P.r : X(last.d)}" y="${H - 6}" text-anchor="${list.length > 1 ? 'end' : 'middle'}">${shortMd(last.d)}</text>
+    </svg>`;
+  };
+  const cur = seasons.at(-1);
+  return `
+    <div class="sc-nav"><button type="button" class="sc-arrow sc-prev" aria-label="Previous season">‹</button><span class="sc-label">${seasonSpan(cur)}</span><button type="button" class="sc-arrow sc-next" aria-label="Next season">›</button></div>
+    <div class="sc-strip">${seasons.map(s => `<div class="sc-slide" data-season="${s}">${chart(bySeason[s])}</div>`).join('')}</div>
+    ${seasons.length > 1 ? `<div class="sc-dots">${seasons.map(s => `<i data-season="${s}"></i>`).join('')}<span class="sc-swipe">Swipe for other seasons</span></div>` : ''}
+    <p class="cm-rule"><span class="tk-key me"></span> your team · <span class="tk-key avg"></span> league average · ▲ roster moves (trades, and moves that changed something this season). ${pts.length < 3 ? 'Daily points start with tonight’s nightly update; last season is rebuilt weekly.' : ''}</p>`;
+}
+
+async function renderTracker(body, params) {
+  const { season, me, f, v } = await gmDynasty(params);
+  const hist = await loadDynHistory();
+  if (route().page !== 'commish') return;
+  const full = Boolean(gmLoad('gm-dyn-full', false));
+  const pick = rec => unpackTeam(rec?.[full ? 'f' : 'c'] ?? null);
+  const impacts = moveImpacts(DATA, v, f.rosters);
+  const mine = impacts.filter(m => (m.x.owners ?? []).includes(me) && m.before[me] && m.after[me]);
+  const seen = trackerSeen(me);
+  const liveArr = teamSnapshot(v, f.rosters);
+  const live = unpackTeam(liveArr[me]);
+  const today = ctDate();
+  const fresh = mine.filter(m => (m.x.ts ?? 0) > seen);
+
+  // Drift: last 7 days, minus what moves explain.
+  const tdays = Object.keys(hist.teams ?? {}).filter(d => d < today && seasonOfDate(d) === seasonOfDate(today)).sort();
+  const back = new Date(`${today}T12:00:00`); back.setDate(back.getDate() - 7);
+  const cutoff = back.toISOString().slice(0, 10);
+  const base = [...tdays].reverse().find(d => d <= cutoff) ?? null;
+  let drift = '';
+  if (!base) {
+    drift = `<p class="empty">Drift shows once a week of nightly snapshots is saved${tdays[0] ? ` (first: ${shortMd(tdays[0])})` : ' (the first is saved tonight)'}.</p>`;
+  } else {
+    const old = pick(hist.teams[base]?.[me]);
+    const since = mine.filter(m => new Date(m.x.ts).toISOString().slice(0, 10) > base);
+    const moved = k => since.reduce((s, m) => s + (m.after[me][k] - m.before[me][k]), 0);
+    const chips = [['now', 'Now', 1], ['later', '2 yrs', 1], ['total', 'Total', 0], ['G', 'G', 0], ['F', 'F', 0], ['C', 'C', 0]]
+      .map(([k, l, dg]) => old ? deltaChip(l, 0, (live[k] - old[k]) - moved(k), { digits: dg }) : '').filter(Boolean);
+    const oldDay = hist.days?.[base] ?? null; // player scores saved the same night
+    const sv = x => (x == null ? 0 : Array.isArray(x) ? (full ? x[1] : x[0]) : x);
+    const roster = [...new Set((f.rosters.find(r => r.owner_id === me)?.players ?? []))];
+    const movers = !oldDay ? [] : roster.map(pid => ({ p: v.players[pid], d: (v.players[pid]?.score ?? 0) - sv(oldDay[pid]) })).filter(x => x.p && x.d).sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 4);
+    drift = `<p class="cm-rule">Since ${shortMd(base)}, with roster moves taken out: what changed from projections, injuries and age alone.</p>
+      <div class="tk-chips">${chips.length ? chips.join('') : '<span class="tk-d"><small>No drift: steady</small></span>'}</div>
+      ${movers.length ? `<ol class="aw-race">${movers.map(x => `<li><span>${esc(x.p.name)} ${tierTag(x.p.score)} ${injuryTag(x.p)}<small>dynasty score ${sv(oldDay[x.p.pid])} → ${x.p.score}</small></span><b class="${x.d > 0 ? 'dy-up' : 'dy-down'}">${x.d > 0 ? '+' : ''}${x.d}</b></li>`).join('')}</ol>` : ''}`;
+  }
+
+  // Chart series: saved team snapshots + today live.
+  const series = metric => {
+    const pts = Object.keys(hist.teams ?? {}).filter(d => d < today).sort().map(d => {
+      const day = hist.teams[d];
+      const all = Object.values(day).map(pick).filter(Boolean).map(t => t[metric]).filter(n => n != null);
+      const m = pick(day[me]);
+      return m ? { d, me: m[metric], avg: all.reduce((a, b) => a + b, 0) / (all.length || 1) } : null;
+    }).filter(Boolean);
+    const allLive = Object.values(liveArr).map(unpackTeam).map(t => t[metric]).filter(n => n != null);
+    pts.push({ d: today, me: live[metric], avg: allLive.reduce((a, b) => a + b, 0) / (allLive.length || 1), live: true });
+    return pts;
+  };
+  const markers = [
+    ...(DATA.transactions ?? []).filter(x => x.type === 'trade' && (x.owners ?? []).includes(me) && x.ts).map(x => ({ d: new Date(x.ts).toISOString().slice(0, 10), title: `Trade with ${[...new Set(x.owners)].filter(w => w !== me).map(name).join(' & ')}` })),
+    ...mine.filter(m => m.x.type !== 'trade' && Math.abs(m.after[me].total - m.before[me].total) >= 5).map(m => ({ d: new Date(m.x.ts).toISOString().slice(0, 10), title: `${MOVE_KIND[m.x.type] ?? 'Move'}: total ${m.after[me].total - m.before[me].total > 0 ? '+' : ''}${m.after[me].total - m.before[me].total}` })),
+  ];
+  let metric = 'now';
+  const fmtOf = k => (k === 'age' ? x => num(Math.round(x * 10) / 10) : k === 'now' || k === 'later' ? x => num(Math.round(x)) : x => num(Math.round(x)));
+
+  const withEffect = mine.filter(m => ['now', 'later', 'total', 'G', 'F', 'C'].some(k => m.after[me][k] !== m.before[me][k]) || m.before[me].nowRank !== m.after[me].nowRank);
+  const noEffect = mine.length - withEffect.length;
+  body.innerHTML = `<div class="gm-page">
+    ${gmTeamPick(me, season, 'tracker')}
+    <section class="card tk-now">
+      <div class="card-head"><h2>${esc(teamName(me, season))} today</h2><span class="card-sub">${fresh.length ? `<b class="tk-new">${fresh.length} new move${fresh.length === 1 ? '' : 's'}</b> since you last looked` : 'No new moves since you last looked'}</span></div>
+      <div class="dy-stats">
+        <span><b>${num(live.now)}</b> this season · No. ${v.outlook[me]?.nowRank}</span>
+        <span><b>${num(live.later)}</b> in 2 yrs · No. ${v.outlook[me]?.laterRank}</span>
+        <span><b>${live.total}</b> total value · No. ${v.outlook[me]?.totalRank}</span>
+        <span><b>${live.age ?? '–'}</b> avg age</span>
+      </div>
+      <div class="tk-pos">${['G', 'F', 'C'].map(g => `<span class="${live[g] >= 110 ? 'dy-up' : live[g] <= 90 ? 'dy-down' : ''}">${NEED_NAME[g]}s <b>${live[g]}</b> <small>→ ${live[`${g}l`]} in 2 yrs</small></span>`).join('')}</div>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Roster moves</h2><span class="card-sub">${seasonSpan(season)} · effect at today’s values</span></div>
+      ${withEffect.length ? `<ol class="tk-list">${withEffect.slice(0, 12).map(m => moveCard(m, me, v, seen)).join('')}</ol>` : '<p class="empty">No moves that changed anything yet this season.</p>'}
+      ${withEffect.length > 12 ? `<details class="cm-group"><summary>Older moves <small>${withEffect.length - 12}</small></summary><ol class="tk-list">${withEffect.slice(12).map(m => moveCard(m, me, v, seen)).join('')}</ol></details>` : ''}
+      ${noEffect ? `<details class="cm-group"><summary>Moves with no effect <small>${noEffect}</small></summary><ol class="tk-list">${mine.filter(m => !withEffect.includes(m)).map(m => moveCard(m, me, v, seen)).join('')}</ol></details>` : ''}
+      <p class="cm-rule">Each move compares the team just before and just after it, valued at today’s dynasty scores, so a move’s effect isn’t mixed with later injuries or projection changes. Highlighted: a rank changes, a position moves 5+, or total value moves 10+.</p>
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Drift</h2><span class="card-sub">Last 7 days, no moves</span></div>
+      ${drift}
+    </section>
+    <section class="card" id="tk-chart">
+      <div class="card-head"><h2>Over time</h2><span class="card-sub" id="tk-unit"></span></div>
+      <div class="st-stage dy-mv-chips tk-metrics" role="group">${TRACK_METRICS.map(([k, l]) => `<a href="#" data-metric="${k}" class="${k === metric ? 'on' : ''}">${l}</a>`).join('')}</div>
+      <div id="tk-plot"></div>
+    </section>
+  </div>`;
+  bindTeamPick(body);
+  const drawChart = () => {
+    const [, l, unit] = TRACK_METRICS.find(([k]) => k === metric);
+    $('#tk-unit', body).textContent = `${l}: ${unit}`;
+    const box = $('#tk-plot', body);
+    box.innerHTML = trackerSeasons(series(metric), l, markers, fmtOf(metric));
+    bindSeasonStrip(box);
+    body.querySelectorAll('[data-metric]').forEach(a => a.classList.toggle('on', a.dataset.metric === metric));
+  };
+  body.querySelectorAll('[data-metric]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); metric = a.dataset.metric; drawChart(); }));
+  drawChart();
+  // Mark this team's moves as seen.
+  const latest = movesOf(me)[0]?.ts ?? 0;
+  if (latest > seen) gmSave(trackerSeenKey(me), latest);
+}
 
 // ---- Trade evaluator (Trade finder → "Evaluate a trade"; logic in tradefinder.js evaluateTrade) ----
 // Enter any offer: 2 or 3 teams, each team's outgoing players and picks (3 teams: pick where

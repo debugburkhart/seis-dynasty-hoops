@@ -278,3 +278,65 @@ export function positionStrength(v, rosters, when = 'now') {
   const ratio = Object.fromEntries(owners.map(o => [o, Object.fromEntries(GROUPS.map(g => [g, sums[o][g] / (avg[g] || 1)]))]));
   return { ratio, sums, top, avg };
 }
+
+// ---------- Team tracker ----------
+
+// One team snapshot per owner, as a compact array (saved nightly in dynasty-history.json):
+// [strength now, strength in 2 yrs, total value, avg age, G, F, C now, G, F, C in 2 yrs]
+// (positions x100, league average = 100). TEAM_KEYS names them.
+export const TEAM_KEYS = ['now', 'later', 'total', 'age', 'G', 'F', 'C', 'Gl', 'Fl', 'Cl'];
+export function teamSnapshot(v, rosters) {
+  const pn = positionStrength(v, rosters, 'now').ratio;
+  const pl = positionStrength(v, rosters, 'later').ratio;
+  const out = {};
+  for (const [o, t] of Object.entries(v.outlook)) {
+    const r = x => Math.round(x * 10) / 10;
+    out[o] = [r(t.now), r(t.later), t.total, t.age ?? null, ...['G', 'F', 'C'].map(g => Math.round((pn[o]?.[g] ?? 0) * 100)), ...['G', 'F', 'C'].map(g => Math.round((pl[o]?.[g] ?? 0) * 100))];
+  }
+  return out;
+}
+export const unpackTeam = a => (a ? Object.fromEntries(TEAM_KEYS.map((k, i) => [k, a[i]])) : null);
+
+// A snapshot with ranks for any rosters and pick owners (outlook redone for them).
+function snapshotFor(v, rosters, picks, season) {
+  const outlook = teamOutlook(v.players, picks, rosters, season);
+  const arr = teamSnapshot({ ...v, outlook }, rosters);
+  return Object.fromEntries(Object.keys(arr).map(o => [o, { ...unpackTeam(arr[o]), nowRank: outlook[o].nowRank, laterRank: outlook[o].laterRank, totalRank: outlook[o].totalRank, label: outlook[o].label }]));
+}
+
+// Every roster move this season and its effect on each team in it: rosters are rolled back
+// through the transactions, newest first, and each team is compared just before and just after
+// the move, at today's dynasty values (so a move's effect isn't mixed with later value changes).
+// Returns [{ x (the transaction), before: { owner: snapshot }, after: { owner: snapshot } }], newest first.
+export function moveImpacts(DATA, v, rosters) {
+  const cur = DATA.seasons.at(-1);
+  const season = cur.season;
+  const ownerOfRid = Object.fromEntries(cur.teams.map(t => [t.rosterId, t.owner]));
+  const state = (rosters ?? []).map(r => ({ owner_id: r.owner_id, players: [...(r.players ?? [])], taxi: [...(r.taxi ?? [])], reserve: [...(r.reserve ?? [])] }));
+  const picks = v.picks.map(p => ({ ...p }));
+  const of = o => state.find(r => r.owner_id === o);
+  const moves = (DATA.transactions ?? [])
+    .filter(x => x.s === season && (Object.keys(x.adds ?? {}).length || Object.keys(x.drops ?? {}).length || (x.picks ?? []).length))
+    .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0));
+  const out = [];
+  let after = snapshotFor(v, state, picks, season);
+  for (const x of moves) {
+    // Undo: players added go back off, players dropped come back, picks return to the sender.
+    for (const [pid, o] of Object.entries(x.adds ?? {})) {
+      const r = of(o);
+      if (r) for (const k of ['players', 'taxi', 'reserve']) r[k] = r[k].filter(p => p !== pid);
+    }
+    for (const [pid, o] of Object.entries(x.drops ?? {})) {
+      const r = of(o);
+      if (r && !r.players.includes(pid)) r.players.push(pid);
+    }
+    for (const p of x.picks ?? []) {
+      const pk = picks.find(y => y.season === p.season && y.round === p.round && y.orig === ownerOfRid[p.orig]);
+      if (pk && p.from) pk.owner = p.from;
+    }
+    const before = snapshotFor(v, state, picks, season);
+    out.push({ x, before, after });
+    after = before;
+  }
+  return out;
+}

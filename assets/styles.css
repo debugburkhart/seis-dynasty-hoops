@@ -2208,3 +2208,34 @@ a.tl-event:hover { background: #fbf6e6; }
 .pos-need { font-size: 11.5px; color: #a03a2d; font-weight: 700; white-space: nowrap; }
 .hy-pts-label.sc-best { margin-top: 4px; color: var(--gold-ink); }
 .hy-pts-label.sc-best b { font-weight: 900; }
+
+/* ---------- Team tracker ---------- */
+.tk-pos { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 13px; }
+.tk-pos b { font: 900 15px/1 var(--display); margin-left: 2px; }
+.tk-pos small { color: var(--muted); font-size: 11px; }
+.tk-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.tk-move { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fbfaf6; }
+.tk-move.big { border-color: var(--brass); background: #fffaf0; }
+.tk-move.new { box-shadow: inset 4px 0 0 var(--gold); }
+.tk-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tk-top small { color: var(--muted); font-size: 11.5px; }
+.tk-date { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+.tk-new { display: inline-block; padding: 1px 7px; border-radius: 99px; background: var(--gold); color: var(--navy-900); font: 800 9.5px/1.5 var(--display); letter-spacing: .06em; text-transform: uppercase; }
+.tk-io { margin: 6px 0 0; font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.tk-io b { font: 800 10px var(--display); letter-spacing: .08em; text-transform: uppercase; margin-right: 4px; }
+.tk-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.tk-d { display: inline-flex; align-items: baseline; gap: 4px; padding: 3px 8px; border-radius: 99px; background: #efece3; font: 800 12px/1.3 var(--font); color: var(--ink); }
+.tk-d small { font: 700 9.5px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.tk-d.up { background: #dcefe4; color: #1d5c3c; }
+.tk-d.down { background: #fbe6e1; color: #a03a2d; }
+.tk-metrics { margin-bottom: 6px; flex-wrap: wrap; }
+.tk-avg { fill: none; stroke: #b7b2a4; stroke-width: 1.5; stroke-dasharray: 4 4; }
+.tk-mark path { fill: var(--brass); }
+.tk-key { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--navy-700); vertical-align: middle; }
+.tk-key.avg { border-top: 2px dashed #b7b2a4; }
+.tk-alert p { margin: 0; font-size: 13px; line-height: 1.5; }
+.gm-brief + .tk-alert, .tk-alert { margin-bottom: 0; }
+@media (max-width: 560px) {
+  .tk-metrics { display: grid; grid-template-columns: repeat(4, 1fr); align-self: stretch; }
+  .tk-metrics a { padding: 8px 4px; font-size: 9.5px; }
+}

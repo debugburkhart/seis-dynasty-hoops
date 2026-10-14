@@ -345,6 +345,18 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   High-end starter, Starter, Flex, Depth, Stash, Replaceable; classes .tier-0..7) next to player
   names in the Dynasty roster + taxi clock, Trade finder offers and Waiver wire rows; also on each
   guide row.
+  Team tracker (owner, Oct 2026; My GM tab "tracker", every team, default yours): moveImpacts() in
+  tradefinder.js rolls rosters + pick owners back through this season's transactions newest first and
+  compares each team just before/after a move at TODAY's values (snapshotFor: teamOutlook +
+  positionStrength); alerts list with chips (now/2 yrs/total with ranks, age, G/F/C), highlighted when a
+  rank changes, a position moves 5+, total 10+ or now 5+; "New" since last view (localStorage
+  gm-tracker-seen-{owner}; first visit = last 7 days); no-effect moves collapsed. Drift = 7-day change
+  in the team snapshot minus move effects, plus the roster's biggest player-score changes. Charts per
+  metric (now, 2 yrs, total, age, G, F, C) vs league average (dashed), season panels (bindSeasonStrip),
+  ▲ markers for trades + moves with total 5+. Data: update.mjs saves hist.teams[date][owner] = { c, f }
+  (teamSnapshot arrays, TEAM_KEYS; c = Out discounted, f = full) nightly; last season rebuilt weekly once
+  via backfillSeason(onWeek) (hist.teamsBackfilled). Briefing shows a "Team tracker" card when there are
+  new moves.
   Next: step 4 Playoff odds (after 3-4 weeks of games), step 5 Draft helper.
 - `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has

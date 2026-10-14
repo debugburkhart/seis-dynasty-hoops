@@ -229,7 +229,8 @@ export function historyDay(cut, full) {
 // that week's lineups (they list every rostered player). Returns { date: day }.
 // SMOOTH: how much each new week moves the running projection (the rest is the weeks before).
 export const BACKFILL_SMOOTH = 0.3;
-export async function backfillSeason(DATA, season, smooth = BACKFILL_SMOOTH) {
+// onWeek(date, cut, full, rosters): optional, called with each rebuilt week (team snapshots).
+export async function backfillSeason(DATA, season, smooth = BACKFILL_SMOOTH, onWeek = null) {
   const s = DATA.seasons.find(x => x.season === season);
   if (!s) return {};
   const prev = n => String(Number(season) - n);
@@ -274,7 +275,9 @@ export async function backfillSeason(DATA, season, smooth = BACKFILL_SMOOTH) {
     const outSet = new Set();
     for (const r of weekRosters) for (const pid of r.players) if (projPg[pid] == null && known[pid] != null) { projPg[pid] = known[pid]; outSet.add(pid); }
     const f = { season, league, rosters: weekRosters, proj: proj ?? [], projPg, outSet, last, prior: [last, prev2, prev3], traded: [], birth };
-    out[endOf[w]] = historyDay(dynastyValues(DATA, f), dynastyValues(DATA, f, { fullInjured: true }));
+    const cut = dynastyValues(DATA, f), full = dynastyValues(DATA, f, { fullInjured: true });
+    out[endOf[w]] = historyDay(cut, full);
+    onWeek?.(endOf[w], cut, full, weekRosters);
   }
   return out;
 }
