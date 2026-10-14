@@ -7,7 +7,7 @@ import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, seriesBefore, standingsBef
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
 import { LOCK_CAL, gameCoach, injuryNews, loadBoxes, loadSlate } from './gm.js';
 import { PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, taxiLeft } from './dynasty.js';
-import { offersFor, offersForNeed, offersToSell, packageValue, tradeContext } from './tradefinder.js';
+import { evaluateTrade, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, tradeContext } from './tradefinder.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
 import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, ownerAt, playerOfTheYear, rookieClass, seasonEndKey } from './awards.js';
 import { ALL_STAR_POSITIONS, CORRECTIONS, DRAFT_CORRECTIONS, PHOTO_CORRECTIONS } from './corrections.js';
@@ -2812,6 +2812,58 @@ function bindSeasonStrip(box) {
   show();
 }
 
+// ---- Position strength (Dynasty tab): every team's G / F / C vs the league average = 100 ----
+// Same numbers as the trade evaluator (positionStrength in tradefinder.js).
+// A team's needs (Managers cards and the Position strength table): weak positions this season
+// (under 95) and in 2 years (under 90), what its outlook says it's shopping for, a full taxi
+// squad, and no 1st-round pick in the next draft. Returns short labels, most important first.
+const NEED_NAME = { G: 'Guard', F: 'Forward', C: 'Center' };
+function teamNeeds(v, rosters, o, psNow = positionStrength(v, rosters, 'now'), psLater = positionStrength(v, rosters, 'later')) {
+  const out = [];
+  const now = psNow.ratio[o] ?? {};
+  const later = psLater.ratio[o] ?? {};
+  for (const g of ['G', 'F', 'C'].filter(x => (now[x] ?? 1) < 0.95).sort((a, b) => now[a] - now[b])) out.push({ kind: 'pos', text: `${NEED_NAME[g]} (${Math.round(now[g] * 100)})` });
+  for (const g of ['G', 'F', 'C'].filter(x => (later[x] ?? 1) < 0.9 && !((now[x] ?? 1) < 0.95)).sort((a, b) => later[a] - later[b])) out.push({ kind: 'later', text: `${NEED_NAME[g]} in 2 yrs (${Math.round(later[g] * 100)})` });
+  const label = v.outlook[o]?.label;
+  if (label === 'Contender' || label === 'Win now') out.push({ kind: 'style', text: 'Proven starters now' });
+  else if (label === 'Rising' || label === 'Rebuilding') out.push({ kind: 'style', text: 'Youth + picks' });
+  else if (label === 'Fading') out.push({ kind: 'style', text: 'Younger core' });
+  const r = (rosters ?? []).find(x => x.owner_id === o);
+  if ((r?.taxi ?? []).length >= 15) out.push({ kind: 'limit', text: 'Taxi full (15)' });
+  const next = v.nextDraft;
+  if (next && !v.picks.some(p => p.owner === o && p.season === next && p.round === 1)) out.push({ kind: 'limit', text: `No ${next} 1st` });
+  return out;
+}
+const needChips = list => (list.length ? list.map(n => `<span class="need need-${n.kind}">${esc(n.text)}</span>`).join(' ') : '<span class="need need-ok">No clear holes</span>');
+
+function drawPositions(card, v, rosters, me) {
+  if (!card) return;
+  let when = 'now';
+  const cls = x => (x >= 1.1 ? 'pos-hi' : x <= 0.9 ? 'pos-lo' : '');
+  const draw = () => {
+    const ps = positionStrength(v, rosters, when);
+    const rows = Object.entries(ps.ratio).map(([o, r]) => ({ o, r, all: (r.G + r.F + r.C) / 3 })).sort((a, b) => b.all - a.all);
+    const mine = ps.top[me] ?? {};
+    const k = when === 'later' ? 2 : 0;
+    const groupName = { G: 'Guards (best 3)', F: 'Forwards (best 3)', C: 'Centers (best 2)' };
+    card.innerHTML = `
+      <div class="card-head"><h2>Position strength</h2><span class="card-sub">100 = league average</span></div>
+      <div class="st-stage dy-mv-chips pos-when" role="group">${[['now', 'This season'], ['later', 'In 2 years']].map(([id, l]) => `<a href="#" data-when="${id}" class="${id === when ? 'on' : ''}">${l}</a>`).join('')}</div>
+      <div class="cm-scroll"><table class="cm-table pos-table"><thead><tr><th>Team</th><th>G</th><th>F</th><th>C</th><th>Avg</th><th>Needs</th></tr></thead><tbody>
+        ${rows.map(x => `<tr class="${x.o === me ? 'cm-me' : ''}"><td>${esc(name(x.o))}</td>${['G', 'F', 'C'].map(g => `<td class="${cls(x.r[g])}">${Math.round(x.r[g] * 100)}</td>`).join('')}<td><b>${Math.round(x.all * 100)}</b></td><td class="pos-need">${['G', 'F', 'C'].filter(g => x.r[g] < (when === 'later' ? 0.9 : 0.95)).sort((a, b) => x.r[a] - x.r[b]).map(g => NEED_NAME[g]).join(', ') || '–'}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="pos-mine">
+        <div class="tf-side-head">${esc(teamName(me, DATA.seasons.at(-1).season))}: who counts</div>
+        ${['G', 'F', 'C'].map(g => `<p><b>${groupName[g]} · ${Math.round((ps.ratio[me]?.[g] ?? 0) * 100)}</b><small>${(mine[g] ?? []).map(p => `${esc(p.name)} ${num(p.v[k])}`).join(' · ') || 'nobody'}</small></p>`).join('')}
+      </div>
+      <p class="cm-rule">${when === 'now'
+        ? 'Each team’s best guards (PG/SG), forwards (SF/PF) and centers this season by projected fantasy points per game, taxi players left out, compared with the league average. Above 110 is a strength (green), under 90 a weak spot (red).'
+        : 'The same two seasons from now: points per game carried forward on the age curve, taxi players included (they’ll be up by then). Picks aren’t counted here.'} Players listed Out follow the injury setting at the top. Positions are Sleeper’s main position for each player.</p>`;
+    card.querySelectorAll('[data-when]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); when = a.dataset.when; draw(); }));
+  };
+  draw();
+}
+
 // ---- Risers & fallers: biggest dynasty score changes over a season (Dynasty tab) ----
 // From data/dynasty-history.json. A past season runs from its first saved point to its last; the
 // current season ends with today's live scores and can be narrowed to the last 30 or 7 days.
@@ -2983,6 +3035,7 @@ async function renderDynasty(body, params) {
         <tbody>${list.map(x => `<tr class="${x.owner === me ? 'cm-me' : ''}"><td>${esc(name(x.owner))}</td><td>No. ${x.nowRank}</td><td>No. ${x.laterRank}</td><td>${x.total}</td><td>${esc(x.label)}</td></tr>`).join('')}</tbody></table></div>
       </details>
     </section>
+    <section class="card" id="dy-pos"></section>
     <section class="card" id="dy-movers"><div class="card-head"><h2>Risers &amp; fallers</h2></div><p class="cm-rule">Loading score history…</p></section>
     <div class="cm-races">
       <section class="card">
@@ -3018,6 +3071,7 @@ async function renderDynasty(body, params) {
   if (params.get('guide') === '1') $('#dy-guide', body)?.scrollIntoView({ block: 'start' });
   bindScoreCharts(body, v);
   fillMovers($('#dy-movers', body), v, me).catch(() => {});
+  drawPositions($('#dy-pos', body), v, f.rosters, me);
   body.querySelectorAll('[data-inj]').forEach(a => a.addEventListener('click', e => {
     e.preventDefault();
     gmSave('gm-dyn-full', a.dataset.inj === 'full');
@@ -3065,6 +3119,122 @@ function dynastyGuide(v, open = false) {
 
 // ---- Trade finder (logic in assets/tradefinder.js) ----
 
+// ---- Trade evaluator (Trade finder → "Evaluate a trade"; logic in tradefinder.js evaluateTrade) ----
+// Enter any offer: 2 or 3 teams, each team's outgoing players and picks (3 teams: pick where
+// each goes). The draft is kept on this device until cleared.
+function renderEvaluator(box, { season, me, f, v }) {
+  const owners = DATA.seasons.at(-1).teams.map(t => t.owner);
+  const all = teamAssets(v, f.rosters, { all: true });
+  const assetOf = Object.fromEntries(Object.values(all).flat().map(a => [a.id, a]));
+  const key = 'gm-eval';
+  const saved = gmLoad(key, null);
+  const st = saved && Array.isArray(saved.legs) ? saved : { n: 2, teams: [me, owners.find(o => o !== me)], legs: [] };
+  const fix = () => {
+    st.n = st.n === 3 ? 3 : 2;
+    st.teams = st.teams.slice(0, st.n);
+    while (st.teams.length < st.n) st.teams.push(owners.find(o => !st.teams.includes(o)));
+    // Keep legs that still make sense: their team is in the trade and still owns the asset.
+    st.legs = st.legs.filter(l => st.teams.includes(l.from) && assetOf[l.id] && (all[l.from] ?? []).some(a => a.id === l.id));
+    for (const l of st.legs) if (!st.teams.includes(l.to) || l.to === l.from) l.to = st.teams.find(o => o !== l.from);
+    gmSave(key, st);
+  };
+  const teamSelect = (i) => `<span class="ed-select"><span class="hy-pick-val">${esc(teamName(st.teams[i], season))}</span>
+    <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+    <select data-team="${i}" aria-label="Team ${i + 1}">${owners.map(o => `<option value="${esc(o)}"${o === st.teams[i] ? ' selected' : ''}${st.teams.includes(o) && o !== st.teams[i] ? ' disabled' : ''}>${esc(teamName(o, season))} (${esc(name(o))})</option>`).join('')}</select></span>`;
+  const assetLine = a => `${esc(a.name)} ${a.kind === 'player' ? tierTag(a.score) : ''} ${a.prospect ? prospectChip({ prospect: a.prospect }) : ''}${a.injury ? ` ${injuryTag(a)}` : ''}${a.where === 'taxi' ? ' <span class="cm-pill">Taxi</span>' : ''}`;
+  const sideCard = (o, i) => {
+    const mine = st.legs.filter(l => l.from === o);
+    const used = new Set(st.legs.map(l => l.id));
+    const options = (all[o] ?? []).filter(a => !used.has(a.id));
+    return `
+      <section class="card ev-team">
+        <div class="ev-team-head"><span class="hy-pick-label">Team ${'ABC'[i]}</span>${teamSelect(i)}</div>
+        <div class="tf-side-head">Sends</div>
+        ${mine.length ? `<ol class="aw-race">${mine.map(l => { const a = assetOf[l.id]; return `<li><span>${assetLine(a)}<small>${a.kind === 'pick' ? 'Rookie pick' : esc([a.pos, a.team, a.age != null ? `age ${a.age}` : ''].filter(Boolean).join(' · '))}${st.n === 3 ? '' : ` · to ${esc(name(l.to))}`}</small>
+          ${st.n === 3 ? `<span class="ev-to">to <select data-to="${esc(l.id)}">${st.teams.filter(x => x !== o).map(x => `<option value="${esc(x)}"${x === l.to ? ' selected' : ''}>${esc(name(x))}</option>`).join('')}</select></span>` : ''}</span>
+          <span class="ev-right"><b>${a.score}</b><button type="button" class="ev-x" data-remove="${esc(l.id)}" aria-label="Remove ${esc(a.name)}">×</button></span></li>`; }).join('')}</ol>` : '<p class="empty">Nothing yet.</p>'}
+        <label class="ev-add"><span>+ Add player or pick</span><select data-add="${esc(o)}"><option value="">Add a player or pick…</option>
+          <optgroup label="Players">${options.filter(a => a.kind === 'player').map(a => `<option value="${esc(a.id)}">${esc(a.name)} · ${a.score}</option>`).join('')}</optgroup>
+          <optgroup label="Picks">${options.filter(a => a.kind === 'pick').map(a => `<option value="${esc(a.id)}">${esc(a.name)} · ${a.score}</option>`).join('')}</optgroup></select></label>
+      </section>`;
+  };
+  const arrow = (a, b, better = 'up') => {
+    if (a === b) return `<span class="dy-flat">${a}</span>`;
+    const good = better === 'up' ? b > a : b < a;
+    return `${a} → <b class="${good ? 'dy-up' : 'dy-down'}">${b}</b>`;
+  };
+  const rankArrow = (a, b) => (a === b ? `No. ${a}` : `No. ${a} → <b class="${b < a ? 'dy-up' : 'dy-down'}">No. ${b}</b>`);
+  const pctArrow = (a, b) => arrow(Math.round(a * 100), Math.round(b * 100));
+
+  const results = () => {
+    if (!st.legs.length) return '<p class="filter-note">Add what each team sends to see the evaluation.</p>';
+    const ev = evaluateTrade(DATA, v, f.rosters, st.legs);
+    const verdictText = s => (s.verdict === 'wins' ? 'Comes out ahead' : s.verdict === 'loses' ? 'Comes out behind' : 'About even');
+    const sides = ev.sides.map(s => `
+      <section class="card ev-side ev-${s.verdict}">
+        <div class="card-head"><h2>${esc(name(s.owner))}</h2><span class="cm-pill ${s.verdict === 'wins' ? 'good' : s.verdict === 'loses' ? 'bad' : ''}">${verdictText(s)}</span></div>
+        <div class="tf-sides">
+          <div><div class="tf-side-head">Gives <b>${Math.round(s.giveTV)}</b></div>${s.give.length ? `<ol class="aw-race">${s.give.map(a => `<li><span>${assetLine(a)}</span><b>${a.score}</b></li>`).join('')}</ol>` : '<p class="empty">Nothing.</p>'}</div>
+          <div><div class="tf-side-head">Gets <b>${Math.round(s.getTV)}</b></div>${s.get.length ? `<ol class="aw-race">${s.get.map(a => `<li><span>${assetLine(a)}</span><b>${a.score}</b></li>`).join('')}</ol>` : '<p class="empty">Nothing.</p>'}</div>
+        </div>
+        <div class="tf-balance"><i style="width:${Math.round(100 * s.giveTV / ((s.giveTV + s.getTV) || 1))}%"></i></div>
+        <dl class="mg-stats ev-stats">
+          <div><dt>Net value</dt><dd><span class="${s.net >= 0 ? 'dy-up' : 'dy-down'}">${s.net >= 0 ? '+' : ''}${num(s.net)}</span> <small>standard timeline · on theirs (${esc(s.label)}): ${s.theirNet >= 0 ? '+' : ''}${num(s.theirNet)}</small></dd></div>
+          <div><dt>This season</dt><dd>${rankArrow(s.before.nowRank, s.after.nowRank)} <small>best 9 this season (not taxi): ${arrow(num(s.before.now), num(s.after.now))} pts/game</small></dd></div>
+          <div><dt>In 2 years</dt><dd>${rankArrow(s.before.laterRank, s.after.laterRank)} <small>${arrow(num(s.before.later), num(s.after.later))}</small></dd></div>
+          <div><dt>Dynasty total</dt><dd>${rankArrow(s.before.totalRank, s.after.totalRank)} <small>${arrow(s.before.total, s.after.total)}</small></dd></div>
+          <div><dt>Outlook</dt><dd>${s.before.label === s.after.label ? esc(s.after.label) : `${esc(s.before.label)} → <b>${esc(s.after.label)}</b>`} <small>avg age (by value) ${arrow(s.before.age ?? '–', s.after.age ?? '–', 'down')}</small></dd></div>
+          <div><dt>Positions</dt><dd class="ev-pos">${['G', 'F', 'C'].map(g => `<span>${g} ${pctArrow(s.posBefore?.[g] ?? 0, s.posAfter?.[g] ?? 0)}</span>`).join('')} <small>this season’s best ${'guards (3), forwards (3), centers (2)'} vs league average = 100</small></dd></div>
+          <div><dt>Roster</dt><dd>${s.spots ? `${s.spots > 0 ? '+' : ''}${s.spots} player${Math.abs(s.spots) === 1 ? '' : 's'}` : 'Same size'} <small>${s.spots > 0 ? `needs ${s.spots} open spot${s.spots === 1 ? '' : 's'} · ` : ''}taxi ${s.taxiAfter} of 15${s.taxiAfter > 15 ? ' (over the limit)' : ''}</small></dd></div>
+        </dl>
+      </section>`).join('');
+    const involved = new Set(ev.teams);
+    const league = Object.values(ev.after).sort((a, b) => a.nowRank - b.nowRank).map(t => {
+      const b = ev.before[t.owner];
+      return `<tr class="${involved.has(t.owner) ? 'cm-me' : ''}"><td>${esc(name(t.owner))}</td><td>${rankArrow(b.nowRank, t.nowRank)}</td><td>${rankArrow(b.laterRank, t.laterRank)}</td><td>${rankArrow(b.totalRank, t.totalRank)}</td><td>${b.label === t.label ? esc(t.label) : `${esc(b.label)} → <b>${esc(t.label)}</b>`}</td></tr>`;
+    }).join('');
+    const moved = Object.values(ev.after).filter(t => ['nowRank', 'laterRank', 'totalRank'].some(k => t[k] !== ev.before[t.owner][k]) || t.label !== ev.before[t.owner].label);
+    const pastNet = {};
+    const fo = ledger();
+    for (const x of fo.trades.filter(t => ev.history.some(h => h.ts === t.ts))) for (const sd of x.sides) if (involved.has(sd.o)) pastNet[sd.o] = (pastNet[sd.o] ?? 0) + sd.net;
+    return `
+      <div class="mg-grid ev-sides">${sides}</div>
+      <section class="card">
+        <div class="card-head"><h2>How it shifts the league</h2><span class="card-sub">Dynasty ranks before → after</span></div>
+        <p class="cm-rule">${moved.length ? `${moved.length} team${moved.length === 1 ? '' : 's'} move${moved.length === 1 ? 's' : ''} in at least one ranking or outlook.` : 'No team changes rank: a small move.'} Teams in the trade are highlighted.</p>
+        <div class="cm-scroll"><table class="cm-table dy-table ev-league"><thead><tr><th>Team</th><th>This season</th><th>In 2 yrs</th><th>Total</th><th>Outlook</th></tr></thead><tbody>${league}</tbody></table></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Between these teams</h2></div>
+        <p class="cm-rule">${ev.history.length ? `${ev.history.length} past trade${ev.history.length === 1 ? '' : 's'}. Front Office net from them (locked points since): ${ev.teams.map(o => `${esc(name(o))} ${pastNet[o] >= 0 ? '+' : ''}${num(pastNet[o] ?? 0)}`).join(' · ')}.` : 'They’ve never traded with each other.'}</p>
+      </section>
+      <p class="filter-note">Values are dynasty scores (0–100) added up the way trades work: a package is worth less than its total (two 30s ≈ one ${Math.round(packageValue([30, 30]))}). “About even” = within 10%. “On theirs” uses each team’s own timeline: win-now teams count this season more, building teams the later seasons. Rankings use each team’s best 9 healthy players this season and best 9 in two years (with picks). The injury setting on the Dynasty tab applies.</p>`;
+  };
+
+  const draw = () => {
+    fix();
+    box.innerHTML = `
+      <div class="ev-bar">
+        <div class="st-stage ev-n">${[2, 3].map(n => `<a href="#" data-n="${n}" class="${st.n === n ? 'on' : ''}">${n} teams</a>`).join('')}</div>
+        <button type="button" class="ev-clear">Clear trade</button>
+      </div>
+      <div class="ev-teams ev-n${st.n}">${st.teams.map(sideCard).join('')}</div>
+      ${results()}`;
+    box.querySelectorAll('[data-n]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); st.n = Number(a.dataset.n); draw(); }));
+    $('.ev-clear', box).addEventListener('click', () => { st.legs = []; draw(); });
+    box.querySelectorAll('[data-team]').forEach(sel => sel.addEventListener('change', () => { st.teams[Number(sel.dataset.team)] = sel.value; draw(); }));
+    box.querySelectorAll('[data-add]').forEach(sel => sel.addEventListener('change', () => {
+      if (!sel.value) return;
+      const from = sel.dataset.add;
+      st.legs.push({ id: sel.value, from, to: st.teams.find(o => o !== from) });
+      draw();
+    }));
+    box.querySelectorAll('[data-to]').forEach(sel => sel.addEventListener('change', () => { const l = st.legs.find(x => x.id === sel.dataset.to); if (l) l.to = sel.value; draw(); }));
+    box.querySelectorAll('[data-remove]').forEach(b => b.addEventListener('click', () => { st.legs = st.legs.filter(l => l.id !== b.dataset.remove); draw(); }));
+  };
+  draw();
+}
+
 async function renderTrades(body, params) {
   const { season, me, f, v } = await gmDynasty(params);
   if (route().page !== 'commish') return;
@@ -3076,7 +3246,14 @@ async function renderTrades(body, params) {
   }
   const blockKey = `gm-block-${me}`;
   const block = gmLoad(blockKey, []);
-  const mode = ['get', 'need', 'sell'].includes(params.get('mode')) ? params.get('mode') : 'get';
+  const mode = ['get', 'need', 'sell', 'eval'].includes(params.get('mode')) ? params.get('mode') : 'get';
+  const modeChips = `<div class="st-stage tf-modes">${[['get', 'Get a player'], ['need', 'Fill a need'], ['sell', 'Sell a player'], ['eval', 'Evaluate a trade']].map(([id, l]) => `<a href="#/commish?${new URLSearchParams({ tab: 'trades', ...(me === COMMISH ? {} : { team: me }), mode: id })}" class="${id === mode ? 'on' : ''}">${l}</a>`).join('')}</div>`;
+  if (mode === 'eval') {
+    body.innerHTML = `<div class="gm-page">${gmTeamPick(me, season, 'trades')}${modeChips}<div id="tf-eval"></div></div>`;
+    bindTeamPick(body);
+    renderEvaluator($('#tf-eval', body), { season, me, f, v });
+    return;
+  }
   const hash = extra => `#/commish?${new URLSearchParams({ tab: 'trades', ...(me === COMMISH ? {} : { team: me }), mode, ...extra })}`;
   const owners = Object.keys(c.assets).filter(o => o !== me).sort((a, b) => name(a).localeCompare(name(b)));
   const assetName = a => `${a.name} · ${a.score}`;
@@ -3127,7 +3304,7 @@ async function renderTrades(body, params) {
 
   body.innerHTML = `<div class="gm-page">
     ${gmTeamPick(me, season, 'trades')}
-    <div class="st-stage tf-modes">${[['get', 'Get a player'], ['need', 'Fill a need'], ['sell', 'Sell a player']].map(([id, l]) => `<a href="#/commish?${new URLSearchParams({ tab: 'trades', ...(me === COMMISH ? {} : { team: me }), mode: id })}" class="${id === mode ? 'on' : ''}">${l}</a>`).join('')}</div>
+    ${modeChips}
     ${picker}
     <p class="filter-note">${note} <a href="#/commish?tab=dynasty&guide=1${me === COMMISH ? '' : `&team=${me}`}">What do the scores mean?</a></p>
     ${offers.length ? `<div class="mg-grid tf-grid">${offers.map(card).join('')}</div>` : ''}
@@ -3156,6 +3333,8 @@ async function renderManagers(body, params) {
   const { season, me, f, v } = await gmDynasty(params);
   if (route().page !== 'commish') return;
   const fo = ledger();
+  const psNow = positionStrength(v, f.rosters, 'now');
+  const psLater = positionStrength(v, f.rosters, 'later');
   const grades = draftGrades(DATA);
   const owners = DATA.seasons.at(-1).teams.map(t => t.owner);
   const cards = reportCards(grades, owners);
@@ -3249,6 +3428,7 @@ async function renderManagers(body, params) {
         <div><dt>Waiver/FA adds</dt><dd>${s.moves} <small>${s.movesNow} this season${s.faab ? ` · $${s.faab} FAAB spent` : ''}</small></dd></div>
         <div><dt>Drafting</dt><dd>${s.card?.grade ?? '–'} <small>${Object.entries(s.pos).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${n} ${p}`).join(', ') || 'no rookie picks'}${s.draftAge ? ` · avg age ${num(s.draftAge)} at the draft` : ''}</small></dd></div>
         ${loyaltyOf[s.o] ? `<div><dt>Startup picks</dt><dd>${pctText(loyaltyOf[s.o].pct)} <small>${loyaltyOf[s.o].kept.length} of ${loyaltyOf[s.o].picks} still on the team · No. ${loyalty.indexOf(loyaltyOf[s.o]) + 1} in the league</small></dd></div>` : ''}
+        <div><dt>Needs</dt><dd class="mg-needs">${needChips(teamNeeds(v, f.rosters, s.o, psNow, psLater))}</dd></div>
         <div><dt>Roster</dt><dd>No. ${s.out?.totalRank ?? '–'} <small>dynasty value · avg age ${s.out?.age ?? '–'} · now No. ${s.out?.nowRank ?? '–'}, in 2 yrs No. ${s.out?.laterRank ?? '–'}</small></dd></div>
         ${s.o !== me ? `<div><dt>Vs you</dt><dd>${s.h2h[0]}–${s.h2h[1]}${s.h2h[2] ? `–${s.h2h[2]}` : ''} <small>their record against you, all games</small></dd></div>` : ''}
         <div><dt>Last move</dt><dd>${s.act?.days == null ? '–' : s.act.days === 0 ? 'Today' : `${s.act.days} day${s.act.days === 1 ? '' : 's'} ago`}${s.act?.days == null ? ' <small>no moves yet</small>' : ''}</dd></div>

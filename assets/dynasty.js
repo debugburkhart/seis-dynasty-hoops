@@ -201,33 +201,7 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
     };
   });
 
-  // Team outlook: "now" = the best 9 this season (taxi can't play), "in 2 years" = the best
-  // 9 two seasons from now from everyone on the roster plus the next two drafts' picks.
-  const outlook = {};
-  for (const r of f.rosters ?? []) {
-    const mine = [...new Set([...(r.players ?? []), ...(r.taxi ?? []), ...(r.reserve ?? [])])].map(pid => players[pid]).filter(Boolean);
-    const now = mine.filter(p => p.where !== 'taxi').map(p => p.v[0]).sort((a, b) => b - a).slice(0, 9).reduce((a, b) => a + b, 0);
-    const myPicks = picks.filter(p => p.owner === r.owner_id && Number(p.season) <= Number(season) + 2);
-    const later = [...mine.map(p => p.v[2]), ...myPicks.map(p => p.v3)].sort((a, b) => b - a).slice(0, 9).reduce((a, b) => a + b, 0);
-    const weightedAge = mine.filter(p => p.age != null && p.score > 0);
-    outlook[r.owner_id] = {
-      owner: r.owner_id,
-      now: r1(now), later: r1(later),
-      total: mine.reduce((a, p) => a + p.score, 0) + myPicks.reduce((a, p) => a + p.score, 0),
-      age: weightedAge.length ? r1(weightedAge.reduce((a, p) => a + p.age * p.score, 0) / weightedAge.reduce((a, p) => a + p.score, 0)) : null,
-      taxi: (r.taxi ?? []).length,
-    };
-  }
-  const list = Object.values(outlook);
-  const rank = key => [...list].sort((a, b) => b[key] - a[key]).forEach((t, i) => { t[`${key}Rank`] = i + 1; });
-  rank('now'); rank('later'); rank('total');
-  const avg = key => list.reduce((a, t) => a + t[key], 0) / (list.length || 1);
-  const [avgNow, avgLater] = [avg('now'), avg('later')];
-  for (const t of list) {
-    // Meter: -1 = all-in on now, +1 = built for later.
-    t.lean = Math.max(-1, Math.min(1, (t.later / avgLater - t.now / avgNow) * 5));
-    t.label = t.nowRank <= 3 && t.laterRank <= 3 ? 'Contender' : t.nowRank <= 3 ? 'Win now' : t.laterRank <= t.nowRank - 2 ? 'Rising' : t.laterRank >= t.nowRank + 2 ? 'Fading' : t.nowRank >= 6 ? 'Rebuilding' : 'Middle of the pack';
-  }
+  const outlook = teamOutlook(players, picks, f.rosters, season);
   return { players, picks, outlook, floor: r1(floor), top: r1(top), hitRate, nextDraft, orderKnown: Boolean(order?.weeks), starterLine: r1(starterLine) };
 }
 
@@ -303,4 +277,37 @@ export async function backfillSeason(DATA, season, smooth = BACKFILL_SMOOTH) {
     out[endOf[w]] = historyDay(dynastyValues(DATA, f), dynastyValues(DATA, f, { fullInjured: true }));
   }
   return out;
+}
+
+// Team outlook: "now" = the best 9 this season (taxi can't play), "in 2 years" = the best 9 two
+// seasons from now from everyone on the roster plus the next two drafts' picks; ranks, the
+// win-now / build-later lean and a label. Shared by the Dynasty tab and the trade evaluator.
+export function teamOutlook(players, picks, rosters, season) {
+  const outlook = {};
+  for (const r of rosters ?? []) {
+    const mine = [...new Set([...(r.players ?? []), ...(r.taxi ?? []), ...(r.reserve ?? [])])].map(pid => players[pid]).filter(Boolean);
+    const now = mine.filter(p => p.where !== 'taxi').map(p => p.v[0]).sort((a, b) => b - a).slice(0, 9).reduce((a, b) => a + b, 0);
+    const myPicks = picks.filter(p => p.owner === r.owner_id && Number(p.season) <= Number(season) + 2);
+    const later = [...mine.map(p => p.v[2]), ...myPicks.map(p => p.v3)].sort((a, b) => b - a).slice(0, 9).reduce((a, b) => a + b, 0);
+    const weightedAge = mine.filter(p => p.age != null && p.score > 0);
+    outlook[r.owner_id] = {
+      owner: r.owner_id,
+      now: r1(now), later: r1(later),
+      total: mine.reduce((a, p) => a + p.score, 0) + myPicks.reduce((a, p) => a + p.score, 0),
+      age: weightedAge.length ? r1(weightedAge.reduce((a, p) => a + p.age * p.score, 0) / weightedAge.reduce((a, p) => a + p.score, 0)) : null,
+      taxi: (r.taxi ?? []).length,
+      size: mine.length,
+    };
+  }
+  const list = Object.values(outlook);
+  const rank = key => [...list].sort((a, b) => b[key] - a[key]).forEach((t, i) => { t[`${key}Rank`] = i + 1; });
+  rank('now'); rank('later'); rank('total');
+  const avg = key => list.reduce((a, t) => a + t[key], 0) / (list.length || 1);
+  const [avgNow, avgLater] = [avg('now'), avg('later')];
+  for (const t of list) {
+    // Meter: -1 = all-in on now, +1 = built for later.
+    t.lean = Math.max(-1, Math.min(1, (t.later / avgLater - t.now / avgNow) * 5));
+    t.label = t.nowRank <= 3 && t.laterRank <= 3 ? 'Contender' : t.nowRank <= 3 ? 'Win now' : t.laterRank <= t.nowRank - 2 ? 'Rising' : t.laterRank >= t.nowRank + 2 ? 'Fading' : t.nowRank >= 6 ? 'Rebuilding' : 'Middle of the pack';
+  }
+  return outlook;
 }

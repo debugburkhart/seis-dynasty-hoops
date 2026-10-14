@@ -2161,3 +2161,48 @@ a.tl-event:hover { background: #fbf6e6; }
   .dy-mv-chips { display: flex; align-self: stretch; min-width: 0; }
   .dy-mv-chips a { flex: 1; padding: 8px 6px; }
 }
+
+/* ---------- Trade evaluator ---------- */
+.ev-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ev-n { grid-template-columns: 1fr 1fr; min-width: 0; }
+.ev-n a { padding: 9px 16px; }
+.ev-clear { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--muted); font: 700 12px var(--font); cursor: pointer; }
+.ev-clear:hover { color: #a03a2d; border-color: #e7b9b0; }
+.ev-teams { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.ev-team-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; min-width: 0; }
+.ev-team-head .ed-select { flex: 1; min-width: 0; justify-content: space-between; }
+.ev-team .aw-race li { align-items: center; }
+.ev-right { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.ev-x { width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 50%; background: var(--paper); color: var(--muted); font: 700 14px/1 var(--font); cursor: pointer; padding: 0; }
+.ev-x:hover { color: #a03a2d; border-color: #e7b9b0; }
+.ev-to { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
+.ev-to select { margin-left: 4px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: #fbfaf6; font: 600 11.5px var(--font); color: var(--ink); max-width: 160px; }
+.ev-add { display: block; margin-top: 8px; position: relative; }
+.ev-add span { display: block; padding: 9px 12px; border: 1px dashed var(--brass); border-radius: 8px; color: var(--gold-ink); font: 700 12.5px var(--font); text-align: center; }
+.ev-add select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.ev-sides { margin-bottom: 14px; }
+.ev-side.ev-wins { border-color: #b7dcc6; }
+.ev-side.ev-loses { border-color: #e7b9b0; }
+.ev-stats { margin-top: 10px; }
+.ev-pos span { display: inline-block; margin-right: 10px; }
+.ev-league td { white-space: nowrap; }
+@media (max-width: 560px) {
+  .ev-bar .ev-n { flex: 1; }
+}
+/* Dynasty: position strength */
+.pos-when { margin-bottom: 8px; }
+.pos-table th:nth-child(n+2), .pos-table td:nth-child(n+2) { text-align: center; width: 52px; }
+.pos-table td.pos-hi { color: #23704a; font-weight: 800; background: #f1f8f4; }
+.pos-table td.pos-lo { color: #a03a2d; font-weight: 800; background: #fdf3f1; }
+.pos-mine { margin: 10px 0 8px; display: grid; gap: 6px; }
+.pos-mine p { margin: 0; font-size: 12.5px; }
+.pos-mine small { display: block; margin-top: 1px; color: var(--muted); font-size: 11.5px; }
+/* Team needs */
+.need { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 8px; border-radius: 99px; font: 700 11px/1.5 var(--font); white-space: nowrap; }
+.need-pos { background: #fbe6e1; color: #a03a2d; }
+.need-later { background: #fbf0d3; color: var(--gold-ink); }
+.need-style { background: #dce6f3; color: var(--navy-800); }
+.need-limit { background: #efece3; color: #5b6070; }
+.need-ok { background: #dcefe4; color: #1d5c3c; }
+.mg-needs { font-weight: 500 !important; }
+.pos-need { font-size: 11.5px; color: #a03a2d; font-weight: 700; white-space: nowrap; }

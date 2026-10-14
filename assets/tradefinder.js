@@ -3,7 +3,7 @@
 // "Fair" uses the standard value; whether the other team would say yes uses how THEY see
 // value (a win-now team counts this season more, a building team the later seasons).
 
-import { VIEWS } from './dynasty.js';
+import { VIEWS, teamOutlook } from './dynasty.js';
 
 // A package is worth less than the sum of its parts: value = (sum of score^1.6)^(1/1.6).
 // One player = his score; two 30s = about one 46; three 20s = about one 40. So a star
@@ -26,16 +26,17 @@ const TIMELINE = { now: 'built to win now (this season counts most)', later: 'bu
 const r0 = n => Math.round(n);
 
 // Every tradeable asset per team: players (taxi and IR too) and future picks.
-export function teamAssets(v, rosters) {
+export function teamAssets(v, rosters, { all = false } = {}) {
   const out = {};
   for (const r of rosters ?? []) {
     const pids = [...new Set([...(r.players ?? []), ...(r.taxi ?? []), ...(r.reserve ?? [])])];
-    const players = pids.map(pid => v.players[pid]).filter(p => p && p.score >= 1).map(p => ({
+    const players = pids.map(pid => v.players[pid]).filter(p => p && (all || p.score >= 1)).map(p => ({
       id: p.pid, kind: 'player', name: p.name, score: p.score, view: p.view, group: GROUP(p.pos), pos: p.pos, age: p.age,
-      now: p.v[0], prospect: p.prospect, where: p.where,
+      now: p.v[0], prospect: p.prospect, where: p.where, injury: p.injury, team: p.team,
     }));
-    const picks = v.picks.filter(p => p.owner === r.owner_id && p.score >= 1).map(p => ({
+    const picks = v.picks.filter(p => p.owner === r.owner_id && (all || p.score >= 1)).map(p => ({
       id: `pick-${p.season}-${p.round}-${p.orig}`, kind: 'pick', name: `${p.label}${p.orig !== r.owner_id ? ' (via trade)' : ''}`, score: p.score, view: p.view, group: null,
+      season: p.season, round: p.round, orig: p.orig,
     }));
     out[r.owner_id] = [...players, ...picks].sort((a, b) => b.score - a.score);
   }
@@ -184,4 +185,96 @@ function pickDistinct(found, limit) {
     if (kept.length >= limit) break;
   }
   return kept;
+}
+
+// ---------- Trade evaluator ----------
+
+// Fair band for the verdict: within 10% either way on standard value is "fair".
+const FAIR_BAND = 0.1;
+const GROUPS = ['G', 'F', 'C'];
+
+// Evaluate a trade someone offers, 2 or 3 teams. legs = [{ id, from, to }] with asset ids from
+// teamAssets(v, rosters, { all: true }) (players by Sleeper ID, picks as pick-season-round-orig).
+// Returns each team's side (value given and received, on the standard timeline and their own)
+// and the league before and after (dynasty outlook ranks, position strength, age, roster size).
+export function evaluateTrade(DATA, v, rosters, legs) {
+  const all = teamAssets(v, rosters, { all: true });
+  const assetOf = Object.fromEntries(Object.values(all).flat().map(a => [a.id, a]));
+  const label = o => v.outlook[o]?.label ?? 'Middle of the pack';
+  const teams = [...new Set(legs.flatMap(l => [l.from, l.to]))];
+
+  // Rosters and pick owners after the trade (taxi players stay on taxi).
+  const after = (rosters ?? []).map(r => ({ ...r, players: [...(r.players ?? [])], taxi: [...(r.taxi ?? [])], reserve: [...(r.reserve ?? [])] }));
+  const rosterOf = o => after.find(r => r.owner_id === o);
+  const picksAfter = v.picks.map(p => ({ ...p }));
+  for (const l of legs) {
+    const a = assetOf[l.id];
+    if (!a) continue;
+    if (a.kind === 'player') {
+      const from = rosterOf(l.from), to = rosterOf(l.to);
+      for (const key of ['players', 'taxi', 'reserve']) {
+        if (!from[key].includes(a.id)) continue;
+        from[key] = from[key].filter(x => x !== a.id);
+        if (key === 'taxi') to.taxi.push(a.id);
+        if (key === 'reserve') to.reserve.push(a.id);
+      }
+      to.players.push(a.id); // Sleeper lists taxi and IR players in players too
+    } else {
+      const p = picksAfter.find(x => x.season === a.season && x.round === a.round && x.orig === a.orig);
+      if (p) p.owner = l.to;
+    }
+  }
+  const season = DATA.seasons.at(-1).season;
+  const before = v.outlook;
+  const afterOutlook = teamOutlook(v.players, picksAfter, after, season);
+
+  // Position strength before and after (this season, 100 = league average).
+  const posBefore = positionStrength(v, rosters ?? []).ratio;
+  const posAfter = positionStrength(v, after).ratio;
+
+  const sides = teams.map(o => {
+    const give = legs.filter(l => l.from === o).map(l => assetOf[l.id]).filter(Boolean);
+    const get = legs.filter(l => l.to === o).map(l => assetOf[l.id]).filter(Boolean);
+    const view = viewFor(label(o));
+    const giveTV = packageValue(give.map(a => a.score));
+    const getTV = packageValue(get.map(a => a.score));
+    const theirNet = packageValue(get.map(a => a.view?.[view] ?? a.score)) - packageValue(give.map(a => a.view?.[view] ?? a.score));
+    const ratio = giveTV ? getTV / giveTV : getTV ? 9 : 1;
+    const verdict = ratio > 1 + FAIR_BAND ? 'wins' : ratio < 1 - FAIR_BAND ? 'loses' : 'fair';
+    const roster = rosterOf(o);
+    return {
+      owner: o, give, get, giveTV, getTV, net: getTV - giveTV, theirNet, view, verdict, label: label(o),
+      before: before[o], after: afterOutlook[o], posBefore: posBefore[o], posAfter: posAfter[o],
+      taxiAfter: roster?.taxi.length ?? 0,
+      spots: get.filter(a => a.kind === 'player').length - give.filter(a => a.kind === 'player').length,
+    };
+  });
+  // Past trades between these teams.
+  const history = (DATA.transactions ?? []).filter(x => x.type === 'trade' && teams.filter(o => x.owners.includes(o)).length >= 2);
+  return { teams, sides, before, after: afterOutlook, history };
+}
+
+// Position strength (Dynasty tab card and the trade evaluator): each team's best guards (3),
+// forwards (3) and centers (2) in fantasy points per game, vs the league average = 1.
+// when 'now' = this season (taxi can't play); 'later' = two seasons from now on the age curve,
+// taxi included (they'll be up by then). Returns { ratio: {owner: {G,F,C}}, sums, top: {owner:
+// {G: [players counted]}}, avg }.
+export function positionStrength(v, rosters, when = 'now') {
+  const k = when === 'later' ? 2 : 0;
+  const sums = {};
+  const top = {};
+  for (const r of rosters ?? []) {
+    const mine = [...new Set([...(r.players ?? []), ...(r.taxi ?? []), ...(r.reserve ?? [])])].map(pid => v.players[pid]).filter(Boolean);
+    sums[r.owner_id] = {};
+    top[r.owner_id] = {};
+    for (const g of GROUPS) {
+      const best = mine.filter(p => GROUP(p.pos) === g && (k || p.where !== 'taxi')).sort((a, b) => b.v[k] - a.v[k]).slice(0, STARTERS[g]);
+      top[r.owner_id][g] = best;
+      sums[r.owner_id][g] = best.reduce((a, p) => a + p.v[k], 0);
+    }
+  }
+  const owners = Object.keys(sums);
+  const avg = Object.fromEntries(GROUPS.map(g => [g, owners.reduce((a, o) => a + sums[o][g], 0) / (owners.length || 1)]));
+  const ratio = Object.fromEntries(owners.map(o => [o, Object.fromEntries(GROUPS.map(g => [g, sums[o][g] / (avg[g] || 1)]))]));
+  return { ratio, sums, top, avg };
 }

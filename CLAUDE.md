@@ -320,6 +320,20 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   "Why they'd say yes": fairness, their timeline gain, thin/deep positions, picks for builders,
   prospects, trade history, roster spots. Trade block in localStorage gm-block-{owner} (+15 rank
   per block player). Need offers sorted by your-timeline gain; sell shows each team's best first.
+  Trade evaluator (owner, Oct 2026): Trade finder mode "eval" (renderEvaluator in app.js, logic
+  evaluateTrade in tradefinder.js): 2 or 3 teams, each team's outgoing players/picks (teamAssets with
+  { all: true }; 3 teams = pick the destination per asset), draft saved in localStorage gm-eval.
+  Per team: gives/gets package value, net (standard + own timeline), verdict (within 10% = about
+  even), before -> after via teamOutlook() (now moved out of dynastyValues, shared): this-season /
+  2-yr / total ranks + best-9 sums, outlook label, value-weighted age, G/F/C strength vs league avg
+  (=100), roster size change, taxi vs 15. League table of every team's ranks before -> after, past
+  trades between the teams + Front Office net. Position strength (owner): positionStrength(v, rosters,
+  when) in tradefinder.js (shared by the evaluator) = best 3 G / 3 F / 2 C per-game (now: v[0], taxi
+  out; later: v[2], taxi in) / league avg; Dynasty tab card (drawPositions): all teams, This season /
+  In 2 years, >=110 green, <=90 red, plus "who counts" for the viewed team. Team needs (owner):
+  teamNeeds() in app.js = positions under 95 now (red chips) or under 90 in 2 yrs (gold), outlook
+  shopping style (Proven starters now / Youth + picks / Younger core), Taxi full (15), No {next} 1st;
+  shown as a "Needs" row on every Managers card and a Needs column in the Position strength table.
   Guide: dynastyGuide() on the Dynasty tab (#dy-guide, opened/scrolled by ?guide=1, linked from the
   Trade finder): SCORE_TIERS with live counts + examples, arrows, prospect grade, picks, trade math.
   Tier tags (owner asked): tierTag(score) in app.js = SCORE_TIERS short names (Cornerstone, Star,
