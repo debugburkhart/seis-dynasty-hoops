@@ -7,7 +7,7 @@ import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, seriesBefore, standingsBef
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
 import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach } from './gm.js';
 import { PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, taxiLeft } from './dynasty.js';
-import { evaluateTrade, moveImpacts, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, teamSnapshot, tradeContext, unpackTeam } from './tradefinder.js';
+import { CENTERPIECE, evaluateTrade, moveImpacts, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, teamSnapshot, tradeContext, unpackTeam } from './tradefinder.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
 import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, ownerAt, playerOfTheYear, rookieClass, seasonEndKey } from './awards.js';
 import { ALL_STAR_POSITIONS, CORRECTIONS, DRAFT_CORRECTIONS, PHOTO_CORRECTIONS } from './corrections.js';
@@ -3464,7 +3464,10 @@ async function renderTrades(body, params) {
   const hash = extra => `#/commish?${new URLSearchParams({ tab: 'trades', ...(me === COMMISH ? {} : { team: me }), mode, ...extra })}`;
   const owners = Object.keys(c.assets).filter(o => o !== me).sort((a, b) => name(a).localeCompare(name(b)));
   const assetName = a => `${a.name} · ${a.score}`;
-  const findAsset = id => Object.values(c.assets).flat().find(a => a.id === id);
+  const findAsset = id => Object.values(c.allAssets).flat().find(a => a.id === id);
+  // Filters (Get a player / Fill a need): leave your picks out, and (Fill a need) a target tier.
+  const noPicks = params.get('picks') === 'no';
+  const pickChips = keep => `<div class="st-stage tf-filter"><span class="tf-filter-l">Your picks</span>${[['', 'Can be used'], ['no', 'Keep my picks']].map(([id, l]) => `<a href="${hash({ ...keep, ...(id ? { picks: id } : {}) })}" class="${(id === 'no') === noPicks ? 'on' : ''}">${l}</a>`).join('')}</div>`;
 
   // Pickers for each mode.
   let picker = '';
@@ -3474,15 +3477,28 @@ async function renderTrades(body, params) {
     const target = findAsset(params.get('target'));
     picker = `<label class="hy-pick cm-pick"><span class="hy-pick-label">Get</span><span class="ed-select"><span class="hy-pick-val">${target ? esc(target.name) : 'Choose a player'}</span>
       <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
-      <select class="tf-select" data-key="target"><option value="">Choose a player…</option>${owners.map(o => `<optgroup label="${esc(name(o))}">${c.assets[o].map(a => `<option value="${esc(a.id)}"${target?.id === a.id ? ' selected' : ''}>${esc(assetName(a))}</option>`).join('')}</optgroup>`).join('')}</select></span></label>`;
-    if (target) offers = offersFor(c, target, { block, limit: 4 });
-    note = target ? (offers.length ? `Offers from your roster for ${esc(target.name)} (${target.score}).` : `No fair offer from your roster for ${esc(target.name)}: you’d have to give more than 3 pieces, or he’s worth more than your best package.`) : 'Pick any player (or pick) on another team to see what it would take.';
+      <select class="tf-select" data-key="target"><option value="">Choose a player…</option>${owners.map(o => `<optgroup label="${esc(name(o))}">${c.allAssets[o].map(a => `<option value="${esc(a.id)}"${target?.id === a.id ? ' selected' : ''}>${esc(assetName(a))}</option>`).join('')}</optgroup>`).join('')}</select></span></label>`;
+    picker += pickChips(target ? { target: target.id } : {});
+    if (target) offers = offersFor(c, target, { block, limit: 4, noPicks });
+    const tierName = target?.kind === 'player' ? `, ${TIER_SHORT[SCORE_TIERS.findIndex(([min]) => target.score >= min)]}` : '';
+    note = target ? (offers.length ? `Offers from your roster for ${esc(target.name)} (${target.score}${tierName})${noPicks ? ', without your picks' : ''}.` : `No fair offer from your roster for ${esc(target.name)}${noPicks ? ' without your picks' : ''}: you’d have to give more than 3 pieces, ${target.score >= CENTERPIECE.at(-1)[0] ? 'you have no single piece big enough to headline it, ' : ''}or he’s worth more than your best package.`) : 'Pick any player (or pick) on another team to see what it would take.';
   } else if (mode === 'need') {
     const pos = ['G', 'F', 'C'].includes(params.get('pos')) ? params.get('pos') : 'G';
-    picker = `<div class="st-stage tf-pos">${[['G', 'Guard'], ['F', 'Forward'], ['C', 'Center']].map(([id, l]) => `<a href="${hash({ pos: id })}" class="${id === pos ? 'on' : ''}">${l}</a>`).join('')}</div>`;
-    const r = offersForNeed(c, pos, { block });
+    // Tier = index into SCORE_TIERS (Replaceable left out); range = [its min, next tier up's min).
+    const ti = Number(params.get('tier'));
+    const tierIdx = params.get('tier') != null && Number.isInteger(ti) && ti >= 0 && ti < SCORE_TIERS.length - 1 ? ti : null;
+    const tier = tierIdx == null ? null : [SCORE_TIERS[tierIdx][0], tierIdx ? SCORE_TIERS[tierIdx - 1][0] - 0.01 : 100];
+    const tierKeep = tierIdx == null ? {} : { tier: tierIdx };
+    const picksKeep = noPicks ? { picks: 'no' } : {};
+    picker = `<div class="st-stage tf-pos">${[['G', 'Guard'], ['F', 'Forward'], ['C', 'Center']].map(([id, l]) => `<a href="${hash({ pos: id, ...tierKeep, ...picksKeep })}" class="${id === pos ? 'on' : ''}">${l}</a>`).join('')}</div>
+      <div class="st-stage tf-filter tf-tiers"><span class="tf-filter-l">Target</span><a href="${hash({ pos, ...picksKeep })}" class="${tierIdx == null ? 'on' : ''}">Any upgrade</a>${TIER_SHORT.slice(0, -1).map((l, i) => `<a href="${hash({ pos, tier: i, ...picksKeep })}" class="${i === tierIdx ? 'on' : ''}">${l}</a>`).join('')}</div>
+      ${pickChips({ pos, ...tierKeep })}`;
+    const r = offersForNeed(c, pos, { block, noPicks, tier });
     offers = r.offers;
-    note = `Players on other teams who’d start for you at ${pos === 'G' ? 'guard' : pos === 'F' ? 'forward' : 'center'} (better this season than your weakest starter there, ${num(r.bar)} a game), each with its best fair offer, best for you first.${offers.length ? '' : ' None found.'}`;
+    const posName = pos === 'G' ? 'guard' : pos === 'F' ? 'forward' : 'center';
+    note = tier
+      ? `${TIER_SHORT[tierIdx]} ${posName}s (score ${SCORE_TIERS[tierIdx][0]}${tierIdx ? `–${SCORE_TIERS[tierIdx - 1][0] - 1}` : '+'}) on other teams, each with its best fair offer${noPicks ? ' without your picks' : ''}, best for you first. At a chosen level they don’t have to beat your weakest starter (${num(r.bar)} a game); “+N a game” shows when one would.${offers.length ? '' : ` None found${tierIdx < 2 ? ': nobody at this level, or no piece on your roster big enough to headline the deal' : ''}.`}`
+      : `Players on other teams who’d start for you at ${posName} (better this season than your weakest starter there, ${num(r.bar)} a game), each with its best fair offer${noPicks ? ' without your picks' : ''}, best for you first.${offers.length ? '' : ' None found.'}`;
   } else {
     const sell = c.assets[me].find(a => a.id === params.get('sell'));
     picker = `<label class="hy-pick cm-pick"><span class="hy-pick-label">Sell</span><span class="ed-select"><span class="hy-pick-val">${sell ? esc(sell.name) : 'Choose one of yours'}</span>
@@ -3497,7 +3513,7 @@ async function renderTrades(body, params) {
     const share = Math.round(100 * o.giveTV / (o.giveTV + o.getTV));
     return `
     <section class="card tf-offer">
-      <div class="card-head"><h2>${esc(name(o.partner))}</h2><span class="cm-pill ${LABEL_CLS[o.lab] ?? ''}">${esc(o.lab)}</span>${o.upgrade != null ? `<span class="card-sub">+${o.upgrade} a game at the spot</span>` : ''}</div>
+      <div class="card-head"><h2>${esc(name(o.partner))}</h2><span class="cm-pill ${LABEL_CLS[o.lab] ?? ''}">${esc(o.lab)}</span>${o.upgrade > 0 ? `<span class="card-sub">+${o.upgrade} a game at the spot</span>` : ''}</div>
       <div class="tf-sides">
         <div><div class="tf-side-head">You give <b>${Math.round(o.giveTV)}</b></div><ol class="aw-race">${o.give.map(assetRow).join('')}</ol></div>
         <div><div class="tf-side-head">You get <b>${Math.round(o.getTV)}</b></div><ol class="aw-race">${o.get.map(assetRow).join('')}</ol></div>
@@ -3505,6 +3521,7 @@ async function renderTrades(body, params) {
       <div class="tf-balance" aria-label="Value given vs received"><i style="width:${share}%"></i></div>
       <ul class="tf-why">${o.why.map(w => `<li>${esc(w)}</li>`).join('')}</ul>
       <p class="tf-mine">On your timeline: <b class="${o.myGain >= 0 ? 'dy-up' : 'dy-down'}">${o.myGain >= 0 ? '+' : ''}${num(o.myGain)}</b>${o.onBlock ? ` · uses ${o.onBlock} player${o.onBlock === 1 ? '' : 's'} from your trade block` : ''}</p>
+      <button type="button" class="tf-eval-btn" data-i="${offers.indexOf(o)}">Open in Evaluate a trade ›</button>
     </section>`;
   };
   const blockList = c.assets[me].filter(a => a.kind === 'player').slice(0, 30);
@@ -3524,11 +3541,23 @@ async function renderTrades(body, params) {
     <section class="card">
       <div class="card-head"><h2>How offers are built</h2></div>
       <p class="cm-rule">Each offer is fair on the standard dynasty value (within about 5–20%), counting that scores don’t simply add: a package is worth less than its total (two 30s ≈ one ${Math.round(packageValue([30, 30]))}), and a team taking on extra players needs 5% more per player. It also has to work for the other team on <b>their</b> timeline: a win-now team counts this season 70%, a building team counts the later seasons 80%. That gap is where trades both sides like come from. Up to 3 pieces a side, from each team’s ${28} most valuable assets.</p>
+      <p class="cm-rule">Big targets need a real headliner: one piece you give must be worth at least ${CENTERPIECE.map(([min, share]) => `${Math.round(share * 100)}% of a ${TIER_SHORT[SCORE_TIERS.findIndex(t => t[0] === min)]} (${min}+)`).join(', ')}, so a pile of bench players never buys a star. “Keep my picks” builds offers from players only. “Open in Evaluate a trade” loads an offer into the evaluator to see how it changes both teams and the league.</p>
       <p class="cm-rule">“On your timeline” is the same check from your side (${esc(v.outlook[me]?.label ?? '')}). These are starting points: injuries, roster spots and personalities still matter.</p>
     </section></div>`;
 
   bindTeamPick(body);
   body.querySelectorAll('.tf-select').forEach(sel => sel.addEventListener('change', () => { location.hash = hash({ [sel.dataset.key]: sel.value }); }));
+  // Hand an offer to the evaluator (same asset ids), then switch modes.
+  body.querySelectorAll('.tf-eval-btn').forEach(b => b.addEventListener('click', () => {
+    const o = offers[Number(b.dataset.i)];
+    if (!o) return;
+    gmSave('gm-eval', { n: 2, teams: [me, o.partner], legs: [
+      ...o.give.map(a => ({ id: a.id, from: me, to: o.partner })),
+      ...o.get.map(a => ({ id: a.id, from: o.partner, to: me })),
+    ] });
+    location.hash = `#/commish?${new URLSearchParams({ tab: 'trades', ...(me === COMMISH ? {} : { team: me }), mode: 'eval' })}`;
+    window.scrollTo(0, 0);
+  }));
   body.querySelectorAll('.tf-block input').forEach(cb => cb.addEventListener('change', () => {
     const now = [...body.querySelectorAll('.tf-block input:checked')].map(x => x.value);
     gmSave(blockKey, now);

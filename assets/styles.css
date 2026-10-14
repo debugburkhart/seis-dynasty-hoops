@@ -2073,6 +2073,11 @@ a.tl-event:hover { background: #fbf6e6; }
 .tf-modes { min-width: min(420px, 100%); }
 .tf-modes a, .tf-pos a { padding: 10px 12px; }
 .tf-pos { min-width: min(320px, 100%); }
+.tf-filter { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; max-width: 100%; margin-top: 8px; }
+.tf-filter a { padding: 9px 11px; }
+.tf-filter-l { padding: 0 6px 0 8px; font: 800 9.5px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--gold-ink); }
+.tf-eval-btn { margin-top: 10px; padding: 9px 12px; border: 1px solid var(--navy-800); border-radius: 9px; background: var(--paper); color: var(--navy-800); font: 800 11px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+.tf-eval-btn:hover { background: var(--navy-800); color: var(--gold); }
 .tf-grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
 .tf-offer .card-head { align-items: center; flex-wrap: wrap; }
 .tf-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

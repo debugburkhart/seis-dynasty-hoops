@@ -325,6 +325,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   "Why they'd say yes": fairness, their timeline gain, thin/deep positions, picks for builders,
   prospects, trade history, roster spots. Trade block in localStorage gm-block-{owner} (+15 rank
   per block player). Need offers sorted by your-timeline gain; sell shows each team's best first.
+  Trade finder filters (owner, Oct 2026): ?picks=no ("Keep my picks", Get a player + Fill a need)
+  = no picks on your side; Fill a need ?tier=i (SCORE_TIERS index, Replaceable excluded) targets
+  that score band from every rostered player (c.allAssets) and drops the beat-your-weakest-starter
+  rule ("+N a game" shown only when > 0). Get a player's list = all rostered players too. Headliner
+  rule CENTERPIECE in tradefinder.js: target 90+ needs one given piece >= 70% of it, 70+ >= 60%,
+  50+ >= 45% (so 3 high-end starters can't buy Jokic). Every offer card has "Open in Evaluate a
+  trade" (writes gm-eval {n:2, teams, legs} and switches to mode=eval).
   Trade evaluator (owner, Oct 2026): Trade finder mode "eval" (renderEvaluator in app.js, logic
   evaluateTrade in tradefinder.js): 2 or 3 teams, each team's outgoing players/picks (teamAssets with
   { all: true }; 3 teams = pick the destination per asset), draft saved in localStorage gm-eval.

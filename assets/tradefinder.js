@@ -77,7 +77,8 @@ export function tradeContext(DATA, v, rosters, me) {
   const label = o => v.outlook[o]?.label ?? 'Middle of the pack';
   const tradesWith = o => (DATA.transactions ?? []).filter(x => x.type === 'trade' && x.owners.includes(me) && x.owners.includes(o)).length;
   const tradesAll = o => (DATA.transactions ?? []).filter(x => x.type === 'trade' && x.owners.includes(o)).length;
-  return { DATA, v, me, assets, needs, label, tradesWith, tradesAll };
+  const allAssets = teamAssets(v, rosters, { all: true }); // every rostered player, for low-tier targets
+  return { DATA, v, me, rosters, assets, allAssets, needs, label, tradesWith, tradesAll };
 }
 
 // Why the other team might say yes (and anything that could get in the way).
@@ -103,16 +104,24 @@ function reasons(c, partner, give, get, theirView, theirGain, giveTV, getTV) {
 }
 
 // Get one player (or pick) from another team: offers from your assets.
-export function offersFor(c, target, { block = [], limit = 3 } = {}) {
-  const partner = Object.entries(c.assets).find(([, list]) => list.some(a => a.id === target.id))?.[0];
+// Centerpiece rule: a high-end target needs a real centerpiece, not a pile of role players. The
+// best piece you send must be worth at least this share of the target: Star or better (70+) 60%,
+// High-end starter (50+) 45%. Lower tiers have no rule (the value windows are enough).
+export const CENTERPIECE = [[90, 0.7], [70, 0.6], [50, 0.45]];
+const needsCenterpiece = score => CENTERPIECE.find(([min]) => score >= min)?.[1] ?? 0;
+// noPicks: offers only from your players.
+export function offersFor(c, target, { block = [], limit = 3, noPicks = false } = {}) {
+  const partner = Object.entries(c.allAssets ?? c.assets).find(([, list]) => list.some(a => a.id === target.id))?.[0];
   if (!partner || partner === c.me) return [];
   const theirView = viewFor(c.label(partner));
   const myView = viewFor(c.label(c.me));
   const getTV = packageValue([target.score]);
   const blocked = new Set(block);
-  const pool = c.assets[c.me].slice(0, POOL);
+  const pool = c.assets[c.me].filter(a => !noPicks || a.kind !== 'pick').slice(0, POOL);
+  const core = needsCenterpiece(target.score) * target.score;
   const found = [];
   for (const give of combos(pool, MAX_PIECES)) {
+    if (core && Math.max(...give.map(a => a.score)) < core) continue; // no real centerpiece
     const giveTV = packageValue(give.map(a => a.score));
     const extra = Math.max(0, give.filter(a => a.kind === 'player').length - 1); // players they must make room for
     if (giveTV < GET_WINDOW[0] * getTV * (1 + EXTRA_PLAYER * extra) || giveTV > GET_WINDOW[1] * getTV * (1 + EXTRA_PLAYER * extra)) continue;
@@ -154,16 +163,22 @@ export function offersToSell(c, asset, { perTeam = 2 } = {}) {
 }
 
 // Fill a position: players on other teams who'd start for you there, each with its best offer.
-export function offersForNeed(c, group, { block = [], limit = 6 } = {}) {
+// tier = [min, max] dynasty score: only targets in that tier (then they don't have to beat your
+// weakest starter: a Depth target is for depth). noPicks: offers only from your players.
+export function offersForNeed(c, group, { block = [], limit = 6, noPicks = false, tier = null } = {}) {
   const mine = c.assets[c.me].filter(a => a.group === group && a.where !== 'taxi').map(a => a.now ?? 0).sort((a, b) => b - a);
   const bar = mine[STARTERS[group] - 1] ?? 0; // your weakest starter there, this season
-  const myBest = packageValue(c.assets[c.me].slice(0, MAX_PIECES).map(a => a.score));
-  const targets = Object.entries(c.assets).filter(([o]) => o !== c.me).flatMap(([, list]) => list)
-    .filter(a => a.kind === 'player' && a.group === group && (a.now ?? 0) > bar + 1 && a.score <= myBest / GET_WINDOW[0])
-    .sort((a, b) => b.score - a.score).slice(0, 14);
+  const myBest = packageValue(c.assets[c.me].filter(a => !noPicks || a.kind !== 'pick').slice(0, MAX_PIECES).map(a => a.score));
+  // Teams' full rosters, so low tiers (Depth, Stash) have targets too.
+  const pool = tier ? Object.entries(c.allAssets).filter(([o]) => o !== c.me).flatMap(([, list]) => list)
+    : Object.entries(c.assets).filter(([o]) => o !== c.me).flatMap(([, list]) => list);
+  const targets = pool
+    .filter(a => a.kind === 'player' && a.group === group && a.score <= myBest / GET_WINDOW[0]
+      && (tier ? a.score >= tier[0] && a.score <= tier[1] : (a.now ?? 0) > bar + 1))
+    .sort((a, b) => b.score - a.score).slice(0, tier ? 20 : 14);
   const out = [];
   for (const t of targets) {
-    const best = offersFor(c, t, { block, limit: 1 })[0];
+    const best = offersFor(c, t, { block, limit: 1, noPicks })[0];
     if (best) out.push({ ...best, upgrade: r0((t.now ?? 0) - bar) });
     if (out.length >= limit) break;
   }
