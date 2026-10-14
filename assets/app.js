@@ -3026,6 +3026,15 @@ async function renderDynasty(body, params) {
   const pct = x => `${Math.round(x * 100)}%`;
   const chances = q => `Rotation ${pct(q.rotation)} · Starter ${pct(q.starter)} · Star ${pct(q.star)}`;
   const prospects = roster.filter(p => p.prospect).sort((a, b) => (b.prospect.star + b.prospect.starter + b.prospect.rotation) - (a.prospect.star + a.prospect.starter + a.prospect.rotation));
+  const GROUP = { PG: 'G', SG: 'G', G: 'G', SF: 'F', PF: 'F', F: 'F', C: 'C' };
+  const posGroups = p => {
+    const main = GROUP[p.pos] ?? '';
+    return { main, sec: [...new Set((p.fpos ?? []).map(x => GROUP[x]).filter(g => g && g !== main))] };
+  };
+  const posText = p => [p.pos, ...(p.fpos ?? []).filter(x => x !== p.pos)].filter(Boolean).join('/');
+  // Roster filters (kept on this device): G/F/C by main Sleeper position + secondary ones, hide taxi.
+  const rosterPos = ['G', 'F', 'C'].includes(gmLoad('gm-dyn-pos', '')) ? gmLoad('gm-dyn-pos', '') : '';
+  const hideTaxi = Boolean(gmLoad('gm-dyn-hidetaxi', false));
   const taxiText = n => (n < 0 ? 'Over the limit' : n === 0 ? 'Last year' : `${n} more yr${n === 1 ? '' : 's'}`);
   const list = Object.values(v.outlook).sort((a, b) => b.total - a.total);
   const meter = Math.round((t.lean + 1) * 50);
@@ -3057,8 +3066,11 @@ async function renderDynasty(body, params) {
     <section class="card" id="dy-movers"><div class="card-head"><h2>Risers &amp; fallers</h2></div><p class="cm-rule">Loading score history…</p></section>
     <div class="cm-races">
       <section class="card">
-        <div class="card-head"><h2>Roster by dynasty score</h2><span class="card-sub">${roster.length} players · tap one for his score over time</span></div>
-        <ol class="aw-race dy-list">${roster.map(p => `<li class="dy-row" data-pid="${esc(p.pid)}" tabindex="0" role="button" aria-expanded="false"><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))} · ${trendOf(p)}${p.out ? ` · <span class="${p.outCut ? 'dy-down' : 'dy-flat'}">listed Out: ${p.outCut ? 'this season at half' : 'full value'}</span>` : ''}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small></span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
+        <div class="card-head"><h2>Roster by dynasty score</h2><span class="card-sub" id="dy-count">${roster.length} players · tap one for his score over time</span></div>
+        <div class="st-stage tf-filter dy-filter" role="group" aria-label="Position">${[['', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']].map(([id, l]) => `<a href="#" data-pos="${id}" class="${id === rosterPos ? 'on' : ''}">${l}</a>`).join('')}</div>
+        <label class="dy-taxi-toggle"><input type="checkbox"${hideTaxi ? ' checked' : ''}> Hide taxi (${taxi.length})</label>
+        <ol class="aw-race dy-list">${roster.map(p => `<li class="dy-row" data-pid="${esc(p.pid)}" data-pos="${posGroups(p).main}" data-sec="${posGroups(p).sec.join(' ')}" data-taxi="${p.where === 'taxi' ? 1 : 0}" tabindex="0" role="button" aria-expanded="false"><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([posText(p), p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))}<span class="dy-sec-note"></span> · ${trendOf(p)}${p.out ? ` · <span class="${p.outCut ? 'dy-down' : 'dy-flat'}">listed Out: ${p.outCut ? 'this season at half' : 'full value'}</span>` : ''}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small>${p.chances ? `<small class="dy-chances">In 3 seasons: ${chances(p.chances)}</small>` : ''}</span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
+        <p class="cm-rule">Filters use each player’s main Sleeper position; players who can also play there (another position Sleeper lists for him) show too, marked “secondary position”. <b>In 3 seasons</b>: his chances of being a rotation player (top 120), a weekly starter (top 72) or a star (top 24) by points per game three seasons from now; players ${PROSPECT_MAX_AGE} and under use the prospect model, older players a model fitted the same way on 2,453 NBA veterans (2013–2022), which counts players who decline or retire.</p>
       </section>
       <div class="dy-side">
         <section class="card">
@@ -3088,6 +3100,27 @@ async function renderDynasty(body, params) {
   bindTeamPick(body);
   if (params.get('guide') === '1') $('#dy-guide', body)?.scrollIntoView({ block: 'start' });
   bindScoreCharts(body, v);
+  const POS_WORD = { G: ['guard', 'guards'], F: ['forward', 'forwards'], C: ['center', 'centers'] };
+  const filterRoster = () => {
+    const pos = gmLoad('gm-dyn-pos', '');
+    const noTaxi = Boolean(gmLoad('gm-dyn-hidetaxi', false));
+    let main = 0, sec = 0;
+    body.querySelectorAll('.dy-list > .dy-row').forEach(li => {
+      const isSec = Boolean(pos) && li.dataset.pos !== pos && li.dataset.sec.split(' ').includes(pos);
+      const show = (!pos || li.dataset.pos === pos || isSec) && !(noTaxi && li.dataset.taxi === '1');
+      li.hidden = !show;
+      if (!show && li.nextElementSibling?.classList.contains('sc-row')) { li.nextElementSibling.remove(); li.setAttribute('aria-expanded', 'false'); }
+      $('.dy-sec-note', li).innerHTML = isSec ? ` · <span class="dy-sec">secondary position: ${POS_WORD[pos][0]}</span>` : '';
+      if (show) { if (isSec) sec++; else main++; }
+    });
+    $('#dy-count', body).textContent = pos
+      ? `${main} ${POS_WORD[pos][main === 1 ? 0 : 1]}${sec ? ` + ${sec} secondary` : ''}${noTaxi ? ', taxi hidden' : ''}`
+      : `${main} players${noTaxi ? ' (taxi hidden)' : ''} · tap one for his score over time`;
+    body.querySelectorAll('.dy-filter a').forEach(a => a.classList.toggle('on', a.dataset.pos === pos));
+  };
+  body.querySelectorAll('.dy-filter a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); gmSave('gm-dyn-pos', a.dataset.pos); filterRoster(); }));
+  $('.dy-taxi-toggle input', body).addEventListener('change', e => { gmSave('gm-dyn-hidetaxi', e.target.checked); filterRoster(); });
+  filterRoster();
   fillMovers($('#dy-movers', body), v, me).catch(() => {});
   drawPositions($('#dy-pos', body), v, f.rosters, me);
   body.querySelectorAll('[data-inj]').forEach(a => a.addEventListener('click', e => {

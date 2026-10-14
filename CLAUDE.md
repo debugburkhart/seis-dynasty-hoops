@@ -306,7 +306,14 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   logistic fits on x = (ppg carried 3 yrs on AGE_CURVE) / last season's 72nd-best ppg, 1,777
   NBA players <= 24 with 20+ gp 2012-2022 (busts out of the NBA count as misses; TEAM_ rows in
   Sleeper stats must be skipped), holdout 2019-22 calibrated. Grade A+..F (GRADES in dynasty.js);
-  shown as chips in the roster + taxi clock and a Prospects card. Waiver wire tab (owner asked)
+  shown as chips in the roster + taxi clock and a Prospects card. Every player now has p.chances
+  (rotation/starter/star in 3 seasons; <= 24 = the prospect fit, 25+ = VET_*_FIT in dynasty.js,
+  fitted on 2,453 vet seasons 2013-2022 with a max(0, age-33) term, ridge on it; calibrated by age
+  group incl. 36+), shown as an "In 3 seasons" line on every Roster by dynasty score row. Roster
+  filters (owner, Oct 2026): All/Guards/Forwards/Centers by main Sleeper position (p.pos: PG/SG/G = G,
+  SF/PF/F = F, C), plus players whose fantasy_positions (p.fpos) include that group, marked
+  "secondary position: guard"; "Hide taxi" checkbox; both client-side, saved in localStorage
+  gm-dyn-pos / gm-dyn-hidetaxi. Waiver wire tab (owner asked)
   also loads dynasty values: "Dynasty pickups" (unrostered with an NBA team, by 3-season raw,
   Out included) and "Prospects on the wire" (unrostered <= 24 by chances), plus grade chips +
   "dynasty N" on every waiver row (prospectChip shared). Role test (owner asked, Oct 2026): adding

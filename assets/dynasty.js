@@ -61,6 +61,17 @@ const GRADES = [ // [grade, test(starter, star, rotation)]: first match wins
   ['C+', (st, sr, ro) => st >= 0.15 || ro >= 0.6], ['C', (st, sr, ro) => ro >= 0.4], ['C-', (st, sr, ro) => ro >= 0.25],
   ['D', (st, sr, ro) => ro >= 0.12], ['F', () => true],
 ];
+// Veterans (25+), same three chances (Roster by dynasty score shows them for everyone):
+// fitted the same way on 2,453 NBA player-seasons aged 25+ with 20+ games, 2013-2022
+// (Sleeper has no 2012 stats), plus a late-career term max(0, age - 33) (lightly
+// regularized), without which players 36+ came out about 2x too high. On 2019-2022 held
+// out it beat the young-player fit on all three (log loss rotation .238 vs .263, starter
+// .151 vs .180, star .077 vs .085); by age group (25-28 ... 36+) predicted vs real stays
+// within ~1-2 points. Constants refitted on all of 2013-2022: [intercept, x, age - 21, max(0, age - 33)].
+const VET_ROTATION_FIT = [-7.135, 7.311, 0.062, -0.29];
+const VET_STARTER_FIT = [-11.799, 9.538, 0.261, -0.398];
+const VET_STAR_FIT = [-15.307, 10.004, 0.374, -0.215];
+const vetChance = (w, x, age) => 1 / (1 + Math.exp(-(w[0] + w[1] * x + w[2] * (age - 21) + w[3] * Math.max(0, age - 33))));
 const logistic = (w, x, age) => 1 / (1 + Math.exp(-(w[0] + w[1] * x + w[2] * (age - 21))));
 
 const r1 = n => Math.round(n * 10) / 10;
@@ -138,6 +149,7 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
       pid,
       name: i ? `${i.first_name} ${i.last_name}` : DATA.players?.[pid]?.n ?? `Player ${pid}`,
       pos: i?.position ?? DATA.players?.[pid]?.pos ?? '',
+      fpos: i?.fantasy_positions ?? [], // every position Sleeper lets him fill (Dynasty roster filter)
       team: i?.team ?? DATA.players?.[pid]?.t ?? '',
       injury: i?.injury_status ?? null,
       age, out, nbaSeasons, outCut: out && !fullInjured,
@@ -154,6 +166,13 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
       const star = logistic(STAR_FIT, x, age);
       const rotation = logistic(ROTATION_FIT, x, age);
       players[pid].prospect = { starter, star, rotation, in3: r1(in3), grade: GRADES.find(([, test]) => test(starter, star, rotation))[0] };
+      players[pid].chances = players[pid].prospect;
+    } else if (age != null && base > 0) {
+      const x = base * ageMult(age) * ageMult(age + 1) * ageMult(age + 2) / starterLine;
+      // Fitted separately, so keep them in order: star <= starter <= rotation.
+      const rotation = vetChance(VET_ROTATION_FIT, x, age);
+      const starter = Math.min(rotation, vetChance(VET_STARTER_FIT, x, age));
+      players[pid].chances = { rotation, starter, star: Math.min(starter, vetChance(VET_STAR_FIT, x, age)) };
     }
   }
 

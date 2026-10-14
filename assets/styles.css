@@ -2244,3 +2244,11 @@ a.tl-event:hover { background: #fbf6e6; }
   .tk-metrics { display: grid; grid-template-columns: repeat(4, 1fr); align-self: stretch; }
   .tk-metrics a { padding: 8px 4px; font-size: 9.5px; }
 }
+
+/* Dynasty roster filters + 3-season chances */
+.dy-filter { grid-template-columns: none; margin: 0 0 8px; }
+.dy-taxi-toggle { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 10px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.dy-taxi-toggle input { margin: 0; accent-color: var(--navy-800); }
+.dy-list > .dy-row[hidden] { display: none; }
+.dy-sec { color: var(--gold-ink); font-weight: 700; }
+.aw-race li small.dy-chances { margin-top: 1px; color: #3c4556; }
