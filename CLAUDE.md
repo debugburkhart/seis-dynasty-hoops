@@ -316,7 +316,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   gm-dyn-pos / gm-dyn-hidetaxi. Waiver wire tab (owner asked)
   also loads dynasty values: "Dynasty pickups" (unrostered with an NBA team, by 3-season raw,
   Out included) and "Prospects on the wire" (unrostered <= 24 by chances), plus grade chips +
-  "dynasty N" on every waiver row (prospectChip shared). Role test (owner asked, Oct 2026): adding
+  "dynasty N" on every waiver row (prospectChip shared). Waiver rows (owner, Oct 2026) also show
+  every position (posText), age, trend and the "In 3 seasons" chances line like the roster; position
+  chips include secondary-position players (marked, shared posGroups/POS_WORD helpers); Top 10 / Top 30
+  switch (?n=30) for every list. Role test (owner asked, Oct 2026): adding
   per-minute production (per 36, overall or bench-only <20 mpg) or minutes trend to the prospect
   model did NOT help on the 2019-22 holdout (log loss / AUC equal or worse, also for low-minute
   players), so the per-game model stays. Managers tab also has "Startup draft: still on the team"

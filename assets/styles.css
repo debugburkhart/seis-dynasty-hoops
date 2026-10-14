@@ -2252,3 +2252,4 @@ a.tl-event:hover { background: #fbf6e6; }
 .dy-list > .dy-row[hidden] { display: none; }
 .dy-sec { color: var(--gold-ink); font-weight: 700; }
 .aw-race li small.dy-chances { margin-top: 1px; color: #3c4556; }
+.cm-size { grid-template-columns: repeat(2, 1fr); min-width: 0; }

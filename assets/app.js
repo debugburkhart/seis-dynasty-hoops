@@ -2712,6 +2712,17 @@ const trendOf = p => {
   return pct >= 5 ? `<span class="dy-up">↑ ${pct}%</span>` : pct <= -5 ? `<span class="dy-down">↓ ${-pct}%</span>` : '<span class="dy-flat">steady</span>';
 };
 const LABEL_CLS = { Contender: 'good', 'Win now': 'good', Rising: 'good', Fading: 'bad', Rebuilding: 'bad' };
+// Positions (Dynasty roster + Waiver wire filters): main Sleeper position -> G/F/C group, plus
+// the other groups his fantasy_positions let him fill ("secondary position").
+const POS_GROUP = { PG: 'G', SG: 'G', G: 'G', SF: 'F', PF: 'F', F: 'F', C: 'C' };
+const POS_WORD = { G: ['guard', 'guards'], F: ['forward', 'forwards'], C: ['center', 'centers'] };
+const posGroups = p => {
+  const main = POS_GROUP[p.pos] ?? '';
+  return { main, sec: [...new Set((p.fpos ?? []).map(x => POS_GROUP[x]).filter(g => g && g !== main))] };
+};
+const posText = p => [p.pos, ...(p.fpos ?? []).filter(x => x !== p.pos)].filter(Boolean).join('/');
+const pctOf = x => `${Math.round(x * 100)}%`;
+const chances = q => `Rotation ${pctOf(q.rotation)} · Starter ${pctOf(q.starter)} · Star ${pctOf(q.star)}`;
 
 // ---- Dynasty score over time (tap a player on the Dynasty tab) ----
 // data/dynasty-history.json is written by the nightly update: { days: { date: { pid: score,
@@ -3024,14 +3035,7 @@ async function renderDynasty(body, params) {
   const tag = p => (p.where === 'taxi' ? '<span class="cm-pill">Taxi</span>' : p.where === 'ir' ? '<span class="cm-pill bad">IR</span>' : '');
   const grade = prospectChip;
   const pct = x => `${Math.round(x * 100)}%`;
-  const chances = q => `Rotation ${pct(q.rotation)} · Starter ${pct(q.starter)} · Star ${pct(q.star)}`;
   const prospects = roster.filter(p => p.prospect).sort((a, b) => (b.prospect.star + b.prospect.starter + b.prospect.rotation) - (a.prospect.star + a.prospect.starter + a.prospect.rotation));
-  const GROUP = { PG: 'G', SG: 'G', G: 'G', SF: 'F', PF: 'F', F: 'F', C: 'C' };
-  const posGroups = p => {
-    const main = GROUP[p.pos] ?? '';
-    return { main, sec: [...new Set((p.fpos ?? []).map(x => GROUP[x]).filter(g => g && g !== main))] };
-  };
-  const posText = p => [p.pos, ...(p.fpos ?? []).filter(x => x !== p.pos)].filter(Boolean).join('/');
   // Roster filters (kept on this device): G/F/C by main Sleeper position + secondary ones, hide taxi.
   const rosterPos = ['G', 'F', 'C'].includes(gmLoad('gm-dyn-pos', '')) ? gmLoad('gm-dyn-pos', '') : '';
   const hideTaxi = Boolean(gmLoad('gm-dyn-hidetaxi', false));
@@ -3100,7 +3104,6 @@ async function renderDynasty(body, params) {
   bindTeamPick(body);
   if (params.get('guide') === '1') $('#dy-guide', body)?.scrollIntoView({ block: 'start' });
   bindScoreCharts(body, v);
-  const POS_WORD = { G: ['guard', 'guards'], F: ['forward', 'forwards'], C: ['center', 'centers'] };
   const filterRoster = () => {
     const pos = gmLoad('gm-dyn-pos', '');
     const noTaxi = Boolean(gmLoad('gm-dyn-hidetaxi', false));
@@ -3723,33 +3726,43 @@ async function renderWaivers(body, params) {
   ]);
   if (route().page !== 'commish') return;
   const pos = ['G', 'F', 'C'].includes(params.get('pos')) ? params.get('pos') : 'all';
-  const all = waiverWire(DATA, ctx, extra).filter(p => !p.out && (pos === 'all' || p.group === pos));
+  const size = params.get('n') === '30' ? 30 : 10;
   const dy = p => dyn?.players[p.pid];
+  // Position filter: main Sleeper position, plus players who can also play there (marked).
+  const groupsOf = p => posGroups({ pos: p.pos, fpos: dy(p)?.fpos ?? p.fpos });
+  const isSec = p => pos !== 'all' && groupsOf(p).main !== pos && groupsOf(p).sec.includes(pos);
+  const fits = p => pos === 'all' || groupsOf(p).main === pos || isSec(p);
+  const all = waiverWire(DATA, ctx, extra).filter(p => !p.out && fits(p));
   // Dynasty pickups and prospects: every unrostered player (Out ones too: they can be stashed).
-  const posGroup = x => (/^(PG|SG|G)/.test(x) ? 'G' : /^(SF|PF|F)/.test(x) ? 'F' : /^C/.test(x) ? 'C' : null);
-  const free = dyn ? Object.values(dyn.players).filter(p => !p.owner && (pos === 'all' || posGroup(p.pos) === pos)) : [];
-  const stash = free.filter(p => p.team).sort((a, b) => b.raw - a.raw).slice(0, 10);
+  const free = dyn ? Object.values(dyn.players).filter(p => !p.owner && fits(p)) : [];
+  const stash = free.filter(p => p.team).sort((a, b) => b.raw - a.raw).slice(0, size);
   const chanceSum = q => q.rotation + q.starter + q.star;
-  const prospects = free.filter(p => p.prospect).sort((a, b) => chanceSum(b.prospect) - chanceSum(a.prospect)).slice(0, 10);
-  const pct = x => `${Math.round(x * 100)}%`;
-  const top = (rows, n = 10) => rows.slice(0, n);
+  const prospects = free.filter(p => p.prospect).sort((a, b) => chanceSum(b.prospect) - chanceSum(a.prospect)).slice(0, size);
+  const top = rows => rows.slice(0, size);
   const risers = top(all.filter(p => p.recentGames >= 2 && p.recent >= 20 && p.jump >= 5).sort((a, b) => b.jump - a.jump));
   const trending = top(all.filter(p => p.adds > 0).sort((a, b) => b.adds - a.adds));
   const best = top(all.filter(p => (p.gp >= 5 ? p.fpg : p.fpgLast) != null).sort((a, b) => (b.gp >= 5 ? b.fpg : b.fpgLast) - (a.gp >= 5 ? a.fpg : a.fpgLast)));
   const streams = top(all.filter(p => p.proj > 0).sort((a, b) => b.proj - a.proj));
-  const meta = p => [p.pos, p.team || 'No team', p.games ? `${p.games} game${p.games === 1 ? '' : 's'} this week` : 'no games this week'].join(' · ');
+  // Same read as the Dynasty roster: every position he can play, age, dynasty score + trend,
+  // and his rotation / starter / star chances 3 seasons out.
+  const secNote = p => (isSec(p) ? ` · <span class="dy-sec">secondary position: ${POS_WORD[pos][0]}</span>` : '');
+  const dynLine = d => (d ? ` · dynasty ${d.score} ${trendOf(d)}` : '');
+  const chanceLine = d => (d?.chances ? `<small class="dy-chances">In 3 seasons: ${chances(d.chances)}</small>` : '');
+  const meta = p => esc([posText({ pos: p.pos, fpos: dy(p)?.fpos }), p.team || 'No team', dy(p)?.age != null ? `age ${dy(p).age}` : '', p.games ? `${p.games} game${p.games === 1 ? '' : 's'} this week` : 'no games this week'].filter(Boolean).join(' · ')) + secNote(p);
   const rows = (list, value, extraLine) => (list.length ? `<ol class="aw-race">${list.map((p, i) => `
-    <li><span>${i + 1}. ${esc(p.name)} ${dy(p) ? tierTag(dy(p).score) : ''} ${prospectChip(dy(p))} ${injuryTag(p)}<small>${esc(meta(p))}${extraLine ? ` · ${esc(extraLine(p))}` : ''}${dy(p) ? ` · dynasty ${dy(p).score}` : ''}</small></span><b>${value(p)}</b></li>`).join('')}</ol>`
+    <li><span>${i + 1}. ${esc(p.name)} ${dy(p) ? tierTag(dy(p).score) : ''} ${prospectChip(dy(p))} ${injuryTag(p)}<small>${meta(p)}${extraLine ? ` · ${esc(extraLine(p))}` : ''}${dynLine(dy(p))}</small>${chanceLine(dy(p))}</span><b>${value(p)}</b></li>`).join('')}</ol>`
     : '<p class="empty">Nobody fits right now.</p>');
   const dynRows = (list, value, line) => (list.length ? `<ol class="aw-race">${list.map((p, i) => `
-    <li><span>${i + 1}. ${esc(p.name)} ${tierTag(p.score)} ${prospectChip(p)} ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No NBA team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))} · ${line(p)}</small></span>${value(p)}</li>`).join('')}</ol>`
+    <li><span>${i + 1}. ${esc(p.name)} ${tierTag(p.score)} ${prospectChip(p)} ${injuryTag(p)}<small>${esc([posText(p), p.team || 'No NBA team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))}${secNote(p)} · ${line(p)}</small>${chanceLine(p)}</span>${value(p)}</li>`).join('')}</ol>`
     : `<p class="empty">${dyn ? 'Nobody fits right now.' : 'Couldn’t load dynasty values.'}</p>`);
+  const link = (p, n) => `#/commish?${new URLSearchParams({ tab: 'waivers', ...(p === 'all' ? {} : { pos: p }), ...(n === 30 ? { n: 30 } : {}) })}`;
   const chips = [['all', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']].map(([id, label]) =>
-    `<a class="${id === pos ? 'on' : ''}" href="#/commish?tab=waivers${id === 'all' ? '' : `&pos=${id}`}">${label}</a>`).join('');
+    `<a class="${id === pos ? 'on' : ''}" href="${link(id, size)}">${label}</a>`).join('');
+  const sizeChips = [10, 30].map(n => `<a class="${n === size ? 'on' : ''}" href="${link(pos, n)}">Top ${n}</a>`).join('');
 
   body.innerHTML = `
-    <div class="st-stage cm-pos">${chips}</div>
-    <p class="filter-note">Players on no roster in this league, ${at.started ? `week ${at.week}` : `before week ${at.week}`}. Players listed Out are hidden. Recently dropped players stay on waivers for ${ctx.league?.settings?.waiver_clear_days ?? 2} days before they’re free agents.</p>
+    <div class="cm-pickers"><div class="st-stage cm-pos">${chips}</div><div class="st-stage cm-pos cm-size">${sizeChips}</div></div>
+    <p class="filter-note">Players on no roster in this league, ${at.started ? `week ${at.week}` : `before week ${at.week}`}. Players listed Out are hidden (except in the two dynasty lists). Position filters use his main Sleeper position plus anyone who can also play there, marked “secondary position”. Each player shows his dynasty score, its 2-season trend and his chances 3 seasons from now of being a rotation player (top 120), a starter (top 72) or a star (top 24), same as the Dynasty roster. Recently dropped players stay on waivers for ${ctx.league?.settings?.waiver_clear_days ?? 2} days before they’re free agents.</p>
     <div class="cm-races">
       <section class="card"><div class="card-head"><h2>Dynasty pickups</h2><a class="gm-more" href="#/commish?tab=dynasty">Dynasty →</a></div>
         <p class="cm-rule">Best unrostered players by 3-season value (this season 50%, next 30%, the one after 20%; players listed Out included, they can be stashed). Big number = dynasty score.</p>
@@ -3757,7 +3770,7 @@ async function renderWaivers(body, params) {
       </section>
       <section class="card"><div class="card-head"><h2>Prospects on the wire</h2></div>
         <p class="cm-rule">Unrostered players 24 and under with the best chances, 3 seasons from now, of being a rotation player (top 120), a starter (top 72) or a star (top 24). Taxi-eligible: worth a look when you clear a spot.</p>
-        ${dynRows(prospects, p => prospectChip(p), p => `Rotation ${pct(p.prospect.rotation)} · Starter ${pct(p.prospect.starter)} · Star ${pct(p.prospect.star)}`)}
+        ${dynRows(prospects, p => prospectChip(p), p => `dynasty ${p.score} ${trendOf(p)}`)}
       </section>
       <section class="card"><div class="card-head"><h2>Risers</h2></div>
         <p class="cm-rule">Fantasy points per game over the last 14 days vs his season average (2+ recent games, 20+ a game).</p>
