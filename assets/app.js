@@ -2697,10 +2697,21 @@ const prospectChip = p => (p?.prospect ? `<span class="pg pg-${p.prospect.grade[
 const TIER_SHORT = ['Cornerstone', 'Star', 'High-end starter', 'Starter', 'Flex', 'Depth', 'Stash', 'Replaceable'];
 const tierTag = score => { const i = SCORE_TIERS.findIndex(([min]) => score >= min); return i < 0 ? '' : `<span class="tier tier-${i}" title="Dynasty tier: ${SCORE_TIERS[i][1]}">${TIER_SHORT[i]}</span>`; };
 
+// Smoothed projection states saved nightly (dynasty.js PROJ_SMOOTH); missing file = raw projections.
+let DYN_PROJ = null;
+async function loadDynProj() {
+  if (DYN_PROJ) return DYN_PROJ;
+  try {
+    const res = await fetch(`data/dynasty-proj.json?t=${Date.now()}`, { cache: 'no-store' });
+    DYN_PROJ = res.ok ? (await res.json()).states ?? [] : [];
+  } catch { DYN_PROJ = []; }
+  return DYN_PROJ;
+}
+const loadDynastyFeeds = async () => loadDynasty(DATA, { projStates: await loadDynProj() });
 async function gmDynasty(params) {
   const cur = DATA.seasons.at(-1);
   const me = cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH;
-  const f = await loadDynasty(DATA);
+  const f = await loadDynastyFeeds();
   return { season: cur.season, me, f, v: dynastyValues(DATA, f, { fullInjured: gmLoad('gm-dyn-full', false) }) };
 }
 const scoreBar = s => `<span class="dy-bar" aria-hidden="true"><i style="width:${s}%"></i></span><b class="dy-score">${s}</b>`;
@@ -2723,6 +2734,8 @@ const posGroups = p => {
 const posText = p => [p.pos, ...(p.fpos ?? []).filter(x => x !== p.pos)].filter(Boolean).join('/');
 const pctOf = x => `${Math.round(x * 100)}%`;
 const chances = q => `Rotation ${pctOf(q.rotation)} · Starter ${pctOf(q.starter)} · Star ${pctOf(q.star)}`;
+// Smoothing note: Sleeper's projection moved and the score is still catching up.
+const projNote = p => (p?.projRaw != null ? ` · <span class="dy-catch" title="This season's projection is smoothed, so one overnight update can't swing the score">${p.projRaw > p.projUsed ? '↗' : '↘'} catching up: Sleeper ${num(p.projRaw)} a game, counted ${num(p.projUsed)}</span>` : '');
 
 // ---- Dynasty score over time (tap a player on the Dynasty tab) ----
 // data/dynasty-history.json is written by the nightly update: { days: { date: { pid: score,
@@ -3073,7 +3086,7 @@ async function renderDynasty(body, params) {
         <div class="card-head"><h2>Roster by dynasty score</h2><span class="card-sub" id="dy-count">${roster.length} players · tap one for his score over time</span></div>
         <div class="st-stage tf-filter dy-filter" role="group" aria-label="Position">${[['', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']].map(([id, l]) => `<a href="#" data-pos="${id}" class="${id === rosterPos ? 'on' : ''}">${l}</a>`).join('')}</div>
         <label class="dy-taxi-toggle"><input type="checkbox"${hideTaxi ? ' checked' : ''}> Hide taxi (${taxi.length})</label>
-        <ol class="aw-race dy-list">${roster.map(p => `<li class="dy-row" data-pid="${esc(p.pid)}" data-pos="${posGroups(p).main}" data-sec="${posGroups(p).sec.join(' ')}" data-taxi="${p.where === 'taxi' ? 1 : 0}" tabindex="0" role="button" aria-expanded="false"><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([posText(p), p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))}<span class="dy-sec-note"></span> · ${trendOf(p)}${p.out ? ` · <span class="${p.outCut ? 'dy-down' : 'dy-flat'}">listed Out: ${p.outCut ? 'this season at half' : 'full value'}</span>` : ''}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small>${p.chances ? `<small class="dy-chances">In 3 seasons: ${chances(p.chances)}</small>` : ''}</span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
+        <ol class="aw-race dy-list">${roster.map(p => `<li class="dy-row" data-pid="${esc(p.pid)}" data-pos="${posGroups(p).main}" data-sec="${posGroups(p).sec.join(' ')}" data-taxi="${p.where === 'taxi' ? 1 : 0}" tabindex="0" role="button" aria-expanded="false"><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([posText(p), p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))}<span class="dy-sec-note"></span> · ${trendOf(p)}${projNote(p)}${p.out ? ` · <span class="${p.outCut ? 'dy-down' : 'dy-flat'}">listed Out: ${p.outCut ? 'this season at half' : 'full value'}</span>` : ''}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small>${p.chances ? `<small class="dy-chances">In 3 seasons: ${chances(p.chances)}</small>` : ''}</span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
         <p class="cm-rule">Filters use each player’s main Sleeper position; players who can also play there (another position Sleeper lists for him) show too, marked “secondary position”. <b>In 3 seasons</b>: his chances of being a rotation player (top 120), a weekly starter (top 72) or a star (top 24) by points per game three seasons from now; players ${PROSPECT_MAX_AGE} and under use the prospect model, older players a model fitted the same way on 2,453 NBA veterans (2013–2022), which counts players who decline or retire.</p>
       </section>
       <div class="dy-side">
@@ -3097,7 +3110,7 @@ async function renderDynasty(body, params) {
     ${dynastyGuide(v, params.get('guide') === '1')}
     <section class="card">
       <div class="card-head"><h2>How dynasty scores work</h2></div>
-      <p class="cm-rule"><b>0–100</b>: 0 is what you could pick up off waivers, 100 is the league’s most valuable player (now ${esc(Object.values(v.players).sort((a, b) => b.worth - a.worth)[0]?.name ?? '')}). It blends three seasons of fantasy points per game, ${SEASON_WEIGHTS.map(w => `${w * 100}%`).join(' / ')}: this season is Sleeper’s projection under league scoring (players listed Out count half for this season; since the score measures value above waiver level, that can cut a mid-level player’s score a lot, e.g. 35 to 11; the “Injured: full value” switch at the top turns that off, and the setting also applies to the Trade finder, Managers and Waiver wire), and the next two follow an age curve fitted on 10 seasons of NBA stats: players improve about 10–15% a year up to 22, level off around 24–25, and lose about 5% a year by 29 and 10% by 31. The arrow is his value in 2 seasons vs this one.</p>
+      <p class="cm-rule"><b>0–100</b>: 0 is what you could pick up off waivers, 100 is the league’s most valuable player (now ${esc(Object.values(v.players).sort((a, b) => b.worth - a.worth)[0]?.name ?? '')}). It blends three seasons of fantasy points per game, ${SEASON_WEIGHTS.map(w => `${w * 100}%`).join(' / ')}: this season is Sleeper’s projection under league scoring (players listed Out count half for this season; since the score measures value above waiver level, that can cut a mid-level player’s score a lot, e.g. 35 to 11; the “Injured: full value” switch at the top turns that off, and the setting also applies to the Trade finder, Managers and Waiver wire), and the next two follow an age curve fitted on 10 seasons of NBA stats: players improve about 10–15% a year up to 22, level off around 24–25, and lose about 5% a year by 29 and 10% by 31. The arrow is his value in 2 seasons vs this one. Sleeper updates season projections every morning, so this season’s projection is smoothed: each day the value moves a quarter of the way to Sleeper’s new number (about half in 2–3 days, 90% in about 8), so one overnight update can’t swing a score; “catching up” marks players still moving.</p>
       <p class="cm-rule">Each value carries some uncertainty, so a young player just below waiver level keeps a little value for his upside. <b>Picks</b>: what a rookie at that spot has produced in this league’s drafts (Draft Grades), with the same upside, 10% off per year until the draft. Picks only count their first 3 seasons, so dynasty markets that look further ahead value them higher.</p>
       <p class="cm-rule"><b>Prospect grade</b> (players ${PROSPECT_MAX_AGE} and under, A+ to F): the score above looks 3 seasons ahead, which undersells young players, so the grade asks where he’ll be in 3 seasons. His points per game are carried forward on the age curve and compared with how ${'1,777'} young NBA players since 2012 actually turned out (counting the ones who fell out of the league). Checked on players the model never saw (2019–2022): when it said about 21% would become starters, 15% did; about 59%, 67% did; about 83%, 86% did. A+ = 50%+ star chance; A = 30%+ star or 85%+ starter; A– to B– = 70% down to 25% starter; C+ to D = mostly his rotation chance; F = under 12% to even be a rotation player.</p>
     </section></div>`;
@@ -3722,7 +3735,7 @@ async function renderWaivers(body, params) {
   const at = (await scoutWeek()) ?? { season: DATA.seasons.at(-1).season, week: 1, started: false };
   const [ctx, extra, dyn] = await Promise.all([
     loadWeek(DATA, at.season, at.week), loadWaivers(at.season, at.week, at.started),
-    loadDynasty(DATA).then(f => dynastyValues(DATA, f, { fullInjured: gmLoad('gm-dyn-full', false) })).catch(() => null),
+    loadDynastyFeeds().then(f => dynastyValues(DATA, f, { fullInjured: gmLoad('gm-dyn-full', false) })).catch(() => null),
   ]);
   if (route().page !== 'commish') return;
   const pos = ['G', 'F', 'C'].includes(params.get('pos')) ? params.get('pos') : 'all';
@@ -3746,14 +3759,16 @@ async function renderWaivers(body, params) {
   // Same read as the Dynasty roster: every position he can play, age, dynasty score + trend,
   // and his rotation / starter / star chances 3 seasons out.
   const secNote = p => (isSec(p) ? ` · <span class="dy-sec">secondary position: ${POS_WORD[pos][0]}</span>` : '');
-  const dynLine = d => (d ? ` · dynasty ${d.score} ${trendOf(d)}` : '');
+  const dynLine = d => (d ? ` · dynasty ${d.score} ${trendOf(d)}${projNote(d)}` : '');
   const chanceLine = d => (d?.chances ? `<small class="dy-chances">In 3 seasons: ${chances(d.chances)}</small>` : '');
   const meta = p => esc([posText({ pos: p.pos, fpos: dy(p)?.fpos }), p.team || 'No team', dy(p)?.age != null ? `age ${dy(p).age}` : '', p.games ? `${p.games} game${p.games === 1 ? '' : 's'} this week` : 'no games this week'].filter(Boolean).join(' · ')) + secNote(p);
+  // Tap a player (one with a dynasty value) for his score chart, same as the Dynasty roster.
+  const chartAttrs = d => (d ? ` class="dy-row" data-pid="${esc(d.pid)}" tabindex="0" role="button" aria-expanded="false"` : '');
   const rows = (list, value, extraLine) => (list.length ? `<ol class="aw-race">${list.map((p, i) => `
-    <li><span>${i + 1}. ${esc(p.name)} ${dy(p) ? tierTag(dy(p).score) : ''} ${prospectChip(dy(p))} ${injuryTag(p)}<small>${meta(p)}${extraLine ? ` · ${esc(extraLine(p))}` : ''}${dynLine(dy(p))}</small>${chanceLine(dy(p))}</span><b>${value(p)}</b></li>`).join('')}</ol>`
+    <li${chartAttrs(dy(p))}><span>${i + 1}. ${esc(p.name)} ${dy(p) ? tierTag(dy(p).score) : ''} ${prospectChip(dy(p))} ${injuryTag(p)}<small>${meta(p)}${extraLine ? ` · ${esc(extraLine(p))}` : ''}${dynLine(dy(p))}</small>${chanceLine(dy(p))}</span><b>${value(p)}</b></li>`).join('')}</ol>`
     : '<p class="empty">Nobody fits right now.</p>');
   const dynRows = (list, value, line) => (list.length ? `<ol class="aw-race">${list.map((p, i) => `
-    <li><span>${i + 1}. ${esc(p.name)} ${tierTag(p.score)} ${prospectChip(p)} ${injuryTag(p)}<small>${esc([posText(p), p.team || 'No NBA team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))}${secNote(p)} · ${line(p)}</small>${chanceLine(p)}</span>${value(p)}</li>`).join('')}</ol>`
+    <li${chartAttrs(p)}><span>${i + 1}. ${esc(p.name)} ${tierTag(p.score)} ${prospectChip(p)} ${injuryTag(p)}<small>${esc([posText(p), p.team || 'No NBA team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))}${secNote(p)} · ${line(p)}${projNote(p)}</small>${chanceLine(p)}</span>${value(p)}</li>`).join('')}</ol>`
     : `<p class="empty">${dyn ? 'Nobody fits right now.' : 'Couldn’t load dynasty values.'}</p>`);
   const link = (p, n) => `#/commish?${new URLSearchParams({ tab: 'waivers', ...(p === 'all' ? {} : { pos: p }), ...(n === 30 ? { n: 30 } : {}) })}`;
   const chips = [['all', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']].map(([id, label]) =>
@@ -3762,7 +3777,7 @@ async function renderWaivers(body, params) {
 
   body.innerHTML = `
     <div class="cm-pickers"><div class="st-stage cm-pos">${chips}</div><div class="st-stage cm-pos cm-size">${sizeChips}</div></div>
-    <p class="filter-note">Players on no roster in this league, ${at.started ? `week ${at.week}` : `before week ${at.week}`}. Players listed Out are hidden (except in the two dynasty lists). Position filters use his main Sleeper position plus anyone who can also play there, marked “secondary position”. Each player shows his dynasty score, its 2-season trend and his chances 3 seasons from now of being a rotation player (top 120), a starter (top 72) or a star (top 24), same as the Dynasty roster. Recently dropped players stay on waivers for ${ctx.league?.settings?.waiver_clear_days ?? 2} days before they’re free agents.</p>
+    <p class="filter-note">Players on no roster in this league, ${at.started ? `week ${at.week}` : `before week ${at.week}`}. Players listed Out are hidden (except in the two dynasty lists). Position filters use his main Sleeper position plus anyone who can also play there, marked “secondary position”. Each player shows his dynasty score, its 2-season trend and his chances 3 seasons from now of being a rotation player (top 120), a starter (top 72) or a star (top 24), same as the Dynasty roster; tap a player for his dynasty score over time. Recently dropped players stay on waivers for ${ctx.league?.settings?.waiver_clear_days ?? 2} days before they’re free agents.</p>
     <div class="cm-races">
       <section class="card"><div class="card-head"><h2>Dynasty pickups</h2><a class="gm-more" href="#/commish?tab=dynasty">Dynasty →</a></div>
         <p class="cm-rule">Best unrostered players by 3-season value (this season 50%, next 30%, the one after 20%; players listed Out included, they can be stashed). Big number = dynasty score.</p>
@@ -3789,6 +3804,7 @@ async function renderWaivers(body, params) {
         ${rows(streams, p => num(p.proj))}
       </section>
     </div>`;
+  if (dyn) bindScoreCharts(body, dyn);
 }
 
 // ---- Playoff picture: clinch and elimination math ----

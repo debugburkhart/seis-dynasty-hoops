@@ -319,7 +319,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   "dynasty N" on every waiver row (prospectChip shared). Waiver rows (owner, Oct 2026) also show
   every position (posText), age, trend and the "In 3 seasons" chances line like the roster; position
   chips include secondary-position players (marked, shared posGroups/POS_WORD helpers); Top 10 / Top 30
-  switch (?n=30) for every list. Role test (owner asked, Oct 2026): adding
+  switch (?n=30) for every list; every waiver row with a dynasty value opens the score chart
+  (bindScoreCharts, same as the roster). Projection smoothing (owner, Oct 2026, after Rui Hachimura
+  went 2 -> 21 overnight on a Sleeper projection refresh): PROJ_SMOOTH 0.25/day in dynasty.js
+  (smoothProjections); update.mjs saves data/dynasty-proj.json { states: [{ date, pg }] } (last 3,
+  Chicago dates); pages load it (loadDynastyFeeds in app.js) and step once from the newest state
+  before today, so page = nightly. p.projRaw/projUsed -> "catching up" note (projNote). Backfill
+  (f.projPg) is not affected. Role test (owner asked, Oct 2026): adding
   per-minute production (per 36, overall or bench-only <20 mpg) or minutes trend to the prospect
   model did NOT help on the 2019-22 holdout (log loss / AUC equal or worse, also for low-minute
   players), so the per-game model stays. Managers tab also has "Startup draft: still on the team"

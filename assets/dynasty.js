@@ -78,8 +78,28 @@ const r1 = n => Math.round(n * 10) / 10;
 const fantasy = (stats, scoring) => Object.entries(scoring).reduce((sum, [k, v]) => sum + (Number(stats?.[k]) || 0) * v, 0);
 const ageOn = (birth, season) => (birth ? Math.floor((new Date(`${season}-10-15`) - new Date(birth)) / (365.25 * 864e5)) : null);
 
+// This season's projection, smoothed (owner, Oct 2026): Sleeper refreshes season projections
+// every morning, and one refresh once moved Rui Hachimura from waiver level to 21 overnight.
+// Each day the value moves PROJ_SMOOTH of the way to the new projection (about half in
+// 2.5 days, 90% in 8). The nightly job saves the smoothed values (data/dynasty-proj.json,
+// { states: [{ date, pg: { pid: perGame } }] }, the last 3 nights); pages take the newest
+// saved night BEFORE today and step once, so the page and the nightly agree on the same day.
+export const PROJ_SMOOTH = 0.25;
+export const chicagoDate = (d = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(d);
+export function smoothProjections(raw, states, today) {
+  const prev = (states ?? []).filter(s => s.date < today).sort((a, b) => (a.date < b.date ? -1 : 1)).at(-1);
+  if (!prev) return { ...raw };
+  const days = Math.max(1, Math.round((new Date(`${today}T12:00:00Z`) - new Date(`${prev.date}T12:00:00Z`)) / 864e5));
+  const a = 1 - (1 - PROJ_SMOOTH) ** days;
+  return Object.fromEntries(Object.entries(raw).map(([pid, x]) => {
+    const old = prev.pg[pid];
+    return [pid, old == null ? x : old + a * (x - old)];
+  }));
+}
+
 // Everything the model needs, fetched once (Sleeper responses are cached 2 minutes).
-export async function loadDynasty(DATA) {
+// projStates: the saved smoothing states (see above); without them, raw projections.
+export async function loadDynasty(DATA, { projStates = null } = {}) {
   const cur = DATA.seasons.at(-1);
   const season = cur.season;
   const prev = n => String(Number(season) - n);
@@ -99,7 +119,7 @@ export async function loadDynasty(DATA) {
     const all = await get('/v1/players/nba', {});
     birth = Object.fromEntries(Object.entries(all ?? {}).filter(([, p]) => p?.birth_date).map(([pid, p]) => [pid, p.birth_date]));
   }
-  return { season, league, rosters, proj, last, prior: [last, prev2, prev3], traded, birth };
+  return { season, league, rosters, proj, last, prior: [last, prev2, prev3], traded, birth, projStates };
 }
 
 // Values for every player with a projection or on a roster, every future rookie pick,
@@ -125,6 +145,9 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
   }
   // Past weeks (backfill): per-game projections and who was out are given directly.
   if (f.projPg) Object.assign(projPg, f.projPg);
+  // Today: smoothed against the saved nights (rawProj kept for the nightly save + the notes).
+  const rawProj = { ...projPg };
+  if (!f.projPg && f.projStates) Object.assign(projPg, smoothProjections(rawProj, f.projStates, f.today ?? chicagoDate()));
   const lastPg = pid => {
     const x = f.last?.[pid];
     return x?.gp >= 10 ? fantasy(x, scoring) / x.gp : null;
@@ -156,6 +179,9 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
       owner: ownerOf[pid] ?? null,
       where: where[pid] ?? null,
       source: projPg[pid] ? 'projection' : lastPg(pid) != null ? 'last season' : 'none',
+      // Sleeper's projection today vs the smoothed one used (only when they differ by 0.5+).
+      projRaw: rawProj[pid] != null && projPg[pid] != null && Math.abs(rawProj[pid] - projPg[pid]) >= 0.5 ? r1(rawProj[pid]) : null,
+      projUsed: projPg[pid] != null ? r1(projPg[pid]) : null,
       v: [r1(v1), r1(v2), r1(v3)],
       raw: SEASON_WEIGHTS[0] * v1 + SEASON_WEIGHTS[1] * v2 + SEASON_WEIGHTS[2] * v3,
     };
@@ -221,7 +247,7 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
   });
 
   const outlook = teamOutlook(players, picks, f.rosters, season);
-  return { players, picks, outlook, floor: r1(floor), top: r1(top), hitRate, nextDraft, orderKnown: Boolean(order?.weeks), starterLine: r1(starterLine) };
+  return { players, picks, outlook, floor: r1(floor), top: r1(top), hitRate, nextDraft, orderKnown: Boolean(order?.weeks), starterLine: r1(starterLine), projPg };
 }
 
 // Taxi clock for one player: the league lets a player stay on taxi through his 3rd NBA season.

@@ -85,9 +85,15 @@ await writeFile(`data/snapshots/${today}.json`, JSON.stringify({ date: today, se
 try {
   const { loadDynasty, dynastyValues, historyDay, backfillSeason } = await import('../assets/dynasty.js');
   const { teamSnapshot } = await import('../assets/tradefinder.js');
-  const feeds = await loadDynasty(data);
+  // Smoothed this-season projections (dynasty.js PROJ_SMOOTH): last 3 nights kept.
+  const projFile = (await readJson('data/dynasty-proj.json')) ?? { states: [] };
+  const feeds = await loadDynasty(data, { projStates: projFile.states });
+  feeds.today = today;
   const cut = dynastyValues(data, feeds);
   const full = dynastyValues(data, feeds, { fullInjured: true });
+  const pg = Object.fromEntries(Object.entries(cut.projPg).map(([pid, x]) => [pid, Math.round(x * 100) / 100]));
+  projFile.states = [...projFile.states.filter(s => s.date < today), { date: today, pg }].slice(-3);
+  await writeFile('data/dynasty-proj.json', JSON.stringify(projFile));
   const day = historyDay(cut, full);
   const hist = (await readJson('data/dynasty-history.json')) ?? { days: {} };
   hist.days[today] = day;
