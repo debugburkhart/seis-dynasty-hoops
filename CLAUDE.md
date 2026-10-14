@@ -321,7 +321,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   chips include secondary-position players (marked, shared posGroups/POS_WORD helpers); Top 10 / Top 30
   switch (?n=30) for every list; every waiver row with a dynasty value opens the score chart
   (bindScoreCharts, same as the roster). Projection smoothing (owner, Oct 2026, after Rui Hachimura
-  went 2 -> 21 overnight on a Sleeper projection refresh): PROJ_SMOOTH 0.25/day in dynasty.js
+  went 2 -> 21 overnight on a Sleeper projection refresh): TURNED OFF by the owner Oct 14 (role was
+  real; smoothing only delays news): PROJ_SMOOTH = 1 (0.25/day turns it back on) in dynasty.js
   (smoothProjections); update.mjs saves data/dynasty-proj.json { states: [{ date, pg }] } (last 3,
   Chicago dates); pages load it (loadDynastyFeeds in app.js) and step once from the newest state
   before today, so page = nightly. p.projRaw/projUsed -> "catching up" note (projNote). Backfill

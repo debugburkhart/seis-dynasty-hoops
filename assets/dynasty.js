@@ -84,7 +84,10 @@ const ageOn = (birth, season) => (birth ? Math.floor((new Date(`${season}-10-15`
 // 2.5 days, 90% in 8). The nightly job saves the smoothed values (data/dynasty-proj.json,
 // { states: [{ date, pg: { pid: perGame } }] }, the last 3 nights); pages take the newest
 // saved night BEFORE today and step once, so the page and the nightly agree on the same day.
-export const PROJ_SMOOTH = 0.25;
+// OFF since Oct 14 2026 (owner): Rui's jump was a real role change, so smoothing only delays real
+// news. 1 = use Sleeper's projection as is; the nightly still saves the states, so setting it back
+// to 0.25 turns smoothing on again.
+export const PROJ_SMOOTH = 1;
 export const chicagoDate = (d = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(d);
 export function smoothProjections(raw, states, today) {
   const prev = (states ?? []).filter(s => s.date < today).sort((a, b) => (a.date < b.date ? -1 : 1)).at(-1);
