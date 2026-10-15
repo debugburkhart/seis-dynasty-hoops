@@ -83,7 +83,7 @@ await writeFile(`data/snapshots/${today}.json`, JSON.stringify({ date: today, se
 // per night: { days: { date: { pid: score, or [score, fullValueScore] when he's listed Out } } }.
 // Players on a roster or with a score above 0. A problem here never stops the nightly update.
 try {
-  const { loadDynasty, dynastyValues, historyDay, backfillSeason } = await import('../assets/dynasty.js');
+  const { loadDynasty, dynastyValues, historyDay, historyExtra, backfillSeason } = await import('../assets/dynasty.js');
   const { teamSnapshot } = await import('../assets/tradefinder.js');
   // Smoothed this-season projections (dynasty.js PROJ_SMOOTH): last 3 nights kept.
   const projFile = (await readJson('data/dynasty-proj.json')) ?? { states: [] };
@@ -124,6 +124,12 @@ try {
   const day = historyDay(cut, full);
   const hist = (await readJson('data/dynasty-history.json')) ?? { days: {} };
   hist.days[today] = day;
+  // Chart explanations: each player's projection + the league anchors, same dates as days.
+  hist.proj ??= {};
+  hist.league ??= {};
+  const extra = historyExtra(cut, day);
+  hist.proj[today] = extra.proj;
+  hist.league[today] = extra.league;
   // Team tracker: each team's strength now / in 2 yrs, total value, age and position strength,
   // with Out players discounted (c) and at full value (f). { teams: { date: { owner: { c, f } } } }
   const snap = (c, f, rosters) => {
@@ -138,14 +144,23 @@ try {
   const lastSeason = String(Number(current.season) - 1);
   const needPlayers = !hist.backfilled.includes(lastSeason);
   const needTeams = !hist.teamsBackfilled.includes(lastSeason);
-  if ((needPlayers || needTeams) && data.seasons.some(s => s.season === lastSeason)) {
+  // Projections + league anchors for last season's weeks (added Oct 2026: rebuilt once more).
+  hist.projBackfilled ??= [];
+  const needProj = !hist.projBackfilled.includes(lastSeason);
+  if ((needPlayers || needTeams || needProj) && data.seasons.some(s => s.season === lastSeason)) {
     const teamWeeks = {};
-    const weeks = await backfillSeason(data, lastSeason, undefined, (date, c, f, rosters) => { teamWeeks[date] = snap(c, f, rosters); });
+    const extras = {};
+    const weeks = await backfillSeason(data, lastSeason, undefined, (date, c, f, rosters) => {
+      teamWeeks[date] = snap(c, f, rosters);
+      extras[date] = historyExtra(c, historyDay(c, f));
+    });
     if (needPlayers) Object.assign(hist.days, weeks);
-    Object.assign(hist.teams, teamWeeks);
+    if (needTeams) Object.assign(hist.teams, teamWeeks);
+    for (const [date, x] of Object.entries(extras)) { hist.proj[date] = x.proj; hist.league[date] = x.league; }
     if (Object.keys(weeks).length >= 10) { // else try again tomorrow
       if (needPlayers) hist.backfilled.push(lastSeason);
-      hist.teamsBackfilled.push(lastSeason);
+      if (needTeams) hist.teamsBackfilled.push(lastSeason);
+      if (needProj) hist.projBackfilled.push(lastSeason);
     }
     console.log(`Dynasty history: rebuilt ${lastSeason}, ${Object.keys(weeks).length} weeks${needPlayers ? '' : ' (teams only)'}.`);
   }

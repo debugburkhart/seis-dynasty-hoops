@@ -2254,3 +2254,10 @@ a.tl-event:hover { background: #fbf6e6; }
 .aw-race li small.dy-chances { margin-top: 1px; color: #3c4556; }
 .cm-size { grid-template-columns: repeat(2, 1fr); min-width: 0; }
 .dy-catch { color: var(--gold-ink); }
+/* Score chart: projection markers + tapped-day info */
+.sc-mk { font-size: 8px; pointer-events: none; }
+.sc-mk.up { fill: #23704a; }
+.sc-mk.down { fill: #a03a2d; }
+.sc-pt { cursor: pointer; }
+.sc-pt.sel circle:not(.sc-hit) { stroke: var(--navy-800); stroke-width: 2; }
+.sc-info { margin: 6px 0 4px; font-size: 12.5px; line-height: 1.45; color: #3c4556; }

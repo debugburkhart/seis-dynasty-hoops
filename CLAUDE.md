@@ -331,7 +331,14 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   { at, pg }, runs: [{ at, stamp (Sleeper max updated_at), total, changed (>= 0.05), added, removed,
   avg, movers: [pid, name, from, to] top 10 }] } (last 500 runs); Health report card "Projection
   updates" (projectionLogCard). Sleeper stamps ~all rows in one daily batch (~6:50 AM CT seen), so
-  the stamp alone doesn't mean numbers changed. Role test (owner asked, Oct 2026): adding
+  the stamp alone doesn't mean numbers changed. Chart explanations (owner, Oct 2026): update.mjs also
+  saves hist.proj[date] = { pid: projUsed } (players in that day) and hist.league[date] = { floor, top }
+  (historyExtra in dynasty.js); last season redone once more for them (hist.projBackfilled; the rebuild
+  reproduced all 21 saved weeks exactly). Score chart: tap a dot -> .sc-info line (scoreInfo/scoreWhy:
+  score, projection, Out, waiver line + cause of the change since the point before: projection, Out
+  status, waiver line, top value >= 1%); ▲▼ (.sc-mk) where the projection moved 0.5+. Projections
+  are Rotowire stat lines (one average game, gp = 1) scored with league settings (bonuses/techs not
+  projected); last season's = blend of weekly projections. Role test (owner asked, Oct 2026): adding
   per-minute production (per 36, overall or bench-only <20 mpg) or minutes trend to the prospect
   model did NOT help on the 2019-22 holdout (log loss / AUC equal or worse, also for low-minute
   players), so the per-game model stays. Managers tab also has "Startup draft: still on the team"

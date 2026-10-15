@@ -2753,15 +2753,39 @@ const ctDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chica
 // Month and day, plus the year when it isn't this year ("Mar 15 '26").
 const shortMd = d => { const t = new Date(`${d}T12:00:00`); const md = t.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); return t.getFullYear() === new Date().getFullYear() ? md : `${md} '${String(t.getFullYear()).slice(2)}`; };
 
-function scoreSeries(hist, p, full) {
+function scoreSeries(hist, p, full, v = null) {
   const pts = Object.entries(hist.days ?? {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([d, day]) => {
     const x = day[p.pid];
-    return { d, s: x == null ? 0 : Array.isArray(x) ? (full ? x[1] : x[0]) : x };
+    return { d, s: x == null ? 0 : Array.isArray(x) ? (full ? x[1] : x[0]) : x, pr: hist.proj?.[d]?.[p.pid] ?? null, out: Array.isArray(x), lg: hist.league?.[d] ?? null };
   });
   const today = ctDate();
   if (pts.at(-1)?.d === today) pts.pop();
-  pts.push({ d: today, s: p.score, live: true });
+  pts.push({ d: today, s: p.score, live: true, pr: p.projUsed ?? null, out: Boolean(p.out), lg: v ? { floor: v.floor, top: v.top } : null });
   return pts;
+}
+
+// Why a point moved from the one before: his projection, his Out status, or the league anchors
+// (waiver line = 0, the most valuable player = 100). Saved nightly from Oct 2026 (hist.proj/league).
+function scoreWhy(prev, x, full) {
+  if (!prev) return '';
+  const parts = [];
+  if (prev.pr != null && x.pr != null && Math.abs(x.pr - prev.pr) >= 0.05) parts.push(`projection ${num(prev.pr)} → ${num(x.pr)} a game`);
+  if (prev.out !== x.out) parts.push(x.out ? `listed Out${full ? ' (counted at full value)' : ' (this season counted at half)'}` : 'no longer listed Out');
+  if (prev.lg && x.lg && Math.abs(x.lg.floor - prev.lg.floor) >= 0.1) parts.push(`waiver line ${num(prev.lg.floor)} → ${num(x.lg.floor)} a game (${x.lg.floor > prev.lg.floor ? 'higher line = lower scores' : 'lower line = higher scores'})`);
+  if (prev.lg && x.lg && Math.abs(x.lg.top / prev.lg.top - 1) >= 0.01) parts.push(`the top player’s value ${x.lg.top > prev.lg.top ? 'rose, so every score shifts down a little' : 'fell, so every score shifts up a little'}`);
+  const ch = x.s - prev.s;
+  const head = `${ch > 0 ? '+' : ''}${ch} since ${shortMd(prev.d)}`;
+  if (parts.length) return `${head}: ${parts.join('; ')}.`;
+  if (prev.pr == null || x.pr == null || !prev.lg || !x.lg) return `${head}${ch ? ' (no saved projection for that day, so the cause isn’t known)' : ''}.`;
+  return ch ? `${head}: nothing he or the league changed was saved, so it’s rounding.` : `${head}: no change.`;
+}
+function scoreInfo(x, prev, full) {
+  const bits = [`${shortMd(x.d)}${x.live ? ' (now)' : ''}: score ${x.s}`];
+  if (x.pr != null) bits.push(`projected ${num(x.pr)} a game`);
+  if (x.out) bits.push('listed Out');
+  if (x.lg) bits.push(`waiver line ${num(x.lg.floor)}`);
+  const why = scoreWhy(prev, x, full);
+  return `${bits.join(' · ')}.${why ? ` ${why}` : ''}`;
 }
 
 const CHART_TIER = ['Cornerstone', 'Star', 'High-end', 'Starter', 'Flex', 'Depth', 'Stash', 'Waiver'];
@@ -2782,7 +2806,14 @@ function scoreChart(p, pts, range) {
     return `<line class="sc-tier" x1="${P.l}" x2="${W - P.r}" y1="${Y(min)}" y2="${Y(min)}"/><text class="sc-tier-l" x="${W - P.r + 6}" y="${Y(min) + 3}">${CHART_TIER[idx]} ${min}</text>`;
   }).join('');
   const path = pts.map((x, i) => `${i ? 'L' : 'M'}${X(x.d).toFixed(1)},${Y(x.s).toFixed(1)}`).join(' ');
-  const dots = pts.map(x => `<g class="sc-pt${x.live ? ' now' : ''}"><title>${shortMd(x.d)}${x.live ? ' (now)' : ''}: ${x.s}</title><circle cx="${X(x.d)}" cy="${Y(x.s)}" r="12" class="sc-hit"/><circle cx="${X(x.d)}" cy="${Y(x.s)}" r="${x.live ? 5 : 3}"/></g>`).join('');
+  const dots = pts.map((x, i) => `<g class="sc-pt${x.live ? ' now' : ''}" data-info="${esc(x.info ?? '')}"><title>${esc(x.info ?? `${shortMd(x.d)}: ${x.s}`)}</title><circle cx="${X(x.d)}" cy="${Y(x.s)}" r="12" class="sc-hit"/><circle cx="${X(x.d)}" cy="${Y(x.s)}" r="${x.live ? 5 : 3}"/></g>`).join('');
+  // ▲ / ▼ under a point where his projection moved 0.5+ a game since the point before.
+  const marks = pts.map((x, i) => {
+    const prev = pts[i - 1];
+    if (!prev || prev.pr == null || x.pr == null || Math.abs(x.pr - prev.pr) < 0.5) return '';
+    const up = x.pr > prev.pr;
+    return `<text class="sc-mk ${up ? 'up' : 'down'}" x="${X(x.d)}" y="${Math.min(H - P.b - 2, Y(x.s) + 15)}" text-anchor="middle">${up ? '▲' : '▼'}</text>`;
+  }).join('');
   const last = pts.at(-1);
   return `<svg class="sc-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(p.name)} dynasty score, ${seasonSpan(seasonOfDate(last.d))}">
     <text class="sc-ax" x="${P.l - 6}" y="${Y(hi) + 4}" text-anchor="end">${hi}</text>
@@ -2790,6 +2821,7 @@ function scoreChart(p, pts, range) {
     <line class="sc-base" x1="${P.l}" x2="${W - P.r}" y1="${Y(lo)}" y2="${Y(lo)}"/>
     ${tiers}
     ${pts.length > 1 ? `<path class="sc-line" d="${path}"/>` : ''}
+    ${marks}
     ${dots}
     <text class="sc-val" x="${X(last.d) - 8}" y="${Y(last.s) - 9}" text-anchor="end">${last.s}</text>
     <text class="sc-ax" x="${P.l}" y="${H - 6}">${pts.length > 1 ? shortMd(pts[0].d) : ''}</text>
@@ -2801,7 +2833,7 @@ function scoreSummary(pts, current) {
   // Weekly points (a rebuilt past season) are 5+ days apart; nightly points are 1 day apart.
   const weekly = pts.slice(1).some((x, i) => (new Date(x.d) - new Date(pts[i].d)) / 864e5 >= 5);
   const how = weekly
-    ? 'One point a week, rebuilt from each week’s Sleeper projections (within about 3 points of the nightly method).'
+    ? 'One point a week, rebuilt from each week’s Sleeper projections (within about 3 points of the nightly method); “projected” here is the running blend of those weekly projections.'
     : 'One point a night.';
   if (pts.length < 2) return current ? 'This season’s history starts with tonight’s nightly update, then adds a point every night. The gold dot is today.' : how;
   const first = pts[0], last = pts.at(-1);
@@ -2811,7 +2843,8 @@ function scoreSummary(pts, current) {
 }
 
 // The charts, one season per panel: swipe on phones, arrows with a mouse. Opens on this season.
-function scoreSeasons(p, pts) {
+function scoreSeasons(p, pts, full = false) {
+  pts.forEach((x, i) => { x.info = scoreInfo(x, pts[i - 1], full); });
   const bySeason = {};
   for (const x of pts) (bySeason[seasonOfDate(x.d)] ??= []).push(x);
   const seasons = Object.keys(bySeason).sort();
@@ -2830,7 +2863,9 @@ function scoreSeasons(p, pts) {
     <div class="sc-strip">${seasons.map(s => `
       <div class="sc-slide" data-season="${s}">
         ${scoreChart(p, bySeason[s], { lo, hi })}
-        <p class="cm-rule">${esc(scoreSummary(bySeason[s], s === cur))}</p>
+        <p class="sc-info" aria-live="polite">${esc(bySeason[s].at(-1).info)}</p>
+        <p class="cm-rule">${esc(scoreSummary(bySeason[s], s === cur))} Tap a dot for that day’s projection and what moved the score; ▲▼ = his projection moved 0.5+ a game.</p>
+        <p class="cm-rule"><b>Projected</b> = the fantasy points (your league’s scoring) Sleeper expects in his <i>average</i> game this season, not every game: real games swing around it (about 2 games in 3 land between 70% and 130% of it), and since you lock his best game of the week, a starter’s weekly score usually beats it. <b>Waiver line</b> = what you could get for free: about the 5th-best free agent’s value, in fantasy points per game blended over 3 seasons the same way as the score (this season 50%, next 30%, the one after 20%). A player at or below the line scores about 0 (young players keep a little for their upside); the further above it, the higher the score.</p>
       </div>`).join('')}</div>
     ${seasons.length > 1 ? `<div class="sc-dots">${seasons.map(s => `<i data-season="${s}"></i>`).join('')}<span class="sc-swipe">Swipe for other seasons</span></div>` : ''}`;
 }
@@ -2981,10 +3016,19 @@ function bindScoreCharts(body, v) {
     row.innerHTML = '<div class="sc-box"><p class="cm-rule">Loading history…</p></div>';
     li.after(row);
     li.setAttribute('aria-expanded', 'true');
-    const pts = scoreSeries(await loadDynHistory(), p, Boolean(gmLoad('gm-dyn-full', false)));
+    const full = Boolean(gmLoad('gm-dyn-full', false));
+    const pts = scoreSeries(await loadDynHistory(), p, full, v);
     const box = $('.sc-box', row);
-    box.innerHTML = scoreSeasons(p, pts);
+    box.innerHTML = scoreSeasons(p, pts, full);
     bindSeasonStrip(box);
+    // Tap (or click) a dot: that day's projection and what moved the score, under the chart.
+    box.querySelectorAll('.sc-pt').forEach(g => g.addEventListener('click', e => {
+      e.stopPropagation();
+      const slide = g.closest('.sc-slide');
+      slide.querySelectorAll('.sc-pt.sel').forEach(x => x.classList.remove('sel'));
+      g.classList.add('sel');
+      $('.sc-info', slide).textContent = g.dataset.info;
+    }));
   };
   body.querySelectorAll('.dy-row').forEach(li => {
     li.addEventListener('click', () => toggle(li));
@@ -3110,7 +3154,7 @@ async function renderDynasty(body, params) {
     ${dynastyGuide(v, params.get('guide') === '1')}
     <section class="card">
       <div class="card-head"><h2>How dynasty scores work</h2></div>
-      <p class="cm-rule"><b>0–100</b>: 0 is what you could pick up off waivers, 100 is the league’s most valuable player (now ${esc(Object.values(v.players).sort((a, b) => b.worth - a.worth)[0]?.name ?? '')}). It blends three seasons of fantasy points per game, ${SEASON_WEIGHTS.map(w => `${w * 100}%`).join(' / ')}: this season is Sleeper’s projection under league scoring (players listed Out count half for this season; since the score measures value above waiver level, that can cut a mid-level player’s score a lot, e.g. 35 to 11; the “Injured: full value” switch at the top turns that off, and the setting also applies to the Trade finder, Managers and Waiver wire), and the next two follow an age curve fitted on 10 seasons of NBA stats: players improve about 10–15% a year up to 22, level off around 24–25, and lose about 5% a year by 29 and 10% by 31. The arrow is his value in 2 seasons vs this one. Sleeper updates season projections every morning, so a role change shows up overnight (and can move a player near waiver level a lot).</p>
+      <p class="cm-rule"><b>0–100</b>: 0 is what you could pick up off waivers (the <b>waiver line</b>: about the 5th-best free agent, measured the same 3-season way; at or below it ≈ 0), 100 is the league’s most valuable player (now ${esc(Object.values(v.players).sort((a, b) => b.worth - a.worth)[0]?.name ?? '')}). It blends three seasons of fantasy points per game, ${SEASON_WEIGHTS.map(w => `${w * 100}%`).join(' / ')}: this season is Sleeper’s projection under league scoring (his <i>average</i> game, not every game; players listed Out count half for this season; since the score measures value above waiver level, that can cut a mid-level player’s score a lot, e.g. 35 to 11; the “Injured: full value” switch at the top turns that off, and the setting also applies to the Trade finder, Managers and Waiver wire), and the next two follow an age curve fitted on 10 seasons of NBA stats: players improve about 10–15% a year up to 22, level off around 24–25, and lose about 5% a year by 29 and 10% by 31. The arrow is his value in 2 seasons vs this one. Sleeper updates season projections every morning, so a role change shows up overnight (and can move a player near waiver level a lot).</p>
       <p class="cm-rule">Each value carries some uncertainty, so a young player just below waiver level keeps a little value for his upside. <b>Picks</b>: what a rookie at that spot has produced in this league’s drafts (Draft Grades), with the same upside, 10% off per year until the draft. Picks only count their first 3 seasons, so dynasty markets that look further ahead value them higher.</p>
       <p class="cm-rule"><b>Prospect grade</b> (players ${PROSPECT_MAX_AGE} and under, A+ to F): the score above looks 3 seasons ahead, which undersells young players, so the grade asks where he’ll be in 3 seasons. His points per game are carried forward on the age curve and compared with how ${'1,777'} young NBA players since 2012 actually turned out (counting the ones who fell out of the league). Checked on players the model never saw (2019–2022): when it said about 21% would become starters, 15% did; about 59%, 67% did; about 83%, 86% did. A+ = 50%+ star chance; A = 30%+ star or 85%+ starter; A– to B– = 70% down to 25% starter; C+ to D = mostly his rotation chance; F = under 12% to even be a rotation player.</p>
     </section></div>`;

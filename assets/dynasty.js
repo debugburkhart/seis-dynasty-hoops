@@ -278,6 +278,15 @@ export function historyDay(cut, full) {
 // SMOOTH: how much each new week moves the running projection (the rest is the weeks before).
 export const BACKFILL_SMOOTH = 0.3;
 // onWeek(date, cut, full, rosters): optional, called with each rebuilt week (team snapshots).
+// What explains a day's scores (score charts, owner Oct 2026): each saved player's this-season
+// projection (fantasy pts per game under league scoring; last season = the weekly blend) and the
+// league anchors (waiver line = floor, 100 = top). Out status is already in the day (array form).
+export function historyExtra(cut, day) {
+  const proj = {};
+  for (const pid of Object.keys(day)) { const x = cut.players[pid]?.projUsed; if (x != null) proj[pid] = x; }
+  return { proj, league: { floor: cut.floor, top: cut.top } };
+}
+
 export async function backfillSeason(DATA, season, smooth = BACKFILL_SMOOTH, onWeek = null) {
   const s = DATA.seasons.find(x => x.season === season);
   if (!s) return {};
