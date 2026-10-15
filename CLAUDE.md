@@ -109,7 +109,11 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   owner IDs; owner chose 2026+ only, earlier seasons untouched): "Rivalry" tag (red) and
   +25 History after the boost, capped (= up to +5 hype); a regular week where every game is
   a rivalry gets a "Rivalry Week" banner (2026: weeks 7, 14, 21). Public "How hype works"
-  lists the rivalries (owner made them public Oct 2026).
+  lists the rivalries (owner made them public Oct 2026). Starting strength (owner, Oct 2026): before
+  PEDIGREE_WEEKS (6) are played, strengthsBefore() blends the real Power score with the PRESEASON
+  Power Rankings (preseasonPower(), DATA.preseason) instead of last season's finish, so offseason
+  trades/rookies count from week 1; seasons without a saved preseason (2023-2025) still use the
+  finish (unchanged). 2026 week 1 Main event went jimmycooks2-bigtrey (71) -> tzola-bigdaddyburk (58).
   Uses only games
   before the week. The page (app.js) fetches Sleeper state + live scores in the browser and
   reveals a week only once it's under way, except week 1, which shows as soon as the season's

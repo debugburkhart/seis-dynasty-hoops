@@ -1471,7 +1471,7 @@ async function renderHype(main, params) {
         <b>Closeness</b> (25%) is how evenly matched they are (within 2 Power points counts as dead even), <b>Stakes</b> (25%) is what the result means for the playoff race (it grows as the season goes on) or the bracket round,
         and <b>History</b> (20%) is the rivalry: a close series, playoff and title meetings, a recent nail-biter, a long streak.
         A perfect 100 takes a Championship between the league’s two best teams, dead even, with a deep rivalry behind it.
-        Until six weeks are played, strength leans on last season’s finish. The top score is the <b>Main event</b>; in title week it’s always the Championship.
+        Until six weeks are played, strength leans on the preseason Power Rankings (rosters and projections when the season started; last season’s finish for seasons before 2026-27). The top score is the <b>Main event</b>; in title week it’s always the Championship.
         Labels like <b>Trap-game watch</b> (a clear favorite with a reason to slip: the underdog won the last meeting, is hotter lately, or the favorite has a top team on deck next week) come from the same numbers.
         <b>League rivalries</b> (since ${seasonSpan(RIVALRIES_FROM)}): ${RIVALRIES.map(([a, b]) => `${esc(name(a))} vs ${esc(name(b))}`).join(", ")}. A rivalry game gets a <b>Rivalry</b> tag and up to 5 extra hype, and a week when every rivalry plays is <b>Rivalry Week</b>.
         Everything uses only games played before that week. Week 1 appears as soon as the schedule is set; every later week appears once it starts.

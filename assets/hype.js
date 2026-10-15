@@ -16,7 +16,7 @@
 //
 // The highest score is the Main event (in the playoffs, the Championship always is).
 
-import { powerRankings, powerSeasons } from './power.js';
+import { powerRankings, powerSeasons, preseasonRankings } from './power.js';
 import { finishes } from './standings.js';
 import { RIVALRIES, RIVALRIES_FROM } from './config.js';
 
@@ -163,8 +163,22 @@ export function seriesBefore(DATA, A, B, season, week) {
 }
 
 // ---------- Team strength entering a week ----------
-// The Power Rankings score after the previous week, blended with last season's
-// final finish until PEDIGREE_WEEKS weeks have been played.
+// The Power Rankings score after the previous week, blended with a starting point
+// until PEDIGREE_WEEKS weeks have been played. The starting point is the preseason
+// Power Rankings (current rosters + projections, saved nightly until week 1; owner,
+// Oct 2026, so offseason trades and the rookie draft count from week 1), or, for
+// seasons without a saved preseason edition (2023-2025), last season's final finish.
+
+const preCache = new WeakMap();
+function preseasonPower(DATA, season) {
+  const byData = preCache.get(DATA) ?? new Map();
+  preCache.set(DATA, byData);
+  if (!byData.has(season)) {
+    const pre = DATA.preseason?.[season] ? preseasonRankings(DATA, season) : null;
+    byData.set(season, pre?.rows?.length ? Object.fromEntries(pre.rows.map(r => [r.owner, r.power])) : null);
+  }
+  return byData.get(season);
+}
 
 function strengthsBefore(DATA, season, week, owners) {
   const weeks = (powerSeasons(DATA).find(x => x.season === season)?.weeks ?? []).filter(w => w < week);
@@ -172,14 +186,16 @@ function strengthsBefore(DATA, season, week, owners) {
   const prev = DATA.seasons.filter(s => s.status === 'complete' && Number(s.season) < Number(season)).at(-1);
   const place = prev ? cached(DATA).finishes[prev.season] ?? {} : {};
   const size = prev?.teams.length ?? owners.length;
+  const pre = preseasonPower(DATA, season);
   const k = Math.min(1, weeks.length / PEDIGREE_WEEKS);
   const out = {};
   for (const o of owners) {
     const p = place[o];
     const pedigree = p ? 50 + 12 * (1 - (2 * (p - 1)) / Math.max(1, size - 1)) : 50;
-    out[o] = { str: (power[o] ?? 50) * k + pedigree * (1 - k), prevPlace: p ?? null, prevSeason: prev?.season ?? null };
+    const start = pre?.[o] ?? pedigree;
+    out[o] = { str: (power[o] ?? 50) * k + start * (1 - k), prevPlace: p ?? null, prevSeason: prev?.season ?? null };
   }
-  return { by: out, weeksIn: weeks.length };
+  return { by: out, weeksIn: weeks.length, preseason: Boolean(pre) };
 }
 
 function playoffSpots(DATA, season) {
@@ -215,7 +231,7 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
   const s = DATA.seasons.find(x => x.season === season);
   const owners = s.teams.map(t => t.owner);
   const table = standingsBefore(DATA, season, week);
-  const { by: str, weeksIn } = strengthsBefore(DATA, season, week, owners);
+  const { by: str, weeksIn, preseason: fromPre } = strengthsBefore(DATA, season, week, owners);
   // League-wide strength this week, for a relative Quality: the average team and the top two.
   const strs = owners.map(o => str[o]?.str ?? 50).sort((a, b) => b - a);
   const leagueStr = mean(strs);
@@ -388,7 +404,7 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
       add('david', 'David vs. Goliath', `${name(fav)} is a big favorite (strength ${Math.round(str[fav].str)} vs ${Math.round(str[dog].str)}). An upset would be the story of the week.`);
     }
     if (!series.all.n) add('first', 'First meeting', `${name(A)} and ${name(B)} have never played each other.`);
-    if (week === 1) add('opener', 'Opening night', `Week 1. Strength is based on last season's finish until real games are played.`);
+    if (week === 1) add('opener', 'Opening night', fromPre ? `Week 1. Strength is based on the preseason Power Rankings (today's rosters and projections) until real games are played.` : `Week 1. Strength is based on last season's finish until real games are played.`);
 
     return { a: A, b: B, t: p.t, label: p.label, final, tA, tB, sA, sB, gap, series, parts, hype, labels, raceA, raceB, rivalry };
   });
