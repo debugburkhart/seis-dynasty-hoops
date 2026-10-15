@@ -4117,14 +4117,31 @@ async function renderEarlyHype(body, params) {
   $('#cm-week', body)?.addEventListener('change', e => { location.hash = `#/commish?tab=hype&week=${e.target.value}`; });
 }
 
+// Projection log (data/projection-log.json, written by every nightly run): how often Sleeper's
+// season projections (from Rotowire) really change, and who moved most.
+function projectionLogCard(log, when) {
+  const runs = (log?.runs ?? []).filter(r => r.changed != null);
+  const head = '<div class="card-head"><h2>Projection updates</h2><span class="card-sub">Sleeper’s season projections, checked every nightly run</span></div>';
+  if (!runs.length) return `<section class="card">${head}<p class="empty">${log ? 'The first run saved a starting point; changes show from the next run.' : 'Starts with the next nightly run.'}</p></section>`;
+  const days = new Set(runs.map(r => when(r.at).split(',')[0]));
+  const changedDays = new Set(runs.filter(r => r.changed).map(r => when(r.at).split(',')[0]));
+  const stamps = [...new Set(runs.map(r => r.stamp).filter(Boolean))].slice(-3).map(s => esc(when(s))).join(', ');
+  const fmt = x => num(x);
+  return `<section class="card">${head}
+    <p class="cm-rule">Changes found on <b>${changedDays.size} of ${days.size} day${days.size === 1 ? '' : 's'}</b> logged (${runs.length} run${runs.length === 1 ? '' : 's'}). Sleeper’s latest batch times: ${stamps || 'unknown'} CT. A change = a player’s projected fantasy points per game moved by 0.05 or more since the run before.</p>
+    <ul class="cm-checks">${runs.slice(-12).reverse().map(r => `<li><b>${esc(when(r.at))}</b> <small>${r.changed ? `${r.changed} of ${r.total} changed (avg ${fmt(r.avg)} a game)` : `no changes (${r.total} players)`}${r.added ? ` · ${r.added} new` : ''}${r.removed ? ` · ${r.removed} gone` : ''}</small>${r.movers?.length ? `<span class="cm-issues">${r.movers.slice(0, 5).map(([, n, a, b]) => `${esc(n)} ${fmt(a)} → ${fmt(b)}`).join(' · ')}</span>` : ''}</li>`).join('')}</ul>
+  </section>`;
+}
+
 async function renderHealth(body) {
   const fo = ledger();
   const at = await scoutWeek().catch(() => null);
-  const [runs, check, guard, ctx] = await Promise.all([
+  const [runs, check, guard, ctx, projLog] = await Promise.all([
     fetch('https://api.github.com/repos/debugburkhart/seis-dynasty-hoops/actions/runs?per_page=5').then(r => (r.ok ? r.json() : null)).catch(() => null),
     fetch(`data/scoring-check.txt?t=${Date.now()}`).then(r => (r.ok ? r.text() : null)).catch(() => null),
     fetch(`data/week-guard.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
     at ? loadWeek(DATA, at.season, at.week).catch(() => null) : null,
+    fetch(`data/projection-log.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
   ]);
   if (route().page !== 'commish') return;
   const when = x => new Date(x).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -4167,6 +4184,8 @@ async function renderHealth(body) {
       </ul>
       <details class="cm-group"><summary>Corrections in effect <small>${corrections.length}</small></summary><ul class="cm-list">${corrections.map(c => `<li>${esc(c)}</li>`).join('')}</ul></details>
     </section>
+
+    ${projectionLogCard(projLog, when)}
 
     <section class="card">
       <div class="card-head"><h2>Lineup check</h2><span class="card-sub">${at ? `Week ${at.week}${at.started ? '' : ' (before tip-off)'}` : 'No week to check'}</span></div>

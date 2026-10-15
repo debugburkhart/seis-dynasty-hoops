@@ -250,7 +250,7 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
   });
 
   const outlook = teamOutlook(players, picks, f.rosters, season);
-  return { players, picks, outlook, floor: r1(floor), top: r1(top), hitRate, nextDraft, orderKnown: Boolean(order?.weeks), starterLine: r1(starterLine), projPg };
+  return { players, picks, outlook, floor: r1(floor), top: r1(top), hitRate, nextDraft, orderKnown: Boolean(order?.weeks), starterLine: r1(starterLine), projPg, projRaw: rawProj };
 }
 
 // Taxi clock for one player: the league lets a player stay on taxi through his 3rd NBA season.

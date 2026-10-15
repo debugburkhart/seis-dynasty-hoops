@@ -94,6 +94,33 @@ try {
   const pg = Object.fromEntries(Object.entries(cut.projPg).map(([pid, x]) => [pid, Math.round(x * 100) / 100]));
   projFile.states = [...projFile.states.filter(s => s.date < today), { date: today, pg }].slice(-3);
   await writeFile('data/dynasty-proj.json', JSON.stringify(projFile));
+  // Projection log (owner asked, Oct 2026: how often does Sleeper/Rotowire really change its
+  // season projections?). Every run compares Sleeper's raw per-game projections with the last
+  // run's: { last: { at, pg }, runs: [{ at, stamp, total, changed, added, removed, avg, movers }] }.
+  // stamp = Sleeper's newest updated_at (its batch time). Shown in Commish → Health report.
+  try {
+    const log = (await readJson('data/projection-log.json')) ?? { last: null, runs: [] };
+    const now = cut.projRaw;
+    const stamp = Math.max(0, ...(feeds.proj ?? []).map(x => Number(x.updated_at) || 0)) || null;
+    const run = { at: new Date().toISOString(), stamp, total: Object.keys(now).length };
+    if (log.last) {
+      const before = log.last.pg;
+      const moves = Object.keys(now).filter(pid => before[pid] != null && Math.abs(now[pid] - before[pid]) >= 0.05)
+        .map(pid => ({ pid, from: before[pid], to: Math.round(now[pid] * 100) / 100 }));
+      run.changed = moves.length;
+      run.added = Object.keys(now).filter(pid => before[pid] == null).length;
+      run.removed = Object.keys(before).filter(pid => now[pid] == null).length;
+      run.avg = moves.length ? Math.round(100 * moves.reduce((a, m) => a + Math.abs(m.to - m.from), 0) / moves.length) / 100 : 0;
+      run.movers = moves.sort((a, b) => Math.abs(b.to - b.from) - Math.abs(a.to - a.from)).slice(0, 10)
+        .map(m => [m.pid, cut.players[m.pid]?.name ?? m.pid, m.from, m.to]);
+    }
+    log.runs = [...log.runs, run].slice(-500);
+    log.last = { at: run.at, pg: Object.fromEntries(Object.entries(now).map(([pid, x]) => [pid, Math.round(x * 100) / 100])) };
+    await writeFile('data/projection-log.json', JSON.stringify(log));
+    console.log(`Projection log: ${run.changed ?? 'first run'} of ${run.total} projections changed.`);
+  } catch (e) {
+    console.log(`Projection log skipped: ${e.message}`);
+  }
   const day = historyDay(cut, full);
   const hist = (await readJson('data/dynasty-history.json')) ?? { days: {} };
   hist.days[today] = day;

@@ -326,7 +326,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (smoothProjections); update.mjs saves data/dynasty-proj.json { states: [{ date, pg }] } (last 3,
   Chicago dates); pages load it (loadDynastyFeeds in app.js) and step once from the newest state
   before today, so page = nightly. p.projRaw/projUsed -> "catching up" note (projNote). Backfill
-  (f.projPg) is not affected. Role test (owner asked, Oct 2026): adding
+  (f.projPg) is not affected. Projection log (owner, Oct 2026): every update.mjs run compares Sleeper's
+  raw season per-game projections (v.projRaw) with the last run's -> data/projection-log.json { last:
+  { at, pg }, runs: [{ at, stamp (Sleeper max updated_at), total, changed (>= 0.05), added, removed,
+  avg, movers: [pid, name, from, to] top 10 }] } (last 500 runs); Health report card "Projection
+  updates" (projectionLogCard). Sleeper stamps ~all rows in one daily batch (~6:50 AM CT seen), so
+  the stamp alone doesn't mean numbers changed. Role test (owner asked, Oct 2026): adding
   per-minute production (per 36, overall or bench-only <20 mpg) or minutes trend to the prospect
   model did NOT help on the 2019-22 holdout (log loss / AUC equal or worse, also for low-minute
   players), so the per-game model stays. Managers tab also has "Startup draft: still on the team"
