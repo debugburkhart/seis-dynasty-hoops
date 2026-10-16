@@ -1,9 +1,9 @@
-import { ALL_STARS_FROM, LEAGUE_ID, RIVALRIES, RIVALRIES_FROM, WAGER } from './config.js';
+import { ALL_STARS_FROM, LEAGUE_ID, MINOR_RIVALRIES, RIVALRIES, RIVALRIES_FROM, RIVALRY_BONUS, WAGER } from './config.js';
 import { CATEGORIES, CHANGE_LABELS, buildRecords, playerPhoto, recordHistory, recordVisible, viewData } from './records.js';
 import { PARTS, PRESEASON_PARTS, powerRankings, powerSeasons, preseasonRankings, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
 import { frontOffice } from './frontoffice.js';
-import { HYPE_PARTS, hypeSlate, moments, seasonWeeks, seriesBefore, standingsBefore, weekPairs } from './hype.js';
+import { HYPE_PARTS, hypeSlate, isRivalry, moments, seasonSeries, seasonWeeks, seriesBefore, standingsBefore, trophyHistory, trophyImg, trophyOf, weekPairs } from './hype.js';
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
 import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach } from './gm.js';
 import { PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, taxiLeft } from './dynasty.js';
@@ -435,6 +435,7 @@ function renderRivalry(main, params) {
   const poLead = r.poA === r.poB ? (r.playoffs ? 'Even' : 'None yet') : `${esc(name(r.poA > r.poB ? A : B))} leads`;
   const ptsLead = r.ptsA === r.ptsB ? 'Even' : esc(name(r.ptsA > r.ptsB ? A : B));
   const bestMeta = r.best ? `${esc(name(r.best.who))} · ${yy(r.best.m.s)} Wk ${r.best.m.w}` : '—';
+  const rv = isRivalry(DATA.seasons.at(-1).season, A, B);
 
   main.innerHTML = `
     <div class="page">
@@ -452,8 +453,22 @@ function renderRivalry(main, params) {
         </div>
       </div>
 
+      <section class="card tro-case-card">
+        <div class="card-head"><h2>Trophy case</h2><span class="card-sub">Who holds each rivalry trophy · tap one for the rivalry</span></div>
+        ${trophyCase()}
+      </section>
+
+      <div class="rv-named">
+        <span class="rv-named-l">Minor rivalries</span>
+        ${MINOR_RIVALRIES.map(([a, b, n]) => {
+          const on = (a === A && b === B) || (a === B && b === A);
+          return `<a class="rv-chip minor${on ? ' on' : ''}" href="#/rivalry?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}" title="${esc(name(a))} vs ${esc(name(b))}">${esc(n)}<small>${esc(name(a))} vs ${esc(name(b))}</small></a>`;
+        }).join('')}
+      </div>
+
       <section class="fight">
         <div class="fight-top"><span>Official fight card</span><span class="gold-text">All-time series</span></div>
+        ${rv ? `<div class="rv-title ${rv.level}">${trophyOf(A, B) ? trophyPic(trophyOf(A, B), 'tiny') : icon('swords')}<b>${esc(rv.name)}</b><span>${rv.level === 'major' ? 'League rivalry' : 'Minor rivalry'} · +${rv.bonus} hype when they meet</span></div>` : ''}
         <div class="corners">
           ${corner(A, 'blue', r.winsA)}
           <div class="vs-col">
@@ -475,6 +490,8 @@ function renderRivalry(main, params) {
           <div><div class="fs-label">Best week here</div><div class="fs-val">${r.best ? num(r.best.pts) : '—'} <small>${bestMeta}</small></div></div>
         </div>
       </section>
+
+      ${trophyDetail(A, B)}
 
       <section class="card">
         <div class="card-head"><h2>Latest meetings</h2><span class="card-sub">${Math.min(5, latest.length)} of ${latest.length}</span></div>
@@ -1206,15 +1223,93 @@ const HYPE_TONES = { gold: 'hy-gold', red: 'hy-red', navy: 'hy-navy' };
 const chip = l => `<span class="hy-chip ${HYPE_TONES[l.tone] ?? ''}">${l.id === 'main' ? icon('bolt') : ''}${esc(l.text)}</span>`;
 const teamName = (o, season) => DATA.owners[o]?.teams?.[season] ?? name(o);
 // Every game on the slate is a league rivalry (config.js).
-const rivalryBanner = () => `<p class="hy-banner hy-rivalry">${icon('swords')}<span><b>Rivalry Week.</b> Every league rivalry plays this week: ${RIVALRIES.map(([a, b]) => `${esc(name(a))} vs ${esc(name(b))}`).join(', ')}. Each one gets the Rivalry bonus.</span></p>`;
+const rivalryBanner = () => `<p class="hy-banner hy-rivalry">${icon('swords')}<span><b>Rivalry Week.</b> Every major rivalry plays this week: ${RIVALRIES.map(([a, b, n]) => `<b>${esc(n)}</b> (${esc(name(a))} vs ${esc(name(b))})`).join(', ')}. Each one gets +${RIVALRY_BONUS.major} hype.</span></p>`;
 
-async function renderHype(main, params) {
+// ---- Rivalry trophies (hype.js seasonSeries/trophyHistory; images in assets/trophies/) ----
+const trophyPic = (r, cls = '') => `<img class="tro-img ${cls}" src="${trophyImg(r)}" alt="${esc(r[2])} trophy" loading="lazy">`;
+const wl = (x, o) => `${x.wins[o]}–${x.wins[o === x.A ? x.B : x.A]}${x.ties ? `–${x.ties}` : ''}`;
+// One line on a season series: "jimmycooks2 leads 1–0", "Tied 1–1 (points 760–742)", "tzola13 clinched 2–0".
+function seriesLine(x) {
+  const span = seasonSpan(x.season);
+  if (!x.games.length) return x.upcoming.length ? `${span} series starts week ${x.upcoming[0]}` : `No ${span} meetings`;
+  if (x.winner) {
+    const how = x.how === 'points' ? ` on points (${num(x.pts[x.winner])}–${num(x.pts[x.winner === x.A ? x.B : x.A])})` : '';
+    return `${name(x.winner)} ${x.complete ? 'won' : 'clinched'} the ${span} series ${wl(x, x.winner)}${how}`;
+  }
+  if (x.lead) return `${name(x.lead)} leads the ${span} series ${wl(x, x.lead)}`;
+  const ahead = x.pts[x.A] === x.pts[x.B] ? null : x.pts[x.A] > x.pts[x.B] ? x.A : x.B;
+  return `${span} series tied ${x.wins[x.A]}–${x.wins[x.B]}${ahead ? ` · ${name(ahead)} ahead on points (${num(x.pts[ahead])}–${num(x.pts[ahead === x.A ? x.B : x.A])})` : ''}`;
+}
+const holderLine = h => (h.holder ? `Held by <b>${esc(name(h.holder))}</b>${h.since ? ` since ${seasonSpan(h.since)}` : ''}` : 'Up for grabs: first awarded this season');
+
+// All four trophies (Rivalry page top, Home).
+function trophyCase(compact = false) {
+  return `<div class="tro-case${compact ? ' compact' : ''}">${RIVALRIES.map(r => {
+    const h = trophyHistory(DATA, r);
+    return `<a class="tro-tile" href="#/rivalry?a=${encodeURIComponent(r[0])}&b=${encodeURIComponent(r[1])}">
+      ${trophyPic(r)}
+      <span class="tro-txt"><b>${esc(r[2])}</b><small>${esc(name(r[0]))} vs ${esc(name(r[1]))}</small>
+      <span class="tro-hold">${holderLine(h)}</span>
+      ${h.current ? `<span class="tro-series">${esc(seriesLine(h.current))}</span>` : ''}</span></a>`;
+  }).join('')}</div>`;
+}
+
+// Matchup page: what the two teams are playing for (major rivalries only).
+function trophyStake(season, week, A, B) {
+  const r = trophyOf(A, B);
+  if (!r || Number(season) < Number(RIVALRIES_FROM)) return '';
+  const x = seasonSeries(DATA, season, A, B, week);
+  const h = trophyHistory(DATA, r);
+  const nth = x.games.length + 1;
+  const decided = x.winner ? `${name(x.winner)} has already clinched it (${wl(x, x.winner)}).` : '';
+  return `
+    <section class="card tro-stake">
+      ${trophyPic(r, 'big')}
+      <div class="tro-stake-txt">
+        <div class="eyebrow">Playing for</div>
+        <h2>${esc(r[2])} trophy</h2>
+        <p>${x.games.length ? `${esc(seriesLine(x))} before this game.` : `Meeting 1 of the ${seasonSpan(season)} season series.`} ${x.games.length ? `This is meeting ${nth}.` : ''} ${esc(decided)}</p>
+        <p class="tro-hold">${holderLine(h)}</p>
+      </div>
+    </section>`;
+}
+
+// Rivalry page: the trophy for the selected pair.
+function trophyDetail(A, B) {
+  const r = trophyOf(A, B);
+  if (!r) return '';
+  const h = trophyHistory(DATA, r);
+  const x = h.current;
+  const row = g => `<li><span>Week ${g.w}${g.t === 'P' ? ` · ${esc(g.label ?? 'Playoffs')}` : ''}</span><span>${esc(name(A))} ${num(g.ap)} – ${num(g.bp)} ${esc(name(B))}</span><b>${g.win === 'tie' ? 'Tie' : esc(name(g.win))}</b></li>`;
+  return `
+    <section class="card tro-detail">
+      <div class="card-head"><h2>The traveling trophy</h2><span class="card-sub">${esc(r[2])}</span></div>
+      <div class="tro-detail-grid">
+        ${trophyPic(r, 'big')}
+        <div>
+          <p class="tro-hold">${holderLine(h)}</p>
+          ${x ? `<p class="tro-series"><b>${esc(seriesLine(x))}</b></p>
+          <div class="tro-score"><span>${esc(name(A))} <b>${x.wins[A]}</b></span><span>${esc(name(B))} <b>${x.wins[B]}</b></span><small>Points ${num(x.pts[A])}–${num(x.pts[B])}</small></div>
+          ${x.games.length ? `<ul class="tro-games">${x.games.map(row).join('')}</ul>` : ''}
+          ${x.upcoming.length ? `<p class="cm-rule">Still to play: week${x.upcoming.length === 1 ? '' : 's'} ${x.upcoming.join(', ')}${x.playoffLeft ? ', plus a playoff meeting if they draw each other' : ''}.</p>` : x.playoffLeft ? '<p class="cm-rule">A playoff meeting would still count.</p>' : ''}` : ''}
+          ${h.seasons.length ? `<p class="cm-rule"><b>Past winners:</b> ${h.seasons.map(s => `${seasonSpan(s.season)} ${esc(name(s.winner))} (${wl(s, s.winner)})`).join(' · ')}</p>` : ''}
+        </div>
+      </div>
+      <p class="cm-rule">The trophy goes to whoever wins the season series: their 3 regular-season meetings, plus a playoff meeting if they have one (consolation games don’t count). Level on wins, for example 2–2 after a playoff meeting, goes to whoever scored more points in those games. Once a team can’t be caught, it has clinched and holds the trophy. A playoff meeting stops being possible as soon as either team is mathematically out of the playoffs or gets knocked out, so a series can be clinched (or settled on points) right then.</p>
+    </section>`;
+}
+
+// preview: a future week number (commish Early hype tab): the page exactly as that week will
+// look once it starts, with no live scores and links that stay in the preview.
+async function renderHype(main, params, preview = null) {
+  const pageKey = preview ? 'commish' : 'hype';
   if (!HYPE_NOW) {
     main.innerHTML = '<div class="page"><div class="loading">Checking this week’s slate…</div></div>';
     HYPE_NOW = await hypeNow();
-    if (route().page !== 'hype') return;
+    if (route().page !== pageKey) return;
   }
-  const now = HYPE_NOW;
+  // In a preview, act as if week `preview` is the week under way.
+  const now = preview ? { ...HYPE_NOW, pre: preview === 1 && HYPE_NOW.pre, done: false, week: preview } : HYPE_NOW;
   const cur = DATA.seasons.at(-1);
   const curOpen = now.done || now.week >= 1;
 
@@ -1237,15 +1332,15 @@ async function renderHype(main, params) {
   const season = pickSeason.season;
   const isCur = season === cur.season && !now.done;
   const allWeeks = weeksFor(season);
-  const open = isCur ? allWeeks.filter(x => x.w <= now.week) : allWeeks.filter(x => DATA.games.some(g => g.s === season && g.w === x.w));
+  const open = preview ? allWeeks.filter(x => x.w <= Math.max(preview, now.week)) : isCur ? allWeeks.filter(x => x.w <= now.week) : allWeeks.filter(x => DATA.games.some(g => g.s === season && g.w === x.w));
   const wanted = Number(params.get('week'));
-  const week = open.some(x => x.w === wanted) ? wanted : (isCur ? now.week : open.at(-1)?.w);
-  const live = isCur && week === now.week && !DATA.games.some(g => g.s === season && g.w === week);
+  const week = preview ?? (open.some(x => x.w === wanted) ? wanted : (isCur ? now.week : open.at(-1)?.w));
+  const live = Boolean(preview) || (isCur && week === now.week && !DATA.games.some(g => g.s === season && g.w === week));
 
   let liveData = null;
-  if (live) {
+  if (live && !preview) {
     try { liveData = await liveWeek(season, week); } catch { /* scores just won't be live */ }
-    if (route().page !== 'hype') return;
+    if (route().page !== pageKey) return;
   }
   const pairs = liveData?.pairs ?? weekPairs(DATA, season, week);
   const slate = hypeSlate(DATA, season, week, pairs);
@@ -1258,7 +1353,7 @@ async function renderHype(main, params) {
 
   const hash = changes => {
     const p = new URLSearchParams({ season, week, ...changes });
-    return `#/hype?${p}`;
+    return preview ? `#/commish?${new URLSearchParams({ tab: 'hype', view: 'page', week: changes.week ?? week, ...(changes.m ? { m: changes.m } : {}) })}` : `#/hype?${p}`;
   };
   const seasonSelect = `
     <label class="ed-select">
@@ -1355,7 +1450,7 @@ async function renderHype(main, params) {
     if (x === y) return `All square · ${total} combined live points`;
     return `${esc(name(x > y ? A : B))} leads by ${num(Math.abs(x - y))} · ${total} combined live points`;
   };
-  const status = g.final ? 'Final' : live && liveData ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'Scores load from Sleeper';
+  const status = g.final ? 'Final' : live && liveData ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : preview ? 'Tip-off pending' : 'Scores load from Sleeper';
 
   // ----- The hype -----
   const rankOnSlate = slate.games.indexOf(g) + 1;
@@ -1375,6 +1470,7 @@ async function renderHype(main, params) {
               <div class="pw-track"><span style="width:${Math.max(2, g.parts[p.id])}%"></span></div>
               <div class="pw-part-val">${Math.round(g.parts[p.id])}</div>
             </div>`).join('')}
+          ${g.rivalry ? `<div class="hy-bonus">${icon('swords')} ${esc(g.rivalry.name)} <b>+${g.rivalry.bonus}</b></div>` : ''}
         </div>
       </div>
     </section>`;
@@ -1447,7 +1543,7 @@ async function renderHype(main, params) {
       }).join('')}
     </section>`;
 
-  const lag = isCur && week === now.week && !isPlayoffWeek && (cur.weeksPlayed ?? 0) < week - 1;
+  const lag = !preview && isCur && week === now.week && !isPlayoffWeek && (cur.weeksPlayed ?? 0) < week - 1;
   main.innerHTML = `
     <div class="page page-wide">
       ${head}
@@ -1462,6 +1558,7 @@ async function renderHype(main, params) {
       </section>
       <p class="filter-note">Standings use win percentage (league-median games included, as in Sleeper), then points for. The head-to-head series leaves median games out.${lag ? ' Last week’s results arrive with the nightly update, so this week’s hype may shift slightly until then.' : ''}</p>
       ${g.labels.length ? `<div class="hy-tags">${g.labels.map(chip).join('')}</div>` : ''}
+      ${trophyStake(season, week, A, B)}
       ${hypeCard}
       ${seriesCard}
       ${momentsCard}
@@ -1473,7 +1570,7 @@ async function renderHype(main, params) {
         A perfect 100 takes a Championship between the league’s two best teams, dead even, with a deep rivalry behind it.
         Until six weeks are played, strength leans on the preseason Power Rankings (rosters and projections when the season started; last season’s finish for seasons before 2026-27). The top score is the <b>Main event</b>; in title week it’s always the Championship.
         Labels like <b>Trap-game watch</b> (a clear favorite with a reason to slip: the underdog won the last meeting, is hotter lately, or the favorite has a top team on deck next week) come from the same numbers.
-        <b>League rivalries</b> (since ${seasonSpan(RIVALRIES_FROM)}): ${RIVALRIES.map(([a, b]) => `${esc(name(a))} vs ${esc(name(b))}`).join(", ")}. A rivalry game gets a <b>Rivalry</b> tag and up to 5 extra hype, and a week when every rivalry plays is <b>Rivalry Week</b>.
+        <b>League rivalries</b> (since ${seasonSpan(RIVALRIES_FROM)}), tagged by name: ${RIVALRIES.map(([a, b, n]) => `<b>${esc(n)}</b> (${esc(name(a))} vs ${esc(name(b))})`).join(", ")}, each <b>+${RIVALRY_BONUS.major}</b> hype; minor rivalries ${MINOR_RIVALRIES.map(([a, b, n]) => `<b>${esc(n)}</b> (${esc(name(a))} vs ${esc(name(b))})`).join(", ")}, each <b>+${RIVALRY_BONUS.minor}</b> (hype tops out at 100). A week when every major rivalry plays is <b>Rivalry Week</b>.
         Everything uses only games played before that week. Week 1 appears as soon as the schedule is set; every later week appears once it starts.
       </p>
     </div>`;
@@ -4125,15 +4222,35 @@ async function renderEarlyHype(body, params) {
   const slate = hypeSlate(DATA, season, week);
   const g0 = slate.games[0];
   const weeksAway = week - Math.max(HYPE_NOW.week, 0);
+  // Views (owner, Oct 2026): the summary, or the real Matchup Hype page / Home page drawn as
+  // they'll look once the week starts (same code as the public pages, no live scores).
+  const view = ['page', 'home'].includes(params.get('view')) ? params.get('view') : 'summary';
+  const go = (w, v) => `#/commish?${new URLSearchParams({ tab: 'hype', week: w, ...(v === 'summary' ? {} : { view: v }) })}`;
+  const controls = `
+    <div class="cm-pickers">
+      <label class="hy-pick cm-pick">
+        <span class="hy-pick-label">Week</span>
+        <span class="ed-select"><span class="hy-pick-val">Week ${week}</span>
+          <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+          <select id="cm-week" aria-label="Week">${future.map(w => `<option value="${w}"${w === week ? ' selected' : ''}>Week ${w}${w === future[0] ? ' (next to be revealed)' : ''}</option>`).join('')}</select>
+        </span>
+      </label>
+      <div class="st-stage cm-preview-tabs">${[['summary', 'Summary'], ['page', 'Hype page'], ['home', 'Home']].map(([id, l]) => `<a href="${go(week, id)}" class="${id === view ? 'on' : ''}">${l}</a>`).join('')}</div>
+    </div>`;
+  const notPublic = `<p class="hy-banner">${icon('lock')}<span><b>Not public yet.</b> Week ${week} is revealed to everyone ${week === 1 && HYPE_NOW.reveal ? `on ${esc(prettyDate(HYPE_NOW.reveal))}` : 'when it starts'}. ${weeksAway > 1 ? `This preview uses only the results so far; ${weeksAway - 1} more week${weeksAway - 1 === 1 ? '' : 's'} will be played first, so the hype can change by then.` : 'It uses the same results the announcement will, so this is very likely what everyone will see.'}</span></p>`;
+  if (view !== 'summary') {
+    body.innerHTML = `${controls}${notPublic}
+      <p class="filter-note">${view === 'page' ? 'Exactly the Matchup Hype page as it will open in week ' + week + ', with scores at 0 until tip-off. Pick any matchup below.' : 'The Home page as it will look in week ' + week + ': the Main event is that week’s; the other cards show today’s numbers.'}</p>
+      <div class="cm-preview" id="cm-prev"></div>`;
+    $('#cm-week', body)?.addEventListener('change', e => { location.hash = go(e.target.value, view); });
+    const box = $('#cm-prev', body);
+    if (view === 'page') await renderHype(box, params, week);
+    else renderHome(box, week);
+    return;
+  }
 
   body.innerHTML = `
-    <label class="hy-pick cm-pick">
-      <span class="hy-pick-label">Week</span>
-      <span class="ed-select"><span class="hy-pick-val">Week ${week}</span>
-        <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
-        <select id="cm-week" aria-label="Week">${future.map(w => `<option value="${w}"${w === week ? ' selected' : ''}>Week ${w}${w === future[0] ? ' (next to be revealed)' : ''}</option>`).join('')}</select>
-      </span>
-    </label>
+    ${controls}
     ${slate.rivalryWeek ? rivalryBanner() : ''}
     <p class="hy-banner">${icon('lock')}<span><b>Not public yet.</b> Week ${week} is revealed to everyone ${week === 1 && HYPE_NOW.reveal ? `on ${esc(prettyDate(HYPE_NOW.reveal))}` : 'when it starts'}. ${weeksAway > 1 ? `This preview uses only the results so far; ${weeksAway - 1} more week${weeksAway - 1 === 1 ? '' : 's'} will be played first, so the hype can change by then.` : week === 1 ? 'Nothing is played before it, so this is what everyone will see unless a manager or team name changes.' : 'It uses the same results the announcement will, so this is very likely what everyone will see (unless last week’s results are still coming in).'}</span></p>
 
@@ -4154,11 +4271,11 @@ async function renderEarlyHype(body, params) {
           <span class="hy-g-teams"><b>${esc(teamName(x.a, season))}</b> <i>vs</i> <b>${esc(teamName(x.b, season))}</b>
             <small>${x.labels.map(chip).join('')}</small>
             ${x.labels.length ? `<span class="cm-why">${x.labels.map(l => esc(l.why)).join(' ')}</span>` : '<span class="cm-why">No labels: nothing special on paper.</span>'}
-            <span class="cm-parts">${HYPE_PARTS.map(p => `${p.name} ${Math.round(x.parts[p.id])}`).join(' · ')}</span></span>
+            <span class="cm-parts">${HYPE_PARTS.map(p => `${p.name} ${Math.round(x.parts[p.id])}`).join(' · ')}${x.rivalry ? ` · ${esc(x.rivalry.name)} +${x.rivalry.bonus}` : ''}</span></span>
           <span class="hy-g-hype"><b>${x.hype}</b><small>Hype</small></span>
         </div>`).join('')}
     </section>`;
-  $('#cm-week', body)?.addEventListener('change', e => { location.hash = `#/commish?tab=hype&week=${e.target.value}`; });
+  $('#cm-week', body)?.addEventListener('change', e => { location.hash = go(e.target.value, view); });
 }
 
 // Projection log (data/projection-log.json, written by every nightly run): how often Sleeper's
@@ -4482,10 +4599,12 @@ let homeBy = 'wins';
 
 // The week the Matchup Hype page opens on: the week under way, or else the
 // last week with games.
-async function homeHypeWeek() {
+async function homeHypeWeek(preview = null) {
   HYPE_NOW ??= await hypeNow();
   const now = HYPE_NOW;
   const cur = DATA.seasons.at(-1);
+  // Commish preview (Early hype tab): show week `preview` as it will look once it starts.
+  if (preview) return { season: cur.season, week: preview, live: true, preview: true, now: { ...now, pre: preview === 1 && now.pre, done: false, week: preview } };
   if (!now.done && now.week >= 1) {
     const live = !DATA.games.some(g => g.s === cur.season && g.w === now.week);
     return { season: cur.season, week: now.week, live, now };
@@ -4499,18 +4618,18 @@ async function homeHypeWeek() {
 // Fills the Main event card. Returns true when the week is being played, so
 // the scores are worth refreshing. refresh: a timed update of a card already
 // shown, which keeps the old card if Sleeper doesn't answer.
-async function homeHype(box, refresh = false) {
+async function homeHype(box, refresh = false, preview = null) {
   let pick;
-  try { pick = await homeHypeWeek(); } catch { pick = {}; }
+  try { pick = await homeHypeWeek(preview); } catch { pick = {}; }
   if (!box.isConnected) return false;
-  const { season, week, live, now } = pick;
+  const { season, week, live, now, preview: isPreview } = pick;
   const cur = DATA.seasons.at(-1);
   if (!season || !week) {
     box.innerHTML = '<a class="card hm-card hm-link" href="#/hype"><p class="empty">Matchup Hype starts with week 1 of the season.</p></a>';
     return false;
   }
   let liveData = null;
-  if (live) {
+  if (live && !isPreview) {
     try { liveData = await liveWeek(season, week); } catch { /* scores just won't be live */ }
     if (!box.isConnected || (refresh && !liveData)) return live;
   }
@@ -4540,7 +4659,7 @@ async function homeHype(box, refresh = false) {
   const status = g.final ? 'Final' : live && hasScore ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : live ? 'Tip-off pending' : '';
   const why = g.labels.find(l => l.id === 'main')?.why ?? g.labels[0]?.why;
   box.innerHTML = `
-    <a class="hm-main" href="#/hype?${new URLSearchParams({ season, week, m: g.a })}">
+    <a class="hm-main" href="${isPreview ? `#/commish?${new URLSearchParams({ tab: 'hype', view: 'page', week, m: g.a })}` : `#/hype?${new URLSearchParams({ season, week, m: g.a })}`}">
       <div class="hm-main-top">
         <span class="hm-kicker">${icon('bolt')} ${esc(when)}${g.label ? ` · ${esc(g.label)}` : ''}</span>
         <span class="hm-hype"><b>${g.hype}</b> Hype</span>
@@ -4555,10 +4674,11 @@ async function homeHype(box, refresh = false) {
       </div>
       ${g.labels.length ? `<div class="hm-chips">${g.labels.slice(0, 3).map(chip).join('')}</div>` : ''}
       ${why ? `<p class="hm-why">${esc(why)}</p>` : ''}
+      ${trophyOf(g.a, g.b) && Number(season) >= Number(RIVALRIES_FROM) ? `<p class="hm-trophy">${trophyPic(trophyOf(g.a, g.b), 'mini')}<span>Playing for the <b>${esc(trophyOf(g.a, g.b)[2].replace(/^The /, ''))}</b> trophy · ${esc(seriesLine(seasonSeries(DATA, season, g.a, g.b, week)))}</span></p>` : ''}
       <span class="hm-go">Full matchup ${icon('arrow')}</span>
     </a>
     ${waiting ? `<p class="hm-note">${icon('clock')}<span>The ${esc(cur.season)} season tips off ${esc(prettyDate(now.tipoff))}. Week 1’s Main event appears once Sleeper sets the schedule.</span></p>` : ''}`;
-  return live && !now.pre; // no point refreshing scores before tip-off
+  return live && !now.pre && !isPreview; // no point refreshing scores before tip-off (or in a preview)
 }
 
 // Newest record changes, league and personal together.
@@ -4899,7 +5019,8 @@ async function homeWagerLive(main) {
   } catch { /* keep the nightly version */ }
 }
 
-function renderHome(main) {
+// preview: a future week number (commish Early hype tab) to show that week's Main event.
+function renderHome(main, preview = null) {
   main.innerHTML = `
     <div class="page page-wide hm">
       <div class="page-head">
@@ -4912,6 +5033,11 @@ function renderHome(main) {
         ${homePower()}
         ${homeStandings()}
       </div>
+      <section class="card hm-card hm-trophies">
+        <div class="hm-head"><h2>${icon('swords')} Rivalry trophies</h2><a class="hm-all" href="#/rivalry">Rivalries ${icon('arrow')}</a></div>
+        <p class="card-sub">Season series and who holds each traveling trophy</p>
+        ${trophyCase(true)}
+      </section>
       <div id="hm-wager">${homeWager()}</div>
       ${homeWire()}
     </div>`;
@@ -4928,7 +5054,7 @@ function renderHome(main) {
   // While a week is being played, refresh the Main event's scores every minute.
   const box = $('#hm-hype', main);
   bindTicker(main);
-  homeHype(box).then(live => {
+  homeHype(box, false, preview).then(live => {
     if (!live || !box.isConnected) return;
     HYPE_TIMER = setInterval(() => {
       if (!box.isConnected) return clearInterval(HYPE_TIMER);

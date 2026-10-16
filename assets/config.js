@@ -20,16 +20,23 @@ export const ALL_STARS_FROM = '2025';
 export const AWARD_SCORING = { '2023': '2024' };
 
 // League rivalries (set by the commissioner). When a pair meets, Matchup Hype
-// tags the game "Rivalry" and adds up to 5 hype (through the History part).
-// Only from RIVALRIES_FROM on: earlier seasons stay as they were.
-// Pairs are Sleeper user IDs, so a display-name change doesn't break them.
+// tags the game with the rivalry's name and adds RIVALRY_BONUS to its hype score
+// (major +10, minor +5, owner Oct 2026). Only from RIVALRIES_FROM on: earlier
+// seasons stay as they were. Pairs are Sleeper user IDs, so a display-name change
+// doesn't break them. Rivalry Week = every game that week is a major rivalry.
 export const RIVALRIES_FROM = '2026';
-export const RIVALRIES = [
-  ['986665284570279936', '1035744206368657408'], // jimmycooks2 vs tzola13
-  ['1035475215997906944', '1036083466980458496'], // bigdaddyburk vs TRT3
-  ['1035995054579617792', '1035999704737259520'], // loganzarvell vs bigtrey5456
-  ['866760756052537344', '1038192436067016704'], // simeoncampbell7 vs BenDoverPlz123
+export const RIVALRIES = [ // major: [owner, owner, name, trophy image (assets/trophies/<x>.webp)]
+  ['986665284570279936', '1035744206368657408', 'The Finals Fallout', 'finals-fallout'], // jimmycooks2 vs tzola13
+  ['1035475215997906944', '1036083466980458496', 'The Crown Clash', 'crown-clash'], // bigdaddyburk vs TRT3
+  ['1035995054579617792', '1035999704737259520', 'The Never Ending Negotiation', 'never-ending-negotiation'], // loganzarvell vs bigtrey5456
+  ['866760756052537344', '1038192436067016704', 'The Race to Relevance', 'race-to-relevance'], // simeoncampbell7 vs BenDoverPlz123
 ];
+export const MINOR_RIVALRIES = [
+  ['1036083466980458496', '1035999704737259520', 'Battle of Brothers'], // TRT3 vs bigtrey5456
+  ['866760756052537344', '986665284570279936', 'Battle of Brothers'], // simeoncampbell7 vs jimmycooks2
+  ['1036083466980458496', '1035995054579617792', 'Culture Clash'], // TRT3 vs loganzarvell
+];
+export const RIVALRY_BONUS = { major: 10, minor: 5 };
 
 // Wager Weeks (Rulebook rule 9, 2026-27 only): in weeks `from` to `to`, the lowest
 // weekly score puts up `stake` dollars for the league parlay; nobody pays more than

@@ -18,7 +18,8 @@
 
 import { powerRankings, powerSeasons, preseasonRankings } from './power.js';
 import { finishes } from './standings.js';
-import { RIVALRIES, RIVALRIES_FROM } from './config.js';
+import { MINOR_RIVALRIES, RIVALRIES, RIVALRIES_FROM, RIVALRY_BONUS } from './config.js';
+import { playoffPicture } from './commish.js';
 
 export const HYPE_PARTS = [
   { id: 'quality', name: 'Quality', weight: 0.30, desc: 'how strong both teams are' },
@@ -40,13 +41,19 @@ const PEDIGREE_WEEKS = 6; // weeks until this season's results fully replace las
 // Chosen with the owner (Oct 2026, "V5") so a 100 is reachable: a title game between the
 // league's two best teams, within 2 Power points, with a deep rivalry. Tested on every past
 // game: the 2025 final went from 81 to 91; regular-season games average about 46.
-//   rivalryHistory: added to History (after the boost, capped at 100) when a league
-//   rivalry (config.js) meets: up to +5 hype. Owner's choice, from RIVALRIES_FROM on.
-export const TUNING = { quality: 'relative', closeFree: 2, closePer: 3.5, historyScale: 1.5, rivalryHistory: 25 };
+//   Rivalries (config.js, owner Oct 2026): a major rivalry adds RIVALRY_BONUS.major (10) and a
+//   minor one RIVALRY_BONUS.minor (5) straight to the hype score (capped at 100), from RIVALRIES_FROM on.
+export const TUNING = { quality: 'relative', closeFree: 2, closePer: 3.5, historyScale: 1.5 };
 
-// A league rivalry, from the season they started.
-export const isRivalry = (season, a, b) => Number(season) >= Number(RIVALRIES_FROM)
-  && RIVALRIES.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
+// A league rivalry, from the season they started: { name, level: 'major' | 'minor', bonus } or null.
+export function isRivalry(season, a, b) {
+  if (Number(season) < Number(RIVALRIES_FROM)) return null;
+  const pair = ([x, y]) => (x === a && y === b) || (x === b && y === a);
+  const major = RIVALRIES.find(pair);
+  if (major) return { name: major[2] ?? 'Rivalry', level: 'major', bonus: RIVALRY_BONUS.major };
+  const minor = MINOR_RIVALRIES.find(pair);
+  return minor ? { name: minor[2] ?? 'Rivalry', level: 'minor', bonus: RIVALRY_BONUS.minor } : null;
+}
 const clamp = x => Math.max(0, Math.min(100, x));
 const mean = xs => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
 const r1 = x => Math.round(x * 10) / 10;
@@ -315,9 +322,9 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
       if (series.streak?.n >= 3) history += 10;
     }
     const rivalry = isRivalry(season, A, B);
-    history = clamp(history * TUNING.historyScale + (rivalry ? TUNING.rivalryHistory : 0));
+    history = clamp(history * TUNING.historyScale);
     const parts = { quality, closeness, stakes, history };
-    const hype = Math.round(HYPE_PARTS.reduce((sum, x) => sum + parts[x.id] * x.weight, 0));
+    const hype = Math.min(100, Math.round(HYPE_PARTS.reduce((sum, x) => sum + parts[x.id] * x.weight, 0)) + (rivalry?.bonus ?? 0));
 
     // ----- Labels, most important first -----
     const labels = [];
@@ -331,7 +338,7 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
     else if (p.label === 'Last place game') add('toilet', 'Toilet bowl', 'The lower score finishes last in the league. Nobody wants this one.', 'red');
     else if (p.t === 'P') add('elim', 'Win or go home', `${p.label}: the loser's season is over.`, 'red');
     else if (p.t === 'X') add('consolation', p.label ?? 'Consolation', 'Playing for final position in the standings.');
-    if (rivalry) add('rivalry', 'Rivalry', `League rivalry: ${name(A)} vs ${name(B)}. Rivalry games get extra hype.`, 'red');
+    if (rivalry) add('rivalry', rivalry.name, `${rivalry.level === 'major' ? 'League rivalry' : 'Minor rivalry'}: ${name(A)} vs ${name(B)}. +${rivalry.bonus} hype.`, rivalry.level === 'major' ? 'red' : 'gold');
 
     if (series.titles.length) {
       const t = series.titles.at(-1);
@@ -422,14 +429,14 @@ export function hypeSlate(DATA, season, week, pairs = weekPairs(DATA, season, we
     const top = HYPE_PARTS.map(x => ({ ...x, v: main.parts[x.id] * x.weight })).sort((x, y) => y.v - x.v).slice(0, 2);
     const why = main.label === 'Championship'
       ? `The title game is always the main event (hype ${main.hype}).`
-      : `The highest hype score on the slate (${main.hype}), led by ${top.map(x => x.name.toLowerCase()).join(' and ')}.`;
+      : `The highest hype score on the slate (${main.hype}), led by ${top.map(x => x.name.toLowerCase()).join(' and ')}${main.rivalry ? ` plus the ${main.rivalry.name.replace(/^The /, '')} bonus (+${main.rivalry.bonus})` : ''}.`;
     main.labels.unshift({ id: 'main', text: 'Main event', why, tone: 'gold' });
     main.main = true;
   }
   for (const g of games) g.labels = g.labels.slice(0, MAX_LABELS);
   games.sort((x, y) => (y.main ? 1 : 0) - (x.main ? 1 : 0) || y.hype - x.hype);
   // Rivalry Week: every game on a regular-season slate is a league rivalry.
-  const rivalryWeek = !playoffs && games.length > 1 && games.every(g => g.rivalry);
+  const rivalryWeek = !playoffs && games.length > 1 && games.every(g => g.rivalry?.level === 'major');
   return { season, week, playoffs, lastRegular, spots, left, weeksIn, games, rivalryWeek, prevSeason: Object.values(str)[0]?.prevSeason ?? null };
 }
 
@@ -461,4 +468,81 @@ export function moments(DATA, series, A, B, perSide = 2) {
     B: all.filter(x => x.o === B).slice(0, perSide),
     total: all.length,
   };
+}
+
+// ---------- Rivalry trophies (owner, Oct 2026) ----------
+// Each MAJOR rivalry has a traveling trophy (RIVALRIES[i][3] = image in assets/trophies/).
+// It goes to the winner of that season's series: the 3 regular-season meetings plus a
+// playoff meeting if they have one (consolation games don't count). Most wins takes it; level
+// on wins (e.g. 2-2 after a playoff meeting, or a tie game) = most points scored in those games.
+// A series is clinched when the trailer can't catch up even by winning every game left; the
+// clincher holds the trophy from then on, otherwise last season's winner keeps it.
+export const trophyOf = (a, b) => RIVALRIES.find(([x, y]) => (x === a && y === b) || (x === b && y === a)) ?? null;
+export const trophyImg = r => `assets/trophies/${r[3]}.webp`;
+
+// Teams mathematically out of the playoffs during the regular season, as of the last regular
+// week played before `beforeWeek` (commish.js playoffPicture). Cached per data load.
+const ELIM = new WeakMap();
+function eliminatedBy(DATA, season, beforeWeek) {
+  const s = DATA.seasons.find(x => x.season === season);
+  const lastRegular = (s?.playoffStart ?? 22) - 1;
+  const played = DATA.games.filter(g => g.s === season && g.t === 'R' && g.w < beforeWeek).map(g => g.w);
+  const week = Math.min(lastRegular, played.length ? Math.max(...played) : 0);
+  if (!week) return new Set();
+  const byData = ELIM.get(DATA) ?? new Map();
+  ELIM.set(DATA, byData);
+  const key = `${season}|${week}`;
+  if (!byData.has(key)) {
+    let set = new Set();
+    try { set = new Set(playoffPicture(DATA, season, week, standingsBefore).rows.filter(r => r.eliminated).map(r => r.owner)); } catch { /* no picture: nobody counted out */ }
+    byData.set(key, set);
+  }
+  return byData.get(key);
+}
+
+export function seasonSeries(DATA, season, A, B, beforeWeek = Infinity) {
+  const s = DATA.seasons.find(x => x.season === season);
+  const pair = g => (g.a === A && g.b === B) || (g.a === B && g.b === A);
+  const games = DATA.games.filter(g => g.s === season && pair(g) && (g.t === 'R' || g.t === 'P') && g.w < beforeWeek)
+    .sort((x, y) => x.w - y.w)
+    .map(g => {
+      const flip = g.a !== A;
+      return { w: g.w, t: g.t, label: g.label ?? null, ap: flip ? g.bp : g.ap, bp: flip ? g.ap : g.bp, win: g.win === 'tie' ? 'tie' : (g.win === 'a') !== flip ? A : B };
+    });
+  const played = new Set(games.map(g => g.w));
+  const upcoming = (DATA.schedule ?? []).filter(g => g.s === season && pair(g) && !played.has(g.w)).map(g => g.w).sort((x, y) => x - y);
+  const wins = { [A]: games.filter(g => g.win === A).length, [B]: games.filter(g => g.win === B).length };
+  const pts = { [A]: games.reduce((t, g) => t + g.ap, 0), [B]: games.reduce((t, g) => t + g.bp, 0) };
+  const ties = games.filter(g => g.win === 'tie').length;
+  // A playoff meeting is still possible until one of them is out (or they already met there).
+  // Out = mathematically eliminated during the regular season (Playoff picture math), not in
+  // the bracket once it's set, or lost a playoff game.
+  const complete = s?.status === 'complete' && beforeWeek === Infinity;
+  const metInPlayoffs = games.some(g => g.t === 'P');
+  const elim = eliminatedBy(DATA, season, beforeWeek);
+  const out = o => elim.has(o) || (s?.playoffTeams?.length && !s.playoffTeams.includes(o))
+    || DATA.games.some(g => g.s === season && g.t === 'P' && g.w < beforeWeek && ((g.a === o && g.win === 'b') || (g.b === o && g.win === 'a')));
+  const playoffLeft = !complete && !metInPlayoffs && !out(A) && !out(B) ? 1 : 0;
+  const left = complete ? 0 : upcoming.length + playoffLeft;
+  const lead = wins[A] === wins[B] ? null : wins[A] > wins[B] ? A : B;
+  const trail = lead === A ? B : A;
+  let winner = null, how = null;
+  // Decided: season over, nothing left to play (level on wins goes to points right away),
+  // or the leader can't be caught.
+  if (complete || (games.length && left === 0) || (lead && wins[lead] > wins[trail] + left)) {
+    if (lead) { winner = lead; how = 'wins'; }
+    else if (games.length && pts[A] !== pts[B]) { winner = pts[A] > pts[B] ? A : B; how = 'points'; }
+  }
+  return { season, A, B, games, upcoming, wins, pts, ties, left, playoffLeft, lead, winner, how, clinched: Boolean(winner) && !complete, complete };
+}
+
+// The trophy's holder now and every season's winner (from RIVALRIES_FROM on).
+export function trophyHistory(DATA, r) {
+  const [A, B] = r;
+  const seasons = DATA.seasons.filter(s => Number(s.season) >= Number(RIVALRIES_FROM)).map(s => s.season);
+  const list = seasons.map(season => seasonSeries(DATA, season, A, B));
+  let holder = null, since = null;
+  for (const x of list) if (x.winner) { if (x.winner !== holder) since = x.season; holder = x.winner; }
+  const current = list.at(-1) ?? null;
+  return { holder, since, seasons: list.filter(x => x.winner), current };
 }

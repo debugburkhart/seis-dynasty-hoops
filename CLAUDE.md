@@ -109,7 +109,26 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   owner IDs; owner chose 2026+ only, earlier seasons untouched): "Rivalry" tag (red) and
   +25 History after the boost, capped (= up to +5 hype); a regular week where every game is
   a rivalry gets a "Rivalry Week" banner (2026: weeks 7, 14, 21). Public "How hype works"
-  lists the rivalries (owner made them public Oct 2026). Starting strength (owner, Oct 2026): before
+  lists the rivalries (owner made them public Oct 2026). Named rivalries (owner, Oct 2026): RIVALRIES
+  entries are [a, b, name] (major: The Finals Fallout jimmy-tzola, The Crown Clash burk-TRT3, The Never
+  Ending Negotiation logan-bigtrey, The Race to Relevance simeon-BenDover) + MINOR_RIVALRIES (Battle of
+  Brothers TRT3-bigtrey and simeon-jimmy, Culture Clash TRT3-logan); RIVALRY_BONUS {major 10, minor 5}
+  added straight to hype (capped 100; replaced the old +25 History boost); isRivalry() returns
+  { name, level, bonus }; tag text = rivalry name (major red, minor gold); hype meter shows a bonus
+  line; Rivalry Week = every game a MAJOR rivalry. Rivalry page: named-rivalry chips (.rv-named) +
+  name banner on the fight card (.rv-title). TRAVELING TROPHIES (owner, Oct 2026): each MAJOR rivalry
+  has a trophy (RIVALRIES[i][3] = assets/trophies/<slug>.webp, cut from the owner's image with real
+  alpha). seasonSeries(DATA, season, A, B, beforeWeek) in hype.js: R + P (bracket) meetings that
+  season (X consolation games excluded), wins, then most points in those games if level (2-2 after a
+  playoff meeting, or a tie game); clinched when lead > games left (unplayed scheduled meetings + 1
+  possible playoff meeting until one is out: mathematically eliminated (eliminatedBy() = commish
+  playoffPicture at the last regular week played, cached), not in the bracket, or lost a P game; level
+  on wins with nothing left = decided on points right away); trophyHistory(): holder = latest season
+  winner incl. a clinched current season, else vacant ("first awarded this season"). UI: Rivalry page
+  "Trophy case" (all 4, trophyCase()) + Minor rivalries chips + trophy in the fight-card banner +
+  "The traveling trophy" card (trophyDetail: holder, series, games, still to play, past winners,
+  rules); Hype page "Playing for" card (trophyStake, series before that week); Home "Rivalry trophies"
+  card (trophyCase(true)) + a trophy line on the Main event card. Starting strength (owner, Oct 2026): before
   PEDIGREE_WEEKS (6) are played, strengthsBefore() blends the real Power score with the PRESEASON
   Power Rankings (preseasonPower(), DATA.preseason) instead of last season's finish, so offseason
   trades/rookies count from week 1; seasons without a saved preseason (2023-2025) still use the
@@ -224,7 +243,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   /league/{id}/traded_picks + trade paths from DATA.transactions; next 3 drafts), Award races (season picker; live season totals + rookies from
   Sleeper via seasonTotals(); every award in banner order 01-09 + Championship MVP; finished
   seasons match the Awards page), Early hype (unrevealed
-  regular weeks' hypeSlate, default = next week to be revealed), Health report.
+  regular weeks' hypeSlate, default = next week to be revealed; views (owner, Oct 2026): Summary /
+  Hype page = renderHype(box, params, previewWeek) / Home = renderHome(box, previewWeek): the real pages
+  as that week will look (now.week = preview, live labels, no live scores, "Tip-off pending", links stay in
+  #/commish?tab=hype&view=page&week=&m=; other Home cards show today), Health report.
   Health report: GitHub runs, scoring-check.txt, week-guard.json, warnings, corrections,
   lineup check, activity (flag >21 days in season), trade review (750+ net, 4+ trades/pair).
 - `assets/gm.js` + "My GM" tabs in the commish office (Assistant GM, owner's plan Oct 2026).
