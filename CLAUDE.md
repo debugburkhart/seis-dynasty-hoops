@@ -346,6 +346,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   { pid: [[date, grade]] } only when a saved player's grade changes. TOP 100 PROSPECTS (owner, Oct
   2026): My GM tab "prospects" (renderProspects): prospectRanking(v) in dynasty.js = every graded player
   (<= 24, rostered or FA with an NBA team) by grade (A+ first), then star %, starter %, rotation %;
+  "Grade changes" card on top (league-wide, newest first, 12 + "N more"; hist.grades now covers EVERY
+  graded player incl. free agents; rebuilt once from hist.proj back to Oct 14 (hist.gradesBackfilled),
+  a night grading the same as today's ROUNDED projection counts as today's grade so 0.1 rounding on a
+  grade line (Dominick Barlow, 12.0% rotation) isn't a fake change; prospectFor() in dynasty.js);
   filters All / On rosters / Free agents / My team; ▲N/▼N/NEW vs the saved order ~7 days back
   (update.mjs hist.prospectRanks[date] = top-100 pids, last 21 nights) + risers/fallers line; rows open
   the score chart. Dynasty Prospects card and every Waiver wire list show #rank chips (.pr-chip; waiver

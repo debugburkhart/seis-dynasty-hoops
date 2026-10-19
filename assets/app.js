@@ -3182,8 +3182,28 @@ async function renderProspects(body, params) {
   const fallers = [...moved].sort((a, b) => a.m - b.m).filter(r => r.m < 0).slice(0, 3);
   const link = s => `#/commish?${new URLSearchParams({ tab: 'prospects', ...(me === COMMISH ? {} : { team: me }), ...(s === 'all' ? {} : { show: s }) })}`;
   const mineCount = rows.filter(r => r.p.owner === me).length;
+  // Grade changes, league-wide (dynasty-history.json grades: a line only when a grade moves).
+  const glog = hist.grades ?? {};
+  const rankOf = Object.fromEntries(rows.map(r => [r.p.pid, r.rank]));
+  const gchanges = Object.entries(glog).flatMap(([pid, list]) => list.slice(1).map(([d, g], i) => ({ pid, d, from: list[i][1], to: g })))
+    .filter(c => v.players[c.pid]).sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : (rankOf[a.pid] ?? 999) - (rankOf[b.pid] ?? 999)));
+  const trackedSince = Object.values(glog).map(x => x[0]?.[0]).filter(Boolean).sort()[0];
+  const gRow = c => {
+    const p = v.players[c.pid];
+    const up = GRADE_ORDER.indexOf(c.to) < GRADE_ORDER.indexOf(c.from);
+    return `<li class="${p.owner === me ? 'cm-me' : ''}"><span>${rankOf[c.pid] ? `<span class="pr-chip">#${rankOf[c.pid]}</span> ` : ''}${esc(p.name)}<small>${esc(shortMd(c.d))} · ${p.owner ? esc(name(p.owner)) : 'Free agent'}${p.where === 'taxi' ? ' (taxi)' : ''}</small></span><span class="dy-grade-move"><span class="pg pg-${esc(c.from[0])}">${esc(c.from)}</span><span class="${up ? 'dy-up' : 'dy-down'}">${up ? '▲' : '▼'}</span><span class="pg pg-${esc(c.to[0])}">${esc(c.to)}</span></span></li>`;
+  };
+  const gradeCard = `
+    <section class="card">
+      <div class="card-head"><h2>Grade changes</h2><span class="card-sub">League-wide · newest first</span></div>
+      ${gchanges.length ? `<ol class="aw-race">${gchanges.slice(0, 12).map(gRow).join('')}</ol>
+        ${gchanges.length > 12 ? `<details class="cm-group"><summary>${gchanges.length - 12} more</summary><ol class="aw-race">${gchanges.slice(12).map(gRow).join('')}</ol></details>` : ''}`
+        : '<p class="empty">No grade changes yet.</p>'}
+      <p class="cm-rule">Every prospect’s grade is checked each night; a line appears only when the letter moves${trackedSince ? ` (tracked since ${esc(shortMd(trackedSince))})` : ' (tracking starts with the next nightly update)'}. #N = his place in the Top ${PROSPECT_LIST} now.</p>
+    </section>`;
   body.innerHTML = `<div class="gm-page">
     ${gmTeamPick(me, season, 'prospects')}
+    ${gradeCard}
     <section class="card">
       <div class="card-head"><h2>Top ${PROSPECT_LIST} prospects</h2><span class="card-sub">League-wide · ${esc(name(me))} has ${mineCount}</span></div>
       <div class="st-stage tf-filter dy-filter" role="group">${[['all', 'All'], ['rostered', 'On rosters'], ['free', 'Free agents'], ['mine', 'My team']].map(([id, l]) => `<a href="${link(id)}" class="${id === show ? 'on' : ''}">${l}</a>`).join('')}</div>

@@ -83,7 +83,7 @@ await writeFile(`data/snapshots/${today}.json`, JSON.stringify({ date: today, se
 // per night: { days: { date: { pid: score, or [score, fullValueScore] when he's listed Out } } }.
 // Players on a roster or with a score above 0. A problem here never stops the nightly update.
 try {
-  const { loadDynasty, dynastyValues, historyDay, historyExtra, backfillSeason, prospectRanking } = await import('../assets/dynasty.js');
+  const { loadDynasty, dynastyValues, historyDay, historyExtra, backfillSeason, prospectRanking, prospectFor } = await import('../assets/dynasty.js');
   const { teamSnapshot } = await import('../assets/tradefinder.js');
   // Smoothed this-season projections (dynasty.js PROJ_SMOOTH): last 3 nights kept.
   const projFile = (await readJson('data/dynasty-proj.json')) ?? { states: [] };
@@ -137,10 +137,37 @@ try {
   // Prospect grades (Dynasty tab "Prospect grade changes"): { pid: [[date, grade], ...] }, a new
   // entry only when a saved player's grade differs from his last one.
   hist.grades ??= {};
-  for (const pid of Object.keys(day)) {
-    const g = cut.players[pid]?.prospect?.grade;
-    if (!g) continue;
-    const list = (hist.grades[pid] ??= []);
+  // Once (owner, Oct 2026): rebuild the grades of the nights before tracking began from the saved
+  // projections (hist.proj, this season), so changes since then show too.
+  if (!hist.gradesBackfilled) {
+    const start = `${Number(today.slice(0, 4)) - (Number(today.slice(5, 7)) >= 8 ? 0 : 1)}-08-01`;
+    const rebuilt = {};
+    for (const date of Object.keys(hist.proj).filter(d => d >= start && d < today).sort()) {
+      for (const [pid, pg] of Object.entries(hist.proj[date])) {
+        const p = cut.players[pid];
+        if (!p?.prospect || !(pg > 0)) continue; // graded today = still 24 or under
+        // Saved projections are rounded to 0.1, which can tip a player sitting on a grade line;
+        // a night that grades the same as today's rounded projection counts as today's grade.
+        const now = p.projUsed > 0 ? prospectFor(Math.round(p.projUsed * 10) / 10, p.age, cut.line).grade : null;
+        const raw = prospectFor(pg, p.age, cut.line).grade;
+        const g = raw === now ? p.prospect.grade : raw;
+        const list = (rebuilt[pid] ??= []);
+        if (list.at(-1)?.[1] !== g) list.push([date, g]);
+      }
+    }
+    for (const [pid, list] of Object.entries(hist.grades)) for (const e of list) if (!rebuilt[pid]?.some(x => x[0] === e[0])) (rebuilt[pid] ??= []).push(e);
+    for (const list of Object.values(rebuilt)) {
+      list.sort((a, b) => (a[0] < b[0] ? -1 : 1));
+      for (let i = list.length - 1; i > 0; i--) if (list[i][1] === list[i - 1][1]) list.splice(i, 1);
+    }
+    hist.grades = rebuilt;
+    hist.gradesBackfilled = true;
+  }
+  // Every graded player (24 and under, on a roster or with an NBA team), free agents included.
+  for (const p of Object.values(cut.players)) {
+    const g = p.prospect?.grade;
+    if (!g || !(p.team || p.owner)) continue;
+    const list = (hist.grades[p.pid] ??= []);
     if (list.at(-1)?.[1] !== g) list.push([today, g]);
   }
   // Team tracker: each team's strength now / in 2 yrs, total value, age and position strength,

@@ -189,12 +189,7 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
       raw: SEASON_WEIGHTS[0] * v1 + SEASON_WEIGHTS[1] * v2 + SEASON_WEIGHTS[2] * v3,
     };
     if (age != null && age <= PROSPECT_MAX_AGE && base > 0) {
-      const in3 = base * ageMult(age) * ageMult(age + 1) * ageMult(age + 2);
-      const x = in3 / starterLine;
-      const starter = logistic(STARTER_FIT, x, age);
-      const star = logistic(STAR_FIT, x, age);
-      const rotation = logistic(ROTATION_FIT, x, age);
-      players[pid].prospect = { starter, star, rotation, in3: r1(in3), grade: GRADES.find(([, test]) => test(starter, star, rotation))[0] };
+      players[pid].prospect = prospectFor(base, age, starterLine);
       players[pid].chances = players[pid].prospect;
     } else if (age != null && base > 0) {
       const x = base * ageMult(age) * ageMult(age + 1) * ageMult(age + 2) / starterLine;
@@ -250,7 +245,7 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
   });
 
   const outlook = teamOutlook(players, picks, f.rosters, season);
-  return { players, picks, outlook, floor: r1(floor), top: r1(top), hitRate, nextDraft, orderKnown: Boolean(order?.weeks), starterLine: r1(starterLine), projPg, projRaw: rawProj };
+  return { players, picks, outlook, floor: r1(floor), top: r1(top), hitRate, nextDraft, orderKnown: Boolean(order?.weeks), starterLine: r1(starterLine), line: starterLine, projPg, projRaw: rawProj };
 }
 
 // Taxi clock for one player: the league lets a player stay on taxi through his 3rd NBA season.
@@ -382,4 +377,15 @@ export function prospectRanking(v, n = PROSPECT_LIST) {
     .sort((a, b) => order[a.prospect.grade] - order[b.prospect.grade]
       || b.prospect.star - a.prospect.star || b.prospect.starter - a.prospect.starter || b.prospect.rotation - a.prospect.rotation)
     .slice(0, n);
+}
+
+// A prospect's chances and grade from his per-game value (this season), age and the starter line
+// (dynastyValues uses it; the nightly job reuses it to rebuild past grades from saved projections).
+export function prospectFor(base, age, starterLine) {
+  const in3 = base * ageMult(age) * ageMult(age + 1) * ageMult(age + 2);
+  const x = in3 / starterLine;
+  const starter = logistic(STARTER_FIT, x, age);
+  const star = logistic(STAR_FIT, x, age);
+  const rotation = logistic(ROTATION_FIT, x, age);
+  return { starter, star, rotation, in3: r1(in3), grade: GRADES.find(([, test]) => test(starter, star, rotation))[0] };
 }
