@@ -79,6 +79,42 @@ const standings = [...current.teams]
   .map((t, i) => ({ rank: i + 1, owner: t.owner, team: t.team, w: t.w, l: t.l, t: t.t, pf: t.pf }));
 await writeFile(`data/snapshots/${today}.json`, JSON.stringify({ date: today, season: current.season, standings }, null, 1));
 
+// Draft Scout (commish → My GM → Draft Scout, assets/scout.js): the next 3 NBA draft classes graded
+// for this league. Once a week (owner, Oct 2026): the Sunday run, or any run when the file is missing
+// or was built by older code. Writes data/draft-scout.json + data/scout-pool.json (comps). Runs before
+// the dynasty values below, which use each class's strength for rookie picks. Never stops the update.
+let scout = await readJson('data/draft-scout.json');
+try {
+  const { SCOUT_VERSION, runScout } = await import('../assets/scout.js');
+  const sunday = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short' }).format(new Date()) === 'Sun';
+  if (sunday || scout?.version !== SCOUT_VERSION) {
+    // Labeled as this site's bot (sites that turn bots away aren't used), one request at a time.
+    const UA = 'Mozilla/5.0 (compatible; SeisDynastyHoops/1.0; +https://github.com/debugburkhart/seis-dynasty-hoops)';
+    const pause = ms => new Promise(r => setTimeout(r, ms));
+    const getText = async url => {
+      if (!/sleeper/.test(url)) await pause(1500);
+      const res = await fetch(url, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(60000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.text();
+    };
+    const getJson = async url => JSON.parse(await getText(url));
+    const league = await getJson(`https://api.sleeper.app/v1/league/${current.leagueId}`);
+    const sleeperPlayers = await getJson('https://api.sleeper.app/v1/players/nba').catch(() => null);
+    const { scout: built, pool } = await runScout({
+      getText, getJson, scoring: league.scoring_settings ?? {}, sleeperPlayers, prev: scout, pool: await readJson('data/scout-pool.json'),
+    });
+    scout = built;
+    await writeFile('data/draft-scout.json', JSON.stringify(scout));
+    await writeFile('data/scout-pool.json', JSON.stringify(pool));
+    const bad = scout.sources.filter(s => !s.ok).map(s => s.name);
+    console.log(`Draft Scout: ${Object.entries(scout.classes).map(([y, c]) => `${y} ${c.prospects.length} prospects`).join(', ')}${bad.length ? `; failed: ${bad.join(', ')}` : ''}.`);
+  } else {
+    console.log(`Draft Scout: not Sunday, kept the ${scout.built} build.`);
+  }
+} catch (e) {
+  console.log(`Draft Scout skipped: ${e.message}`);
+}
+
 // Dynasty score history (commish → My GM → Dynasty: tap a player for his chart). One entry
 // per night: { days: { date: { pid: score, or [score, fullValueScore] when he's listed Out } } }.
 // Players on a roster or with a score above 0. A problem here never stops the nightly update.
@@ -87,7 +123,7 @@ try {
   const { teamSnapshot } = await import('../assets/tradefinder.js');
   // Smoothed this-season projections (dynasty.js PROJ_SMOOTH): last 3 nights kept.
   const projFile = (await readJson('data/dynasty-proj.json')) ?? { states: [] };
-  const feeds = await loadDynasty(data, { projStates: projFile.states });
+  const feeds = await loadDynasty(data, { projStates: projFile.states, scout });
   feeds.today = today;
   const cut = dynastyValues(data, feeds);
   const full = dynastyValues(data, feeds, { fullInjured: true });

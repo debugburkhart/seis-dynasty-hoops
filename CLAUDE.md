@@ -436,7 +436,39 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (teamSnapshot arrays, TEAM_KEYS; c = Out discounted, f = full) nightly; last season rebuilt weekly once
   via backfillSeason(onWeek) (hist.teamsBackfilled). Briefing shows a "Team tracker" card when there are
   new moves.
-  Next: step 4 Playoff odds (after 3-4 weeks of games), step 5 Draft helper.
+  DRAFT SCOUT (owner, Oct 2026; My GM tab "draftscout", replaces the planned step-5 Draft helper):
+  `assets/scout.js` (no DOM/Node APIs; runs in the job and in a browser for testing). Built WEEKLY ONLY
+  (owner: Sundays, Chicago) by update.mjs, or any run when data/draft-scout.json is missing or its
+  version != SCOUT_VERSION (bump it when the build changes) -> data/draft-scout.json (classes, sources,
+  raw parsed copies = fallback when a source fails, history = weekly consensus order for ▲▼) +
+  data/scout-pool.json (comps pool: drafted college players 2011+ matched to Sleeper ids; first build
+  downloads Torvik 2011..; then only new draft years). Next 3 drafts (nextDraftYear: July+ = next year).
+  Sources, read as a labeled bot (UA SeisDynastyHoops; NBADraftRoom returned 403 to it, so it's NOT
+  used; ESPN blocks too): Tankathon big board + mock (page title gives the year; after a draft they flip
+  to the next year automatically), CBS prospect rankings (top 30), 247Sports composite HS rankings
+  (class Y-1 -> draft Y, top 30) for the 2 later classes, Bart Torvik CSV getadvstats.php?year=Y&csv=1
+  (no header; column map T in scout.js; before games start the new-season file repeats last season
+  without per-game columns: detected by equal gp/minp/usg), Sleeper stats (comps' NBA careers,
+  starter line). Consensus = freshness-weighted mean of ln(rank) (missing = list length + 8; mock 0.5).
+  Model (fitted Oct 2026 on 618 drafted college players 2011-2023, outcome = 3rd NBA season top
+  120/72/24 by FP/G with 20+ gp, same as dynasty.js prospect grade + same GRADES letters):
+  DRAFT_FIT logistic on ln(pick) (+ln^2); stats did NOT help the yes/no chances in leave-one-class-out
+  CV, but on a continuous outcome (best FP/G in seasons 2-3 / starter line) BPM, assist rate and age
+  did (others: size, stl, blk, FT, 3PA, usage, rec rank = nothing beyond slot) -> VALUE_FULL shifts the
+  slot (effPick); unknown stats = TYPICAL(x) for the slot, weight gp/12. Chances averaged over slot
+  uncertainty (spreadFor months to draft + source disagreement). HS classes: HS_FIT on ln(national
+  rank) (1,950 top-150 freshmen). Holdout 2019-23: ~46% starter -> 35% real, slightly optimistic.
+  Class strength = lift of the top-24 expected values vs the slot curve minus CLASS_LIFT; history
+  says only about +-2% is visible pre-draft (owner told); classStrength() clamps 0.85-1.15 and
+  dynasty.js multiplies rookie pick expectations by it (pick.strength, pick.avgScore = without);
+  HS classes = 1. Comps: nearest pool players with NBA careers (COMP_KEYS weights, same position
+  group), shown with best FP/G season + tier; only for players with 5+ college games (freshmen from
+  ~Nov; international/HS none). Traits (green >= 75th pct of recent 1st-rounders, red <= 25th;
+  wording TRAIT_WORDS in app.js) are notes only. Page: team picker, year chips (later years
+  "early"), your picks (league slot -> "likely there" by expected value), class outlook + sources,
+  board (position filter, tap = why/stats/traits/comps, ?p=key opens one), fine print "How Draft
+  Scout works" (owner asked). Test locally by serving saved source pages through a getText stub.
+  Next: step 4 Playoff odds (after 3-4 weeks of games).
 - `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has
   wrong; Sleeper's LeBron James photo (id 1362) is Bronny). All player photos go through
@@ -444,7 +476,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   families/twins (Thompson, Murray, Champagnie, Lopez, Ball, Holiday...) are correct.
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json).
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json,
+  dynasty files, draft-scout.json + scout-pool.json weekly).
   Never have the owner upload a `data` folder.
 
 ## Data rules decided with the owner

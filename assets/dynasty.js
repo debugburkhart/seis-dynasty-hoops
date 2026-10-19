@@ -5,6 +5,7 @@
 import { get, pickLedger, loadTradedPicks } from './commish.js';
 import { draftGrades, projectedOrder } from './draft.js';
 import { standingsBefore } from './hype.js';
+import { classStrength } from './scout.js';
 
 // The owner chose 50% this season, 30% next, 20% the one after.
 export const SEASON_WEIGHTS = [0.5, 0.3, 0.2];
@@ -102,7 +103,8 @@ export function smoothProjections(raw, states, today) {
 
 // Everything the model needs, fetched once (Sleeper responses are cached 2 minutes).
 // projStates: the saved smoothing states (see above); without them, raw projections.
-export async function loadDynasty(DATA, { projStates = null } = {}) {
+// scout: data/draft-scout.json (Draft Scout), for how strong each coming draft class looks.
+export async function loadDynasty(DATA, { projStates = null, scout = null } = {}) {
   const cur = DATA.seasons.at(-1);
   const season = cur.season;
   const prev = n => String(Number(season) - n);
@@ -122,7 +124,7 @@ export async function loadDynasty(DATA, { projStates = null } = {}) {
     const all = await get('/v1/players/nba', {});
     birth = Object.fromEntries(Object.entries(all ?? {}).filter(([, p]) => p?.birth_date).map(([pid, p]) => [pid, p.birth_date]));
   }
-  return { season, league, rosters, proj, last, prior: [last, prev2, prev3], traded, birth, projStates };
+  return { season, league, rosters, proj, last, prior: [last, prev2, prev3], traded, birth, projStates, scout };
 }
 
 // Values for every player with a projection or on a roster, every future rookie pick,
@@ -228,17 +230,20 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
 
   // A pick at overall spot `no`: his 3-season value is k x his points per game.
   const kOf = w => w[0] + w[1] * ageMult(PICK_AGE) + w[2] * ageMult(PICK_AGE) * ageMult(PICK_AGE + 1);
-  const pickWorth = (no, w = SEASON_WEIGHTS) => (curve ? hitRate * abovePart(kOf(w) * curve.expect(no) - floor, kOf(w) * curve.sd) : 0);
+  // Class strength (Draft Scout, owner Oct 2026): a pick in a class that looks stronger than an average
+  // one expects that much more (1 = average; college numbers move it only a few percent).
+  const pickWorth = (no, w = SEASON_WEIGHTS, cls = 1) => (curve ? hitRate * abovePart(kOf(w) * curve.expect(no) * cls - floor, kOf(w) * curve.sd) : 0);
   const picks = ledger.picks.map(p => {
     const away = Math.max(1, Number(p.season) - Number(season));
     const slot = p.season === nextDraft ? slotOf[p.orig] ?? null : null;
+    const strength = classStrength(f.scout, p.season);
     // Known slot: that pick. Unknown: the average pick of the round.
     const spots = (slot ? [slot] : Array.from({ length: teams }, (_, i) => i + 1)).map(s => (p.round - 1) * teams + s);
-    const avgWorth = w => spots.reduce((a, no) => a + pickWorth(no, w), 0) / spots.length * PICK_YEARLY_DISCOUNT ** away;
+    const avgWorth = (w, cls = strength) => spots.reduce((a, no) => a + pickWorth(no, w, cls), 0) / spots.length * PICK_YEARLY_DISCOUNT ** away;
     const worth = avgWorth(SEASON_WEIGHTS);
-    const v3 = curve ? hitRate * spots.reduce((a, no) => a + curve.expect(no), 0) / spots.length * ageMult(PICK_AGE) * ageMult(PICK_AGE + 1) : 0;
+    const v3 = curve ? hitRate * spots.reduce((a, no) => a + curve.expect(no), 0) / spots.length * strength * ageMult(PICK_AGE) * ageMult(PICK_AGE + 1) : 0;
     return {
-      ...p, slot, worth, score: score(worth), v3: r1(v3),
+      ...p, slot, worth, score: score(worth), v3: r1(v3), strength, avgScore: score(avgWorth(SEASON_WEIGHTS, 1)),
       view: Object.fromEntries(Object.entries(VIEWS).map(([id, w]) => [id, 100 * avgWorth(w) / top])),
       label: `${p.season} ${['1st', '2nd', '3rd'][p.round - 1] ?? `${p.round}th`}${slot ? ` (No. ${slot}, projected)` : ''}`,
     };

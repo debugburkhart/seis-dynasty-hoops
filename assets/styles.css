@@ -2353,3 +2353,47 @@ a.tl-event:hover { background: #fbf6e6; }
 .pr-chip { display: inline-block; padding: 1px 6px; border-radius: 6px; background: var(--navy-800); color: var(--gold); font: 800 10.5px/1.5 var(--display); text-decoration: none; }
 .dy-pros .dy-pro-score { margin-left: auto; }
 .dy-pros .dy-pro-score .dy-bar { width: 44px; }
+
+/* Draft Scout (commish → My GM → Draft Scout) */
+.ds-years { grid-template-columns: repeat(3, 1fr); }
+.ds-years a small { font-size: 8.5px; letter-spacing: .08em; opacity: .75; }
+.ds-picks li { align-items: center; }
+.ds-picks li > span:first-child { flex: 1; }
+.ds-picks small { line-height: 1.5; }
+.ds-picks .pg { min-width: 22px; height: 17px; font-size: 10px; }
+.ds-from { display: inline !important; margin: 0 0 0 4px !important; }
+.ds-jump { color: var(--navy-700); font-weight: 700; }
+.ds-outlook { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; margin: 4px 0 10px; }
+.ds-outlook > div:first-child { flex: 1 1 260px; min-width: 0; }
+.ds-big { display: block; font: 800 17px/1.2 var(--display); color: var(--navy-800); }
+.ds-outlook small { display: block; margin-top: 4px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.ds-grades { display: flex; flex-wrap: wrap; gap: 8px 12px; font: 800 13px/1 var(--display); color: var(--navy-800); }
+.ds-list > li { display: block; padding: 0; }
+.ds-row > summary { display: flex; align-items: center; gap: 10px; padding: 7px 0; cursor: pointer; list-style: none; }
+.ds-row > summary::-webkit-details-marker { display: none; }
+.ds-row[open] > summary { background: #f7f5ee; }
+.ds-lg { flex: none; min-width: 44px; text-align: right; font-size: 9.5px; line-height: 1.2; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.ds-lg b { font: 900 15px/1 var(--display); letter-spacing: 0; color: var(--navy-800); }
+.ds-body { padding: 4px 0 12px 38px; font-size: 12.5px; line-height: 1.5; color: #3c4556; }
+.ds-body p { margin: 4px 0; }
+.ds-traits { display: flex; flex-wrap: wrap; gap: 5px; }
+.ds-t { padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.ds-t.good { background: #dcefe4; color: #1d5c3c; }
+.ds-t.bad { background: #fbe6e1; color: #a03a2d; }
+.ds-comps { margin-top: 8px; }
+.ds-comps > b { font: 800 9.5px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--gold-ink); }
+.ds-comps ol { list-style: none; margin: 4px 0 0; padding: 0; }
+.ds-comps li { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); }
+.ds-comps li small { display: block; font-size: 10.5px; color: var(--muted); }
+.ds-comp-out { flex: none; text-align: right; }
+.ds-tier { display: inline-block; padding: 1px 6px; border-radius: 5px; font: 800 10.5px/1.5 var(--display); background: #efece3; color: var(--muted); }
+.ds-tier-star { background: #dcefe4; color: #1d5c3c; }
+.ds-tier-starter { background: #dce6f3; color: var(--navy-800); }
+.ds-tier-rotation { background: #f3e6c4; color: var(--gold-ink); }
+.ds-comps-none { font-style: italic; color: var(--muted); }
+.ds-fine p { margin: 0 0 8px; font-size: 11.5px; line-height: 1.55; color: var(--muted); }
+.ds-fine b { color: #3c4556; }
+@media (max-width: 560px) {
+  .ds-body { padding-left: 0; }
+  .ds-years a { padding: 10px 6px; }
+}
