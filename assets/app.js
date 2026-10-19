@@ -6,7 +6,7 @@ import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, isRivalry, moments, seasonSeries, seasonWeeks, seriesBefore, standingsBefore, trophyHistory, trophyImg, trophyOf, weekPairs } from './hype.js';
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
 import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach } from './gm.js';
-import { PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, taxiLeft } from './dynasty.js';
+import { PROSPECT_LIST, PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, prospectRanking, taxiLeft } from './dynasty.js';
 import { CENTERPIECE, evaluateTrade, moveImpacts, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, teamSnapshot, tradeContext, unpackTeam } from './tradefinder.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
 import { POSITION_GROUPS, REGULAR_WEEKS, allFantasy, allStars, banner, championshipMvp, gmOfTheYear, mvpRace, ownerAt, playerOfTheYear, rookieClass, seasonEndKey } from './awards.js';
@@ -2312,7 +2312,7 @@ function renderCommish(main, params) {
   }
   // Two groups: the Assistant GM tools, then the league office reports.
   const GROUPS = [
-    ['My GM', [['brief', 'Briefing'], ['coach', 'Lock-in coach'], ['dynasty', 'Dynasty'], ['tracker', 'Team tracker'], ['trades', 'Trade finder'], ['managers', 'Managers']]],
+    ['My GM', [['brief', 'Briefing'], ['coach', 'Lock-in coach'], ['dynasty', 'Dynasty'], ['prospects', 'Prospects'], ['tracker', 'Team tracker'], ['trades', 'Trade finder'], ['managers', 'Managers']]],
     ['League office', [['scout', 'Scouting report'], ['waivers', 'Waiver wire'], ['playoffs', 'Playoff picture'], ['recap', 'Weekly recap'], ['picks', 'Draft picks'], ['races', 'Award races'], ['hype', 'Early hype'], ['wager', 'Wager Weeks'], ['health', 'Health report']]],
   ];
   const TABS = GROUPS.flatMap(([, tabs]) => tabs);
@@ -2340,7 +2340,7 @@ function renderCommish(main, params) {
       <div id="cm-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
     </div>`;
   const body = $('#cm-body', main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, health: renderHealth }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, health: renderHealth }[tab];
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
   });
@@ -3151,6 +3151,56 @@ async function fillGradeLog(box, v, me) {
     }).join('')}</ol>` : `<p class="empty">No grade changes yet.</p>`}
     <p class="cm-rule">Each night the prospect grade of every saved player is checked; a line appears only when a grade moves${first ? ` (tracking since ${esc(shortMd(first))})` : ' (tracking starts with the next nightly update)'}.</p>`;
 }
+
+// ---- Top 100 prospects, league-wide (My GM → Prospects; ranking in dynasty.js prospectRanking) ----
+// Arrows compare today's rank with the saved order from about a week ago (dynasty-history.json
+// prospectRanks: the newest saved night at least 7 days back, or the earliest one).
+function prospectMoves(hist, list) {
+  const ranks = hist.prospectRanks ?? {};
+  const today = ctDate();
+  const dates = Object.keys(ranks).filter(d => d < today).sort();
+  if (!dates.length) return { base: null, move: () => null };
+  const back = new Date(`${today}T12:00:00`); back.setDate(back.getDate() - 7);
+  const base = [...dates].reverse().find(d => d <= back.toISOString().slice(0, 10)) ?? dates[0];
+  const was = Object.fromEntries(ranks[base].map((pid, i) => [pid, i + 1]));
+  return { base, move: (pid, rank) => (was[pid] ? was[pid] - rank : 'new') };
+}
+const moveTag = m => (m == null || m === 0 ? '' : m === 'new' ? '<span class="pr-mv new">NEW</span>' : `<span class="pr-mv ${m > 0 ? 'up' : 'down'}">${m > 0 ? '▲' : '▼'}${Math.abs(m)}</span>`);
+
+async function renderProspects(body, params) {
+  const { season, me, f, v } = await gmDynasty(params);
+  if (route().page !== 'commish') return;
+  const list = prospectRanking(v);
+  const hist = await loadDynHistory();
+  if (route().page !== 'commish') return;
+  const { base, move } = prospectMoves(hist, list);
+  const show = ['rostered', 'free', 'mine'].includes(params.get('show')) ? params.get('show') : 'all';
+  const rows = list.map((p, i) => ({ p, rank: i + 1, m: move(p.pid, i + 1) }));
+  const shown = rows.filter(({ p }) => show === 'all' || (show === 'rostered' ? p.owner : show === 'free' ? !p.owner : p.owner === me));
+  const moved = rows.filter(r => typeof r.m === 'number' && r.m);
+  const risers = [...moved].sort((a, b) => b.m - a.m).filter(r => r.m > 0).slice(0, 3);
+  const fallers = [...moved].sort((a, b) => a.m - b.m).filter(r => r.m < 0).slice(0, 3);
+  const link = s => `#/commish?${new URLSearchParams({ tab: 'prospects', ...(me === COMMISH ? {} : { team: me }), ...(s === 'all' ? {} : { show: s }) })}`;
+  const mineCount = rows.filter(r => r.p.owner === me).length;
+  body.innerHTML = `<div class="gm-page">
+    ${gmTeamPick(me, season, 'prospects')}
+    <section class="card">
+      <div class="card-head"><h2>Top ${PROSPECT_LIST} prospects</h2><span class="card-sub">League-wide · ${esc(name(me))} has ${mineCount}</span></div>
+      <div class="st-stage tf-filter dy-filter" role="group">${[['all', 'All'], ['rostered', 'On rosters'], ['free', 'Free agents'], ['mine', 'My team']].map(([id, l]) => `<a href="${link(id)}" class="${id === show ? 'on' : ''}">${l}</a>`).join('')}</div>
+      ${base && (risers.length || fallers.length) ? `<p class="pr-movers">Since ${esc(shortMd(base))}: ${risers.length ? `<b class="dy-up">Up</b> ${risers.map(r => `${esc(r.p.name)} ${moveTag(r.m)}`).join(', ')}` : ''}${risers.length && fallers.length ? ' · ' : ''}${fallers.length ? `<b class="dy-down">Down</b> ${fallers.map(r => `${esc(r.p.name)} ${moveTag(r.m)}`).join(', ')}` : ''}</p>` : ''}
+      ${shown.length ? `<ol class="aw-race pr-list">${shown.map(({ p, rank, m }) => `
+        <li class="dy-row${p.owner === me ? ' cm-me' : ''}" data-pid="${esc(p.pid)}" tabindex="0" role="button" aria-expanded="false">
+          <span class="pr-rank">${rank}</span>
+          <span class="pr-main">${esc(p.name)} ${prospectChip(p)} ${moveTag(m)}
+            <small>${esc([posText(p), p.team || 'No NBA team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))} · ${p.owner ? esc(name(p.owner)) : '<b>Free agent</b>'}${p.where === 'taxi' ? ' (taxi)' : ''}</small>
+            <small class="dy-chances">Star ${pctOf(p.prospect.star)} · Starter ${pctOf(p.prospect.starter)} · Rotation ${pctOf(p.prospect.rotation)}</small></span>
+          <span class="dy-val">${scoreBar(p.score)}</span>
+        </li>`).join('')}</ol>` : '<p class="empty">Nobody here.</p>'}
+      <p class="cm-rule">Every player ${PROSPECT_MAX_AGE} and under, on a roster or not, ranked by prospect grade (A+ first), then within a grade by his chance of being a <b>star</b> (top 24) three seasons from now, then a <b>starter</b> (top 72), then a <b>rotation</b> player (top 120). It updates whenever Sleeper’s projections move the chances. ${base ? `▲/▼ = places moved since ${esc(shortMd(base))}; NEW = not in the top ${PROSPECT_LIST} then.` : 'Arrows start after the next nightly update saves today’s order.'} The bar is his dynasty score (value now and the next two seasons); tap a player for his score over time.</p>
+    </section></div>`;
+  bindTeamPick(body);
+  bindScoreCharts(body, v);
+}
 function bindScoreCharts(body, v) {
   const toggle = async li => {
     const next = li.nextElementSibling;
@@ -3238,7 +3288,9 @@ async function renderDynasty(body, params) {
   const tag = p => (p.where === 'taxi' ? '<span class="cm-pill">Taxi</span>' : p.where === 'ir' ? '<span class="cm-pill bad">IR</span>' : '');
   const grade = prospectChip;
   const pct = x => `${Math.round(x * 100)}%`;
-  const prospects = roster.filter(p => p.prospect).sort((a, b) => (b.prospect.star + b.prospect.starter + b.prospect.rotation) - (a.prospect.star + a.prospect.starter + a.prospect.rotation));
+  const pRank = Object.fromEntries(prospectRanking(v).map((p, i) => [p.pid, i + 1]));
+  // Same order as the league list (unranked ones after, by their chances).
+  const prospects = roster.filter(p => p.prospect).sort((a, b) => (pRank[a.pid] ?? 999) - (pRank[b.pid] ?? 999) || (b.prospect.star + b.prospect.starter + b.prospect.rotation) - (a.prospect.star + a.prospect.starter + a.prospect.rotation));
   // Roster filters (kept on this device): G/F/C by main Sleeper position + secondary ones, hide taxi.
   const rosterPos = ['G', 'F', 'C'].includes(gmLoad('gm-dyn-pos', '')) ? gmLoad('gm-dyn-pos', '') : '';
   const hideTaxi = Boolean(gmLoad('gm-dyn-hidetaxi', false));
@@ -3282,8 +3334,9 @@ async function renderDynasty(body, params) {
       </section>
       <div class="dy-side">
         <section class="card">
-          <div class="card-head"><h2>Prospects</h2><span class="card-sub">Age ${PROSPECT_MAX_AGE} and under · in 3 seasons</span></div>
-          ${prospects.length ? `<ol class="aw-race dy-pros">${prospects.map(p => `<li><span>${esc(p.name)} ${tag(p)}<small>${esc([p.pos, `age ${p.age}`].join(' · '))} · ${chances(p.prospect)}</small></span>${grade(p)}</li>`).join('')}</ol>` : '<p class="empty">No players 24 or younger.</p>'}
+          <div class="card-head"><h2>Prospects</h2><a class="gm-more" href="#/commish?tab=prospects${me === COMMISH ? '' : `&team=${me}`}">Top ${PROSPECT_LIST} →</a></div>
+          <p class="card-sub">Age ${PROSPECT_MAX_AGE} and under · in 3 seasons · #N = league prospect rank · bar = dynasty score</p>
+          ${prospects.length ? `<ol class="aw-race dy-pros">${prospects.map(p => `<li><span>${pRank[p.pid] ? `<a class="pr-chip" href="#/commish?tab=prospects${me === COMMISH ? '' : `&team=${me}`}" title="League prospect rank">#${pRank[p.pid]}</a> ` : ''}${esc(p.name)} ${tag(p)}<small>${esc([p.pos, `age ${p.age}`].join(' · '))} · ${chances(p.prospect)}</small></span><span class="dy-val dy-pro-score" title="Dynasty score">${scoreBar(p.score)}</span>${grade(p)}</li>`).join('')}</ol>` : '<p class="empty">No players 24 or younger.</p>'}
           <p class="cm-rule">Chances he’s a <b>rotation</b> player (top 120, about bench level here), a weekly <b>starter</b> (top 72) or a <b>star</b> (top 24) three seasons from now.</p>
         </section>
         <section class="card" id="dy-grades"><div class="card-head"><h2>Prospect grade changes</h2></div><p class="cm-rule">Loading…</p></section>
@@ -3946,7 +3999,10 @@ async function renderWaivers(body, params) {
   const free = dyn ? Object.values(dyn.players).filter(p => !p.owner && fits(p)) : [];
   const stash = free.filter(p => p.team).sort((a, b) => b.raw - a.raw).slice(0, size);
   const chanceSum = q => q.rotation + q.starter + q.star;
-  const prospects = free.filter(p => p.prospect).sort((a, b) => chanceSum(b.prospect) - chanceSum(a.prospect)).slice(0, size);
+  // League top-100 prospect ranks (Prospects tab); the wire list follows the same order.
+  const pRank = dyn ? Object.fromEntries(prospectRanking(dyn).map((p, i) => [p.pid, i + 1])) : {};
+  const rankChip = pid => (pRank[pid] ? `<a class="pr-chip" href="#/commish?tab=prospects&show=free" title="League prospect rank">#${pRank[pid]}</a> ` : '');
+  const prospects = free.filter(p => p.prospect).sort((a, b) => (pRank[a.pid] ?? 999) - (pRank[b.pid] ?? 999) || chanceSum(b.prospect) - chanceSum(a.prospect)).slice(0, size);
   const top = rows => rows.slice(0, size);
   const risers = top(all.filter(p => p.recentGames >= 2 && p.recent >= 20 && p.jump >= 5).sort((a, b) => b.jump - a.jump));
   const trending = top(all.filter(p => p.adds > 0).sort((a, b) => b.adds - a.adds));
@@ -3961,10 +4017,10 @@ async function renderWaivers(body, params) {
   // Tap a player (one with a dynasty value) for his score chart, same as the Dynasty roster.
   const chartAttrs = d => (d ? ` class="dy-row" data-pid="${esc(d.pid)}" tabindex="0" role="button" aria-expanded="false"` : '');
   const rows = (list, value, extraLine) => (list.length ? `<ol class="aw-race">${list.map((p, i) => `
-    <li${chartAttrs(dy(p))}><span>${i + 1}. ${esc(p.name)} ${dy(p) ? tierTag(dy(p).score) : ''} ${prospectChip(dy(p))} ${injuryTag(p)}<small>${meta(p)}${extraLine ? ` · ${esc(extraLine(p))}` : ''}${dynLine(dy(p))}</small>${chanceLine(dy(p))}</span><b>${value(p)}</b></li>`).join('')}</ol>`
+    <li${chartAttrs(dy(p))}><span>${i + 1}. ${rankChip(p.pid)}${esc(p.name)} ${dy(p) ? tierTag(dy(p).score) : ''} ${prospectChip(dy(p))} ${injuryTag(p)}<small>${meta(p)}${extraLine ? ` · ${esc(extraLine(p))}` : ''}${dynLine(dy(p))}</small>${chanceLine(dy(p))}</span><b>${value(p)}</b></li>`).join('')}</ol>`
     : '<p class="empty">Nobody fits right now.</p>');
   const dynRows = (list, value, line) => (list.length ? `<ol class="aw-race">${list.map((p, i) => `
-    <li${chartAttrs(p)}><span>${i + 1}. ${esc(p.name)} ${tierTag(p.score)} ${prospectChip(p)} ${injuryTag(p)}<small>${esc([posText(p), p.team || 'No NBA team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))}${secNote(p)} · ${line(p)}${projNote(p)}</small>${chanceLine(p)}</span>${value(p)}</li>`).join('')}</ol>`
+    <li${chartAttrs(p)}><span>${i + 1}. ${rankChip(p.pid)}${esc(p.name)} ${tierTag(p.score)} ${prospectChip(p)} ${injuryTag(p)}<small>${esc([posText(p), p.team || 'No NBA team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))}${secNote(p)} · ${line(p)}${projNote(p)}</small>${chanceLine(p)}</span>${value(p)}</li>`).join('')}</ol>`
     : `<p class="empty">${dyn ? 'Nobody fits right now.' : 'Couldn’t load dynasty values.'}</p>`);
   const link = (p, n) => `#/commish?${new URLSearchParams({ tab: 'waivers', ...(p === 'all' ? {} : { pos: p }), ...(n === 30 ? { n: 30 } : {}) })}`;
   const chips = [['all', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']].map(([id, label]) =>
@@ -3980,7 +4036,7 @@ async function renderWaivers(body, params) {
         ${dynRows(stash, p => `<span class="dy-val">${scoreBar(p.score)}</span>`, p => `${num(p.raw)} a game over 3 seasons · ${trendOf(p) || 'no projection'}`)}
       </section>
       <section class="card"><div class="card-head"><h2>Prospects on the wire</h2></div>
-        <p class="cm-rule">Unrostered players 24 and under with the best chances, 3 seasons from now, of being a rotation player (top 120), a starter (top 72) or a star (top 24). Taxi-eligible: worth a look when you clear a spot.</p>
+        <p class="cm-rule">Unrostered players 24 and under in league prospect order (<b>#N</b> = rank in the league-wide Top ${PROSPECT_LIST}, on every list here): grade first, then their chances 3 seasons from now of being a rotation player (top 120), a starter (top 72) or a star (top 24). Taxi-eligible: worth a look when you clear a spot.</p>
         ${dynRows(prospects, p => prospectChip(p), p => `dynasty ${p.score} ${trendOf(p)}`)}
       </section>
       <section class="card"><div class="card-head"><h2>Risers</h2></div>

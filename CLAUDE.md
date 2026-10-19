@@ -343,7 +343,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   moves (owner, Oct 2026): fillWeekArrows() puts ▲N/▼N (.dy-wk) by each roster score = live score minus
   the newest saved night >= 7 days back (or the season's first night) + a team line (#dy-week: up,
   down, net). Prospect grade changes card (#dy-grades, fillGradeLog): update.mjs saves hist.grades
-  { pid: [[date, grade]] } only when a saved player's grade changes. Waiver wire tab (owner asked)
+  { pid: [[date, grade]] } only when a saved player's grade changes. TOP 100 PROSPECTS (owner, Oct
+  2026): My GM tab "prospects" (renderProspects): prospectRanking(v) in dynasty.js = every graded player
+  (<= 24, rostered or FA with an NBA team) by grade (A+ first), then star %, starter %, rotation %;
+  filters All / On rosters / Free agents / My team; ▲N/▼N/NEW vs the saved order ~7 days back
+  (update.mjs hist.prospectRanks[date] = top-100 pids, last 21 nights) + risers/fallers line; rows open
+  the score chart. Dynasty Prospects card and every Waiver wire list show #rank chips (.pr-chip; waiver
+  chips link to the list's Free agents filter); both prospect cards are sorted the same way. Waiver wire tab (owner asked)
   also loads dynasty values: "Dynasty pickups" (unrostered with an NBA team, by 3-season raw,
   Out included) and "Prospects on the wire" (unrostered <= 24 by chances), plus grade chips +
   "dynasty N" on every waiver row (prospectChip shared). Waiver rows (owner, Oct 2026) also show

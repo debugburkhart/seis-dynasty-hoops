@@ -83,7 +83,7 @@ await writeFile(`data/snapshots/${today}.json`, JSON.stringify({ date: today, se
 // per night: { days: { date: { pid: score, or [score, fullValueScore] when he's listed Out } } }.
 // Players on a roster or with a score above 0. A problem here never stops the nightly update.
 try {
-  const { loadDynasty, dynastyValues, historyDay, historyExtra, backfillSeason } = await import('../assets/dynasty.js');
+  const { loadDynasty, dynastyValues, historyDay, historyExtra, backfillSeason, prospectRanking } = await import('../assets/dynasty.js');
   const { teamSnapshot } = await import('../assets/tradefinder.js');
   // Smoothed this-season projections (dynasty.js PROJ_SMOOTH): last 3 nights kept.
   const projFile = (await readJson('data/dynasty-proj.json')) ?? { states: [] };
@@ -130,6 +130,10 @@ try {
   const extra = historyExtra(cut, day);
   hist.proj[today] = extra.proj;
   hist.league[today] = extra.league;
+  // Top 100 prospects' order per night (Prospects tab arrows), last 21 nights kept.
+  hist.prospectRanks ??= {};
+  hist.prospectRanks[today] = prospectRanking(cut).map(p => p.pid);
+  for (const d of Object.keys(hist.prospectRanks).sort().slice(0, -21)) delete hist.prospectRanks[d];
   // Prospect grades (Dynasty tab "Prospect grade changes"): { pid: [[date, grade], ...] }, a new
   // entry only when a saved player's grade differs from his last one.
   hist.grades ??= {};

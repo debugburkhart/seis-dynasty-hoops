@@ -2340,3 +2340,16 @@ a.tl-event:hover { background: #fbf6e6; }
 .pos-table .pos-n { display: block; font-size: 10px; font-weight: 600; color: var(--muted); line-height: 1.1; }
 .pos-cnt { font-size: 11.5px; font-weight: 600; color: var(--muted); }
 .pos-ir { color: #c0392b; font-weight: 800; }
+/* Top 100 prospects */
+.pr-list li { gap: 10px; }
+.pr-rank { flex: none; width: 28px; text-align: right; font: 900 15px/1 var(--display); color: var(--navy-800); }
+.pr-main { flex: 1; min-width: 0; }
+.pr-main small { display: block; }
+.pr-mv { font: 800 10.5px/1 var(--display); margin-left: 2px; }
+.pr-mv.up { color: #23704a; }
+.pr-mv.down { color: #a03a2d; }
+.pr-mv.new { color: var(--gold-ink); letter-spacing: .06em; }
+.pr-movers { margin: 0 0 10px; font-size: 12.5px; line-height: 1.5; color: #3c4556; }
+.pr-chip { display: inline-block; padding: 1px 6px; border-radius: 6px; background: var(--navy-800); color: var(--gold); font: 800 10.5px/1.5 var(--display); text-decoration: none; }
+.dy-pros .dy-pro-score { margin-left: auto; }
+.dy-pros .dy-pro-score .dy-bar { width: 44px; }

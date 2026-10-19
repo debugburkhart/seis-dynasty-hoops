@@ -371,3 +371,15 @@ export function teamOutlook(players, picks, rosters, season) {
   }
   return outlook;
 }
+
+// League-wide top prospects (owner, Oct 2026): every player with a prospect grade (24 and under),
+// rostered or not, best grade first; within a grade by star chance, then starter, then rotation.
+// The nightly job saves the top 100's order (dynasty-history.json prospectRanks) for the arrows.
+export const PROSPECT_LIST = 100;
+export function prospectRanking(v, n = PROSPECT_LIST) {
+  const order = Object.fromEntries(GRADES.map(([g], i) => [g, i]));
+  return Object.values(v.players).filter(p => p.prospect && (p.team || p.owner))
+    .sort((a, b) => order[a.prospect.grade] - order[b.prospect.grade]
+      || b.prospect.star - a.prospect.star || b.prospect.starter - a.prospect.starter || b.prospect.rotation - a.prospect.rotation)
+    .slice(0, n);
+}
