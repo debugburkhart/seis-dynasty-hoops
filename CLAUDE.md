@@ -401,7 +401,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   trades between the teams + Front Office net. Position strength (owner): positionStrength(v, rosters,
   when) in tradefinder.js (shared by the evaluator) = best 3 G / 3 F / 2 C per-game (now: v[0], taxi
   out; later: v[2], taxi in) / league avg; Dynasty tab card (drawPositions): all teams, This season /
-  In 2 years, >=110 green, <=90 red, plus "who counts" for the viewed team. Team needs (owner):
+  In 2 years, >=110 green, <=90 red, plus "who counts" for the viewed team; small numbers under each
+  score = players whose MAIN position is in that group (positionStrength().count = { active, ir, taxi }):
+  active, IR in red (.pos-ir), (taxi) in parentheses; same in both views; who counts says "8 active ·
+  1 on IR · 6 on taxi" (owner, Oct 2026). Team needs (owner):
   teamNeeds() in app.js = positions under 95 now (red chips) or under 90 in 2 yrs (gold), outlook
   shopping style (Proven starters now / Youth + picks / Younger core), Taxi full (15), No {next} 1st;
   shown as a "Needs" row on every Managers card and a Needs column in the Position strength table.

@@ -278,12 +278,17 @@ export function positionStrength(v, rosters, when = 'now') {
   const k = when === 'later' ? 2 : 0;
   const sums = {};
   const top = {};
+  const count = {}; // players whose main position is in the group: { active, ir, taxi }
   for (const r of rosters ?? []) {
     const mine = [...new Set([...(r.players ?? []), ...(r.taxi ?? []), ...(r.reserve ?? [])])].map(pid => v.players[pid]).filter(Boolean);
     sums[r.owner_id] = {};
     top[r.owner_id] = {};
+    count[r.owner_id] = {};
     for (const g of GROUPS) {
-      const best = mine.filter(p => GROUP(p.pos) === g && (k || p.where !== 'taxi')).sort((a, b) => b.v[k] - a.v[k]).slice(0, STARTERS[g]);
+      const pool = mine.filter(p => GROUP(p.pos) === g && (k || p.where !== 'taxi'));
+      const all = mine.filter(p => GROUP(p.pos) === g);
+      count[r.owner_id][g] = { active: all.filter(p => p.where === 'active').length, ir: all.filter(p => p.where === 'ir').length, taxi: all.filter(p => p.where === 'taxi').length };
+      const best = pool.sort((a, b) => b.v[k] - a.v[k]).slice(0, STARTERS[g]);
       top[r.owner_id][g] = best;
       sums[r.owner_id][g] = best.reduce((a, p) => a + p.v[k], 0);
     }
@@ -291,7 +296,7 @@ export function positionStrength(v, rosters, when = 'now') {
   const owners = Object.keys(sums);
   const avg = Object.fromEntries(GROUPS.map(g => [g, owners.reduce((a, o) => a + sums[o][g], 0) / (owners.length || 1)]));
   const ratio = Object.fromEntries(owners.map(o => [o, Object.fromEntries(GROUPS.map(g => [g, sums[o][g] / (avg[g] || 1)]))]));
-  return { ratio, sums, top, avg };
+  return { ratio, sums, top, avg, count };
 }
 
 // ---------- Team tracker ----------

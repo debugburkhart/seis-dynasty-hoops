@@ -2337,3 +2337,6 @@ a.tl-event:hover { background: #fbf6e6; }
 .dy-wk.up { color: #23704a; }
 .dy-wk.down { color: #a03a2d; }
 .dy-grade-move { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+.pos-table .pos-n { display: block; font-size: 10px; font-weight: 600; color: var(--muted); line-height: 1.1; }
+.pos-cnt { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.pos-ir { color: #c0392b; font-weight: 800; }

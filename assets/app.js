@@ -3020,19 +3020,22 @@ function drawPositions(card, v, rosters, me) {
     const mine = ps.top[me] ?? {};
     const k = when === 'later' ? 2 : 0;
     const groupName = { G: 'Guards (best 3)', F: 'Forwards (best 3)', C: 'Centers (best 2)' };
+    const zero = { active: 0, ir: 0, taxi: 0 };
+    const cnt = (o, g) => { const c = ps.count?.[o]?.[g] ?? zero; return `${c.active}${c.ir ? ` <span class="pos-ir">${c.ir}</span>` : ''}${c.taxi ? ` (${c.taxi})` : ''}`; };
+    const cntText = g => { const c = ps.count?.[me]?.[g] ?? zero; return [`${c.active} active`, c.ir ? `<span class="pos-ir">${c.ir} on IR</span>` : '', c.taxi ? `${c.taxi} on taxi` : ''].filter(Boolean).join(' · '); };
     card.innerHTML = `
       <div class="card-head"><h2>Position strength</h2><span class="card-sub">100 = league average</span></div>
       <div class="st-stage dy-mv-chips pos-when" role="group">${[['now', 'This season'], ['later', 'In 2 years']].map(([id, l]) => `<a href="#" data-when="${id}" class="${id === when ? 'on' : ''}">${l}</a>`).join('')}</div>
       <div class="cm-scroll"><table class="cm-table pos-table"><thead><tr><th>Team</th><th>G</th><th>F</th><th>C</th><th>Avg</th><th>Needs</th></tr></thead><tbody>
-        ${rows.map(x => `<tr class="${x.o === me ? 'cm-me' : ''}"><td>${esc(name(x.o))}</td>${['G', 'F', 'C'].map(g => `<td class="${cls(x.r[g])}">${Math.round(x.r[g] * 100)}</td>`).join('')}<td><b>${Math.round(x.all * 100)}</b></td><td class="pos-need">${['G', 'F', 'C'].filter(g => x.r[g] < (when === 'later' ? 0.9 : 0.95)).sort((a, b) => x.r[a] - x.r[b]).map(g => NEED_NAME[g]).join(', ') || '–'}</td></tr>`).join('')}
+        ${rows.map(x => `<tr class="${x.o === me ? 'cm-me' : ''}"><td>${esc(name(x.o))}</td>${['G', 'F', 'C'].map(g => `<td class="${cls(x.r[g])}">${Math.round(x.r[g] * 100)}<small class="pos-n" title="Players whose main position is ${POS_WORD[g][0]}: active, on IR (red), on taxi (in parentheses)">${cnt(x.o, g)}</small></td>`).join('')}<td><b>${Math.round(x.all * 100)}</b></td><td class="pos-need">${['G', 'F', 'C'].filter(g => x.r[g] < (when === 'later' ? 0.9 : 0.95)).sort((a, b) => x.r[a] - x.r[b]).map(g => NEED_NAME[g]).join(', ') || '–'}</td></tr>`).join('')}
       </tbody></table></div>
       <div class="pos-mine">
         <div class="tf-side-head">${esc(teamName(me, DATA.seasons.at(-1).season))}: who counts</div>
-        ${['G', 'F', 'C'].map(g => `<p><b>${groupName[g]} · ${Math.round((ps.ratio[me]?.[g] ?? 0) * 100)}</b><small>${(mine[g] ?? []).map(p => `${esc(p.name)} ${num(p.v[k])}`).join(' · ') || 'nobody'}</small></p>`).join('')}
+        ${['G', 'F', 'C'].map(g => `<p><b>${groupName[g]} · ${Math.round((ps.ratio[me]?.[g] ?? 0) * 100)}</b> <span class="pos-cnt">${cntText(g)}</span><small>${(mine[g] ?? []).map(p => `${esc(p.name)} ${num(p.v[k])}`).join(' · ') || 'nobody'}</small></p>`).join('')}
       </div>
       <p class="cm-rule">${when === 'now'
         ? 'Each team’s best guards (PG/SG), forwards (SF/PF) and centers this season by projected fantasy points per game, taxi players left out, compared with the league average. Above 110 is a strength (green), under 90 a weak spot (red).'
-        : 'The same two seasons from now: points per game carried forward on the age curve, taxi players included (they’ll be up by then). Picks aren’t counted here.'} Players listed Out follow the injury setting at the top. Positions are Sleeper’s main position for each player.</p>`;
+        : 'The same two seasons from now: points per game carried forward on the age curve, taxi players included (they’ll be up by then). Picks aren’t counted here.'} Players listed Out follow the injury setting at the top. Positions are Sleeper’s main position for each player; the small numbers under each score count the team’s players whose main position that is: active, <span class="pos-ir">on IR</span>, (on taxi).</p>`;
     card.querySelectorAll('[data-when]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); when = a.dataset.when; draw(); }));
   };
   draw();
