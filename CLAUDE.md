@@ -458,6 +458,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   player's draft passes; rerun same week replaces. Page: "Grade changes" card per class, and each
   opened prospect draws a weekly chart (scoutSeasons: starter solid, star dashed, grade-letter lines,
   one panel per Aug-Jul season via bindSeasonStrip; follows a player who changes class).
+  HOLDOVER CHECK (owner, Oct 2026: Joaquim Boumtje-Boumtje, a reclassified Duke freshman too young for
+  2027, was missing from 2028): source "freshmen" = last year's HS class (On3 first: it keeps reclassified
+  players in their old class, 247 had him 29 vs On3 4); findHoldovers() = top 25 of it on NO next-draft
+  board/mock (sameName: last name + first initial; skipped if boards < 50 rows) -> added to the class
+  after next (hsClass extras, holdover {hsClass, from}, "Waiting a year" chip, recruitRank kept; class
+  ranks re-sorted by chances). Seeded in scripts/scout-seed.json (raw.freshmen). Health card line.
   Health report has a "Draft Scout" card (scoutHealthCard: build age + next Sunday, each class present,
   every source ok/failed + fallback copy date, stale lists >60 days, Torvik vs Tankathon stats, comps
   pool size, weeks of history).

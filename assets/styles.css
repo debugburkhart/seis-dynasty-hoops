@@ -2404,3 +2404,4 @@ a.tl-event:hover { background: #fbf6e6; }
 .ds-ch-stardot { fill: var(--gold); }
 .ds-ch-g { font: 900 10px var(--display); fill: var(--navy-800); }
 @media (max-width: 560px) { .ds-chart:not(:empty) { padding: 8px; } }
+.ds-hold { display: inline-block; padding: 1px 6px; border-radius: 5px; background: #e8eef8; color: var(--navy-700); font: 800 9.5px/1.5 var(--display); letter-spacing: .06em; text-transform: uppercase; vertical-align: 1px; }

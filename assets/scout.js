@@ -183,13 +183,19 @@ export function parse247(html, hsClass) {
 }
 // On3 industry rankings (On3 + 247 + ESPN + Rivals consensus) for one high school class: the page's
 // embedded data (__NEXT_DATA__). Used when 247Sports can't be read.
+// His college ("Duke Blue Devils" minus the mascot = "Duke"), for players already in school.
+const collegeOf = t => {
+  const n = t?.fullName ?? t?.name;
+  if (!n) return null;
+  return t.mascot && n.endsWith(` ${t.mascot}`) ? n.slice(0, -t.mascot.length - 1) : n;
+};
 export function parseOn3(html, hsClass) {
   const json = /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html)?.[1];
   const list = json ? JSON.parse(json)?.props?.pageProps?.playerData?.list ?? [] : [];
   const rows = list.map(x => {
     const p = x.person ?? {};
     const r = p.rating ?? {};
-    return { rank: r.consensusNationalRank ?? r.nationalRank, name: p.name, pos: p.positionAbbreviation ?? '', school: p.highSchoolName ?? '', ht: p.height || null, wt: p.weight || null, rating: r.consensusRating ? r1(r.consensusRating) : null };
+    return { rank: r.consensusNationalRank ?? r.nationalRank, name: p.name, pos: p.positionAbbreviation ?? '', school: p.highSchoolName ?? '', college: collegeOf(x.collegeTeam), ht: p.height || null, wt: p.weight || null, rating: r.consensusRating ? r1(r.consensusRating) : null };
   }).filter(r => r.rank && r.name).sort((a, b) => a.rank - b.rank);
   if (rows.length < 10) throw new Error('page layout changed');
   return { year: hsClass + 1, hsClass, updated: null, rows, from: 'On3' };
@@ -484,17 +490,42 @@ function collegeClass(year, boards, torvik, pool, scale, ref, today, line) {
   return { year, kind: 'college', strength: Math.round(strength * 1000) / 1000, statsTop24: Math.round(withStats), months: r1(months), prospects };
 }
 
-function hsClass(year, hs, away) {
+// holdovers: college freshmen waiting a year (see findHoldovers), graded the same way from their
+// recruiting rank. The class is ordered by chances, then recruiting rank.
+function hsClass(year, hs, away, holdovers = []) {
   const s = HS_SPREAD[away] ?? 0.5;
-  const prospects = hs.rows.slice(0, HS_LIST).map(r => {
+  const one = (r, extra) => {
     const q = hsChances(Math.log(r.rank), s);
     return {
-      key: key(r.name), name: r.name, rank: r.rank, ranks: { hs: r.rank }, range: [r.rank, r.rank], pos: r.pos, school: r.school, cls: `HS ${hs.hsClass}`,
+      key: key(r.name), name: r.name, rank: r.rank, ranks: { [extra ? 'fr' : 'hs']: r.rank }, range: [r.rank, r.rank], pos: r.pos,
+      school: extra ? r.college ?? 'College' : r.school, cls: extra ? `College freshman (HS ${extra.hsClass})` : `HS ${hs.hsClass}`,
       ht: r.ht, wt: r.wt, rating: r.rating, age: null, stats: null, chances: { rotation: r2(q.rotation), starter: r2(q.starter), star: r2(q.star) }, grade: gradeOf(q),
-      traits: [], comps: [],
+      traits: [], comps: [], ...(extra ? { holdover: { hsClass: extra.hsClass, recruitRank: r.rank, from: extra.from } } : {}),
     };
-  });
-  return { year, kind: 'hs', hsClass: hs.hsClass, strength: 1, prospects };
+  };
+  const list = [...(hs?.rows ?? []).slice(0, HS_LIST).map(r => one(r)), ...holdovers.map(h => one(h.row, h))];
+  const seen = new Set();
+  const prospects = list.filter(p => !seen.has(p.key) && seen.add(p.key))
+    .sort((a, b) => b.chances.starter - a.chances.starter || b.chances.star - a.chances.star || a.rank - b.rank)
+    .map((p, i) => ({ ...p, recruitRank: p.rank, rank: i + 1 }));
+  return { year, kind: 'hs', hsClass: hs?.hsClass ?? year - 1, strength: 1, prospects, holdovers: holdovers.map(h => h.row.name) };
+}
+
+// Holdover check (owner, Oct 2026, after Joaquim Boumtje-Boumtje was missing from 2028): a top recruit
+// already in college who is on NO big board or mock for the next draft is waiting at least a year:
+// too young for it (reclassified, like Boumtje-Boumtje) or expected to stay in school. He goes into
+// the following class. Top HOLDOVER_TOP of last year's high school class (current freshmen); names
+// compared by last name + first initial ("Cam" = "Cameron").
+const HOLDOVER_TOP = 25;
+const sameName = (a, b) => {
+  const x = normName(a).split(' ').filter(Boolean), y = normName(b).split(' ').filter(Boolean);
+  return x.at(-1) === y.at(-1) && x[0]?.[0] === y[0]?.[0];
+};
+export function findHoldovers(freshmen, boardRows) {
+  // Without the next draft's boards (all failed and no copy) everyone would look missing: skip.
+  if (!freshmen?.rows?.length || boardRows.length < 50) return [];
+  return freshmen.rows.filter(r => r.rank <= HOLDOVER_TOP && !boardRows.some(b => sameName(b.name, r.name)))
+    .map(row => ({ row, hsClass: freshmen.hsClass, from: freshmen.from }));
 }
 
 // ---------- The weekly run ----------
@@ -538,6 +569,13 @@ export async function runScout({ getText, getJson, scoring, sleeperPlayers = nul
       [`${SOURCES.on3.name}, class of ${y - 1}`, SOURCES.on3.url(y - 1), h => parseOn3(h, y - 1)],
     ]);
   }
+  // Last year's high school class = this year's college freshmen (holdover check). On3's industry
+  // ranking first here: it ranks reclassified players by their old class too (Boumtje-Boumtje: On3 4,
+  // 247 composite 29).
+  await source('freshmen', [
+    [`${SOURCES.on3.name}, class of ${Y - 1} (college freshmen)`, SOURCES.on3.url(Y - 1), h => parseOn3(h, Y - 1)],
+    [`${SOURCES.hs.name}, class of ${Y - 1} (college freshmen)`, SOURCES.hs.url(Y - 1), h => parse247(h, Y - 1)],
+  ]);
 
   // College stats: the draft year's season (this season) and the one before. Without them,
   // Tankathon's numbers are used.
@@ -568,7 +606,12 @@ export async function runScout({ getText, getJson, scoring, sleeperPlayers = nul
     const boards = ['tankBoard', 'tankMock', 'cbs'].filter(id => raw[id]?.year === y)
       .map(id => ({ id, weight: weightOf(raw[id]) * (id === 'tankMock' ? 0.5 : 1), rows: raw[id].rows }));
     if (boards.length) classes[y] = collegeClass(y, boards, torvik, pool.players, scale, ref, today, line);
-    else if (raw[`hs${y}`]) classes[y] = hsClass(y, raw[`hs${y}`], i);
+    else {
+      // The class after next draft's: high school seniors plus the holdovers from college.
+      const holdovers = i === 1 && raw.freshmen?.hsClass === Y - 1
+        ? findHoldovers(raw.freshmen, ['tankBoard', 'tankMock', 'cbs'].filter(id => raw[id]?.year === Y).flatMap(id => raw[id].rows)) : [];
+      if (raw[`hs${y}`] || holdovers.length) classes[y] = hsClass(y, raw[`hs${y}`], i, holdovers);
+    }
   }
 
   // Weekly projection history (the charts and grade changes on the page): one entry per week, dated

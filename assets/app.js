@@ -3238,7 +3238,7 @@ const DS_POS = [['all', 'All'], ['G', 'Guards'], ['W', 'Wings'], ['B', 'Bigs']];
 const DS_GROUP = { PG: 'G', SG: 'G', G: 'G', SF: 'W', F: 'W', W: 'W', PF: 'B', C: 'B' };
 const dsGroup = p => DS_GROUP[String(p.pos ?? '').split(/[/ ,]/)[0].toUpperCase()] ?? 'W';
 const feetIn = h => (h ? `${Math.floor(h / 12)}'${h % 12}"` : '');
-const SRC_SHORT = { tankBoard: 'Tankathon', tankMock: 'Tankathon mock', cbs: 'CBS', hs: '247Sports' };
+const SRC_SHORT = { tankBoard: 'Tankathon', tankMock: 'Tankathon mock', cbs: 'CBS', hs: 'High school rank', fr: 'Recruit rank' };
 // Scouting notes: [top-quarter wording, bottom-quarter wording] (scout.js TRAITS ids).
 const TRAIT_WORDS = {
   size: ['Big for his position', 'Small for his position'], passing: ['Playmaker', 'Limited passer'], steals: ['Active hands (steals)', 'Few steals'],
@@ -3361,11 +3361,11 @@ async function renderDraftScout(body, params) {
 
   // Class outlook.
   const counts = ['A', 'B', 'C', 'D', 'F'].map(g => [g, cls.prospects.filter(p => p.grade[0] === g).length]).filter(([, n]) => n);
-  const srcs = (sc.sources ?? []).filter(s => cls.kind === 'hs' ? s.id === `hs${year}` : s.year === Number(year) && s.id !== 'torvik');
+  const srcs = (sc.sources ?? []).filter(s => cls.kind === 'hs' ? (s.id === `hs${year}` || (s.id === 'freshmen' && cls.holdovers?.length)) : s.year === Number(year) && s.id !== 'torvik');
   const torvik = (sc.sources ?? []).find(s => s.id === 'torvik');
   const outlook = `
     <section class="card">
-      <div class="card-head"><h2>${year} class outlook</h2><span class="card-sub">${cls.kind === 'hs' ? `Early look · high school class of ${cls.hsClass}` : `${cls.prospects.length} prospects · draft in June ${year}`}</span></div>
+      <div class="card-head"><h2>${year} class outlook</h2><span class="card-sub">${cls.kind === 'hs' ? `Early look · high school class of ${cls.hsClass}${cls.holdovers?.length ? ` + ${cls.holdovers.length} college freshm${cls.holdovers.length === 1 ? 'an' : 'en'} waiting a year` : ''}` : `${cls.prospects.length} prospects · draft in June ${year}`}</span></div>
       <div class="ds-outlook">
         <div><b class="ds-big">${esc(strengthText(cls))}</b>
           <small>${cls.kind === 'hs'
@@ -3406,7 +3406,11 @@ async function renderDraftScout(body, params) {
     return `<p class="ds-traits">${good.map(t => `<span class="ds-t good" title="${t.pct}th percentile among recent first-round picks">${esc(TRAIT_WORDS[t.id]?.[0] ?? t.label)}</span>`).join('')}${bad.map(t => `<span class="ds-t bad" title="${t.pct}th percentile among recent first-round picks">${esc(TRAIT_WORDS[t.id]?.[1] ?? t.label)}</span>`).join('')}</p>`;
   };
   const gradeWhy = p => {
-    if (cls.kind === 'hs') return `<p class="ds-why">No. ${p.rank} in the 247Sports composite${p.rating ? ` (rating ${p.rating.toFixed(4)})` : ''}. Graded from how recruits ranked around him turned out in their 3rd season after high school${p.rank > 10 ? ' (most recruits ranked this low stay in college longer, which keeps the grade low; if he stays, he moves to a later class)' : ''}.</p>`;
+    if (cls.kind === 'hs') {
+      const rr = p.recruitRank ?? p.rank;
+      if (p.holdover) return `<p class="ds-why"><b>Waiting a year:</b> No. ${rr} in the class of ${p.holdover.hsClass} (${esc(p.holdover.from ?? 'recruiting rankings')}), now in college, but on no ${years[0]} big board or mock, so he’s too young for that draft (reclassified players must wait) or expected to stay in school. Projected for ${year}. Graded from his recruiting rank like the high school seniors; his college numbers count once big boards for ${year} appear.</p>`;
+      return `<p class="ds-why">No. ${rr} in the high school class of ${cls.hsClass} (${esc(p.ranks?.hs != null ? (sc.raw?.[`hs${year}`]?.from ?? 'composite') : 'composite')} ranking)${p.rating ? ` (rating ${p.rating})` : ''}. Graded from how recruits ranked around him turned out in their 3rd season after high school${rr > 10 ? ' (most recruits ranked this low stay in college longer, which keeps the grade low; if he stays, he moves to a later class)' : ''}.</p>`;
+    }
     const move = p.rank - p.effPick;
     const w = p.weight ?? (p.stats?.gp >= 12 ? 1 : p.stats ? 0.5 : 0);
     const shownBy = w >= 0.99 ? 'his college numbers and age' : w > 0 ? 'his age and his first college games' : 'his age (no college numbers yet)';
@@ -3421,7 +3425,7 @@ async function renderDraftScout(body, params) {
       <details class="ds-row">
         <summary>
           <span class="pr-rank">${p.rank}</span>
-          <span class="pr-main">${esc(p.name)} ${gradeChip(p)} ${moveTag(p.move)}
+          <span class="pr-main">${esc(p.name)} ${gradeChip(p)} ${moveTag(p.move)}${p.holdover ? ' <span class="ds-hold" title="In college now, on no ' + years[0] + ' board: projected for ' + year + '">Waiting a year</span>' : ''}
             <small>${esc([p.pos, p.school, p.cls, p.age != null ? `age ${p.age}` : '', feetIn(p.ht)].filter(Boolean).join(' · '))}</small>
             <small class="dy-chances">Star ${pctOf(p.chances.star)} · Starter ${pctOf(p.chances.starter)} · Rotation ${pctOf(p.chances.rotation)}</small></span>
           <span class="ds-lg" title="Where this league would usually take him">${leagueSlot[p.key] <= teams * 3 ? `League<br><b>~${leagueSlot[p.key]}</b>` : ''}</span>
@@ -3447,6 +3451,7 @@ async function renderDraftScout(body, params) {
       <p><b>The ${years.length > 1 ? `${years[1]} and ${years[2] ?? years[1]}` : 'later'} classes</b> are early looks: the composite high school rankings (247Sports, or On3’s industry ranking when 247Sports can’t be read), top 30, graded from how recruits at each rank turned out (1,950 top-150 recruits, 2011–2023). College players who stay in school join those classes once big boards for that year appear (after the ${years[0]} draft).</p>
       <p><b>Class strength and pick values.</b> Rookie pick values (Dynasty, Trade finder, Managers) now include how strong the class looks: the 24 best expected values, which is what this league drafts each year, compared with an average class. Honest limit: across 2011–2023, what could be seen before the draft separated strong and weak classes by only about ±2%, so this moves a pick’s value a little, never a lot. How the class actually turns out varied more (about ±12%), but nobody can see that ahead of time.</p>
       <p><b>How well it works.</b> Trained on the 2011–2018 drafts and checked on 2019–2023: players given about a 46% chance of becoming a starter did 35% of the time, about 18% did 13%, about 4% did 2%. That’s close, but slightly optimistic for the middle of the first round in recent classes. Treat a grade as a starting point, not a verdict: injuries, team fit and development aren’t in any of the data.</p>
+      <p><b>Players waiting a year.</b> Some top recruits are already in college but can’t or won’t enter the next draft: reclassified players who are too young (like Joaquim Boumtje-Boumtje, a Duke freshman who must play two seasons) or freshmen expected to stay. Every week the update checks last year’s top 25 recruits (now college freshmen; On3’s industry ranking first, since it ranks reclassified players by their original class) against every ${years[0]} big board and mock. Anyone on none of them is moved to the ${years[1] ?? 'next'} class, marked “Waiting a year”. Once big boards for that year appear (after the ${years[0]} draft), they take over.</p>
       <p><b>Week-to-week tracking.</b> Every Sunday each prospect’s grade, rank and chances are saved. “Grade changes” lists every letter that moved, and each prospect’s chart shows his projection week by week, one panel per season (a 2029 prospect followed from now gets a chart for each year until his draft). If he moves to another class (stays in school longer), his chart follows him.</p>
       <p><b>Updates.</b> Rebuilt every Sunday by the nightly update: rankings, college stats and comps refresh on their own. A source that can’t be read keeps its last good copy and is marked above (the update tries once more on Monday). Bart Torvik’s college stats and the high school rankings sometimes turn GitHub’s servers away; then Tankathon’s college numbers are used (per 36 minutes, true shooting, usage, BPM; assist rate estimated from assists per 36), and the high school lists keep their last copy. Sources are read once a week as a labeled bot; sites that block bots aren’t used. Sources: Tankathon, CBS Sports, 247Sports, On3, Bart Torvik (barttorvik.com), Sleeper.</p>
     </section>`;
@@ -4693,7 +4698,7 @@ function scoutHealthCard(sc, ok) {
   if (!sc?.classes) return `<section class="card">${head}<ul class="cm-checks"><li>${ok(false, '<b>Not built yet.</b> <small>The next update builds it (any day, since the file is missing).</small>')}</li></ul></section>`;
   const info = text => `<span class="cm-status">i</span>${text}`;
   const today = ctDate();
-  const age = Math.round((new Date(`${today}T12:00:00`) - new Date(`${sc.built}T12:00:00`)) / 864e5);
+  const age = Math.max(0, Math.round((new Date(`${today}T12:00:00`) - new Date(`${sc.built}T12:00:00`)) / 864e5));
   const next = new Date(`${today}T12:00:00`); next.setDate(next.getDate() + ((7 - next.getDay()) % 7 || 7));
   const nextSun = next.toISOString().slice(0, 10);
   const years = [0, 1, 2].map(i => String(sc.draftYear + i));
@@ -4713,8 +4718,9 @@ function scoutHealthCard(sc, ok) {
   return `<section class="card">${head}
     <ul class="cm-checks">
       <li>${ok(age <= 8, `<b>Built ${esc(shortMd(sc.built))}</b> <small>${age === 0 ? 'today' : `${age} day${age === 1 ? '' : 's'} ago`} · next build Sunday ${esc(shortMd(nextSun))}${age > 8 ? ' · older than a week: check the latest nightly run' : ''}</small>`)}</li>
-      ${years.map(y => { const c = sc.classes[y]; return `<li>${ok(Boolean(c?.prospects?.length), c ? `<b>${y} class</b> <small>${c.prospects.length} prospects · ${c.kind === 'hs' ? `high school rankings (class of ${c.hsClass})` : `big boards · ${c.statsTop24} of the top 24 with college numbers · strength ${num((c.strength - 1) * 100)}%`}</small>` : `<b>${y} class missing</b> <small>no source for it could be read and there was no saved copy</small>`)}</li>`; }).join('')}
+      ${years.map(y => { const c = sc.classes[y]; return `<li>${ok(Boolean(c?.prospects?.length), c ? `<b>${y} class</b> <small>${c.prospects.length} prospects · ${c.kind === 'hs' ? `high school rankings (class of ${c.hsClass})${c.holdovers?.length ? ` + ${c.holdovers.length} college freshmen waiting a year` : ''}` : `big boards · ${c.statsTop24} of the top 24 with college numbers · strength ${num((c.strength - 1) * 100)}%`}</small>` : `<b>${y} class missing</b> <small>no source for it could be read and there was no saved copy</small>`)}</li>`; }).join('')}
       ${(sc.sources ?? []).map(s => `<li>${srcLine(s)}</li>`).join('')}
+      ${(() => { const c = sc.classes[years[1]]; const fr = (sc.sources ?? []).find(s => s.id === 'freshmen'); return c?.kind === 'hs' ? `<li>${ok(Boolean(fr && (fr.ok || fr.count)), `<b>Holdover check</b> <small>top ${25} recruits now in college who are on no ${years[0]} board, moved to ${years[1]}: ${c.holdovers?.length ? esc(c.holdovers.join(', ')) : 'none'}${fr && !fr.ok ? ` · freshmen list from ${fr.count ? 'an older copy' : 'nowhere'}` : ''}</small>`)}</li>` : ''; })()}
       <li>${ok((sc.poolSize ?? 0) >= 300, `<b>Comps pool</b> <small>${num(sc.poolSize ?? 0)} drafted college players with NBA careers</small>`)}</li>
       <li>${ok(weeks.length > 0, `<b>Weekly history</b> <small>${weeks.length} week${weeks.length === 1 ? '' : 's'} saved${weeks.length ? ` since ${esc(shortMd(weeks[0].date))}` : ''} (grade changes + charts)</small>`)}</li>
     </ul>
