@@ -130,6 +130,15 @@ try {
   const extra = historyExtra(cut, day);
   hist.proj[today] = extra.proj;
   hist.league[today] = extra.league;
+  // Prospect grades (Dynasty tab "Prospect grade changes"): { pid: [[date, grade], ...] }, a new
+  // entry only when a saved player's grade differs from his last one.
+  hist.grades ??= {};
+  for (const pid of Object.keys(day)) {
+    const g = cut.players[pid]?.prospect?.grade;
+    if (!g) continue;
+    const list = (hist.grades[pid] ??= []);
+    if (list.at(-1)?.[1] !== g) list.push([today, g]);
+  }
   // Team tracker: each team's strength now / in 2 yrs, total value, age and position strength,
   // with Out players discounted (c) and at full value (f). { teams: { date: { owner: { c, f } } } }
   const snap = (c, f, rosters) => {

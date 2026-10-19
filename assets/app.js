@@ -3102,6 +3102,52 @@ async function fillMovers(card, v, me) {
   draw();
 }
 
+
+// ▲/▼ next to each roster score: his move over the last 7 days (nightly history; the base is the
+// newest saved night at least 7 days back, or the season's first saved night), plus a team line.
+async function fillWeekArrows(body, v, me) {
+  const hist = await loadDynHistory();
+  const full = Boolean(gmLoad('gm-dyn-full', false));
+  const today = ctDate();
+  const start = `${seasonOfDate(today)}-08-01`;
+  const dates = Object.keys(hist.days ?? {}).filter(d => d >= start && d < today).sort();
+  if (!dates.length || !body.isConnected) return;
+  const back = new Date(`${today}T12:00:00`); back.setDate(back.getDate() - 7);
+  const target = back.toISOString().slice(0, 10);
+  const base = [...dates].reverse().find(d => d <= target) ?? dates[0];
+  const day = hist.days[base];
+  const at = pid => { const x = day[pid]; return x == null ? 0 : Array.isArray(x) ? (full ? x[1] : x[0]) : x; };
+  let up = 0, down = 0, net = 0;
+  body.querySelectorAll('.dy-list > .dy-row').forEach(li => {
+    const p = v.players[li.dataset.pid];
+    if (!p) return;
+    const d = p.score - at(p.pid);
+    net += d;
+    if (d > 0) up++; else if (d < 0) down++;
+    if (d) $('.dy-val', li)?.insertAdjacentHTML('afterbegin', `<span class="dy-wk ${d > 0 ? 'up' : 'down'}" title="${d > 0 ? '+' : ''}${d} since ${shortMd(base)}">${d > 0 ? '▲' : '▼'}${Math.abs(d)}</span>`);
+  });
+  const days = Math.round((new Date(`${today}T12:00:00`) - new Date(`${base}T12:00:00`)) / 864e5);
+  const box = $('#dy-week', body);
+  if (box) box.innerHTML = `Since ${esc(shortMd(base))}${days < 7 ? ` (${days} day${days === 1 ? '' : 's'} of history)` : ''}: <span class="dy-up">${up} ▲</span> · <span class="dy-down">${down} ▼</span> · team net <b class="${net > 0 ? 'dy-up' : net < 0 ? 'dy-down' : ''}">${net > 0 ? '+' : ''}${net}</b>`;
+}
+
+// Prospect grade changes for this roster (update.mjs saves a grade only when it changes).
+const GRADE_ORDER = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F'];
+async function fillGradeLog(box, v, me) {
+  const hist = await loadDynHistory();
+  if (!box?.isConnected) return;
+  const log = hist.grades ?? {};
+  const mine = Object.values(v.players).filter(p => p.owner === me && log[p.pid]);
+  const changes = mine.flatMap(p => log[p.pid].slice(1).map(([d, g], i) => ({ p, d, from: log[p.pid][i][1], to: g })))
+    .sort((a, b) => (a.d < b.d ? 1 : -1)).slice(0, 15);
+  const first = Object.values(log).map(x => x[0]?.[0]).filter(Boolean).sort()[0];
+  box.innerHTML = `<div class="card-head"><h2>Prospect grade changes</h2><span class="card-sub">Your players · only when a grade moves</span></div>
+    ${changes.length ? `<ol class="aw-race">${changes.map(c => {
+      const up = GRADE_ORDER.indexOf(c.to) < GRADE_ORDER.indexOf(c.from);
+      return `<li><span>${esc(c.p.name)}<small>${esc(shortMd(c.d))}</small></span><span class="dy-grade-move"><span class="pg pg-${esc(c.from[0])}">${esc(c.from)}</span><span class="${up ? 'dy-up' : 'dy-down'}">${up ? '▲' : '▼'}</span><span class="pg pg-${esc(c.to[0])}">${esc(c.to)}</span></span></li>`;
+    }).join('')}</ol>` : `<p class="empty">No grade changes yet.</p>`}
+    <p class="cm-rule">Each night the prospect grade of every saved player is checked; a line appears only when a grade moves${first ? ` (tracking since ${esc(shortMd(first))})` : ' (tracking starts with the next nightly update)'}.</p>`;
+}
 function bindScoreCharts(body, v) {
   const toggle = async li => {
     const next = li.nextElementSibling;
@@ -3226,9 +3272,10 @@ async function renderDynasty(body, params) {
       <section class="card">
         <div class="card-head"><h2>Roster by dynasty score</h2><span class="card-sub" id="dy-count">${roster.length} players · tap one for his score over time</span></div>
         <div class="st-stage tf-filter dy-filter" role="group" aria-label="Position">${[['', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']].map(([id, l]) => `<a href="#" data-pos="${id}" class="${id === rosterPos ? 'on' : ''}">${l}</a>`).join('')}</div>
-        <label class="dy-taxi-toggle"><input type="checkbox"${hideTaxi ? ' checked' : ''}> Hide taxi (${taxi.length})</label>
+        <div class="dy-toggles"><label class="dy-taxi-toggle"><input type="checkbox"${hideTaxi ? ' checked' : ''}> Hide taxi (${taxi.length})</label><label class="dy-taxi-toggle dy-sec-toggle"><input type="checkbox"${gmLoad('gm-dyn-sec', true) !== false ? ' checked' : ''}> Include secondary positions</label></div>
+        <p class="dy-week" id="dy-week"></p>
         <ol class="aw-race dy-list">${roster.map(p => `<li class="dy-row" data-pid="${esc(p.pid)}" data-pos="${posGroups(p).main}" data-sec="${posGroups(p).sec.join(' ')}" data-taxi="${p.where === 'taxi' ? 1 : 0}" tabindex="0" role="button" aria-expanded="false"><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([posText(p), p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))}<span class="dy-sec-note"></span> · ${trendOf(p)}${projNote(p)}${p.out ? ` · <span class="${p.outCut ? 'dy-down' : 'dy-flat'}">listed Out: ${p.outCut ? 'this season at half' : 'full value'}</span>` : ''}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small>${p.chances ? `<small class="dy-chances">In 3 seasons: ${chances(p.chances)}</small>` : ''}</span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
-        <p class="cm-rule">Filters use each player’s main Sleeper position; players who can also play there (another position Sleeper lists for him) show too, marked “secondary position”. <b>In 3 seasons</b>: his chances of being a rotation player (top 120), a weekly starter (top 72) or a star (top 24) by points per game three seasons from now; players ${PROSPECT_MAX_AGE} and under use the prospect model, older players a model fitted the same way on 2,453 NBA veterans (2013–2022), which counts players who decline or retire.</p>
+        <p class="cm-rule"><b>▲/▼ next to the score</b> = how much his score moved over the last 7 days (the line above the list adds up your whole team); the ↑/↓ % after his age is different: his value in 2 seasons vs this one. Filters use each player’s main Sleeper position; with <b>Include secondary positions</b> on, players who can also play there (another position Sleeper lists for him) show too, marked “secondary position”. <b>In 3 seasons</b>: his chances of being a rotation player (top 120), a weekly starter (top 72) or a star (top 24) by points per game three seasons from now; players ${PROSPECT_MAX_AGE} and under use the prospect model, older players a model fitted the same way on 2,453 NBA veterans (2013–2022), which counts players who decline or retire.</p>
       </section>
       <div class="dy-side">
         <section class="card">
@@ -3236,6 +3283,7 @@ async function renderDynasty(body, params) {
           ${prospects.length ? `<ol class="aw-race dy-pros">${prospects.map(p => `<li><span>${esc(p.name)} ${tag(p)}<small>${esc([p.pos, `age ${p.age}`].join(' · '))} · ${chances(p.prospect)}</small></span>${grade(p)}</li>`).join('')}</ol>` : '<p class="empty">No players 24 or younger.</p>'}
           <p class="cm-rule">Chances he’s a <b>rotation</b> player (top 120, about bench level here), a weekly <b>starter</b> (top 72) or a <b>star</b> (top 24) three seasons from now.</p>
         </section>
+        <section class="card" id="dy-grades"><div class="card-head"><h2>Prospect grade changes</h2></div><p class="cm-rule">Loading…</p></section>
         <section class="card">
           <div class="card-head"><h2>Taxi clock</h2><span class="card-sub">${taxi.length} of 15</span></div>
           ${taxi.length ? `<ol class="aw-race">${taxi.map(p => `<li><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)}<small>${p.nbaSeasons} NBA season${p.nbaSeasons === 1 ? '' : 's'} before this one · score ${p.score}${p.prospect ? ` · starter ${pct(p.prospect.starter)}` : ''}</small></span><b class="cm-pill ${taxiLeft(p) <= 0 ? 'bad' : ''}">${esc(taxiText(taxiLeft(p)))}</b></li>`).join('')}</ol>` : '<p class="empty">Nobody on taxi.</p>'}
@@ -3261,9 +3309,10 @@ async function renderDynasty(body, params) {
   const filterRoster = () => {
     const pos = gmLoad('gm-dyn-pos', '');
     const noTaxi = Boolean(gmLoad('gm-dyn-hidetaxi', false));
+    const withSec = gmLoad('gm-dyn-sec', true) !== false;
     let main = 0, sec = 0;
     body.querySelectorAll('.dy-list > .dy-row').forEach(li => {
-      const isSec = Boolean(pos) && li.dataset.pos !== pos && li.dataset.sec.split(' ').includes(pos);
+      const isSec = withSec && Boolean(pos) && li.dataset.pos !== pos && li.dataset.sec.split(' ').includes(pos);
       const show = (!pos || li.dataset.pos === pos || isSec) && !(noTaxi && li.dataset.taxi === '1');
       li.hidden = !show;
       if (!show && li.nextElementSibling?.classList.contains('sc-row')) { li.nextElementSibling.remove(); li.setAttribute('aria-expanded', 'false'); }
@@ -3277,6 +3326,9 @@ async function renderDynasty(body, params) {
   };
   body.querySelectorAll('.dy-filter a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); gmSave('gm-dyn-pos', a.dataset.pos); filterRoster(); }));
   $('.dy-taxi-toggle input', body).addEventListener('change', e => { gmSave('gm-dyn-hidetaxi', e.target.checked); filterRoster(); });
+  $('.dy-sec-toggle input', body)?.addEventListener('change', e => { gmSave('gm-dyn-sec', e.target.checked); filterRoster(); });
+  fillWeekArrows(body, v, me).catch(() => {});
+  fillGradeLog($('#dy-grades', body), v, me).catch(() => {});
   filterRoster();
   fillMovers($('#dy-movers', body), v, me).catch(() => {});
   drawPositions($('#dy-pos', body), v, f.rosters, me);

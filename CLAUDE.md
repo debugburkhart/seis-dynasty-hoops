@@ -339,7 +339,11 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   filters (owner, Oct 2026): All/Guards/Forwards/Centers by main Sleeper position (p.pos: PG/SG/G = G,
   SF/PF/F = F, C), plus players whose fantasy_positions (p.fpos) include that group, marked
   "secondary position: guard"; "Hide taxi" checkbox; both client-side, saved in localStorage
-  gm-dyn-pos / gm-dyn-hidetaxi. Waiver wire tab (owner asked)
+  gm-dyn-pos / gm-dyn-hidetaxi; "Include secondary positions" toggle (gm-dyn-sec, default on). Weekly
+  moves (owner, Oct 2026): fillWeekArrows() puts ▲N/▼N (.dy-wk) by each roster score = live score minus
+  the newest saved night >= 7 days back (or the season's first night) + a team line (#dy-week: up,
+  down, net). Prospect grade changes card (#dy-grades, fillGradeLog): update.mjs saves hist.grades
+  { pid: [[date, grade]] } only when a saved player's grade changes. Waiver wire tab (owner asked)
   also loads dynasty values: "Dynasty pickups" (unrostered with an NBA team, by 3-season raw,
   Out included) and "Prospects on the wire" (unrostered <= 24 by chances), plus grade chips +
   "dynasty N" on every waiver row (prospectChip shared). Waiver rows (owner, Oct 2026) also show
