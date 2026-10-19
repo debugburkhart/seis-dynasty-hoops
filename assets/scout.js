@@ -9,7 +9,8 @@
 // rankings (classes 2 and 3 years out), Bart Torvik college stats (barttorvik.com), Sleeper NBA
 // stats (comps' NBA results). A source that fails keeps last week's copy.
 
-export const SCOUT_VERSION = 1;
+export const SCOUT_VERSION = 2;
+const POOL_VERSION = 2; // comps pool layout (per-36 numbers)
 export const SCOUT_LIST = 60; // prospects kept per class
 
 // ---------- The model (fitted Oct 2026 in the browser on the data below) ----------
@@ -138,7 +139,14 @@ export function parseTankathon(html) {
     const [pos, school] = decode(/mock-row-school-position">([^<]+)/.exec(chunk)?.[1] ?? '').split('|').map(s => s.trim());
     const hw = /height-weight"><div>([^<]+)<\/div><div>(\d+)/.exec(chunk);
     const ya = /year-age[^"]*"><div>([^<]+)<\/div><div>([\d.]+) yrs/.exec(chunk);
-    rows.push({ rank, name, pos, school, ht: hw ? inches(decode(hw[1])) : null, wt: hw ? Number(hw[2]) : null, cls: ya?.[1] ?? null, age: ya ? Number(ya[2]) : null });
+    // His college (or pro) numbers, when Tankathon lists them: per game, per 36 minutes, advanced.
+    const group = cls => {
+      const g = new RegExp(`universal-stat ${cls}"[^>]*>([\\s\\S]*?)(?=<div class="universal-stat |$)`).exec(chunk)?.[1] ?? '';
+      return Object.fromEntries([...g.matchAll(/class="label">([^<]+)<\/div>\s*<div class="value[^"]*">([^<]+)/g)].map(m => [m[1].trim().toLowerCase(), parseFloat(m[2])]).filter(([, v]) => Number.isFinite(v)));
+    };
+    const pg = group('stats-per-game'), p36 = group('stats-per-36'), adv = group('stats-advanced');
+    const st = Object.keys(p36).length && adv.bpm != null ? { pg, p36, ts: adv['ts%'] != null ? r1(adv['ts%'] * (adv['ts%'] <= 1 ? 100 : 1)) : null, usg: adv.usg ?? null, bpm: adv.bpm, obpm: adv.obpm ?? null, dbpm: adv.dbpm ?? null } : null;
+    rows.push({ rank, name, pos, school, ht: hw ? inches(decode(hw[1])) : null, wt: hw ? Number(hw[2]) : null, cls: ya?.[1] ?? null, age: ya ? Number(ya[2]) : null, ...(st ? { st } : {}) });
   }
   if (!year || rows.length < 10) throw new Error('page layout changed');
   return { year, updated, rows };
@@ -171,7 +179,20 @@ export function parse247(html, hsClass) {
     });
   }
   if (rows.length < 10) throw new Error('page layout changed');
-  return { year: hsClass + 1, hsClass, updated: null, rows };
+  return { year: hsClass + 1, hsClass, updated: null, rows, from: '247Sports' };
+}
+// On3 industry rankings (On3 + 247 + ESPN + Rivals consensus) for one high school class: the page's
+// embedded data (__NEXT_DATA__). Used when 247Sports can't be read.
+export function parseOn3(html, hsClass) {
+  const json = /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/.exec(html)?.[1];
+  const list = json ? JSON.parse(json)?.props?.pageProps?.playerData?.list ?? [] : [];
+  const rows = list.map(x => {
+    const p = x.person ?? {};
+    const r = p.rating ?? {};
+    return { rank: r.consensusNationalRank ?? r.nationalRank, name: p.name, pos: p.positionAbbreviation ?? '', school: p.highSchoolName ?? '', ht: p.height || null, wt: p.weight || null, rating: r.consensusRating ? r1(r.consensusRating) : null };
+  }).filter(r => r.rank && r.name).sort((a, b) => a.rank - b.rank);
+  if (rows.length < 10) throw new Error('page layout changed');
+  return { year: hsClass + 1, hsClass, updated: null, rows, from: 'On3' };
 }
 // Bart Torvik's player stats CSV (no header; column numbers checked Oct 2026).
 const T = { name: 0, team: 1, conf: 2, gp: 3, minp: 4, usg: 6, ts: 8, orb: 9, drb: 10, ast: 11, tov: 12, fta: 14, ftp: 15, fga2: 17, tpa: 20, tpp: 21, blk: 22, stl: 23, yr: 25, ht: 26, year: 31, pid: 32, rec: 34, pick: 45, bpm: 50, mpg: 54, rpg: 59, apg: 60, spg: 61, bpg: 62, ppg: 63, role: 64, dob: 66 };
@@ -201,10 +222,11 @@ export function parseTorvik(csv) {
 // ---------- Fetching ----------
 const TORVIK = y => `https://barttorvik.com/getadvstats.php?year=${y}&csv=1`;
 export const SOURCES = {
-  tankBoard: { name: 'Tankathon big board', url: () => 'https://www.tankathon.com/big_board' },
-  tankMock: { name: 'Tankathon mock draft', url: () => 'https://www.tankathon.com/mock_draft' },
+  tankBoard: { name: 'Tankathon big board', url: () => 'https://www.tankathon.com/big-board' },
+  tankMock: { name: 'Tankathon mock draft', url: () => 'https://www.tankathon.com/mock-draft' },
   cbs: { name: 'CBS Sports prospect rankings', url: () => 'https://www.cbssports.com/nba/draft/prospect-rankings/' },
   hs: { name: '247Sports composite (high school)', url: c => `https://247sports.com/season/${c}-basketball/compositerecruitrankings/` },
+  on3: { name: 'On3 industry rankings (high school)', url: c => `https://www.on3.com/db/rankings/industry-player/basketball/${c}/` },
   torvik: { name: 'Bart Torvik college stats', url: TORVIK },
 };
 const sleeperStats = s => `https://api.sleeper.com/stats/nba/${s}?season_type=regular`;
@@ -233,8 +255,11 @@ async function nbaSeasons(getJson, first, last, scoring, log) {
 
 // Drafted college players with NBA careers (the comps pool): built once from Torvik's files
 // (2011 on) and topped up each year with the newest draft. { years: [], players: [...] }.
-async function updatePool(pool, getText, nba, sleeperPlayers, draftYear, log) {
-  pool = pool?.version === SCOUT_VERSION ? pool : { version: SCOUT_VERSION, years: [], players: [] };
+// seed = scripts/scout-pool.json (built Oct 2026 from a home computer, because Torvik turns GitHub's
+// servers away): used when the saved pool is missing or older.
+async function updatePool(pool, seed, getText, nba, sleeperPlayers, draftYear, log) {
+  const fresh = p => (p?.version === POOL_VERSION ? p : null);
+  pool = fresh(pool) ?? (fresh(seed) ? JSON.parse(JSON.stringify(seed)) : null) ?? { version: POOL_VERSION, years: [], players: [] };
   const need = [];
   for (let y = 2011; y < draftYear; y++) if (!pool.years.includes(y)) need.push(y);
   // Torvik files list a drafted player's pick on every college season; years go oldest first, so his
@@ -254,10 +279,7 @@ async function updatePool(pool, getText, nba, sleeperPlayers, draftYear, log) {
       if (c.length !== 1) continue;
       // Earlier seasons of the same player (drafted later) are replaced by this one.
       pool.players = pool.players.filter(p => !(p.sid === c[0]));
-      pool.players.push({
-        n: r.name, D: y, pk: r.pick, sid: c[0], school: r.team, role: r.role, ht: r.ht, age: ageAt(r.dob, y), ast: r.ast, stl: r.stl, blk: r.blk,
-        tpr: r.tpr == null ? null : r2(r.tpr), ftp: r.ftp, usg: r.usg, ts: r.ts, orb: r.orb, drb: r.drb, bpm: r.bpm == null ? null : r2(r.bpm), ppg: r.ppg,
-      });
+      pool.players.push({ n: r.name, D: y, pk: r.pick, sid: c[0], school: r.team, ...profileOf(r), age: ageAt(r.dob, y) });
       added++;
     }
     pool.years.push(y);
@@ -267,14 +289,33 @@ async function updatePool(pool, getText, nba, sleeperPlayers, draftYear, log) {
   return pool;
 }
 const ageAt = (dob, y) => (dob ? r2((new Date(`${y}-06-25`) - new Date(dob)) / (365.25 * 864e5)) : null);
+// A college season as the numbers comps and traits use: per 36 minutes (Torvik and Tankathon both
+// have them), true shooting %, usage, BPM, assist rate; three-point volume and free throws only
+// from Torvik.
+const per36 = (x, mpg) => (x != null && mpg > 0 ? r2(x / mpg * 36) : null);
+function profileOf(r) {
+  return {
+    role: r.role, ht: r.ht, pts36: per36(r.ppg, r.mpg), reb36: per36(r.rpg, r.mpg), ast36: per36(r.apg, r.mpg), stl36: per36(r.spg, r.mpg), blk36: per36(r.bpg, r.mpg),
+    ts: r.ts, usg: r.usg, bpm: r.bpm == null ? null : r2(r.bpm), ast: r.ast, tpr: r.tpr == null ? null : r2(r.tpr), ftp: r.ftp,
+  };
+}
+// Tankathon lists assists per 36, not assist rate: fitted on Torvik 2022-2026 (12,978 player
+// seasons with 15+ games and minutes), assist rate = 0.357 + 5.247 x assists per 36 (off by ~1.7).
+const astRateFrom36 = a36 => (a36 == null ? null : r1(0.357 + 5.247 * a36));
+function profileOfTank(st) {
+  const p = st.p36 ?? {};
+  return { pts36: p.pts ?? null, reb36: p.reb ?? null, ast36: p.ast ?? null, stl36: p.stl ?? null, blk36: p.blk ?? null, ts: st.ts, usg: st.usg, bpm: st.bpm, ast: astRateFrom36(p.ast), tpr: null, ftp: null };
+}
 
 // ---------- Traits and comps ----------
-// What carries over (shown as scouting context; only BPM, assist rate and age move the grade).
+// What carries over (shown as scouting notes; only BPM, assist rate and age move the grade).
+// Per-36 numbers, so Torvik and Tankathon seasons compare; free throws and three-point volume only
+// when Torvik could be read.
 const TRAITS = [
   ['size', 'Size for his position', s => (s.ht && s.group ? s.ht - HEIGHT_BY_GROUP[s.group] : null)],
-  ['passing', 'Playmaking (assist rate)', s => s.ast],
-  ['steals', 'Steals (defensive playmaking)', s => s.stl],
-  ['blocks', 'Rim protection (block rate)', s => s.blk],
+  ['passing', 'Playmaking (assists per 36)', s => s.ast36],
+  ['steals', 'Steals per 36', s => s.stl36],
+  ['blocks', 'Blocks per 36', s => s.blk36],
   ['touch', 'Shooting touch (free throws)', s => s.ftp],
   ['range', 'Three-point volume', s => s.tpr],
   ['efficiency', 'Scoring efficiency (true shooting)', s => s.ts],
@@ -298,29 +339,30 @@ function traitsOf(s, ref, hasStats) {
   return out;
 }
 // Comps: nearest drafted college players with NBA careers, on standardized style numbers (weights =
-// how much each says about HOW he plays), plus draft slot so a #3 isn't matched to a #55.
-const COMP_KEYS = [['ht', 1.4], ['ast', 1.1], ['stl', 0.9], ['blk', 1], ['tpr', 1], ['ftp', 0.6], ['usg', 0.8], ['ts', 0.6], ['orb', 0.7], ['drb', 0.6], ['bpm', 0.8], ['age', 0.6], ['lp', 1]];
+// how much each says about HOW he plays), plus draft slot so a #3 isn't matched to a #55. A number
+// one side lacks is left out (and the rest scaled up), always within his position group.
+const COMP_KEYS = [['ht', 1.4], ['ast36', 1.1], ['stl36', 0.9], ['blk36', 1], ['reb36', 0.8], ['pts36', 0.6], ['tpr', 0.8], ['ftp', 0.5], ['usg', 0.8], ['ts', 0.6], ['bpm', 0.8], ['age', 0.6], ['lp', 1]];
+const COMP_TOTAL = COMP_KEYS.reduce((a, [, w]) => a + w, 0);
+const compVal = (p, k) => (k === 'lp' ? Math.log(p.pk) : k === 'blk36' ? (p.blk36 == null ? null : Math.log1p(p.blk36)) : p[k]);
 function compScaler(pool) {
   const stat = {};
   for (const [k] of COMP_KEYS) {
-    const v = pool.map(p => (k === 'lp' ? Math.log(p.pk) : k === 'blk' ? Math.log1p(p.blk ?? 0) : p[k])).filter(x => x != null);
+    const v = pool.map(p => compVal(p, k)).filter(x => x != null);
     const m = v.reduce((a, b) => a + b, 0) / v.length;
     stat[k] = [m, Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / v.length) || 1];
   }
   return stat;
 }
 function comps(s, pool, scale, n = 3) {
-  const val = (p, k) => (k === 'lp' ? Math.log(p.pk) : k === 'blk' ? Math.log1p(p.blk ?? 0) : p[k]);
   const me = { ...s, pk: Math.exp(s.lp) };
-  return pool.filter(p => p.nba).map(p => {
-    let d = 0;
+  return pool.filter(p => p.nba && ROLE_GROUP[p.role] === s.group).map(p => {
+    let d = 0, used = 0;
     for (const [k, w] of COMP_KEYS) {
-      const a = val(me, k), b = val(p, k);
-      if (a == null || b == null) { d += w * 0.5; continue; }
-      d += w * ((a - b) / scale[k][1]) ** 2;
+      const a = compVal(me, k), b = compVal(p, k);
+      if (a == null || b == null) continue;
+      d += w * ((a - b) / scale[k][1]) ** 2; used += w;
     }
-    if (ROLE_GROUP[p.role] !== s.group) d += 2.5; // a guard compared with guards
-    return { p, d };
+    return { p, d: used ? d * COMP_TOTAL / used : 99 };
   }).sort((a, b) => a.d - b.d).slice(0, n).map(({ p, d }) => ({
     name: p.nm ?? p.n, sid: p.sid, D: p.D, pk: p.pk, school: p.school, sim: Math.max(0, Math.round(100 * Math.exp(-d / 12))), ...p.nba,
   }));
@@ -350,6 +392,7 @@ function consensus(boards) {
     p.ranks[b.id] = r.rank;
     for (const f of ['pos', 'school', 'ht', 'wt', 'cls', 'age']) if (p.info[f] == null && r[f] != null && r[f] !== '') p.info[f] = r[f];
     if (b.id === 'tankBoard') p.name = r.name; // Tankathon's spelling first
+    if (r.st && !p.st) p.st = r.st;
   }
   for (const p of Object.values(players)) {
     let tot = 0, wt = 0;
@@ -391,26 +434,37 @@ function collegeClass(year, boards, torvik, pool, scale, ref, today, line) {
     const fresh = c && !sameAsLast && c.gp >= 1;
     const row = fresh ? { ...c, role: c.role || l?.role, dob: c.dob ?? l?.dob ?? null } : l;
     const statsFrom = row ? (fresh ? 'this' : 'last') : null;
+    // No Torvik row (Torvik turns GitHub's servers away, or he isn't in it): Tankathon's numbers. They
+    // don't say how many games, so a freshman's count fully only from mid-December (his first games
+    // in early November count a little); international numbers are pro leagues, not college: skipped.
+    const intl = /international|int/i.test(p.info.cls ?? '');
+    const tank = !row && p.st && !intl ? p.st : null;
     const group = ROLE_GROUP[row?.role] ?? groupOfPos(p.info.pos) ?? 'W';
     const ageNow = p.info.age;
     const age = row?.dob ? ageAt(row.dob, year) : ageNow != null ? r2(ageNow + Math.max(0, months) / 12) : null;
     const x = Math.log(slot);
+    const stats = row ? profileOf(row) : tank ? profileOfTank(tank) : null;
     // Numbers he hasn't shown yet (no college games, or only a few) count as typical for his slot;
     // his age always counts.
-    const weight = row && row.bpm != null && row.ast != null ? Math.min(1, (row.gp ?? 0) / FULL_STATS_GAMES) : 0;
+    const freshRamp = Math.min(1, Math.max(0, (new Date(`${today}T12:00:00`) - new Date(`${year - 1}-11-05T12:00:00`)) / (40 * 864e5)));
+    const weight = !stats || stats.bpm == null || stats.ast == null ? 0
+      : row ? Math.min(1, (row.gp ?? 0) / FULL_STATS_GAMES) : /^fr/i.test(p.info.cls ?? '') ? freshRamp : 1;
     const t = TYPICAL(x);
-    const s = { bpm: weight * (row?.bpm ?? 0) + (1 - weight) * t.bpm, ast: weight * (row?.ast ?? 0) + (1 - weight) * t.ast, age: age ?? t.age };
+    const s = { bpm: weight * (stats?.bpm ?? 0) + (1 - weight) * t.bpm, ast: weight * (stats?.ast ?? 0) + (1 - weight) * t.ast, age: age ?? t.age };
     const shift = traitShift(x, s);
     const xe = slotFor(baseValue(x) + shift);
     const spread = Math.sqrt(spreadFor(months) ** 2 + (p.disagree * 0.7) ** 2);
     const q = draftChances(xe, spread);
-    const prof = { ...(row ?? {}), ht: p.info.ht ?? row?.ht ?? null, age, group, lp: xe };
-    const hasStats = Boolean(row && row.gp >= 5);
+    const prof = { ...(stats ?? {}), ht: p.info.ht ?? row?.ht ?? null, age, group, lp: xe };
+    const hasStats = Boolean(stats && (row ? row.gp >= 5 : weight >= 0.4));
+    const tg = tank?.pg ?? {};
     return {
       key: p.key, name: p.name, rank: slot, ranks: p.ranks, range: p.range,
       pos: p.info.pos ?? '', school: p.info.school ?? row?.team ?? '', cls: p.info.cls ?? row?.cls ?? '', ht: prof.ht, wt: p.info.wt ?? null, age: age == null ? null : r1(age),
-      intl: !row && /international|int/i.test(p.info.cls ?? ''),
-      stats: row ? { from: statsFrom, season: row.year, team: row.team, gp: row.gp, mpg: row.mpg, ppg: row.ppg, rpg: row.rpg, apg: row.apg, spg: row.spg, bpg: row.bpg, ts: row.ts, tpp: row.tpp, tpa: row.tpa, ftp: row.ftp, bpm: row.bpm, ast: row.ast, usg: row.usg, role: row.role } : null,
+      intl: intl && !row,
+      stats: row ? { from: statsFrom, season: row.year, team: row.team, gp: row.gp, mpg: row.mpg, ppg: row.ppg, rpg: row.rpg, apg: row.apg, spg: row.spg, bpg: row.bpg, ts: row.ts, tpp: row.tpp, tpa: row.tpa, ftp: row.ftp, bpm: row.bpm, ast: row.ast, usg: row.usg, role: row.role }
+        : tank ? { from: 'tank', team: p.info.school ?? '', ppg: tg.pts ?? null, rpg: tg.reb ?? null, apg: tg.ast ?? null, spg: tg.stl ?? null, bpg: tg.blk ?? null, ts: tank.ts, usg: tank.usg, bpm: tank.bpm, ast: stats.ast } : null,
+      weight: r2(weight),
       shift: r2(Math.exp(x) - Math.exp(xe)), // + = his numbers play like an earlier pick
       effPick: r1(Math.exp(xe)),
       value: r2(baseValue(x) + shift),
@@ -425,9 +479,9 @@ function collegeClass(year, boards, torvik, pool, scale, ref, today, line) {
   // stats, so a class of freshmen who haven't played yet reads as average).
   const top = prospects.map(p => p.value).sort((a, b) => b - a).slice(0, LEAGUE_ROOKIE_PICKS);
   const lift = top.reduce((a, v, j) => a + v - baseValue(Math.log(j + 1)), 0);
-  const withStats = prospects.slice(0, LEAGUE_ROOKIE_PICKS).filter(p => p.stats && p.stats.gp >= 5).length;
+  const withStats = prospects.slice(0, LEAGUE_ROOKIE_PICKS).reduce((a, p) => a + (p.weight ?? 0), 0);
   const strength = 1 + (lift - CLASS_LIFT * withStats / LEAGUE_ROOKIE_PICKS) / CLASS_BASE_SUM;
-  return { year, kind: 'college', strength: Math.round(strength * 1000) / 1000, statsTop24: withStats, months: r1(months), prospects };
+  return { year, kind: 'college', strength: Math.round(strength * 1000) / 1000, statsTop24: Math.round(withStats), months: r1(months), prospects };
 }
 
 function hsClass(year, hs, away) {
@@ -444,46 +498,63 @@ function hsClass(year, hs, away) {
 }
 
 // ---------- The weekly run ----------
-// getText(url) / getJson(url): fetchers (the job adds a browser-like user agent). prev = last
-// week's data/draft-scout.json (sources that fail keep it), pool = data/scout-pool.json.
-export async function runScout({ getText, getJson, scoring, sleeperPlayers = null, prev = null, pool = null, now = new Date(), log = console.log }) {
+// getText(url) / getJson(url): fetchers. prev = last week's data/draft-scout.json (a source that
+// fails keeps its last copy), pool = data/scout-pool.json, seed = scripts/scout-seed.json +
+// scripts/scout-pool.json (starting copies from a home computer, for sources that turn GitHub away).
+// The week's Sunday (Chicago date): one projection-history point per week.
+export const weekOf = date => { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - d.getUTCDay()); return d.toISOString().slice(0, 10); };
+export async function runScout({ getText, getJson, scoring, sleeperPlayers = null, prev = null, pool = null, seed = null, seedPool = null, now = new Date(), log = console.log }) {
   const today = CHI(now);
   const Y = nextDraftYear(now);
   const years = [Y, Y + 1, Y + 2];
   const status = [];
   const prevSrc = Object.fromEntries((prev?.sources ?? []).map(s => [s.id, s]));
-  // Each source: fetch + parse; on failure, last week's parsed copy.
-  const cached = prev?.raw ?? {};
+  // Each source: fetch + parse (several sites tried in order); on failure, the last good copy.
+  const cached = { ...(seed?.raw ?? {}), ...(prev?.raw ?? {}) };
   const raw = {};
-  async function source(id, label, url, parse) {
-    try {
-      const out = parse(await getText(url));
-      raw[id] = out;
-      status.push({ id, name: label, url, ok: true, year: out.year, updated: out.updated, count: out.rows.length, read: today });
-    } catch (e) {
-      if (cached[id]) raw[id] = cached[id];
-      status.push({ id, name: label, url, ok: false, error: e.message, year: cached[id]?.year ?? null, updated: cached[id]?.updated ?? null, count: cached[id]?.rows.length ?? 0, read: prevSrc[id]?.read ?? null });
-      log(`Draft Scout: ${label} failed (${e.message})${cached[id] ? ', kept last week\'s copy' : ''}.`);
+  async function source(id, tries) {
+    const errors = [];
+    for (const [label, url, parse] of tries) {
+      try {
+        const out = parse(await getText(url));
+        raw[id] = out;
+        status.push({ id, name: label, url, ok: true, year: out.year, updated: out.updated, count: out.rows.length, read: today, ...(errors.length ? { note: errors.join('; ') } : {}) });
+        return;
+      } catch (e) { errors.push(`${label}: ${e.message}`); }
     }
+    const [label, url] = tries[0];
+    if (cached[id]) raw[id] = cached[id];
+    const old = prevSrc[id];
+    status.push({ id, name: old?.ok && cached[id] ? old.name : label, url: old?.url ?? url, ok: false, error: errors.join('; '), year: cached[id]?.year ?? null, updated: cached[id]?.updated ?? null, count: cached[id]?.rows.length ?? 0, read: old?.read ?? seed?.read ?? null });
+    log(`Draft Scout: ${errors.join('; ')}${cached[id] ? ' (kept the last good copy)' : ''}.`);
   }
-  await source('tankBoard', SOURCES.tankBoard.name, SOURCES.tankBoard.url(), parseTankathon);
-  await source('tankMock', SOURCES.tankMock.name, SOURCES.tankMock.url(), parseTankathon);
-  await source('cbs', SOURCES.cbs.name, SOURCES.cbs.url(), parseCbs);
-  for (const y of years.slice(1)) await source(`hs${y}`, `${SOURCES.hs.name} class of ${y - 1}`, SOURCES.hs.url(y - 1), h => parse247(h, y - 1));
+  await source('tankBoard', [[SOURCES.tankBoard.name, SOURCES.tankBoard.url(), parseTankathon]]);
+  await source('tankMock', [[SOURCES.tankMock.name, SOURCES.tankMock.url(), parseTankathon]]);
+  await source('cbs', [[SOURCES.cbs.name, SOURCES.cbs.url(), parseCbs]]);
+  // High school classes (the 2 later drafts): 247Sports, else On3.
+  for (const y of years.slice(1)) {
+    await source(`hs${y}`, [
+      [`${SOURCES.hs.name}, class of ${y - 1}`, SOURCES.hs.url(y - 1), h => parse247(h, y - 1)],
+      [`${SOURCES.on3.name}, class of ${y - 1}`, SOURCES.on3.url(y - 1), h => parseOn3(h, y - 1)],
+    ]);
+  }
 
-  // College stats: the draft year's season (this season) and the one before.
+  // College stats: the draft year's season (this season) and the one before. Without them,
+  // Tankathon's numbers are used.
   let torvik = { cur: [], prev: [] };
   try {
     torvik = { cur: parseTorvik(await getText(TORVIK(Y))), prev: parseTorvik(await getText(TORVIK(Y - 1))) };
+    if (torvik.cur.length < 500 && torvik.prev.length < 500) throw new Error('empty file');
     status.push({ id: 'torvik', name: SOURCES.torvik.name, url: 'https://barttorvik.com/', ok: true, year: Y, count: torvik.cur.length, read: today });
   } catch (e) {
-    status.push({ id: 'torvik', name: SOURCES.torvik.name, url: 'https://barttorvik.com/', ok: false, error: e.message, read: prevSrc.torvik?.read ?? null });
-    log(`Draft Scout: Torvik stats failed (${e.message}).`);
+    torvik = { cur: [], prev: [] };
+    status.push({ id: 'torvik', name: SOURCES.torvik.name, url: 'https://barttorvik.com/', ok: false, optional: true, error: `${e.message} (Tankathon's stats used instead)`, read: prevSrc.torvik?.read ?? null });
+    log(`Draft Scout: Torvik stats failed (${e.message}); using Tankathon's.`);
   }
 
   // NBA results (comps) and the comps pool.
   const nba = await nbaSeasons(getJson, 2013, Y - 1, scoring, log);
-  pool = await updatePool(pool, getText, nba, sleeperPlayers, Y, log);
+  pool = await updatePool(pool, seedPool, getText, nba, sleeperPlayers, Y, log);
   for (const p of pool.players) { p.nba = careerOf(p.sid, nba); p.nm = nba.display[p.sid] ?? p.n; }
   const scale = compScaler(pool.players);
   const ref = traitTable(pool.players);
@@ -495,24 +566,33 @@ export async function runScout({ getText, getJson, scoring, sleeperPlayers = nul
   const classes = {};
   for (const [i, y] of years.entries()) {
     const boards = ['tankBoard', 'tankMock', 'cbs'].filter(id => raw[id]?.year === y)
-      .map(id => ({ id: id.replace(/\d+$/, ''), weight: weightOf(raw[id]) * (id === 'tankMock' ? 0.5 : 1), rows: raw[id].rows }));
+      .map(id => ({ id, weight: weightOf(raw[id]) * (id === 'tankMock' ? 0.5 : 1), rows: raw[id].rows }));
     if (boards.length) classes[y] = collegeClass(y, boards, torvik, pool.players, scale, ref, today, line);
     else if (raw[`hs${y}`]) classes[y] = hsClass(y, raw[`hs${y}`], i);
   }
 
-  // Movement: consensus order saved each week (last 26 weeks).
-  const history = (prev?.history ?? []).filter(h => h.date < today);
-  history.push({ date: today, ranks: Object.fromEntries(Object.entries(classes).map(([y, c]) => [y, c.prospects.map(p => p.key)])) });
-  const base = [...history].reverse().find(h => h.date < today);
+  // Weekly projection history (the charts and grade changes on the page): one entry per week, dated
+  // its Sunday; a rerun in the same week replaces it. { date, p: { key: [draft year, rank, grade,
+  // starter %, star %, rotation %] } }. Players whose draft has passed are dropped.
+  const week = weekOf(today);
+  const weeks = (prev?.weeks ?? []).filter(h => h.date !== week).map(h => ({
+    date: h.date, p: Object.fromEntries(Object.entries(h.p).filter(([, v]) => v[0] >= Y)),
+  })).filter(h => Object.keys(h.p).length);
+  const pct = x => Math.round(x * 100);
+  const entry = {};
+  for (const [y, c] of Object.entries(classes)) for (const p of c.prospects) entry[p.key] ??= [Number(y), p.rank, p.grade, pct(p.chances.starter), pct(p.chances.star), pct(p.chances.rotation)];
+  weeks.push({ date: week, p: entry });
+  weeks.sort((a, b) => (a.date < b.date ? -1 : 1));
+  // ▲▼ = places moved in his class since the week before.
+  const base = weeks.filter(h => h.date < week).at(-1);
   for (const [y, c] of Object.entries(classes)) {
-    const was = base?.ranks?.[y];
-    if (!was) continue;
-    for (const p of c.prospects) { const j = was.indexOf(p.key); p.move = j < 0 ? 'new' : j + 1 - p.rank; }
+    if (!base) break;
+    for (const p of c.prospects) { const was = base.p[p.key]; p.move = !was || was[0] !== Number(y) ? 'new' : was[1] - p.rank; }
     c.since = base.date;
   }
   const out = {
-    version: SCOUT_VERSION, built: today, builtAt: now.toISOString(), draftYear: Y, starterLine: r1(line), poolSize: pool.players.filter(p => p.nba).length,
-    sources: status, classes, history: history.slice(-26), raw: Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, { ...v, rows: v.rows.map(r => ({ ...r })) }])),
+    version: SCOUT_VERSION, built: today, builtAt: now.toISOString(), week, draftYear: Y, starterLine: r1(line), poolSize: pool.players.filter(p => p.nba).length,
+    sources: status, classes, weeks, raw,
   };
   for (const p of pool.players) { delete p.nba; delete p.nm; }
   return { scout: out, pool };

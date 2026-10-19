@@ -444,7 +444,24 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   data/scout-pool.json (comps pool: drafted college players 2011+ matched to Sleeper ids; first build
   downloads Torvik 2011..; then only new draft years). Next 3 drafts (nextDraftYear: July+ = next year).
   Sources, read as a labeled bot (UA SeisDynastyHoops; NBADraftRoom returned 403 to it, so it's NOT
-  used; ESPN blocks too): Tankathon big board + mock (page title gives the year; after a draft they flip
+  used; ESPN blocks too). FROM GITHUB ACTIONS (first live run, Oct 2026): Tankathon + CBS OK, Torvik 403
+  and 247Sports 406 (they work from a home PC). So: update.mjs getText tries Node fetch then curl;
+  247 -> On3 industry rankings (__NEXT_DATA__ JSON, parseOn3) -> last good copy (prev.raw, else
+  scripts/scout-seed.json = HS top lists saved Oct 19 from a home PC); Torvik missing -> Tankathon's
+  per-prospect stats (parseTankathon st: per game, per 36, TS%, usage, BPM; value divs carry quality
+  classes; assist rate = 0.357 + 5.247 x ast/36, fitted on Torvik) with freshmen weighted by date
+  (Nov 5 -> Dec 15); comps pool from scripts/scout-pool.json (seed built at home, POOL_VERSION 2,
+  per-36 fields; data/scout-pool.json once saved). One Monday retry when a non-optional source failed
+  Sunday. Rebuild seeds from a home PC (browser + a local POST-save helper) if they go stale.
+  WEEKLY HISTORY (owner, Oct 2026): draft-scout.json weeks = [{ date (that week's Sunday, weekOf),
+  p: { key: [draft year, rank, grade, starter %, star %, rotation %] } }], all weeks kept until the
+  player's draft passes; rerun same week replaces. Page: "Grade changes" card per class, and each
+  opened prospect draws a weekly chart (scoutSeasons: starter solid, star dashed, grade-letter lines,
+  one panel per Aug-Jul season via bindSeasonStrip; follows a player who changes class).
+  Health report has a "Draft Scout" card (scoutHealthCard: build age + next Sunday, each class present,
+  every source ok/failed + fallback copy date, stale lists >60 days, Torvik vs Tankathon stats, comps
+  pool size, weeks of history).
+  Tankathon big board + mock (page title gives the year; after a draft they flip
   to the next year automatically), CBS prospect rankings (top 30), 247Sports composite HS rankings
   (class Y-1 -> draft Y, top 30) for the 2 later classes, Bart Torvik CSV getadvstats.php?year=Y&csv=1
   (no header; column map T in scout.js; before games start the new-season file repeats last season

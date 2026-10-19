@@ -3245,6 +3245,77 @@ const TRAIT_WORDS = {
   blocks: ['Rim protector', 'Few blocks'], touch: ['Shooting touch (FT%)', 'Shaky free throws'], range: ['Lots of threes', 'Rarely shoots threes'],
   efficiency: ['Efficient scorer', 'Inefficient scorer'], impact: ['High impact (BPM)', 'Low impact (BPM)'], youth: ['Young for the class', 'Old for the class'],
 };
+// Weekly projection history (draft-scout.json weeks: { date, p: { key: [year, rank, grade, starter %,
+// star %, rotation %] } }), one point per week, oldest first.
+const scoutSeries = (sc, key) => (sc.weeks ?? []).filter(h => h.p[key]).map(h => {
+  const [year, rank, grade, starter, star, rotation] = h.p[key];
+  return { d: h.date, year, rank, grade, starter, star, rotation };
+});
+// Starter-chance lines where the grade letter changes (the same tests as the grade; star chance can
+// lift a grade too, so a point can sit a little under its letter's line).
+const GRADE_LINES = [[85, 'A'], [70, 'A-'], [55, 'B+'], [40, 'B'], [25, 'B-'], [15, 'C+']];
+function scoutChart(pts, hi) {
+  const W = 380, H = 170, P = { l: 30, r: 34, t: 12, b: 24 };
+  const day = d => new Date(`${d}T12:00:00`).getTime() / 864e5;
+  const d0 = day(pts[0].d), d1 = Math.max(day(pts.at(-1).d), d0 + 1);
+  const X = d => (pts.length < 2 ? (P.l + W - P.r) / 2 : P.l + (day(d) - d0) / (d1 - d0) * (W - P.l - P.r));
+  const Y = v => H - P.b - v / hi * (H - P.t - P.b);
+  const lines = GRADE_LINES.filter(([v]) => v < hi).map(([v, g]) => `<line class="sc-tier" x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}"/><text class="sc-tier-l" x="${W - P.r + 4}" y="${Y(v) + 3}">${g}</text>`).join('');
+  const path = k => pts.map((x, i) => `${i ? 'L' : 'M'}${X(x.d).toFixed(1)},${Y(x[k]).toFixed(1)}`).join(' ');
+  const info = x => `Week of ${shortMd(x.d)}: grade ${x.grade} · No. ${x.rank} in the ${x.year} class · Starter ${x.starter}% · Star ${x.star}% · Rotation ${x.rotation}%`;
+  const dots = pts.map((x, i) => `<g class="sc-pt${i === pts.length - 1 ? ' now' : ''}" data-info="${esc(info(x))}"><title>${esc(info(x))}</title><circle cx="${X(x.d)}" cy="${Y(x.starter)}" r="12" class="sc-hit"/><circle cx="${X(x.d)}" cy="${Y(x.starter)}" r="${i === pts.length - 1 ? 5 : 3}"/></g>`).join('');
+  // The letter above a point where the grade changed (and the first one).
+  const letters = pts.map((x, i) => (i && pts[i - 1].grade === x.grade ? '' : `<text class="ds-ch-g" x="${X(x.d)}" y="${Math.max(10, Y(x.starter) - 9)}" text-anchor="middle">${esc(x.grade)}</text>`)).join('');
+  const last = pts.at(-1);
+  return `<svg class="sc-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weekly projection">
+    <text class="sc-ax" x="${P.l - 6}" y="${Y(hi) + 4}" text-anchor="end">${hi}%</text>
+    <text class="sc-ax" x="${P.l - 6}" y="${Y(0) + 4}" text-anchor="end">0</text>
+    <line class="sc-base" x1="${P.l}" x2="${W - P.r}" y1="${Y(0)}" y2="${Y(0)}"/>
+    ${lines}
+    ${pts.length > 1 ? `<path class="ds-ch-star" d="${path('star')}"/><path class="sc-line" d="${path('starter')}"/>` : `<circle class="ds-ch-stardot" cx="${X(last.d)}" cy="${Y(last.star)}" r="3"/>`}
+    ${letters}${dots}
+    <text class="sc-ax" x="${P.l}" y="${H - 6}">${pts.length > 1 ? shortMd(pts[0].d) : ''}</text>
+    <text class="sc-ax" x="${pts.length > 1 ? W - P.r : X(last.d)}" y="${H - 6}" text-anchor="${pts.length > 1 ? 'end' : 'middle'}">${shortMd(last.d)}</text>
+  </svg>`;
+}
+// One panel per NBA season (Aug-Jul): a 2029 prospect followed from now gets three. Same scale in
+// every panel. Swipe on phones, arrows with a mouse (bindSeasonStrip).
+function scoutSeasons(p, pts) {
+  const bySeason = {};
+  for (const x of pts) (bySeason[seasonOfDate(x.d)] ??= []).push(x);
+  const seasons = Object.keys(bySeason).sort();
+  const hi = Math.min(100, Math.max(20, Math.ceil(Math.max(...pts.map(x => Math.max(x.starter, x.star))) * 1.25 / 10) * 10));
+  const moved = pts.some((x, i) => i && x.year !== pts[i - 1].year);
+  const summary = list => {
+    if (list.length < 2) return 'History starts this week; a point is added every Sunday.';
+    const a = list[0], b = list.at(-1);
+    return `${shortMd(a.d)} → ${shortMd(b.d)}: grade ${a.grade} → ${b.grade}, starter chance ${a.starter}% → ${b.starter}%, No. ${a.rank} → No. ${b.rank}.`;
+  };
+  return `
+    <div class="sc-head"><b>${esc(p.name)}</b> · projection by week</div>
+    <div class="sc-nav">
+      <button type="button" class="sc-arrow sc-prev" aria-label="Previous season">‹</button>
+      <span class="sc-label">${seasonSpan(seasons.at(-1))}</span>
+      <button type="button" class="sc-arrow sc-next" aria-label="Next season">›</button>
+    </div>
+    <div class="sc-strip">${seasons.map(s => `
+      <div class="sc-slide" data-season="${s}">
+        ${scoutChart(bySeason[s], hi)}
+        <p class="sc-info" aria-live="polite">${esc(`Week of ${shortMd(bySeason[s].at(-1).d)}: grade ${bySeason[s].at(-1).grade} · No. ${bySeason[s].at(-1).rank} · Starter ${bySeason[s].at(-1).starter}% · Star ${bySeason[s].at(-1).star}%`)}</p>
+        <p class="cm-rule">${esc(summary(bySeason[s]))} Solid line = his chance of being a <b>starter</b> here in his 3rd NBA season, dashed = <b>star</b>; the letters on the right mark where the grade changes. Tap a dot for that week.${moved ? ' He has moved between draft classes (stayed in school or reclassified): the chart follows him.' : ''}</p>
+      </div>`).join('')}</div>
+    ${seasons.length > 1 ? `<div class="sc-dots">${seasons.map(s => `<i data-season="${s}"></i>`).join('')}<span class="sc-swipe">Swipe for other seasons</span></div>` : ''}`;
+}
+// Grade changes in one class, newest first: [{ key, d, from, to, name }].
+function scoutGradeChanges(sc, cls) {
+  const out = [];
+  for (const p of cls.prospects) {
+    const pts = scoutSeries(sc, p.key);
+    for (let i = 1; i < pts.length; i++) if (pts[i].grade !== pts[i - 1].grade) out.push({ key: p.key, name: p.name, d: pts[i].d, from: pts[i - 1].grade, to: pts[i].grade, rank: p.rank });
+  }
+  return out.sort((a, b) => (a.d < b.d ? 1 : a.d > b.d ? -1 : a.rank - b.rank));
+}
+
 async function renderDraftScout(body, params) {
   const [{ season, me, v }, sc] = await Promise.all([gmDynasty(params), loadScout()]);
   if (route().page !== 'commish') return;
@@ -3302,17 +3373,32 @@ async function renderDraftScout(body, params) {
             : `${cls.statsTop24} of the top 24 have college numbers so far. Classes 2011–2023 only differed by about ±2% on what can be seen before the draft, so this moves pick values a little at most.`}</small></div>
         <div class="ds-grades">${counts.map(([g, n]) => `<span><span class="pg pg-${g}">${g}</span> ${n}</span>`).join('')}</div>
       </div>
-      <p class="cm-rule">Sources: ${srcs.map(s => `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)}</a>${s.updated ? ` (updated ${esc(shortMd(s.updated.slice(0, 10)))})` : ''}${s.ok ? '' : ' <b class="dy-down">(not read last week: older copy)</b>'}`).join(' · ') || 'none'}${cls.kind === 'college' && torvik ? ` · college stats: <a href="https://barttorvik.com/" target="_blank" rel="noopener">Bart Torvik</a>` : ''}. Built ${esc(shortMd(sc.built))}; rebuilt every Sunday.</p>
+      <p class="cm-rule">Sources: ${srcs.map(s => `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)}</a>${s.updated ? ` (updated ${esc(shortMd(s.updated.slice(0, 10)))})` : ''}${s.ok ? '' : ` <b class="dy-down">(couldn’t be read this week: copy from ${s.read ? esc(shortMd(s.read)) : 'earlier'})</b>`}`).join(' · ') || 'none'}${cls.kind === 'college' ? ` · college stats: ${torvik?.ok ? '<a href="https://barttorvik.com/" target="_blank" rel="noopener">Bart Torvik</a>' : 'Tankathon (Bart Torvik turned the update away this week)'}` : ''}. Built ${esc(shortMd(sc.built))}; rebuilt every Sunday.</p>
+    </section>`;
+  // Grade changes, week to week (weekly history).
+  const changes = scoutGradeChanges(sc, cls);
+  const tracked = sc.weeks?.[0]?.date;
+  const chRow = c => {
+    const up = GRADE_ORDER.indexOf(c.to) < GRADE_ORDER.indexOf(c.from);
+    return `<li><span><a href="${link({ p: c.key, pos: '' })}" class="ds-jump" data-year="${esc(year)}" data-key="${esc(c.key)}">${esc(c.name)}</a><small>Week of ${esc(shortMd(c.d))} · now No. ${c.rank}</small></span><span class="dy-grade-move"><span class="pg pg-${esc(c.from[0])}">${esc(c.from)}</span><span class="${up ? 'dy-up' : 'dy-down'}">${up ? '▲' : '▼'}</span><span class="pg pg-${esc(c.to[0])}">${esc(c.to)}</span></span></li>`;
+  };
+  const changesCard = `
+    <section class="card">
+      <div class="card-head"><h2>Grade changes</h2><span class="card-sub">${year} class · week to week</span></div>
+      ${changes.length ? `<ol class="aw-race">${changes.slice(0, 10).map(chRow).join('')}</ol>
+        ${changes.length > 10 ? `<details class="cm-group"><summary>${changes.length - 10} more</summary><ol class="aw-race">${changes.slice(10).map(chRow).join('')}</ol></details>` : ''}`
+        : `<p class="empty">No grade changes yet${(sc.weeks?.length ?? 0) < 2 ? ': tracking started the week of ' + esc(shortMd(tracked ?? sc.built)) + ', and changes show from next Sunday on' : ''}.</p>`}
+      <p class="cm-rule">Every prospect’s grade, rank and chances are saved each Sunday. Tap a prospect below for his chart by week.</p>
     </section>`;
 
   // The board.
   const shown = cls.prospects.filter(p => pos === 'all' || dsGroup(p) === pos);
   const leagueSlot = Object.fromEntries(leagueOrder(cls).map((p, i) => [p.key, i + 1]));
   const statLine = s => {
-    const when = s.from === 'this' ? 'This season' : `Last season (${s.season - 1}–${String(s.season).slice(2)})`;
-    const bits = [`${s.gp} games`, s.mpg != null ? `${num(s.mpg)} min` : '', s.ppg != null ? `${num(s.ppg)} pts` : '', s.rpg != null ? `${num(s.rpg)} reb` : '', s.apg != null ? `${num(s.apg)} ast` : '',
-      s.spg != null ? `${num(s.spg)} stl` : '', s.bpg != null ? `${num(s.bpg)} blk` : '', s.ts != null ? `${Math.round(s.ts)}% TS` : '', s.tpa ? `${Math.round((s.tpp ?? 0) * 100)}% from 3 (${s.tpa} att.)` : '', s.ftp != null ? `${Math.round(s.ftp * 100)}% FT` : '', s.bpm != null ? `BPM ${num(s.bpm)}` : ''].filter(Boolean);
-    return `<p class="ds-stats"><b>${when} at ${esc(s.team)}:</b> ${bits.join(' · ')}${s.role ? ` · plays as a <i>${esc(s.role)}</i>` : ''}</p>`;
+    const when = s.from === 'tank' ? 'College numbers (Tankathon)' : s.from === 'this' ? 'This season' : `Last season (${s.season - 1}–${String(s.season).slice(2)})`;
+    const bits = [s.gp != null ? `${s.gp} games` : '', s.mpg != null ? `${num(s.mpg)} min` : '', s.ppg != null ? `${num(s.ppg)} pts` : '', s.rpg != null ? `${num(s.rpg)} reb` : '', s.apg != null ? `${num(s.apg)} ast` : '',
+      s.spg != null ? `${num(s.spg)} stl` : '', s.bpg != null ? `${num(s.bpg)} blk` : '', s.ts != null ? `${Math.round(s.ts)}% TS` : '', s.tpa ? `${Math.round((s.tpp ?? 0) * 100)}% from 3 (${s.tpa} att.)` : '', s.ftp != null ? `${Math.round(s.ftp * 100)}% FT` : '', s.usg != null && s.from === 'tank' ? `${num(s.usg)}% usage` : '', s.bpm != null ? `BPM ${num(s.bpm)}` : ''].filter(Boolean);
+    return `<p class="ds-stats"><b>${when}${s.from === 'tank' ? '' : ` at ${esc(s.team)}`}:</b> ${bits.join(' · ')}${s.role ? ` · plays as a <i>${esc(s.role)}</i>` : ''}</p>`;
   };
   const traitChips = p => {
     const good = p.traits.filter(t => t.pct >= 75), bad = p.traits.filter(t => t.pct <= 25);
@@ -3322,7 +3408,8 @@ async function renderDraftScout(body, params) {
   const gradeWhy = p => {
     if (cls.kind === 'hs') return `<p class="ds-why">No. ${p.rank} in the 247Sports composite${p.rating ? ` (rating ${p.rating.toFixed(4)})` : ''}. Graded from how recruits ranked around him turned out in their 3rd season after high school${p.rank > 10 ? ' (most recruits ranked this low stay in college longer, which keeps the grade low; if he stays, he moves to a later class)' : ''}.</p>`;
     const move = p.rank - p.effPick;
-    const shownBy = p.stats ? (p.stats.gp >= 12 ? 'his college numbers and age' : 'his age and a few college games') : 'his age (no college numbers yet)';
+    const w = p.weight ?? (p.stats?.gp >= 12 ? 1 : p.stats ? 0.5 : 0);
+    const shownBy = w >= 0.99 ? 'his college numbers and age' : w > 0 ? 'his age and his first college games' : 'his age (no college numbers yet)';
     return `<p class="ds-why">Consensus No. ${p.rank}${p.range[0] !== p.range[1] ? ` (sources: ${Object.entries(p.ranks).map(([id, r]) => `${esc(SRC_SHORT[id] ?? id)} ${r}`).join(', ')})` : ''}. ${Math.abs(move) >= 1 ? `By ${shownBy} he projects like a typical No. ${Math.round(p.effPick)} pick (${move > 0 ? 'better' : 'worse'} than his slot).` : `By ${shownBy} he projects right at his slot.`} Expected in year 3: about ${num(p.fpg)} fantasy points a game.</p>`;
   };
   const compList = p => {
@@ -3339,7 +3426,7 @@ async function renderDraftScout(body, params) {
             <small class="dy-chances">Star ${pctOf(p.chances.star)} · Starter ${pctOf(p.chances.starter)} · Rotation ${pctOf(p.chances.rotation)}</small></span>
           <span class="ds-lg" title="Where this league would usually take him">${leagueSlot[p.key] <= teams * 3 ? `League<br><b>~${leagueSlot[p.key]}</b>` : ''}</span>
         </summary>
-        <div class="ds-body">${gradeWhy(p)}${p.stats ? statLine(p.stats) : ''}${traitChips(p)}${compList(p)}</div>
+        <div class="ds-body">${gradeWhy(p)}${p.stats ? statLine(p.stats) : ''}${traitChips(p)}${compList(p)}<div class="ds-chart" data-key="${esc(p.key)}"></div></div>
       </details>
     </li>`;
   const board = `
@@ -3356,18 +3443,37 @@ async function renderDraftScout(body, params) {
       <p><b>The grade</b> is the same A+ to F as the Prospect grade on the Dynasty tab, so a draft prospect lines up with young players already in the league. It comes from his chances in his <b>3rd NBA season</b> of being a <b>rotation</b> player (top 120 in fantasy points per game with this league’s scoring, 20+ games), a <b>starter</b> (top 72) or a <b>star</b> (top 24).</p>
       <p><b>Where the chances come from.</b> ${num(sc.poolSize ?? 0)}+ drafted college players from the 2011–2023 drafts were matched to their real NBA results on Sleeper. The strongest signal by far is where a player is drafted: a No. 1 pick became a weekly starter by year 3 about 65% of the time, a No. 10 about 21%, a No. 30 about 4%. Before the draft, the slot is the consensus of the big boards and mocks (each source counts less once it’s more than 2 months old), and the chances allow for the board being wrong. A ranking in October misses by more than one in June, and players the sources disagree on get a wider range.</p>
       <p><b>What college numbers add.</b> Each class was predicted from the others to see which numbers help beyond the draft slot. Three did: <b>Box Plus-Minus</b> (overall impact), <b>assist rate</b> (passing creates fantasy points) and <b>age</b> (younger is better). Together they move a prospect’s slot a few spots either way (“projects like a typical No. 8”). Size for his position, steals, blocks, shooting, usage and recruiting rank added nothing measurable once the slot was known (scouts already price them in), so they appear as scouting notes (green = top quarter of recent first-round picks, red = bottom quarter) but don’t change the grade. Numbers count fully after 12 college games; before that, unknown numbers count as typical for his slot. Freshmen’s numbers start showing once they play (early November).</p>
-      <p><b>Player comps</b> are the 3 drafted college players since 2011, with NBA careers, whose college profiles are closest: height, assist, steal and block rates, three-point volume, free throws, usage, shooting efficiency, rebounding, BPM, age and draft range, always within his position group. Each shows how that player turned out in this league’s scoring (best season). International and high school players get comps once they have college numbers.</p>
-      <p><b>The ${years.length > 1 ? `${years[1]} and ${years[2] ?? years[1]}` : 'later'} classes</b> are early looks: 247Sports’ composite high school rankings, graded from how recruits at each rank turned out (1,950 top-150 recruits, 2011–2023). College players who stay in school join those classes once big boards for that year appear (after the ${years[0]} draft).</p>
+      <p><b>Player comps</b> are the 3 drafted college players since 2011, with NBA careers, whose college profiles are closest: height, assists, steals, blocks, rebounds and points per 36 minutes, shooting efficiency, usage, BPM, three-point volume and free throws (when Torvik can be read), age and draft range, always within his position group (guard, wing or big). Each shows how that player turned out in this league’s scoring (best season). International and high school players get comps once they have college numbers.</p>
+      <p><b>The ${years.length > 1 ? `${years[1]} and ${years[2] ?? years[1]}` : 'later'} classes</b> are early looks: the composite high school rankings (247Sports, or On3’s industry ranking when 247Sports can’t be read), top 30, graded from how recruits at each rank turned out (1,950 top-150 recruits, 2011–2023). College players who stay in school join those classes once big boards for that year appear (after the ${years[0]} draft).</p>
       <p><b>Class strength and pick values.</b> Rookie pick values (Dynasty, Trade finder, Managers) now include how strong the class looks: the 24 best expected values, which is what this league drafts each year, compared with an average class. Honest limit: across 2011–2023, what could be seen before the draft separated strong and weak classes by only about ±2%, so this moves a pick’s value a little, never a lot. How the class actually turns out varied more (about ±12%), but nobody can see that ahead of time.</p>
       <p><b>How well it works.</b> Trained on the 2011–2018 drafts and checked on 2019–2023: players given about a 46% chance of becoming a starter did 35% of the time, about 18% did 13%, about 4% did 2%. That’s close, but slightly optimistic for the middle of the first round in recent classes. Treat a grade as a starting point, not a verdict: injuries, team fit and development aren’t in any of the data.</p>
-      <p><b>Updates.</b> Rebuilt every Sunday by the nightly update: rankings, college stats and comps refresh on their own. A source that can’t be read keeps last week’s copy and is marked above. Sources are read once a week as a labeled bot; sites that block bots aren’t used. Sources: Tankathon, CBS Sports, 247Sports, Bart Torvik (barttorvik.com), Sleeper.</p>
+      <p><b>Week-to-week tracking.</b> Every Sunday each prospect’s grade, rank and chances are saved. “Grade changes” lists every letter that moved, and each prospect’s chart shows his projection week by week, one panel per season (a 2029 prospect followed from now gets a chart for each year until his draft). If he moves to another class (stays in school longer), his chart follows him.</p>
+      <p><b>Updates.</b> Rebuilt every Sunday by the nightly update: rankings, college stats and comps refresh on their own. A source that can’t be read keeps its last good copy and is marked above (the update tries once more on Monday). Bart Torvik’s college stats and the high school rankings sometimes turn GitHub’s servers away; then Tankathon’s college numbers are used (per 36 minutes, true shooting, usage, BPM; assist rate estimated from assists per 36), and the high school lists keep their last copy. Sources are read once a week as a labeled bot; sites that block bots aren’t used. Sources: Tankathon, CBS Sports, 247Sports, On3, Bart Torvik (barttorvik.com), Sleeper.</p>
     </section>`;
 
   body.innerHTML = `<div class="gm-page">
     ${gmTeamPick(me, season, 'draftscout')}
     <div class="st-stage ds-years" role="tablist">${years.map(y => `<a role="tab" href="${link({ year: y, pos: '' })}" class="${y === year ? 'on' : ''}">${y}${sc.classes[y].kind === 'hs' ? ' <small>early</small>' : ''}</a>`).join('')}</div>
-    ${picksCard}${outlook}${board}${finePrint}</div>`;
+    ${picksCard}${outlook}${changesCard}${board}${finePrint}</div>`;
   bindTeamPick(body);
+  // His weekly chart, drawn the first time his row opens (the strip needs its width).
+  body.querySelectorAll('.ds-row').forEach(d => d.addEventListener('toggle', () => {
+    const box = $('.ds-chart', d);
+    if (!d.open || !box || box.dataset.done) return;
+    box.dataset.done = '1';
+    const p = cls.prospects.find(x => x.key === box.dataset.key);
+    const pts = scoutSeries(sc, box.dataset.key);
+    if (!p || !pts.length) { box.innerHTML = '<p class="cm-rule">His weekly chart starts with the next Sunday update.</p>'; return; }
+    box.innerHTML = scoutSeasons(p, pts);
+    bindSeasonStrip(box);
+    box.querySelectorAll('.sc-pt').forEach(g => g.addEventListener('click', e => {
+      e.stopPropagation();
+      const slide = g.closest('.sc-slide');
+      slide.querySelectorAll('.sc-pt.sel').forEach(x => x.classList.remove('sel'));
+      g.classList.add('sel');
+      $('.sc-info', slide).textContent = g.dataset.info;
+    }));
+  }));
   // Links to a prospect (#ds-key): open and scroll to his row.
   const open = k => { const li = document.getElementById(`ds-${k}`); if (!li) return; $('details', li).open = true; li.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
   body.querySelectorAll('.ds-jump').forEach(a => a.addEventListener('click', e => {
@@ -4580,15 +4686,52 @@ function projectionLogCard(log, when) {
   </section>`;
 }
 
+// Draft Scout (data/draft-scout.json, built weekly on Sundays): is the build fresh, did every source
+// read, which college stats were used, are all 3 classes there, and is the weekly history growing.
+function scoutHealthCard(sc, ok) {
+  const head = '<div class="card-head"><h2>Draft Scout</h2><span class="card-sub">Built weekly (Sundays) · <a href="#/commish?tab=draftscout">open</a></span></div>';
+  if (!sc?.classes) return `<section class="card">${head}<ul class="cm-checks"><li>${ok(false, '<b>Not built yet.</b> <small>The next update builds it (any day, since the file is missing).</small>')}</li></ul></section>`;
+  const info = text => `<span class="cm-status">i</span>${text}`;
+  const today = ctDate();
+  const age = Math.round((new Date(`${today}T12:00:00`) - new Date(`${sc.built}T12:00:00`)) / 864e5);
+  const next = new Date(`${today}T12:00:00`); next.setDate(next.getDate() + ((7 - next.getDay()) % 7 || 7));
+  const nextSun = next.toISOString().slice(0, 10);
+  const years = [0, 1, 2].map(i => String(sc.draftYear + i));
+  const days = d => (d ? Math.round((new Date(`${today}T12:00:00`) - new Date(d)) / 864e5) : null);
+  const srcLine = s => {
+    if (s.id === 'torvik') {
+      return s.ok ? ok(true, `<b>College stats: Bart Torvik</b> <small>read ${esc(shortMd(s.read))} · ${num(s.count)} players</small>`)
+        : info(`<b>College stats: Tankathon instead of Bart Torvik</b> <small>Torvik turned the update away (${esc(s.error?.split(' (')[0] ?? 'error')}). Grades and comps still work; free-throw and three-point notes are left out.</small>`);
+    }
+    const stale = days(s.updated);
+    const age = stale != null && stale > 60 ? ` <span class="cm-issues" style="color:var(--muted)">The site itself last updated this list ${esc(shortMd(s.updated.slice(0, 10)))} (${stale} days ago); it counts less in the consensus until it's refreshed.</span>` : '';
+    return s.ok
+      ? ok(true, `<b>${esc(s.name)}</b> <small>read ${esc(shortMd(s.read))} · ${s.count} players${s.updated ? ` · list updated ${esc(shortMd(s.updated.slice(0, 10)))}` : ''}${s.note ? ` · first choice failed (${esc(s.note)})` : ''}</small>${age}`)
+      : ok(false, `<b>${esc(s.name)} couldn't be read</b> <small>${s.count ? `using the copy from ${s.read ? esc(shortMd(s.read)) : 'earlier'} (${s.count} players)` : 'no copy to fall back on'}</small><span class="cm-issues">${esc(s.error ?? '')}</span>`);
+  };
+  const weeks = sc.weeks ?? [];
+  return `<section class="card">${head}
+    <ul class="cm-checks">
+      <li>${ok(age <= 8, `<b>Built ${esc(shortMd(sc.built))}</b> <small>${age === 0 ? 'today' : `${age} day${age === 1 ? '' : 's'} ago`} · next build Sunday ${esc(shortMd(nextSun))}${age > 8 ? ' · older than a week: check the latest nightly run' : ''}</small>`)}</li>
+      ${years.map(y => { const c = sc.classes[y]; return `<li>${ok(Boolean(c?.prospects?.length), c ? `<b>${y} class</b> <small>${c.prospects.length} prospects · ${c.kind === 'hs' ? `high school rankings (class of ${c.hsClass})` : `big boards · ${c.statsTop24} of the top 24 with college numbers · strength ${num((c.strength - 1) * 100)}%`}</small>` : `<b>${y} class missing</b> <small>no source for it could be read and there was no saved copy</small>`)}</li>`; }).join('')}
+      ${(sc.sources ?? []).map(s => `<li>${srcLine(s)}</li>`).join('')}
+      <li>${ok((sc.poolSize ?? 0) >= 300, `<b>Comps pool</b> <small>${num(sc.poolSize ?? 0)} drafted college players with NBA careers</small>`)}</li>
+      <li>${ok(weeks.length > 0, `<b>Weekly history</b> <small>${weeks.length} week${weeks.length === 1 ? '' : 's'} saved${weeks.length ? ` since ${esc(shortMd(weeks[0].date))}` : ''} (grade changes + charts)</small>`)}</li>
+    </ul>
+    <p class="cm-rule">A source that can’t be read keeps its last good copy, and the update tries once more on Monday. Red = something to look at: a missing class, or a list the page is showing from an older copy (or not at all).</p>
+  </section>`;
+}
+
 async function renderHealth(body) {
   const fo = ledger();
   const at = await scoutWeek().catch(() => null);
-  const [runs, check, guard, ctx, projLog] = await Promise.all([
+  const [runs, check, guard, ctx, projLog, scoutData] = await Promise.all([
     fetch('https://api.github.com/repos/debugburkhart/seis-dynasty-hoops/actions/runs?per_page=5').then(r => (r.ok ? r.json() : null)).catch(() => null),
     fetch(`data/scoring-check.txt?t=${Date.now()}`).then(r => (r.ok ? r.text() : null)).catch(() => null),
     fetch(`data/week-guard.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
     at ? loadWeek(DATA, at.season, at.week).catch(() => null) : null,
     fetch(`data/projection-log.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
+    loadScout().catch(() => null),
   ]);
   if (route().page !== 'commish') return;
   const when = x => new Date(x).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -4633,6 +4776,8 @@ async function renderHealth(body) {
     </section>
 
     ${projectionLogCard(projLog, when)}
+
+    ${scoutHealthCard(scoutData, ok)}
 
     <section class="card">
       <div class="card-head"><h2>Lineup check</h2><span class="card-sub">${at ? `Week ${at.week}${at.started ? '' : ' (before tip-off)'}` : 'No week to check'}</span></div>

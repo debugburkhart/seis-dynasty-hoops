@@ -86,22 +86,44 @@ await writeFile(`data/snapshots/${today}.json`, JSON.stringify({ date: today, se
 let scout = await readJson('data/draft-scout.json');
 try {
   const { SCOUT_VERSION, runScout } = await import('../assets/scout.js');
-  const sunday = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short' }).format(new Date()) === 'Sun';
-  if (sunday || scout?.version !== SCOUT_VERSION) {
+  const day = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', weekday: 'short' }).format(new Date());
+  // One retry on Monday when Sunday's build couldn't read a source (other than Torvik, which has a
+  // stand-in), so a one-night outage doesn't cost a week.
+  const retry = day === 'Mon' && scout?.built !== today && (scout?.sources ?? []).some(s => !s.ok && !s.optional);
+  if (day === 'Sun' || retry || scout?.version !== SCOUT_VERSION) {
     // Labeled as this site's bot (sites that turn bots away aren't used), one request at a time.
+    // Node's fetch first, then curl (some sites answer it when they turn Node away).
     const UA = 'Mozilla/5.0 (compatible; SeisDynastyHoops/1.0; +https://github.com/debugburkhart/seis-dynasty-hoops)';
     const pause = ms => new Promise(r => setTimeout(r, ms));
+    const { execFile } = await import('node:child_process');
+    const curl = url => new Promise((resolve, reject) => execFile('curl', ['-sSL', '--compressed', '--max-time', '60', '-A', UA, '-H', 'Accept: text/html,text/csv,*/*;q=0.8', '-H', 'Accept-Language: en-US,en;q=0.9', '-w', '\n%{http_code}', url],
+      { maxBuffer: 64 << 20 }, (err, out) => {
+        if (err) return reject(new Error(err.message.split('\n')[0]));
+        const i = out.lastIndexOf('\n');
+        const code = Number(out.slice(i + 1));
+        return code >= 200 && code < 300 ? resolve(out.slice(0, i)) : reject(new Error(`HTTP ${code} (curl)`));
+      }));
     const getText = async url => {
-      if (!/sleeper/.test(url)) await pause(1500);
-      const res = await fetch(url, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(60000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.text();
+      if (/sleeper/.test(url)) {
+        const res = await fetch(url, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(60000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      }
+      await pause(1500);
+      let first;
+      try {
+        const res = await fetch(url, { headers: { 'user-agent': UA, accept: 'text/html,text/csv,*/*;q=0.8', 'accept-language': 'en-US,en;q=0.9' }, signal: AbortSignal.timeout(60000) });
+        if (res.ok) return await res.text();
+        first = `HTTP ${res.status}`;
+      } catch (e) { first = e.message; }
+      try { return await curl(url); } catch (e) { throw new Error(`${first}; ${e.message}`); }
     };
     const getJson = async url => JSON.parse(await getText(url));
     const league = await getJson(`https://api.sleeper.app/v1/league/${current.leagueId}`);
     const sleeperPlayers = await getJson('https://api.sleeper.app/v1/players/nba').catch(() => null);
     const { scout: built, pool } = await runScout({
       getText, getJson, scoring: league.scoring_settings ?? {}, sleeperPlayers, prev: scout, pool: await readJson('data/scout-pool.json'),
+      seed: await readJson('scripts/scout-seed.json'), seedPool: await readJson('scripts/scout-pool.json'),
     });
     scout = built;
     await writeFile('data/draft-scout.json', JSON.stringify(scout));
@@ -109,7 +131,7 @@ try {
     const bad = scout.sources.filter(s => !s.ok).map(s => s.name);
     console.log(`Draft Scout: ${Object.entries(scout.classes).map(([y, c]) => `${y} ${c.prospects.length} prospects`).join(', ')}${bad.length ? `; failed: ${bad.join(', ')}` : ''}.`);
   } else {
-    console.log(`Draft Scout: not Sunday, kept the ${scout.built} build.`);
+    console.log(`Draft Scout: built weekly (Sundays); kept the ${scout.built} build.`);
   }
 } catch (e) {
   console.log(`Draft Scout skipped: ${e.message}`);
