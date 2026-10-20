@@ -5,7 +5,7 @@ import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from '.
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, isRivalry, moments, seasonSeries, seasonWeeks, seriesBefore, standingsBefore, trophyHistory, trophyImg, trophyOf, weekPairs } from './hype.js';
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
-import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach } from './gm.js';
+import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach, lockedPoints } from './gm.js';
 import { PROSPECT_LIST, PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, prospectRanking, taxiLeft } from './dynasty.js';
 import { CENTERPIECE, evaluateTrade, moveImpacts, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, teamSnapshot, tradeContext, unpackTeam } from './tradefinder.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
@@ -1216,7 +1216,13 @@ async function liveWeek(season, week) {
   } else if (!weekPairs(DATA, season, week).length) {
     pairs = Object.values(byMatch).filter(x => x.length === 2).map(([a, b]) => ({ a, b, t: 'R', label: null, final: null }));
   }
-  return (LIVE[key] = { scores, pairs, at: Date.now() });
+  // Locked points per owner (gm.js); null if the box scores can't be read, then pages show Sleeper's total.
+  let locked = null;
+  try {
+    const byRoster = await withTimeout(lockedPoints(season, week, s.leagueId, rows), 8000);
+    locked = Object.fromEntries(Object.entries(byRoster).map(([r, v]) => [ownerOf[r], v]));
+  } catch { /* fall back to the live total */ }
+  return (LIVE[key] = { scores, locked, pairs, at: Date.now() });
 }
 
 const HYPE_TONES = { gold: 'hy-gold', red: 'hy-red', navy: 'hy-navy' };
@@ -1412,8 +1418,11 @@ async function renderHype(main, params, preview = null) {
   const B = g.b;
   const score = o => {
     if (g.final) return o === A ? g.final.ap : g.final.bp;
-    return liveData?.scores?.[o] ?? 0;
+    return liveData?.locked?.[o] ?? liveData?.scores?.[o] ?? 0;
   };
+  // Sleeper's live total (every starter's latest game, locked or not); the big number is locked points.
+  const liveTotal = o => liveData?.scores?.[o] ?? 0;
+  const lockedOn = () => !g.final && Boolean(liveData?.locked);
   const pa = score(A);
   const pb = score(B);
   const lastSeason = slate.prevSeason;
@@ -1433,7 +1442,8 @@ async function renderHype(main, params, preview = null) {
         <div class="hy-owner">${esc(name(o))}</div>
         <div class="hy-rec">${t ? rec(t.w, t.l, t.t) : '—'}</div>
         <div class="hy-pts" data-o="${esc(o)}">${num(score(o))}</div>
-        <div class="hy-pts-label">${g.final ? 'Final' : 'Points'}</div>
+        <div class="hy-pts-label">${g.final ? 'Final' : lockedOn() ? 'Locked' : 'Points'}</div>
+        ${lockedOn() ? `<div class="hy-pts-live">Live <b data-live="${esc(o)}">${num(liveTotal(o))}</b></div>` : ''}
       </div>`;
   };
   const leadLine = () => {
@@ -1445,6 +1455,12 @@ async function renderHype(main, params, preview = null) {
       const w = g.final.win === 'A' ? A : B;
       return x === y ? `${esc(name(w))} advanced on the tiebreaker · ${total} combined points`
         : `${esc(name(w))} won by ${num(Math.abs(x - y))} · ${total} combined points`;
+    }
+    if (lockedOn()) {
+      const lv = `live ${num(liveTotal(A))}–${num(liveTotal(B))}`;
+      if (!x && !y) return `No locked points yet · ${lv}`;
+      if (x === y) return `All square on locked points · ${lv}`;
+      return `${esc(name(x > y ? A : B))} leads by ${num(Math.abs(x - y))} locked · ${lv}`;
     }
     if (!x && !y) return 'No points on the board yet · tip-off pending';
     if (x === y) return `All square · ${total} combined live points`;
@@ -1530,14 +1546,17 @@ async function renderHype(main, params, preview = null) {
     <section class="card hy-slate">
       <div class="card-head"><h2>The full slate</h2><span class="card-sub">Week ${week} · ranked by hype</span></div>
       ${slate.games.map((x, i) => {
-        const sa = x.final ? x.final.ap : liveData?.scores?.[x.a];
-        const sb = x.final ? x.final.bp : liveData?.scores?.[x.b];
+        const sa = x.final ? x.final.ap : liveData?.locked?.[x.a] ?? liveData?.scores?.[x.a];
+        const sb = x.final ? x.final.bp : liveData?.locked?.[x.b] ?? liveData?.scores?.[x.b];
+        const la = liveData?.scores?.[x.a];
+        const lb = liveData?.scores?.[x.b];
+        const liveLine = !x.final && liveData?.locked && (la || lb) ? `<small>live ${num(la ?? 0)}–${num(lb ?? 0)}</small>` : '';
         return `
         <a class="hy-game${x === g ? ' on' : ''}" href="${hash({ m: x.a })}">
           <span class="hy-g-rank">${i + 1}</span>
           <span class="hy-g-teams"><b>${esc(teamName(x.a, season))}</b> <i>vs</i> <b>${esc(teamName(x.b, season))}</b>
             <small>${x.labels.slice(0, 3).map(chip).join('')}</small></span>
-          <span class="hy-g-score">${sa != null && (sa || sb) ? `${num(sa)}–${num(sb)}` : ''}</span>
+          <span class="hy-g-score">${sa != null && (sa || sb || liveLine) ? `${num(sa)}–${num(sb)}${liveLine}` : ''}</span>
           <span class="hy-g-hype"><b>${x.hype}</b><small>Hype</small></span>
         </a>`;
       }).join('')}
@@ -1584,7 +1603,8 @@ async function renderHype(main, params, preview = null) {
       try {
         const d = await liveWeek(season, week);
         liveData = d;
-        main.querySelectorAll('.hy-pts[data-o]').forEach(el => { el.textContent = num(d.scores[el.dataset.o] ?? 0); });
+        main.querySelectorAll('.hy-pts[data-o]').forEach(el => { el.textContent = num(d.locked?.[el.dataset.o] ?? d.scores[el.dataset.o] ?? 0); });
+        main.querySelectorAll('[data-live]').forEach(el => { el.textContent = num(d.scores[el.dataset.live] ?? 0); });
         const lead = $('#hy-lead', main);
         if (lead) lead.innerHTML = leadLine();
         const st = $('#hy-status', main);
@@ -2433,6 +2453,8 @@ async function renderScouting(body, params) {
   const ta = table.by[me];
   const tb = table.by[opp];
   const live = ctx.live && A?.liveScore != null;
+  // Locked points are the big number while the week is live (liveWeek, cached for a minute).
+  const lockedNow = live ? (await liveWeek(season, week).catch(() => null))?.locked ?? null : null;
   const projA = A?.projStarters ?? 0;
   const projB = B?.projStarters ?? 0;
   const gamesOf = t => t.starters.reduce((s, p) => s + (ctx.live ? p.left || 0 : p.games || 0), 0);
@@ -2471,8 +2493,9 @@ async function renderScouting(body, params) {
       <div class="hy-team">${esc(teamName(o, season))}</div>
       <div class="hy-owner">${esc(name(o))}</div>
       <div class="hy-rec">${t ? rec(t.w, t.l, t.t) : ''}${strength(o) != null ? ` · strength ${Math.round(strength(o))}` : ''}</div>
-      <div class="hy-pts">${num(live ? team.liveScore : proj)}</div>
-      <div class="hy-pts-label">${live ? `Live · proj. ${num(proj)}` : 'Projected (as set)'}</div>
+      <div class="hy-pts">${num(live ? lockedNow?.[o] ?? team.liveScore : proj)}</div>
+      <div class="hy-pts-label">${live ? `${lockedNow ? 'Locked' : 'Live'} · proj. ${num(proj)}` : 'Projected (as set)'}</div>
+      ${live && lockedNow ? `<div class="hy-pts-live">Live <b>${num(team.liveScore)}</b></div>` : ''}
       ${o === opp && Math.abs(bestProjB - projB) >= 0.5 ? `<div class="hy-pts-label sc-best">Best lineup: <b>${num(bestProjB)}</b></div>` : ''}
     </div>`;
   const tape = (label, a, b, ca, cb) => tapeRow(label, a, b, ca, cb);
@@ -2832,6 +2855,8 @@ async function renderBriefing(body, params) {
   const opp = coach.opp;
   const oppTeam = coach.oppCoach?.team;
   const live = ctx.live && team.liveScore != null;
+  const lockedNow = live ? (await liveWeek(season, week).catch(() => null))?.locked ?? null : null;
+  const duelSide = (o, t) => `<div><small>${esc(teamName(o, season))}</small><b>${num(live ? lockedNow?.[o] ?? t.liveScore : coach.now.avg[o])}</b><small>${live ? `${lockedNow ? `locked · live ${num(t.liveScore)}` : 'live'} · expected ${num(coach.now.avg[o])}` : 'expected'}</small></div>`;
 
   // Tonight: every player on the roster with an NBA game today.
   const all = [...team.starters.filter(p => !p.empty).map(p => ({ ...p, starter: true })), ...team.bench];
@@ -2879,9 +2904,9 @@ async function renderBriefing(body, params) {
         <div class="card-head"><h2>This week</h2>${link('scout', 'Scouting report')}</div>
         ${opp ? `
           <div class="gm-duel">
-            <div><small>${esc(teamName(me, season))}</small><b>${num(live ? team.liveScore : coach.now.avg[me])}</b><small>${live ? `live · expected ${num(coach.now.avg[me])}` : 'expected'}</small></div>
+            ${duelSide(me, team)}
             <i>vs</i>
-            <div><small>${esc(teamName(opp, season))}</small><b>${num(live ? oppTeam.liveScore : coach.now.avg[opp])}</b><small>${live ? `live · expected ${num(coach.now.avg[opp])}` : 'expected'}</small></div>
+            ${duelSide(opp, oppTeam)}
           </div>
           ${gmOdds(w, coach.now)}`
         : '<p class="empty">No matchup this week.</p>'}
@@ -5208,10 +5233,14 @@ async function homeHype(box, refresh = false, preview = null) {
     box.innerHTML = `<a class="card hm-card hm-link" href="#/hype"><p class="empty">Week ${week}’s matchups show up once Sleeper sets them.</p></a>`;
     return live;
   }
-  const score = o => (g.final ? (o === g.a ? g.final.ap : g.final.bp) : liveData?.scores?.[o]);
+  // Big numbers = locked points; Sleeper's live total (every latest game) goes underneath.
+  const score = o => (g.final ? (o === g.a ? g.final.ap : g.final.bp) : liveData?.locked?.[o] ?? liveData?.scores?.[o]);
   const sa = score(g.a);
   const sb = score(g.b);
-  const hasScore = sa != null && (sa || sb);
+  const la = liveData?.scores?.[g.a] ?? 0;
+  const lb = liveData?.scores?.[g.b] ?? 0;
+  const showLive = !g.final && liveData?.locked && (la || lb);
+  const hasScore = sa != null && (sa || sb || showLive);
   const winner = g.final && g.final.win !== 'tie' ? (g.final.win === 'A' ? g.a : g.b) : null;
   const side = (o, t) => {
     const av = avatarUrl(DATA.owners[o]?.avatar);
@@ -5235,7 +5264,7 @@ async function homeHype(box, refresh = false, preview = null) {
       <div class="hm-duel">
         ${side(g.a, g.tA)}
         <div class="hm-mid">
-          ${hasScore ? `<div class="hm-score"><span${winner === g.a ? ' class="won"' : ''}>${num(sa)}</span><i>–</i><span${winner === g.b ? ' class="won"' : ''}>${num(sb)}</span></div>` : '<div class="hm-vs">VS</div>'}
+          ${hasScore ? `<div class="hm-score"><span${winner === g.a ? ' class="won"' : ''}>${num(sa)}</span><i>–</i><span${winner === g.b ? ' class="won"' : ''}>${num(sb)}</span></div>${showLive ? `<div class="hm-live">Locked · live ${num(la)}–${num(lb)}</div>` : ''}` : '<div class="hm-vs">VS</div>'}
           ${status ? `<div class="hm-status">${esc(status)}</div>` : ''}
         </div>
         ${side(g.b, g.tB)}
@@ -6250,6 +6279,69 @@ async function loadData() {
   const { buildLeagueData } = await import('./build-data.js');
   return { ...(await buildLeagueData(LEAGUE_ID)), live: true };
 }
+
+// Pull to refresh (owner, Oct 2026): on touch screens, pulling down from the top of any page
+// reloads it (the home-screen app has no refresh button). The arrow follows the finger and
+// spins once it's far enough; let go there to reload.
+function pullToRefresh() {
+  if (!('ontouchstart' in window)) return;
+  document.documentElement.classList.add('ptr-on');
+  const el = document.createElement('div');
+  el.className = 'ptr';
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = '<svg viewBox="0 0 20 20"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5v3.2h-3.2"/></svg>';
+  document.body.append(el);
+  const TRIGGER = 64;
+  const MAX = 96;
+  let y0 = null;
+  let x0 = 0;
+  let pull = 0;
+  let active = false;
+  const show = px => {
+    el.style.transform = `translate(-50%, ${px - 48}px) rotate(${px * 4}deg)`;
+    el.style.opacity = Math.min(1, px / TRIGGER);
+    el.classList.toggle('ready', px >= TRIGGER);
+  };
+  const reset = () => {
+    el.classList.add('back');
+    show(0);
+    setTimeout(() => el.classList.remove('back'), 200);
+    y0 = null; active = false; pull = 0;
+  };
+  window.addEventListener('touchstart', e => {
+    y0 = null;
+    if (el.classList.contains('go') || window.scrollY > 0 || e.touches.length > 1 || document.body.classList.contains('nav-open')) return;
+    y0 = e.touches[0].clientY;
+    x0 = e.touches[0].clientX;
+    pull = 0;
+    active = false;
+  }, { passive: true });
+  window.addEventListener('touchmove', e => {
+    if (y0 == null) return;
+    const dy = e.touches[0].clientY - y0;
+    const dx = e.touches[0].clientX - x0;
+    if (!active) {
+      // Sideways swipes (tickers, chart strips) and scrolling down never start a pull.
+      if (Math.abs(dx) > 10 && Math.abs(dx) > dy) { y0 = null; return; }
+      if (dy < -4 || window.scrollY > 0) { y0 = null; return; }
+      if (dy < 10) return;
+      active = true;
+    }
+    pull = Math.max(0, Math.min(MAX, (dy - 10) * 0.55));
+    show(pull);
+  }, { passive: true });
+  const end = () => {
+    if (!active) { y0 = null; return; }
+    if (pull >= TRIGGER) {
+      el.classList.add('go');
+      el.style.transform = `translate(-50%, ${TRIGGER - 48}px)`;
+      setTimeout(() => location.reload(), 450);
+    } else reset();
+  };
+  window.addEventListener('touchend', end, { passive: true });
+  window.addEventListener('touchcancel', reset, { passive: true });
+}
+pullToRefresh();
 
 $('.menu-btn').addEventListener('click', () => document.body.classList.toggle('nav-open'));
 $('.scrim').addEventListener('click', () => document.body.classList.remove('nav-open'));

@@ -78,6 +78,46 @@ export async function loadSlate(season, week) {
   return out;
 }
 
+// Locked points per team for a live week (Home, Hype page, Wager tracker): { roster_id: pts }.
+// Sleeper's matchup score counts every starter's latest game, locked or not. A starter is
+// locked here by the coach's rule (counted score = an earlier game than his latest), when
+// he's done for the week (no games left: that score is final), or marked "I locked him".
+export async function lockedPoints(season, week, leagueId, rows) {
+  const [league, stats, slate] = await Promise.all([
+    get(`/v1/league/${leagueId}`, {}),
+    get(`/stats/nba/${season}/${week}?season_type=regular`, []),
+    loadSlate(season, week),
+  ]);
+  const scoring = league?.scoring_settings ?? {};
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+  const team = {};
+  const boxes = {};
+  for (const g of stats ?? []) {
+    if (!/^\d+$/.test(g.player_id)) continue;
+    team[g.player_id] ??= g.team ?? g.player?.team;
+    if (g.stats && (g.stats.gp || g.stats.sp)) (boxes[g.player_id] ??= []).push({ date: g.date, pts: r1(fantasy(g.stats, scoring)) });
+  }
+  for (const list of Object.values(boxes)) list.sort((a, b) => (a.date < b.date ? -1 : 1));
+  let marks = {};
+  try { marks = JSON.parse(localStorage.getItem(`gm-locks-${season}-${week}`) ?? '{}') ?? {}; } catch { /* none */ }
+  const out = {};
+  for (const m of rows ?? []) {
+    let sum = 0;
+    for (const pid of m.starters ?? []) {
+      if (!pid || pid === '0') continue;
+      const counted = m.players_points?.[pid];
+      if (counted == null) continue;
+      const played = boxes[pid] ?? [];
+      const latest = played.at(-1);
+      const left = (slate[team[pid]] ?? []).some(g => g.status !== 'complete' && g.date >= today);
+      const earlier = latest && Math.abs(latest.pts - counted) >= 0.05 && played.slice(0, -1).some(b => Math.abs(b.pts - counted) < 0.05);
+      if (earlier || !left || (marks[pid] != null && played.length)) sum += counted;
+    }
+    out[m.roster_id] = r1(sum);
+  }
+  return out;
+}
+
 // ---------- Lock-in coach ----------
 
 // One starter's lock call. Sleeper's public data doesn't say whether a game was locked:

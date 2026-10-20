@@ -138,7 +138,16 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   reveals a week only once it's under way, except week 1, which shows as soon as the season's
   schedule is saved (owner, Oct 2026: every season; HYPE_NOW.pre = preseason, labeled "Opening
   week", no live refresh before tip-off). Live scores
-  refresh every minute while the page is open (Home's Main event card too); the nightly
+  refresh every minute while the page is open (Home's Main event card too). LOCKED POINTS (owner, Oct 20
+  2026): Sleeper's matchup score counts every starter's latest game, locked or not, so every live score
+  (Hype duel + lead line + slate, Home Main event, Scouting report, Briefing) shows LOCKED points big and
+  Sleeper's live total small ("Live N"). liveWeek() returns { scores, locked, pairs }; locked = gm.js
+  lockedPoints(): a starter counts when his counted score is an earlier game than his latest (coach rule),
+  he has no games left this week (schedule status 'complete' or past date), or "I locked him" was marked in
+  this browser; null on failure -> pages fall back to the live total. Wager tracker still uses live totals.
+  PULL TO REFRESH (owner, Oct 2026): pullToRefresh() in app.js, touch screens only, from the very top of
+  any page: arrow follows the finger (.ptr in styles.css), spins past 64px, release = location.reload();
+  sideways swipes never start it; html.ptr-on sets overscroll-behavior-y: contain. The nightly
   Action stays once a day (GitHub won't run more often than every 5 min and runs late).
 - `assets/transactions.js`: Transactions page data (move kinds, Ledger totals); values come
   from frontoffice.js (trades/pickups/letGo carry `tx` = index into DATA.transactions).

@@ -790,6 +790,9 @@ a.book-row:hover .book-arrow { transform: translateX(3px); }
 .hy-pts { margin-top: 12px; font: 900 48px/1 var(--display); font-variant-numeric: tabular-nums; }
 .hy-dark .hy-pts { color: var(--gold); }
 .hy-pts-label { margin-top: 6px; font: 800 9.5px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; opacity: .7; }
+.hy-pts-live { margin-top: 6px; font: 700 13px/1 var(--display); font-variant-numeric: tabular-nums; opacity: .8; }
+.hy-pts-live b { font-weight: 900; }
+.hy-g-score small { display: block; font-size: 10.5px; opacity: .8; }
 .hy-vs { display: grid; place-items: center; background: var(--paper); font: 900 14px/1 var(--display); color: var(--navy-800); }
 .hy-lead { padding: 11px 16px; border-top: 1px solid var(--line); text-align: center; font-size: 12px; color: var(--muted); }
 
@@ -1475,6 +1478,7 @@ a.tx-row.tx-link:hover { background: #fbf6e6; }
 .hm-score span.won { color: var(--gold); }
 .hm-score i { font-style: normal; color: #6f82a3; }
 .hm-status { max-width: 120px; text-align: center; font: 800 9.5px/1.3 var(--display); letter-spacing: .12em; text-transform: uppercase; color: #a9b7cc; }
+.hm-live { font: 700 11px/1.2 var(--display); color: #c9d4e6; font-variant-numeric: tabular-nums; text-align: center; opacity: .85; }
 .hm-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
 .hm-chips .hy-chip:not(.hy-gold) { background: rgba(255,255,255,.1); color: #dfe6f1; }
 .hm-why { margin: 0; text-align: center; font-size: 13px; color: #dfe6f1; }
@@ -2476,3 +2480,19 @@ a.tl-event:hover { background: #fbf6e6; }
 .ds-ch-g { font: 900 10px var(--display); fill: var(--navy-800); }
 @media (max-width: 560px) { .ds-chart:not(:empty) { padding: 8px; } }
 .ds-hold { display: inline-block; padding: 1px 6px; border-radius: 5px; background: #e8eef8; color: var(--navy-700); font: 800 9.5px/1.5 var(--display); letter-spacing: .06em; text-transform: uppercase; vertical-align: 1px; }
+
+/* ---------- Pull to refresh (app.js pullToRefresh, touch screens) ---------- */
+.ptr-on { overscroll-behavior-y: contain; }
+.ptr {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 50%; z-index: 60;
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  background: #fff; color: var(--navy-800); box-shadow: 0 4px 16px rgba(16, 38, 79, .28);
+  opacity: 0; transform: translate(-50%, -48px); pointer-events: none;
+}
+.ptr svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.ptr.ready, .ptr.go { background: var(--navy-800); color: var(--gold); }
+.ptr.back { transition: transform .2s ease, opacity .2s ease; }
+.ptr.go { opacity: 1; transition: transform .15s ease; }
+.ptr.go svg { animation: ptr-spin .7s linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
+@media (max-width: 860px) { .ptr { top: calc(env(safe-area-inset-top, 0px) + 62px); } }
