@@ -256,6 +256,18 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   this one weighted most) -> Dynasty + Managers tabs, Trade finder (Sleeper's trade block is NOT
   in the public API; owner keeps his own block in localStorage), Playoff odds INSIDE the Playoff
   picture tab (Monte Carlo + "root for"), Draft helper last (before the 2027 rookie draft).
+  Lock-in coach MATCHUP BOARD (owner's sketch, Oct 2026): top card shows both CURRENT starting 9s
+  across from each other (you left, opponent right, slot in the middle; .mb-* in styles.css), team
+  header "locked points (starters left to lock)", score boxes next to the slot (locked = navy, live =
+  orange, unlocked score = outlined, none = dash), then Bench and IR sections (both teams, no
+  scores); phones show "D. Fox" names. Every player (both teams, starters/bench/IR) taps open his
+  card below the row (.mb-detail, open keys kept in MB_OPEN across refreshes): starters = the lock
+  card (opponent's without "I locked him"), bench/IR = week's games + what he could still add. The
+  separate call-card grid is gone. Each player shows a dynasty tier tag (coachDynasty(), injured at
+  FULL value always, owner's choice); under each team score a small "if locked now" line = locked +
+  every unlocked lock/wait score (live games not included), (left minus those players), injury tag, and a green "Today vs X" chip + green edge
+  (.mb-on) when his team plays today; bench/IR players with no games left (future or today
+  pre-game) are red + struck through (.mb-gone).
   Lock-in coach: optimal stopping per starter. One game ~ normal(mu = Sleeper per-game projection
   over games it projects > 0 (loadWeek perPlay) x LOCK_CAL 1.04, sd = 0.30 mu); lock bar with k
   games left: V1 = mu, Vk = E[max(X, V(k-1))]; risk Safe/Balanced/Bold shifts bars -0.25/0/+0.25 sd
@@ -266,7 +278,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   earlier one, he's locked; else the "I locked him" button (localStorage gm-locks-{season}-{week}).
   Box scores per game from /stats/nba/{season}/{week}. Assumes a DNP doesn't replace the counted
   score (not verified yet: check in week 1 of 2026, along with the schedule's in-game status name).
-  Modes (localStorage gm-risk): "Play to win" = DEFAULT (owner asked for opponent-aware calls),
+  Modes (localStorage gm-mode, was gm-risk): "Play to win" (Beta; was the default until Oct 20, 2026, see SLOT PLANNER),
   plus Safe/Balanced/Bold points modes. gameCoach(): builds every team's lockCoach rows -> sim
   states (simState: {fixed} or {cur,k,mu,sd}); winChance() plays out the week (seeded RNG, 3,000
   runs, other unsettled players follow Balanced bars; opponents' locks inferred the same way);
@@ -288,6 +300,34 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   with the report's projNow) + a note naming who moves in/out; now within ~3% of the Briefing.
   Coach shows "Their best lineup" (From bench tags + assumed-out
   list); Briefing odds/expected finals use the same.
+  SLOT PLANNER (owner, Oct 2026; replaced per-starter bars, winChance and the greedy bestLineup in
+  gameCoach): every team's roster is planned against the 9 slots. teamPlan() -> pieces (starters +
+  healthy bench; games = schedule minus dates Sleeper projects at 0 = loadWeek missDates; no games
+  left -> fixed, movable) -> makePlan(): plan.now = bestFit() (Hungarian, max total value, slot
+  eligibility via fits/SLOT_FITS), plan.T = lockBar() per piece per game day, nowLock. lockBar(plan,
+  pi, d): keep = best fit with him valued at his own W (Balanced value of his games left); lock
+  value = his score + best fit of the others in the other slots; bar = keep - best rest (= own bar
+  when nobody competes; better players with games left raise it; drops as they run out). Lock slot
+  = best rest, ties -> fewest other players fit it, pickier slot, current slot. Text names the slot
+  (+ "move him there", who shifts, "keep G open for X" when X still has games) and the rival
+  (bumped). simTeam(): day by day, bench players who play today move in for the weakest starter they
+  can replace (bitmask feasibility; a benched score is lost), locks at plan.T; same luck per piece
+  index across versions (CRN). gameCoach: 2,000 runs, all 8 teams with the same planner (owner: assume
+  opponents play smart), Play to win compares planWith(lockSlot) vs planWith(playOn); asSet = your
+  starters only. lineupMoves(): swaps (bench +3 hysteresis, "before {first game}", "X plays Mon
+  first: lock only at T+") + slot moves; swapList shows odds as set vs following the coach.
+  ~0.6 s desktop mid-week. BACKTEST (Oct 2026, _bt harness, deleted; notes in the session notes
+  folder): managers' FINAL starters carry hindsight (in-week 0.965 vs bench 0.83 of 1.082 x proj;
+  labelled from the week before: 0.91 vs 0.90), so the old method (fixed final lineups) favors never
+  moving; there old Balanced 198, new 185. Fair method (lineup picked from projections at week
+  start), H2H+median wins of 336: old Balanced 168 / 57,721 pts, own bars + moves 178, new 176 /
+  58,681; with idle slots filled day by day (bench player who plays today into a starter's slot
+  with nothing at stake): own bars 178 / 58,899, NEW 185 / 59,178. Play to win BELOW Balanced in
+  every version (old 166 vs 168, new 176 vs 185): the sim expects other teams ~22/week above their
+  real scores (360 vs 336: SCORE_CAL fitted on hindsight lineups, real managers lock worse);
+  scaled down 0.935-0.96 it reaches 182-184. Owner (Oct 20, 2026): Balanced is now the DEFAULT
+  (localStorage key moved gm-risk -> gm-mode so old saved choices reset) and Play to win carries a
+  "Beta" tag (.gm-beta) until it is recalibrated.
   Briefing: lock calls, this week (gameCoach's expected finals + win/median chances), lineup tips
   (swaps), tonight's games, injury news (localStorage gm-inj-{owner}, rolls over daily), top 3
   waiver risers.

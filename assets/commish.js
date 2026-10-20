@@ -73,12 +73,12 @@ export async function loadWeek(DATA, season, week) {
   const projBy = {};
   const info = {};
   for (const x of proj ?? []) {
-    const p = (projBy[x.player_id] ??= { total: 0, games: 0, playTotal: 0, playGames: 0 });
+    const p = (projBy[x.player_id] ??= { total: 0, games: 0, playTotal: 0, playGames: 0, missDates: [] });
     const f = fantasy(x.stats, scoring);
     p.total += f;
     p.games++;
     // Games Sleeper expects him to play (it projects 0 for games he'll likely miss).
-    if (f > 0) { p.playTotal += f; p.playGames++; }
+    if (f > 0) { p.playTotal += f; p.playGames++; } else if (x.date) p.missDates.push(x.date);
     if (x.player) info[x.player_id] = { ...x.player, team: x.team ?? x.player.team };
   }
   for (const p of Object.values(projBy)) {
@@ -124,7 +124,7 @@ export function teamRoster(DATA, ctx, owner) {
       elig: i?.fantasy_positions ?? [],
       team,
       injury: i?.injury_status ?? null,
-      games, left, proj, projNow, perGame: r1(perGame), perPlay: r1(pr?.perPlay ?? 0),
+      games, left, proj, projNow, perGame: r1(perGame), perPlay: r1(pr?.perPlay ?? 0), missDates: pr?.missDates ?? [],
       fpg: ctx.now[pid] ? r1(ctx.now[pid].fpg) : null,
       fpgLast: ctx.last[pid] ? r1(ctx.last[pid].fpg) : null,
       livePts,

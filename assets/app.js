@@ -2418,7 +2418,7 @@ async function renderScouting(body, params) {
   const B = teamRoster(DATA, ctx, opp);
   // Their best healthy lineup (the same one the Lock-in coach and Briefing assume), scored the
   // way this report scores lineups: who plays from bestLineup(), each player's projection here.
-  const oppBest = bestLineup(lockCoach(DATA, ctx, boxes, nbaSlate, opp), nbaSlate, ctx.today);
+  const oppBest = bestLineup(lockCoach(DATA, ctx, boxes, nbaSlate, opp), nbaSlate, ctx.today, boxes);
   const oppAll = [...B.starters, ...B.bench, ...B.ir, ...B.taxi].filter(p => !p.empty);
   const bestProjB = r1(oppBest.lineup.reduce((a, p) => a + (p.empty ? 0 : p.sitting ? p.state.fixed : oppAll.find(x => x.pid === p.pid)?.projNow ?? 0), 0));
   const bestIn = oppBest.lineup.filter(p => p.fromBench).map(p => p.name);
@@ -2553,26 +2553,34 @@ async function gmWeek(params) {
   const [boxes, slate] = await Promise.all([loadBoxes(at.season, at.week, ctx.scoring), loadSlate(at.season, at.week)]);
   let pairs = weekPairs(DATA, at.season, at.week);
   if (!pairs.length) pairs = (await liveWeek(at.season, at.week).catch(() => null))?.pairs ?? [];
-  const mode = GM_MODES.some(([id]) => id === gmLoad('gm-risk')) ? gmLoad('gm-risk') : 'win';
+  // Balanced is the default (owner, Oct 2026) until Play to win is recalibrated; new key so an old saved choice doesn't carry over.
+  const mode = GM_MODES.some(([id]) => id === gmLoad('gm-mode')) ? gmLoad('gm-mode') : 'balanced';
   const marksKey = `gm-locks-${at.season}-${at.week}`;
   const medianOn = Boolean(DATA.seasons.find(s => s.season === at.season)?.medianGame);
   const coach = gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode, marks: gmLoad(marksKey, {}), medianOn });
   return { ...at, me, ctx, boxes, slate, pairs, mode, marksKey, medianOn, coach };
 }
-const GM_MODES = [['win', 'Play to win'], ['safe', 'Safe'], ['balanced', 'Balanced'], ['bold', 'Bold']];
+const GM_MODES = [['win', 'Play to win <span class="gm-beta">Beta</span>'], ['safe', 'Safe'], ['balanced', 'Balanced'], ['bold', 'Bold']];
 const gmPct = x => `${Math.round(x * 100)}%`;
 
 // Win chances line: head-to-head, plus the median when it counts.
 const gmOdds = (w, odds) => `<div class="gm-odds">${odds.h2h != null ? `<span>Win chance <b>${gmPct(odds.h2h)}</b></span>` : ''}${w.medianOn ? `<span>Beat the median <b>${gmPct(odds.median)}</b></span>` : ''}</div>`;
 
-// Bench players worth starting.
+// Bench players worth starting (and starters who should change slots to make room), from the
+// coach's plan for the whole roster, plus the odds with the lineup as set vs following the coach.
 function swapList(w, swaps) {
-  if (!swaps.length) return '<p class="empty">Your lineup is set: no bench player is worth 3+ more points than the starter he could replace.</p>';
-  const keepText = s => (s.r.call === 'none' ? 'no games this week' : s.r.call === 'final' ? `done at ${num(s.keep)}` : `worth about ${num(s.keep)}`);
+  const c = w.coach;
+  const moves = c.moves ?? [];
+  if (!swaps.length && !moves.length) return '<p class="empty">Your lineup is set: no bench player is worth 3+ more points than the starter he could replace.</p>';
+  const keepText = s => (s.r.empty ? 'an empty spot' : s.r.call === 'none' ? 'no games this week' : s.r.call === 'final' ? `done at ${num(s.keep)}` : `worth about ${num(s.keep)}`);
+  const odds = o => [o.h2h != null ? `win ${gmPct(o.h2h)}` : '', w.medianOn ? `median ${gmPct(o.median)}` : ''].filter(Boolean).join(', ');
+  const oddsLine = c.asSet && (c.now.h2h != null || w.medianOn) && swaps.length
+    ? `<p class="cm-rule">Your lineup exactly as set: ${odds(c.asSet)}. With these moves (and the lock calls): ${odds(c.now)}.</p>` : '';
   return `<ol class="aw-race gm-swaps">${swaps.map(s => `
-    <li><span>Start <b>${esc(s.b.name)}</b> ${injuryTag(s.b)} for ${esc(s.r.name)} (${esc(s.r.slot)})
-      <small>${s.games.length} game${s.games.length === 1 ? '' : 's'} left, worth about ${num(s.worth)} vs ${esc(s.r.name)}: ${keepText(s)}.${s.after.h2h != null ? ` Win chance ${gmPct(w.coach.now.h2h)} → ${gmPct(s.after.h2h)}.` : ''}${w.medianOn ? ` Median ${gmPct(w.coach.now.median)} → ${gmPct(s.after.median)}.` : ''}</small></span>
-      <b>+${num(s.gain)}</b></li>`).join('')}</ol>`;
+    <li><span>Start <b>${esc(s.b.name)}</b> ${injuryTag(s.b)} in ${esc(s.slot)} for ${s.r.empty ? 'an empty spot' : esc(s.r.name)}, before ${esc(s.when)}
+      <small>${s.games.length} game${s.games.length === 1 ? '' : 's'} left, worth about ${num(s.worth)} vs ${s.r.empty ? '0' : `${esc(s.r.name)}: ${keepText(s)}`}.${s.first ? ` ${esc(s.first)}` : ''}</small></span>
+      <b>+${num(s.gain)}</b></li>`).join('')}${moves.map(m => `
+    <li><span>Move <b>${esc(m.name)}</b> from ${esc(m.from)} to ${esc(m.to)}<small>Makes room for the players above.</small></span><b>↔</b></li>`).join('')}</ol>${oddsLine}`;
 }
 
 const CALL_LABEL = { lock: 'Lock', wait: 'Wait', locked: 'Locked', final: 'Done', live: 'Live', plan: 'Plan', none: 'No games' };
@@ -2590,8 +2598,14 @@ function gmAutoRefresh(body, params, render, w) {
   }, 120_000);
 }
 
+// Lock-in coach board: which player cards are open (kept across the 2-minute refresh) and
+// dynasty values for the tier tags (injured players at full value, owner's choice; once per page load).
+const MB_OPEN = new Set();
+let COACH_DYN = null;
+const coachDynasty = () => (COACH_DYN ??= loadDynastyFeeds().then(f => dynastyValues(DATA, f, { fullInjured: true })).catch(() => null));
+
 async function renderCoach(body, params) {
-  const w = await gmWeek(params);
+  const [w, dyn] = await Promise.all([gmWeek(params), coachDynasty()]);
   if (!w) {
     body.innerHTML = '<section class="card soon-card"><p>The season is over. The Lock-in coach returns when next season’s schedule is set.</p></section>';
     return;
@@ -2611,7 +2625,8 @@ async function renderCoach(body, params) {
     return `<span class="gm-game ${cls}${isLocked ? ' locked' : ''}"><small>${shortDay(g.date)}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</span><b>${g.pts != null ? num(g.pts) : g.done ? 'DNP' : g.playing ? 'Live' : '–'}</b></span>`;
   };
   const markable = r => r.call === 'lock' || r.call === 'wait' || r.marked;
-  const card = r => (r.empty ? `<div class="gm-call gm-none"><div class="gm-call-top"><span class="cm-slot">${esc(r.slot)}</span><b>Empty spot</b></div></div>` : `
+  // A starter's lock card (opened from the board). mine = false: the opponent's, no lock button.
+  const card = (r, mine = true) => (r.empty ? `<div class="gm-call gm-none"><div class="gm-call-top"><span class="cm-slot">${esc(r.slot)}</span><b>Empty spot</b></div></div>` : `
     <div class="gm-call gm-${r.call}">
       <div class="gm-call-top">
         <span class="cm-slot">${esc(r.slot)}</span>
@@ -2620,7 +2635,7 @@ async function renderCoach(body, params) {
       </div>
       ${r.sched.length ? `<div class="gm-games">${r.sched.map(g => game(r, g)).join('')}</div>` : ''}
       <p class="gm-text">${esc(r.text)}</p>
-      ${markable(r) ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-score="${r.score ?? ''}">${r.marked ? 'Undo: not locked' : 'I locked him'}</button>` : ''}
+      ${mine && markable(r) ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-score="${r.score ?? ''}">${r.marked ? 'Undo: not locked' : 'I locked him'}</button>` : ''}
     </div>`);
   const riskBtns = GM_MODES.map(([k, label]) => `<a href="#" data-risk="${k}" class="${k === w.mode ? 'on' : ''}">${label}</a>`).join('');
   const opp = coach.opp;
@@ -2637,19 +2652,113 @@ async function renderCoach(body, params) {
   };
   const benchedOpp = coach.oppBest?.benched ?? [];
 
+  // Matchup board: both current starting lineups across from each other, slot in the middle.
+  const oppRows = coach.oppCoach?.rows ?? [];
+  // Locked points and starters left to lock; ifLocked/ifLeft = the same if every unlocked
+  // score (a finished game not locked yet) were locked now.
+  const tally = rows => {
+    const locked = rows.reduce((t, r) => t + (!r.empty && ['locked', 'final'].includes(r.call) ? r.score ?? 0 : 0), 0);
+    const left = rows.filter(r => !r.empty && ['lock', 'wait', 'live', 'plan'].includes(r.call)).length;
+    const open = rows.filter(r => !r.empty && ['lock', 'wait'].includes(r.call) && r.score != null);
+    return { locked, left, ifLocked: locked + open.reduce((t, r) => t + r.score, 0), ifLeft: left - open.length };
+  };
+  const short = n => { const [f, ...rest] = String(n ?? '').split(' '); return rest.length ? `${f[0]}. ${rest.join(' ')}` : f; };
+  // A player's score box: locked/done (solid), playing now, unlocked score (outlined), none yet.
+  const scoreBox = r => {
+    if (!r || r.empty) return '<span class="mb-pts mb-empty">–</span>';
+    if (['locked', 'final'].includes(r.call)) return `<span class="mb-pts mb-locked">${num(r.score ?? 0)}</span>`;
+    if (r.call === 'live') return `<span class="mb-pts mb-live">${r.score != null ? num(r.score) : '0'}</span>`;
+    if (r.score != null && ['lock', 'wait'].includes(r.call)) return `<span class="mb-pts mb-open">${num(r.score)}</span>`;
+    return '<span class="mb-pts mb-empty">–</span>';
+  };
+  // This week's games for any player (bench and IR too), and the ones a bench player could
+  // still play if moved in now (only games after he's moved in count).
+  const today = w.ctx.today;
+  const weekGames = p => (w.slate[p.team] ?? []).map(g => {
+    const box = (w.boxes[p.pid] ?? []).find(b => b.date === g.date);
+    const done = g.status === 'complete' || g.date < today;
+    return { ...g, pts: box?.pts ?? null, done, playing: !done && g.date === today && (g.status === 'in_progress' || Boolean(box)) };
+  });
+  const gamesLeft = p => (w.slate[p.team] ?? []).filter(g => g.status !== 'complete' && (g.date > today || (g.date === today && g.status === 'pre_game'))).length;
+  const todayGame = p => (w.slate[p.team] ?? []).find(g => g.date === today && g.status !== 'complete');
+  const tier = p => (dyn?.players[p.pid] ? tierTag(dyn.players[p.pid].score) : '');
+  // Tags line under a name: dynasty tier, injury, plays today.
+  const tags = p => {
+    const g = todayGame(p);
+    return `${tier(p)}${p.injury ? injuryTag(p) : ''}${g ? `<span class="mb-today">${g.status === 'in_progress' ? 'Live' : 'Today'} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</span>` : ''}`;
+  };
+  const nameHtml = p => `<b><span class="mb-full">${esc(p.name)}</span><span class="mb-short">${esc(short(p.name))}</span></b>`;
+  // A tappable player: key = side + pid, opens his card (data-for) below the row.
+  const tapAttrs = key => `role="button" tabindex="0" data-key="${esc(key)}" aria-expanded="${MB_OPEN.has(key)}"`;
+  const who = (r, side) => {
+    if (!r) return `<div class="mb-p mb-${side}"></div>`;
+    if (r.empty) return `<div class="mb-p mb-${side}"><span class="mb-name"><i>Empty</i></span>${scoreBox(r)}</div>`;
+    const meta = [r.team || 'FA', r.call === 'none' ? 'No games' : r.call === 'plan' ? `${r.sched.length} game${r.sched.length === 1 ? '' : 's'}` : CALL_LABEL[r.call]].join(' · ');
+    return `<div class="mb-p mb-${side} mb-${r.call}${todayGame(r) ? ' mb-on' : ''}" ${tapAttrs(`${side}-${r.pid}`)}>
+      <span class="mb-name">${nameHtml(r)}<span class="mb-tags">${tags(r)}</span><small>${esc(meta)}</small></span>
+      ${scoreBox(r)}</div>`;
+  };
+  // Bench and IR players: no score (bench points never count); red + struck out with no games left.
+  const reserve = (p, side, where) => {
+    if (!p) return `<div class="mb-p mb-${side}"></div>`;
+    const left = gamesLeft(p);
+    const meta = [p.team || 'FA', left ? `${left} game${left === 1 ? '' : 's'} left` : 'No games left'].join(' · ');
+    return `<div class="mb-p mb-${side} mb-res${left ? '' : ' mb-gone'}${todayGame(p) ? ' mb-on' : ''}" ${tapAttrs(`${side}-${where}-${p.pid}`)}>
+      <span class="mb-name">${nameHtml(p)}<span class="mb-tags">${tags(p)}</span><small>${esc(meta)}</small></span></div>`;
+  };
+  // The card a tapped bench/IR player opens: his week's games and what he could still add.
+  const reserveCard = (p, where, mine) => {
+    const left = gamesLeft(p);
+    const sched = weekGames(p);
+    const text = where === 'ir' ? `On IR: ${mine ? 'you’d' : 'they’d'} have to move him off IR to start him.${left ? ` ${left} game${left === 1 ? '' : 's'} left this week.` : ' No games left this week.'}`
+      : left ? `On the bench: ${left} game${left === 1 ? '' : 's'} left this week. Only games after ${mine ? 'you move' : 'they move'} him into the lineup count.` : 'No games left this week: he can’t add anything from here.';
+    return `<div class="gm-call gm-${left ? 'plan' : 'none'}">
+      <div class="gm-call-top">
+        <span class="cm-slot">${where === 'ir' ? 'IR' : 'BN'}</span>
+        <div class="gm-who"><b>${esc(p.name)}</b> ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No team', p.perGame ? `about ${num(p.perGame * LOCK_CAL)} a game` : ''].filter(Boolean).join(' · '))}</small></div>
+        <span class="gm-badge">${left ? `${left} left` : 'No games'}</span>
+      </div>
+      ${sched.length ? `<div class="gm-games">${sched.map(g => game({}, g)).join('')}</div>` : ''}
+      <p class="gm-text">${esc(text)}</p>
+    </div>`;
+  };
+  const detail = (key, html) => `<div class="mb-detail mb-d${key[0]}" data-for="${esc(key)}"${MB_OPEN.has(key) ? '' : ' hidden'}><p class="mb-whose">${esc(key[0] === 'l' ? teamName(w.me, w.season) : teamName(opp, w.season))}</p>${html}</div>`;
+  const side = (owner, t) => `<div class="mb-team"><small>${esc(owner ? teamName(owner, w.season) : 'No opponent')}</small>${owner ? `<b>${num(t.locked)}<span>(${t.left})</span></b><em title="If every unlocked score were locked now">${num(t.ifLocked)} (${t.ifLeft})</em>` : ''}</div>`;
+  // Bench or IR section: both teams side by side, each row followed by its (hidden) cards.
+  const section = (label, mineList, theirList, where) => {
+    if (!mineList.length && !theirList.length) return '';
+    const rows = Array.from({ length: Math.max(mineList.length, theirList.length) }, (_, i) => {
+      const a = mineList[i], b = theirList[i];
+      return `<div class="mb-row mb-rrow">${reserve(a, 'l', where)}<span class="mb-slot"></span>${reserve(b, 'r', where)}</div>
+        ${a ? detail(`l-${where}-${a.pid}`, reserveCard(a, where, true)) : ''}${b ? detail(`r-${where}-${b.pid}`, reserveCard(b, where, false)) : ''}`;
+    }).join('');
+    return `<div class="mb-sec"><span>${label}</span><span class="mb-slot"></span><span>${opp ? label : ''}</span></div><div class="mb-rows">${rows}</div>`;
+  };
+  const oppTeam = coach.oppCoach?.team;
+  const board = `
+    <div class="mb-head">${side(w.me, tally(coach.rows))}<span class="mb-vs">vs</span>${side(opp, tally(oppRows))}</div>
+    <p class="mb-key">Locked points <span>(starters left to lock)</span><br>Small number: if every unlocked score were locked now · tap a player for his card</p>
+    <div class="mb-rows">${coach.rows.map((r, i) => {
+      const o = oppRows[i];
+      return `<div class="mb-row">${who(r, 'l')}<span class="mb-slot">${esc(r.slot)}</span>${who(o, 'r')}</div>
+        ${r.empty ? '' : detail(`l-${r.pid}`, card(r))}${o && !o.empty ? detail(`r-${o.pid}`, card(o, false)) : ''}`;
+    }).join('')}</div>
+    ${section('Bench', coach.team.bench ?? [], oppTeam?.bench ?? [], 'bn')}
+    ${section('IR', coach.team.ir ?? [], oppTeam?.ir ?? [], 'ir')}`;
+
   body.innerHTML = `<div class="gm-page">
     <div class="cm-pickers gm-tools">
       ${gmTeamPick(w.me, w.season, 'coach')}
       <div class="st-stage gm-risk" role="group" aria-label="Coach mode">${riskBtns}</div>
     </div>
     <section class="card gm-head">
-      <div class="card-head"><h2>Week ${w.week} lock calls</h2><span class="card-sub">${esc(teamName(w.me, w.season))} · ${w.started ? `updated ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'before tip-off'}</span></div>
+      <div class="card-head"><h2>Week ${w.week}</h2><span class="card-sub">${w.started ? `updated ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'before tip-off'}</span></div>
       <div class="gm-counts">${summary.map(([n, t]) => `<span><b>${n}</b> ${t}</span>`).join('')}</div>
-      ${coach.calls.length ? `<p class="gm-alert">Lock now: ${coach.calls.map(r => `<b>${esc(r.name)}</b> (${num(r.score)})`).join(', ')}.</p>` : ''}
+      ${coach.calls.length ? `<p class="gm-alert">Lock now: ${coach.calls.map(r => `<b>${esc(r.name)}</b> (${num(r.score)}${r.lockSlot ? ` in ${esc(r.lockSlot)}` : ''})`).join(', ')}.</p>` : ''}
+      ${board}
       ${opp || w.medianOn ? gmOdds(w, coach.now) : ''}
       ${opp ? `<p class="cm-rule gm-center">Expected final: you ${num(coach.now.avg[w.me])}, ${esc(teamName(opp, w.season))} ${num(coach.now.avg[opp])}.</p>` : ''}
     </section>
-    <div class="gm-calls">${coach.rows.map(card).join('')}</div>
     <div class="cm-races">
       <section class="card">
         <div class="card-head"><h2>Bench players to start</h2></div>
@@ -2658,25 +2767,40 @@ async function renderCoach(body, params) {
       </section>
       ${opp ? `<section class="card">
         <div class="card-head"><h2>Their best lineup</h2><span class="card-sub">${esc(teamName(opp, w.season))}</span></div>
-        <p class="cm-rule">The coach assumes they’ll start their best healthy players from here on, not just today’s lineup: locked players stay, anyone listed Out or Doubtful keeps only what he already has, and healthy bench players with games left move in.</p>
+        <p class="cm-rule">The coach assumes they’ll play smart: their best healthy players from here on, not just today’s lineup. Locked players stay, anyone listed Out or Doubtful keeps only what he already has, and healthy bench players with games left move in. In the simulation they also lock with the same spot-aware bars as yours.</p>
         <ol class="aw-race">${coach.oppBest.lineup.map(oppRow).join('')}</ol>
         ${benchedOpp.length ? `<p class="cm-rule">Assumed out of their lineup: ${benchedOpp.map(r => `${esc(r.name)}${r.injury ? ` (${esc(r.injury)})` : ''}`).join(', ')}.</p>` : ''}
       </section>` : ''}
     </div>
     <section class="card">
       <div class="card-head"><h2>How the coach decides</h2></div>
-      <p class="cm-rule">Each starter counts one game a week: the one you lock, or else his last game. <b>Play to win</b> (the default) plays out the rest of the week a few thousand times, every team’s remaining games, both ways (lock his score now, or keep playing), and picks whichever gives the better chance of beating your opponent plus the chance of beating the league median. It knows which of their players are already locked or done, and assumes every other team starts its best healthy players from here on (not just today’s lineup). Ahead, it locks more to protect the lead; behind, it waits for a bigger night.</p>
+      <p class="cm-rule">Each starter counts one game a week: the one you lock, or else his last game. <b>Play to win</b> (Beta: in testing it trailed Balanced, so Balanced is the default for now) plays out the rest of the week a few thousand times, every team’s remaining games, both ways (lock his score now, or keep playing), and picks whichever gives the better chance of beating your opponent plus the chance of beating the league median. It knows which of their players are already locked or done, and assumes every other team plays smart too: its best healthy players from here on (not just today’s lineup), planned the same way as yours. Ahead, it locks more to protect the lead; behind, it waits for a bigger night.</p>
+      <p class="cm-rule">The coach plans your <b>whole roster against the 9 spots</b>, not each player alone. A lock takes a spot for good, so a score’s lock bar is what that spot is worth: his own games left, or any bench player who fits it and still plays. A depth player’s 25 isn’t a lock while a better bench player with games left could use the spot; a 45 is. Late in the week, as the better players run out of games, the bars come back down. When it says lock, it names the spot: the one the fewest other players could use, so the open spots stay with the players still to play. Bench tips say when to move a bench player in (before his first game) and whether the starter he replaces gets a game first.</p>
       <p class="cm-rule"><b>Safe</b>, <b>Balanced</b> and <b>Bold</b> ignore the matchup and chase points: after each game they compare his score with a <b>lock bar</b>, what waiting is worth on average. Balanced scores the most points; Safe locks more often, Bold chases big games.</p>
-      <p class="cm-rule">Tested on the 2025–26 regular season (every team, against opponents’ real scores): managers’ real locks won 167 games (head-to-head plus median), Balanced would have won 195, Play to win about 199 (196 to 201 across test runs). About half an extra win per team per season: small, but it never did worse. Balanced alone would have locked about 3,100 more points than managers did; for ${esc(name(COMMISH))}, about 300 more.</p>
+      <p class="cm-rule">Tested on the 2025–26 regular season (all 168 team-weeks, real box scores, against opponents’ real scores; wins = head-to-head plus median; managers’ real locks: 168). Each week started from the lineup the projections picked: the old coach (one player at a time, lineup left alone) won 168, this one 176 with its bench moves, and 185 when spots with no game that day are filled with a bench player who plays (old bars that way: 178), about 1,500 more points than the old coach. Play to win came out below Balanced in this test (176 vs 185): its simulation expects other teams to score about 22 more a week than real managers did. (The earlier test’s 195 and 199 kept managers’ final lineups, which carry hindsight.)</p>
       <p class="cm-rule">“About N a game” is Sleeper’s projection for this week under league scoring, for games he’s expected to play, plus 4% (the test’s best fit). Sleeper doesn’t share which game a manager locked: the coach can tell once a later game replaces the score that counts, and otherwise you can tap <b>I locked him</b> (saved on this device). Opponents are read the same way, so one of their players may show as open until a later game shows the lock.</p>
     </section></div>`;
 
   bindTeamPick(body);
   body.querySelectorAll('[data-risk]').forEach(a => a.addEventListener('click', e => {
     e.preventDefault();
-    gmSave('gm-risk', a.dataset.risk);
+    gmSave('gm-mode', a.dataset.risk);
     renderCoach(body, params).catch(() => {});
   }));
+  // Tap a player on the board: open or close his card below the row.
+  const toggle = el => {
+    const key = el.dataset.key;
+    const box = [...body.querySelectorAll('.mb-detail')].find(d => d.dataset.for === key);
+    if (!box) return;
+    const open = box.hidden;
+    box.hidden = !open;
+    el.setAttribute('aria-expanded', String(open));
+    if (open) MB_OPEN.add(key); else MB_OPEN.delete(key);
+  };
+  body.querySelectorAll('.mb-p[data-key]').forEach(el => {
+    el.addEventListener('click', e => { if (!e.target.closest('a')) toggle(el); });
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(el); } });
+  });
   body.querySelectorAll('.gm-mark').forEach(b => b.addEventListener('click', () => {
     const m = gmLoad(w.marksKey, {});
     if (m[b.dataset.pid] != null) delete m[b.dataset.pid];
@@ -2726,9 +2850,9 @@ async function renderBriefing(body, params) {
   const risers = w.started ? waiverWire(DATA, ctx, extra).filter(p => !p.out && p.recentGames >= 2 && p.recent >= 20 && p.jump >= 5).sort((a, b) => b.jump - a.jump).slice(0, 3) : [];
 
   let callsLine = coach.calls.length
-    ? `<p class="gm-alert">Lock now: ${coach.calls.map(r => `<b>${esc(r.name)}</b> (${num(r.score)})`).join(', ')}.</p>`
+    ? `<p class="gm-alert">Lock now: ${coach.calls.map(r => `<b>${esc(r.name)}</b> (${num(r.score)}${r.lockSlot ? ` in ${esc(r.lockSlot)}` : ''})`).join(', ')}.</p>`
     : '';
-  const otherCalls = coach.rows.filter(r => ['live', 'wait', 'none'].includes(r.call));
+  const otherCalls = coach.rows.filter(r => ['lock', 'live', 'wait', 'none'].includes(r.call));
   const planned = coach.rows.filter(r => r.call === 'plan').length;
   if (planned) callsLine += `<p class="cm-rule">${planned === coach.rows.filter(r => !r.empty).length ? 'No games played yet this week.' : `${planned} more starter${planned === 1 ? ' hasn’t' : 's haven’t'} played yet.`} Each one’s lock bar for his first game is on the Lock-in coach.</p>`;
   const link = (tab, text) => `<a class="gm-more" href="#/commish?${new URLSearchParams({ tab, ...(me === COMMISH ? {} : { team: me }) })}">${text} →</a>`;
@@ -2761,7 +2885,7 @@ async function renderBriefing(body, params) {
           </div>
           ${gmOdds(w, coach.now)}`
         : '<p class="empty">No matchup this week.</p>'}
-        <p class="cm-rule">The rest of the week played out 3,000 times: your lineup as set, every other team with its best healthy lineup, locks and finished games counted.</p>
+        <p class="cm-rule">The rest of the week played out 2,000 times, day by day: your roster following the coach (its lock calls and bench moves), every other team planned the same way (best healthy players in the 9 slots, smart locks), locks and finished games counted.</p>
       </section>
       <section class="card">
         <div class="card-head"><h2>Lineup tips</h2>${link('coach', 'Lock-in coach')}</div>
