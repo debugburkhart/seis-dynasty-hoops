@@ -141,7 +141,7 @@ try {
 // per night: { days: { date: { pid: score, or [score, fullValueScore] when he's listed Out } } }.
 // Players on a roster or with a score above 0. A problem here never stops the nightly update.
 try {
-  const { loadDynasty, dynastyValues, historyDay, historyExtra, backfillSeason, prospectRanking, prospectFor } = await import('../assets/dynasty.js');
+  const { loadDynasty, dynastyValues, historyDay, historyExtra, backfillSeason, prospectRanking, prospectFor, rebuildSeasonDays } = await import('../assets/dynasty.js');
   const { teamSnapshot } = await import('../assets/tradefinder.js');
   // Smoothed this-season projections (dynasty.js PROJ_SMOOTH): last 3 nights kept.
   const projFile = (await readJson('data/dynasty-proj.json')) ?? { states: [] };
@@ -240,6 +240,24 @@ try {
   // Once: last season rebuilt week by week (the owner asked, Oct 2026), so charts start there.
   hist.backfilled ??= [];
   const lastSeason = String(Number(current.season) - 1);
+  // Once (owner, Oct 2026): the waiver line changed to the full-health 158th-177th best players
+  // (FLOOR_BAND in dynasty.js), so every saved score is redone with it: this season's nights via
+  // rebuildSeasonDays (rosters rolled back, that night's projections + Out flags) and last season's
+  // weeks by running its rebuild again (the flags below).
+  if (!hist.floorV2) {
+    hist.proj ??= {};
+    hist.league ??= {};
+    const rebuilt = rebuildSeasonDays(data, feeds, hist, today, (date, c, f, rosters) => {
+      hist.teams[date] = snap(c, f, rosters);
+      const x = historyExtra(c, historyDay(c, f));
+      hist.proj[date] = x.proj;
+      hist.league[date] = x.league;
+    });
+    Object.assign(hist.days, rebuilt);
+    for (const k of ['backfilled', 'teamsBackfilled', 'projBackfilled']) hist[k] = (hist[k] ?? []).filter(s => s !== lastSeason);
+    hist.floorV2 = true;
+    console.log(`Dynasty history: rebuilt ${Object.keys(rebuilt).length} nights of ${current.season} with the new waiver line; ${lastSeason} is rebuilt next.`);
+  }
   const needPlayers = !hist.backfilled.includes(lastSeason);
   const needTeams = !hist.teamsBackfilled.includes(lastSeason);
   // Projections + league anchors for last season's weeks (added Oct 2026: rebuilt once more).

@@ -336,7 +336,15 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   blunt Managers tone). Per player: v1 = Sleeper season per-game projection (league scoring;
   Out = x0.5; no projection -> last season 10+ gp), v2/v3 = AGE_CURVE (fitted 2015-2025, 3,017
   player pairs, centered; beat flat on 2019-23 checks). worth = E[max(0, raw - floor)] with
-  uncertainty 4 (6 if age <= 22), floor = 5th-best free agent; score = 100 x worth / top. Injury
+  uncertainty 4 (6 if age <= 22), floor = waiver line = mean FULL-HEALTH raw of the 158th-177th best
+  players with an NBA team (FLOOR_BAND; owner Oct 2026: the old 5th-best free agent flipped scores by
+  a point on every pickup/drop/injury; a 3rd-8th FA average was tested and was WORSE, 0.4 swings);
+  roster moves and Out listings never move it; set to match the old line (20.1). One-time rebuild
+  (update.mjs hist.floorV2): this season's nights via rebuildSeasonDays() (rosters rolled back through
+  transactions after each day's end, that night's saved projections unless only rounding differs, saved
+  Out flags; nights without saved projections shifted by the first rebuilt night's change) + last
+  season's weekly rebuild re-run (backfill now keeps every earlier-projected player, at his last value);
+  score = 100 x worth / top. Injury
   toggle (owner, Oct 2026): dynastyValues(DATA, f, { fullInjured }) from localStorage gm-dyn-full
   ("Injured: discounted / full value" on the Dynasty tab; applies to Dynasty, Trade finder, Managers,
   Waiver wire). Discount = Out players' v1 x0.5 (p.outCut); above-floor scoring makes it big for

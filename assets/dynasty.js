@@ -28,11 +28,15 @@ const OUT_THIS_SEASON = 0.5;
 // year until the draft.
 const PICK_AGE = 20;
 const PICK_YEARLY_DISCOUNT = 0.9;
-// The score: 0 = a player you could pick up off waivers (the 5th-best free agent),
+// The score: 0 = a player you could pick up off waivers (the waiver line = FLOOR_BAND below: the
+// 158th-177th best players league-wide at full health, owner Oct 2026, so pickups, drops and injuries
+// never move it; it was the single 5th-best free agent, which flipped scores by a point on every move),
 // 100 = the league's most valuable player. Each player's value carries an uncertainty
 // (about what the age curve misses over 2 years: 4 points per game, 6 for players 22 and
 // under), so a young player just under waiver level keeps some value for his upside.
-const REPLACEMENT_RANK = 5;
+// Waiver line = mean value (at full health) of the 158th-177th best players in the NBA, set so it
+// matched the old line (20.1) when it changed (owner, Oct 2026): roster moves never move it.
+export const FLOOR_BAND = [158, 177];
 const UNCERTAINTY = 4;
 const UNCERTAINTY_YOUNG = 6;
 const phi = z => 0.3989423 * Math.exp(-z * z / 2);
@@ -214,7 +218,11 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
   const slotOf = Object.fromEntries((order?.weeks ? order.rows : []).map(r => [r.owner, r.slot]));
   // 0-100 scale: waiver level to the top player.
   const free = Object.values(players).filter(p => !p.owner && p.team).sort((a, b) => b.raw - a.raw);
-  const floor = free[REPLACEMENT_RANK - 1]?.raw ?? 0;
+  // Ranked at full health (an Out listing cuts that player's own value, not everyone's line), so the line
+  // only moves when projections do; roster moves never move it.
+  const fullRaw = p => p.raw + (p.outCut ? SEASON_WEIGHTS[0] * p.v[0] : 0);
+  const band = Object.values(players).filter(p => p.team).map(fullRaw).sort((a, b) => b - a).slice(FLOOR_BAND[0] - 1, FLOOR_BAND[1]);
+  const floor = band.length ? band.reduce((a, x) => a + x, 0) / band.length : 0;
   const spread = p => (p.age != null && p.age <= 22 ? UNCERTAINTY_YOUNG : UNCERTAINTY);
   for (const p of Object.values(players)) p.worth = abovePart(p.raw - floor, spread(p));
   // 100 = the most valuable player at full health, so one star listed Out doesn't move everyone.
@@ -330,7 +338,10 @@ export async function backfillSeason(DATA, season, smooth = BACKFILL_SMOOTH, onW
     for (const [pid, a] of Object.entries(sum)) { const x = a.t / a.n; projPg[pid] = known[pid] = known[pid] == null ? x : known[pid] + smooth * (x - known[pid]); }
     const weekRosters = (matchups ?? []).map(m => ({ owner_id: ownerOf[m.roster_id], players: m.players ?? [] })).filter(r => r.owner_id);
     const outSet = new Set();
-    for (const r of weekRosters) for (const pid of r.players) if (projPg[pid] == null && known[pid] != null) { projPg[pid] = known[pid]; outSet.add(pid); }
+    // Everyone projected earlier this season stays in (at his last value, treated as Out this week),
+    // not just rostered players, so the waiver line (a league-wide rank) doesn't drift as weekly
+    // projection lists shrink late in the season.
+    for (const [pid, x] of Object.entries(known)) if (projPg[pid] == null) { projPg[pid] = x; outSet.add(pid); }
     const f = { season, league, rosters: weekRosters, proj: proj ?? [], projPg, outSet, last, prior: [last, prev2, prev3], traded: [], birth };
     const cut = dynastyValues(DATA, f), full = dynastyValues(DATA, f, { fullInjured: true });
     out[endOf[w]] = historyDay(cut, full);
@@ -393,4 +404,59 @@ export function prospectFor(base, age, starterLine) {
   const star = logistic(STAR_FIT, x, age);
   const rotation = logistic(ROTATION_FIT, x, age);
   return { starter, star, rotation, in3: r1(in3), grade: GRADES.find(([, test]) => test(starter, star, rotation))[0] };
+}
+
+// Rebuild this season's saved nights with today's model (owner, Oct 2026: after the waiver line
+// changed to the 3rd-8th free agent average). Per saved date: rosters rolled back through every
+// transaction after that day's end (Chicago), projections = the ones saved that night (hist.proj,
+// saved players) over today's (Sleeper's season projections hadn't changed since then: the
+// projection log shows 0 changes), Out = that night's saved Out flags (others: today's status).
+// Nights before projections were saved get the old score shifted by the same change as the first
+// rebuilt night, so their moves stay as recorded. onDay(date, cut, full, rosters) gets each night.
+export function rebuildSeasonDays(DATA, f, hist, today, onDay = null) {
+  const start = `${Number(today.slice(0, 4)) - (Number(today.slice(5, 7)) >= 8 ? 0 : 1)}-08-01`;
+  const dates = Object.keys(hist.days ?? {}).filter(d => d >= start && d < today).sort();
+  if (!dates.length) return {};
+  const now = dynastyValues(DATA, f);
+  const txs = (DATA.transactions ?? []).filter(t => t.ts).sort((a, b) => b.ts - a.ts);
+  const endOf = d => Date.parse(`${d}T23:59:59-05:00`);
+  const clone = () => (f.rosters ?? []).map(r => ({ ...r, players: [...(r.players ?? [])], taxi: [...(r.taxi ?? [])], reserve: [...(r.reserve ?? [])] }));
+  const rostersAt = d => {
+    const rs = clone();
+    const byOwner = Object.fromEntries(rs.map(r => [r.owner_id, r]));
+    for (const t of txs) {
+      if (t.ts <= endOf(d)) break;
+      for (const [pid, o] of Object.entries(t.adds ?? {})) { const r = byOwner[o]; if (r) for (const k of ['players', 'taxi', 'reserve']) r[k] = r[k].filter(x => x !== pid); }
+      for (const [pid, o] of Object.entries(t.drops ?? {})) { const r = byOwner[o]; if (r && !r.players.includes(pid)) r.players.push(pid); }
+    }
+    return rs;
+  };
+  const out = {};
+  const pick = (x, i) => (Array.isArray(x) ? x[i] : x);
+  let shiftFrom = null;
+  for (const d of dates) {
+    if (!hist.proj?.[d]) continue; // handled below
+    const saved = hist.days[d] ?? {};
+    const outSet = new Set(Object.keys(saved).filter(pid => Array.isArray(saved[pid])));
+    for (const p of Object.values(now.players)) if (!(p.pid in saved) && p.out) outSet.add(p.pid);
+    const rosters = rostersAt(d);
+    // Saved projections are rounded to 0.1: use today's exact one unless that night's really differed.
+    const projPg = { ...now.projRaw };
+    for (const [pid, x] of Object.entries(hist.proj[d])) if (projPg[pid] == null || Math.abs(x - Math.round(projPg[pid] * 10) / 10) > 0.051) projPg[pid] = x;
+    const f2 = { ...f, rosters, projPg, outSet };
+    const cut = dynastyValues(DATA, f2), full = dynastyValues(DATA, f2, { fullInjured: true });
+    out[d] = historyDay(cut, full);
+    onDay?.(d, cut, full, rosters);
+    shiftFrom ??= d;
+  }
+  // Earlier nights (no saved projections): keep their recorded moves, shifted onto the new scale.
+  for (const d of dates.filter(x => !hist.proj?.[x] && shiftFrom && x < shiftFrom)) {
+    const old = hist.days[d], oldRef = hist.days[shiftFrom], neu = out[shiftFrom];
+    out[d] = Object.fromEntries(Object.entries(old).map(([pid, x]) => {
+      if (!(pid in oldRef) || !(pid in neu)) return [pid, x];
+      const shifted = [0, 1].map(i => Math.max(0, pick(x, i) + pick(neu[pid], i) - pick(oldRef[pid], i)));
+      return [pid, Array.isArray(x) ? shifted : shifted[0]];
+    }));
+  }
+  return out;
 }
