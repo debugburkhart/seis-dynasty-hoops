@@ -231,8 +231,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   QF 3v6 and 4v5, verified against 2025's real bracket), magic numbers, season/week pickers.
   Weekly recap tab: weeklyRecap() plain text + copy button. Health report also has a taxi
   limit check. LEAGUE TAXI RULE (from the owner): a player may stay on taxi until he
-  completes his 3rd NBA season (TAXI_SEASONS = 3 in commish.js; Sleeper's taxi_years=2
-  setting is NOT the league rule). Flagged once he played 3 NBA seasons before this one,
+  completes his 3rd NBA season (TAXI_SEASONS = 3 in commish.js). This matches Sleeper's own setting
+  (owner's screenshot, Oct 2026: "2 Years: players with more than 2 years of experience in the NBA must
+  be activated from the Taxi Squad"; rule 2.1 now quotes it). Flagged once he played 3 NBA seasons before this one,
   counted from real games. Taxi SIZE check (owner, Oct 2026): TAXI_SIZE = 15 in commish.js
   (rule 2.3), "Taxi squad size" card lists every team's count, flags any over 15.
   Rule 9 Wager Weeks (rules.js, 2026-27 only, weeks 8-14): lowest score funds a $5 parlay, max 2

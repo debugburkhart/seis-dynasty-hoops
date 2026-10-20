@@ -32,7 +32,8 @@ export const RULES = [
   {
     n: 2, title: 'Taxi Squad', added: '2023',
     items: [
-      'Duration is 2 years.',
+      // Wording matches the league's Sleeper setting "Taxi squad duration: 2 Years" (owner, Oct 2026).
+      'Duration is 2 years: players with more than 2 years of experience in the NBA must be activated from the taxi squad.',
       'The taxi squad deadline is the start of the regular season.',
       // covers: the Timeline shows this change instead of Sleeper's "Taxi 30 → 15" setting change.
       { text: 'Taxi squad size is 15 players.', changed: { season: '2026', was: '30 players' }, covers: 'taxi' },
