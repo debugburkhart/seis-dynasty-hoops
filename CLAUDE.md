@@ -228,7 +228,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   search (accent-insensitive), and a breakdown by fantasy team and by season.
 - `assets/commish.js`: Commissioner's office (#/commish, lock button under the menu, not in
   NAV). Header button "Run nightly update" opens GitHub's workflow page (owner taps Run
-  workflow; no token is stored, the repo is public). Passcode asked every time (in-memory flag, reset when leaving the route); only its
+  workflow; no token is stored, the repo is public). Passcode asked every time the office is opened (flag also in sessionStorage cm-open so a reload or pull to refresh inside the office stays unlocked, owner Oct 2026; cleared when leaving the route or closing the app); only its
   SHA-256 is stored (the owner knows the code; never write it in files). Scouting report
   (default team bigdaddyburk = Parma John Wall; any team selectable) uses live Sleeper data
   in the browser: rosters, /schedule/nba/regular/{season}, per-game projections

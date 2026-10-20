@@ -2296,10 +2296,13 @@ function renderPlayers(main, params) {
 }
 
 // ---------- Commissioner's office ----------
-// Behind a passcode that's asked for every time the section is opened (nothing is
-// remembered). Scouting report and health report live in assets/commish.js.
+// Behind a passcode that's asked for every time the section is opened. Reloading while in
+// the office keeps it open (owner, Oct 2026: pull to refresh on the phone app): a flag in
+// sessionStorage, cleared on leaving the section and gone when the app/tab is closed.
+// Scouting report and health report live in assets/commish.js.
 
-let COMMISH_OPEN = false;
+const cmFlag = on => { try { on ? sessionStorage.setItem('cm-open', '1') : sessionStorage.removeItem('cm-open'); } catch { /* private mode */ } };
+let COMMISH_OPEN = (() => { try { return sessionStorage.getItem('cm-open') === '1'; } catch { return false; } })();
 
 function renderCommish(main, params) {
   if (!COMMISH_OPEN) {
@@ -2320,6 +2323,7 @@ function renderCommish(main, params) {
       e.preventDefault();
       if (await checkPasscode($('#cm-code', main).value)) {
         COMMISH_OPEN = true;
+        cmFlag(true);
         renderCommish(main, route().params);
       } else {
         const err = $('#cm-error', main);
@@ -6248,7 +6252,7 @@ function route() {
 function render() {
   const { page, sub, params } = route();
   clearInterval(HYPE_TIMER);
-  if (page !== 'commish') COMMISH_OPEN = false; // leaving the section locks it again
+  if (page !== 'commish') { COMMISH_OPEN = false; cmFlag(false); } // leaving the section locks it again
   $('#dk-tip')?.classList.remove('on');
   renderSidebar(page);
   const main = $('#main');
