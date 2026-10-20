@@ -4855,13 +4855,14 @@ function scoutHealthCard(sc, ok) {
 async function renderHealth(body) {
   const fo = ledger();
   const at = await scoutWeek().catch(() => null);
-  const [runs, check, guard, ctx, projLog, scoutData] = await Promise.all([
+  const [runs, check, guard, ctx, projLog, scoutData, taxiLog] = await Promise.all([
     fetch('https://api.github.com/repos/debugburkhart/seis-dynasty-hoops/actions/runs?per_page=5').then(r => (r.ok ? r.json() : null)).catch(() => null),
     fetch(`data/scoring-check.txt?t=${Date.now()}`).then(r => (r.ok ? r.text() : null)).catch(() => null),
     fetch(`data/week-guard.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
     at ? loadWeek(DATA, at.season, at.week).catch(() => null) : null,
     fetch(`data/projection-log.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
     loadScout().catch(() => null),
+    fetch(`data/taxi-log.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
   ]);
   if (route().page !== 'commish') return;
   const when = x => new Date(x).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -4927,6 +4928,12 @@ async function renderHealth(body) {
       ${!taxi ? '<p class="empty">Couldn’t load taxi squads from Sleeper.</p>'
         : `<ul class="cm-checks">${taxi.sizes.map(t => `<li>${ok(t.n <= taxi.size, `<b>${esc(teamName(t.owner, at.season))}</b> <small>${esc(name(t.owner))} · ${t.n} on taxi${t.n > taxi.size ? `: ${t.n - taxi.size} over the limit` : ''}</small>`)}</li>`).join('')}</ul>`}
       <p class="cm-rule">League rule (from 2026–27, was 30): a taxi squad holds at most ${taxi?.size ?? 15} players. Counts come from Sleeper’s current rosters.</p>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Taxi moves</h2><span class="card-sub">${taxiLog?.since ? `Logged since ${esc(when(taxiLog.since))} CT` : 'Starts with the next nightly update'}</span></div>
+      ${taxiLog?.events?.length ? `<ul class="cm-checks">${taxiLog.events.slice(-25).reverse().map(e => `<li>${ok(e.move !== 'out', `<b>${esc(e.name)}</b> <small>${esc(when(e.at))} · ${esc(name(e.owner))} · ${e.move === 'on' ? 'put on taxi' : e.move === 'up' ? 'activated from taxi' : 'left the roster while on taxi (dropped or traded)'}</small>`)}</li>`).join('')}</ul>` : `<p class="empty">${taxiLog ? 'No taxi moves since logging began.' : 'No log yet.'}</p>`}
+      <p class="cm-rule">Sleeper keeps no history of taxi moves, so every nightly update compares each team’s taxi squad with the last one and logs who went on or off. A move shows with the time of the update that first saw it, so the real move happened between that update and the one before.</p>
     </section>
 
     <section class="card">

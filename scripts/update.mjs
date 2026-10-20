@@ -286,6 +286,36 @@ try {
   console.log(`Dynasty history skipped tonight: ${e.message}`);
 }
 
+// Taxi log (owner, Oct 2026, after the Adem Bona inquiry: Sleeper keeps no record of taxi moves).
+// Every run compares each team's taxi squad with the last run's and logs who moved on or off:
+// data/taxi-log.json { since, at, last: { owner: [pid] }, events: [{ at, owner, pid, name, move }] },
+// move = 'on' (put on taxi), 'up' (activated, still on the roster) or 'out' (left the roster while on
+// taxi: dropped or traded). Shown in Commish → Health report. A problem here never stops the update.
+try {
+  const lid = data.seasons.at(-1).leagueId;
+  const rosters = await fetch(`https://api.sleeper.app/v1/league/${lid}/rosters?t=${Date.now()}`).then(r => (r.ok ? r.json() : null));
+  if (!Array.isArray(rosters) || !rosters.length) throw new Error('no rosters from Sleeper');
+  const log = (await readJson('data/taxi-log.json')) ?? { since: null, last: null, events: [] };
+  const now = Object.fromEntries(rosters.filter(r => r.owner_id).map(r => [r.owner_id, [...(r.taxi ?? [])]]));
+  const onRoster = Object.fromEntries(rosters.filter(r => r.owner_id).map(r => [r.owner_id, new Set([...(r.players ?? []), ...(r.taxi ?? []), ...(r.reserve ?? [])])]));
+  const at = new Date().toISOString();
+  const pname = pid => data.players?.[pid]?.n ?? `Player ${pid}`;
+  if (log.last) {
+    for (const [owner, list] of Object.entries(now)) {
+      const before = new Set(log.last[owner] ?? []);
+      for (const pid of list) if (!before.has(pid)) log.events.push({ at, owner, pid, name: pname(pid), move: 'on' });
+      for (const pid of before) if (!list.includes(pid)) log.events.push({ at, owner, pid, name: pname(pid), move: onRoster[owner]?.has(pid) ? 'up' : 'out' });
+    }
+  } else log.since = at;
+  log.at = at;
+  log.last = now;
+  log.events = log.events.slice(-1000);
+  await writeFile('data/taxi-log.json', JSON.stringify(log));
+  console.log(`Taxi log: ${Object.values(now).reduce((a, l) => a + l.length, 0)} taxi players, ${log.events.length} moves logged.`);
+} catch (e) {
+  console.log(`Taxi log skipped: ${e.message}`);
+}
+
 console.log(`Saved ${data.seasons.length} seasons, ${data.games.length} games, snapshot ${today}.`);
 
 // ---------- Scoring check ----------

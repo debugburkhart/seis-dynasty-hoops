@@ -236,6 +236,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   be activated from the Taxi Squad"; rule 2.1 now quotes it). Flagged once he played 3 NBA seasons before this one,
   counted from real games. Taxi SIZE check (owner, Oct 2026): TAXI_SIZE = 15 in commish.js
   (rule 2.3), "Taxi squad size" card lists every team's count, flags any over 15.
+  TAXI LOG (owner, Oct 2026, after the Adem Bona inquiry; Sleeper keeps no taxi history and matchup
+  "players" include taxi): update.mjs saves data/taxi-log.json { since, at, last: { owner: [pid] },
+  events: [{ at, owner, pid, name, move: on | up (activated) | out (left roster while on taxi) }] } on
+  every run (last 1000 events); Health report "Taxi moves" card (newest 25).
   Rule 9 Wager Weeks (rules.js, 2026-27 only, weeks 8-14): lowest score funds a $5 parlay, max 2
   times per manager, then next-lowest manager not at the limit (owner's wording made official).
   Tabs: Scouting report, Waiver wire (unrostered players with an NBA team, Out hidden:
@@ -548,7 +552,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   families/twins (Thompson, Murray, Champagnie, Lopez, Ball, Holiday...) are correct.
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json,
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, taxi-log.json,
   dynasty files, draft-scout.json + scout-pool.json weekly).
   Never have the owner upload a `data` folder.
 
