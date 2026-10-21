@@ -578,8 +578,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Dybantsa 0): once games start, Sleeper's SEASON projection feed becomes each player's LATEST box score with
   no gp (Cade's = his 22/4/8 opener; players who sat have nothing), and dynastyValues divided by gp || 1. Now
   dynasty.js seasonFeedOk(proj) (rows with gp >= 1 are at least half) decides; when false, this season =
-  inSeasonProjections(): (PRESEASON projection x PRESEASON_GAMES 15 + actual FP/G this season x games) /
-  (15 + games) (actual = /v1/stats/nba/regular/{season}, loadDynasty f.now); no preseason value -> actual
+  inSeasonProjections(): (PRESEASON projection x PRESEASON_GAMES 10 + actual FP/G this season x games) /
+  (10 + games) (actual = games of 10+ min, see below); PRESEASON_GAMES was 15, set to 10 after a test (owner,
+  Oct 2026: ~640 players 2023-25 predicting rest-of-season FP/G from the first N games, best 8-10, 15 ~2%
+  worse; Rotowire week-1 projections as the prior did no better than last season x age curve); no preseason value -> actual
   with 5+ games, else the average of this + next week's per-game projections (f.weekProj, gp = 1, > 0).
   Frozen preseason = dynasty-proj.json `preseason` { season, at, pg }: update.mjs refreshes it while the feed
   is OK and keeps it fixed after; first run without one = the oldest saved state (preseasonOf()). Weekly

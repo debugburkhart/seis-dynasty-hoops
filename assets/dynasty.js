@@ -149,7 +149,8 @@ export async function seasonActuals(season, week, scoring) {
   for (let w = 1; w <= week; w++) {
     const rows = await get(`/stats/nba/${season}/${w}?season_type=regular`, []);
     for (const g of rows ?? []) {
-      if (!/^\d+$/.test(g.player_id) || !(g.stats?.gp || g.stats?.sp) || !((g.stats.min ?? 0) >= MIN_GAME_MINUTES)) continue;
+      // Minutes: `min`, or seconds played / 60 (older rows have only `sp`: Sleeper drops zero/absent fields).
+      if (!/^\d+$/.test(g.player_id) || !(g.stats?.gp || g.stats?.sp) || !((g.stats.min ?? (g.stats.sp ?? 0) / 60) >= MIN_GAME_MINUTES)) continue;
       const s = (out[g.player_id] ??= [0, 0]);
       s[0] = Math.round((s[0] + fantasy(g.stats, scoring)) * 10) / 10;
       s[1]++;
@@ -168,13 +169,16 @@ export const seasonFeedOk = proj => {
 };
 // In season (owner, Oct 21 2026, after day-1 overreactions): this season = his PRESEASON
 // projection (frozen in dynasty-proj.json `preseason`) blended with what he really averages this
-// season, the real games weighing in as they pile up: (preseason x 15 + actual x games) / (15 +
-// games), so one big night barely moves him and after 15 games it's half and half. No preseason
+// season, the real games weighing in as they pile up: (preseason x 10 + actual x games) / (10 +
+// games), so one big night barely moves him and after 10 games it's half and half. 10 = tested
+// (owner, Oct 2026): ~640 players 2023-25, games of 10+ min, prior = last season x age curve,
+// predicting the rest of the season: best 8-10 (typical miss 3.73-3.74 FP/G vs 3.80 at 15, 5.5 actual
+// only, 4.56 prior only); with Rotowire week-1 projections as the prior (2025) best 5-10 too. No preseason
 // projection (signed later, etc.): his actual average once he has 5+ games, else his average over
 // the games Sleeper projects him to play this week and next (per-game projections, gp = 1).
 // The weekly per-game projections were tried as the main source and were too jumpy (median 0.97 of
 // preseason, 1 in 10 players 30%+ lower: rest days, minutes limits, opponents).
-export const PRESEASON_GAMES = 15;
+export const PRESEASON_GAMES = 10;
 export const preseasonOf = f => (f.preseason?.season === f.season ? f.preseason.pg
   : [...(f.projStates ?? [])].sort((a, b) => (a.date < b.date ? -1 : 1))[0]?.pg) ?? {};
 function inSeasonProjections(f, scoring) {
