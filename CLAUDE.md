@@ -290,6 +290,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   8,402, flips weeks 6 and 18 losses + week 12 tie to wins. Sleeper's public API doesn't show
   locks: players_points = score counting now; if it differs from his latest game and equals an
   earlier one, he's locked; else the "I locked him" button (localStorage gm-locks-{season}-{week}).
+  Marks are per player and count for EVERY team (owner, Oct 2026): gameCoach passes them to all teams,
+  so marking an opponent's player (pick his team, or "They locked him" on the opponent's card on your
+  board) shows in your board, odds, Briefing and live locked points; marking clears the LIVE cache.
   Box scores per game from /stats/nba/{season}/{week}. Assumes a DNP doesn't replace the counted
   score (not verified yet: check in week 1 of 2026, along with the schedule's in-game status name).
   Modes (localStorage gm-mode, was gm-risk): "Play to win" (Beta; was the default until Oct 20, 2026, see SLOT PLANNER),

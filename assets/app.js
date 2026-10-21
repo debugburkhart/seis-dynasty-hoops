@@ -2652,7 +2652,7 @@ async function renderCoach(body, params) {
     return `<span class="gm-game ${cls}${isLocked ? ' locked' : ''}"><small>${shortDay(g.date)}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</span><b>${g.pts != null ? num(g.pts) : g.done ? 'DNP' : g.playing ? 'Live' : '–'}</b></span>`;
   };
   const markable = r => r.call === 'lock' || r.call === 'wait' || r.marked;
-  // A starter's lock card (opened from the board). mine = false: the opponent's, no lock button.
+  // A starter's lock card (opened from the board). mine = false: the opponent's (button says "They locked him").
   const card = (r, mine = true) => (r.empty ? `<div class="gm-call gm-none"><div class="gm-call-top"><span class="cm-slot">${esc(r.slot)}</span><b>Empty spot</b></div></div>` : `
     <div class="gm-call gm-${r.call}">
       <div class="gm-call-top">
@@ -2662,7 +2662,7 @@ async function renderCoach(body, params) {
       </div>
       ${r.sched.length ? `<div class="gm-games">${r.sched.map(g => game(r, g)).join('')}</div>` : ''}
       <p class="gm-text">${esc(r.text)}</p>
-      ${mine && markable(r) ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-score="${r.score ?? ''}">${r.marked ? 'Undo: not locked' : 'I locked him'}</button>` : ''}
+      ${markable(r) ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-score="${r.score ?? ''}">${r.marked ? 'Undo: not locked' : mine ? 'I locked him' : 'They locked him'}</button>` : ''}
     </div>`);
   const riskBtns = GM_MODES.map(([k, label]) => `<a href="#" data-risk="${k}" class="${k === w.mode ? 'on' : ''}">${label}</a>`).join('');
   const opp = coach.opp;
@@ -2805,7 +2805,7 @@ async function renderCoach(body, params) {
       <p class="cm-rule">The coach plans your <b>whole roster against the 9 spots</b>, not each player alone. A lock takes a spot for good, so a score’s lock bar is what that spot is worth: his own games left, or any bench player who fits it and still plays. A depth player’s 25 isn’t a lock while a better bench player with games left could use the spot; a 45 is. Late in the week, as the better players run out of games, the bars come back down. When it says lock, it names the spot: the one the fewest other players could use, so the open spots stay with the players still to play. Bench tips say when to move a bench player in (before his first game) and whether the starter he replaces gets a game first.</p>
       <p class="cm-rule"><b>Safe</b>, <b>Balanced</b> and <b>Bold</b> ignore the matchup and chase points: after each game they compare his score with a <b>lock bar</b>, what waiting is worth on average. Balanced scores the most points; Safe locks more often, Bold chases big games.</p>
       <p class="cm-rule">Tested on the 2025–26 regular season (all 168 team-weeks, real box scores, against opponents’ real scores; wins = head-to-head plus median; managers’ real locks: 168). Each week started from the lineup the projections picked: the old coach (one player at a time, lineup left alone) won 168, this one 176 with its bench moves, and 185 when spots with no game that day are filled with a bench player who plays (old bars that way: 178), about 1,500 more points than the old coach. Play to win came out below Balanced in this test (176 vs 185): its simulation expects other teams to score about 22 more a week than real managers did. (The earlier test’s 195 and 199 kept managers’ final lineups, which carry hindsight.)</p>
-      <p class="cm-rule">“About N a game” is Sleeper’s projection for this week under league scoring, for games he’s expected to play, plus 4% (the test’s best fit). Sleeper doesn’t share which game a manager locked: the coach can tell once a later game replaces the score that counts, and otherwise you can tap <b>I locked him</b> (saved on this device). Opponents are read the same way, so one of their players may show as open until a later game shows the lock.</p>
+      <p class="cm-rule">“About N a game” is Sleeper’s projection for this week under league scoring, for games he’s expected to play, plus 4% (the test’s best fit). Sleeper doesn’t share which game a manager locked: the coach can tell once a later game replaces the score that counts, and otherwise you can tap <b>I locked him</b> (saved on this device). Opponents are read the same way, so one of their players may show as open until a later game shows the lock: if you know he's locked, open his card and tap <b>They locked him</b> (or pick their team above and tap I locked him). Those marks count in the board, the odds, the Briefing and the live scores on this device.</p>
     </section></div>`;
 
   bindTeamPick(body);
@@ -2833,6 +2833,7 @@ async function renderCoach(body, params) {
     if (m[b.dataset.pid] != null) delete m[b.dataset.pid];
     else m[b.dataset.pid] = Number(b.dataset.score) || 0;
     gmSave(w.marksKey, m);
+    for (const k of Object.keys(LIVE)) delete LIVE[k]; // live locked points pick up the mark right away
     renderCoach(body, params).catch(() => {});
   }));
   gmAutoRefresh(body, params, renderCoach, w);

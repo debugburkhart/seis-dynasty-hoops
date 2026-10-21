@@ -149,7 +149,7 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked) {
     return { ...base, call: 'locked', score: earlier.pts, text: `Locked at ${earlier.pts} (from ${dayName(earlier.date)}).`, inferred: true };
   }
   if (marked != null && played.length) {
-    return { ...base, call: 'locked', score: counted ?? marked, text: `Locked at ${counted ?? marked} (you marked it).`, marked: true };
+    return { ...base, call: 'locked', score: counted ?? marked, text: `Locked at ${counted ?? marked} (marked on this device).`, marked: true };
   }
   if (playingNow) {
     const bars = lockBars(perGame, upcoming.length, risk);
@@ -691,8 +691,9 @@ export function gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode = 'win', ma
   const pair = pairs.find(p => p.a === me || p.b === me);
   const opp = pair ? (pair.a === me ? pair.b : pair.a) : null;
   const all = {};
+  // Marks are saved per player, so a lock marked while viewing any team counts for that team everywhere.
   for (const r of ctx.rosters ?? []) {
-    const c = lockCoach(DATA, ctx, boxes, slate, r.owner_id, risk, r.owner_id === me ? marks : {});
+    const c = lockCoach(DATA, ctx, boxes, slate, r.owner_id, risk, marks);
     if (c) all[r.owner_id] = c;
   }
   const mine = all[me];
