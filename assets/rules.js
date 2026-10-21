@@ -37,6 +37,8 @@ export const RULES = [
       'The taxi squad deadline is the start of the regular season.',
       // covers: the Timeline shows this change instead of Sleeper's "Taxi 30 → 15" setting change.
       { text: 'Taxi squad size is 15 players.', changed: { season: '2026', was: '30 players' }, covers: 'taxi' },
+      // An original rule, written down Oct 2026 (owner).
+      'A player traded from a taxi squad may remain on the taxi squad of his new team.',
     ],
   },
   {
