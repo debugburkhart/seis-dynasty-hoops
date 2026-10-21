@@ -556,6 +556,43 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   "early"), your picks (league slot -> "likely there" by expected value), class outlook + sources,
   board (position filter, tap = why/stats/traits/comps, ?p=key opens one), fine print "How Draft
   Scout works" (owner asked). Test locally by serving saved source pages through a getText stub.
+  DRAFT NIGHT 2026 (owner, Oct 2026, "Option A"): year chip "2026 draft night" in Draft Scout (DRAFT_NIGHTS
+  in app.js; loadDraftNights reads assets/draft-night-{year}.json, a STATIC file the owner uploads, never
+  touched by the nightly job). Built once in the browser by scout.js buildDraftNight() (+ parsePastDraft for
+  tankathon.com/past-drafts/{year}): collegeClass with one board = the real picks (opts.oneSource: no
+  disagreement), today = {year}-06-25 (spread 0.25), Torvik {year} + {year-1} files (downloaded with curl from
+  a home PC; Torvik's pick column matched all 54 college picks), comps/traits from pool players drafted
+  before {year} with NBA results through {year-1}; Sleeper ids for all 60 (pool + /v1/players/nba, birth
+  dates checked); picks verified against Basketball-Reference. Hand-checked: Dybantsa B+ (61/27), Peterson B,
+  Boozer A (64/33), Mara C+, Philon D; class 4.7% stronger than average. Page: header (strength, grade
+  counts), "Then vs now" (top 5 on draft night vs the live board's top 5 + how grades are holding up: higher/
+  same/lower vs today), board by pick (draft-night grade -> today's grade, team, dynasty score, tap: why,
+  final college season, traits, comps, "How he's doing now": prospect grade + chances (vets: gradeOf of
+  p.chances), score + tier, NBA games/FP per game this season from /stats/nba/{season}, Sleeper projection,
+  fantasy team (teamName) or free agent). Live 2027 model and weekly build unchanged. To freeze 2027 next
+  June: same steps with a scratch page calling buildDraftNight, add 2027 to DRAFT_NIGHTS.
+  FOUND Oct 21 2026: Sleeper's season projections (/projections/nba/2026) came back EMPTY for 55 of the 60
+  2026 rookies (they had them the night before, e.g. Dybantsa 26.4), so dynastyValues gives them score 0 and
+  no prospect grade everywhere (Dynasty, Trade finder, Prospects); the draft-night page says so per player.
+  FIXED Oct 21 2026 (other chat, owner: "major overreactions" on day 2: Paul George 80%+ star, SGA 100,
+  Dybantsa 0): once games start, Sleeper's SEASON projection feed becomes each player's LATEST box score with
+  no gp (Cade's = his 22/4/8 opener; players who sat have nothing), and dynastyValues divided by gp || 1. Now
+  dynasty.js seasonFeedOk(proj) (rows with gp >= 1 are at least half) decides; when false, this season =
+  inSeasonProjections(): (PRESEASON projection x PRESEASON_GAMES 15 + actual FP/G this season x games) /
+  (15 + games) (actual = /v1/stats/nba/regular/{season}, loadDynasty f.now); no preseason value -> actual
+  with 5+ games, else the average of this + next week's per-game projections (f.weekProj, gp = 1, > 0).
+  Frozen preseason = dynasty-proj.json `preseason` { season, at, pg }: update.mjs refreshes it while the feed
+  is OK and keeps it fixed after; first run without one = the oldest saved state (preseasonOf()). Weekly
+  per-game projections as the MAIN source were tested and rejected (median 0.97 of preseason, 1 in 10 players
+  30%+ lower). Result vs the clean Oct 21 night: median score change 0, 2 players moved 3+ (Paul George 9 ->
+  14 after a 53-FP game). Out rule: listed Out = half this season ONLY if Sleeper projects no game > 0 for him
+  in this or next week's per-game projections (playsSoon); short absences (Dybantsa ankle, Knueppel, Sexton,
+  Coby White...) keep full value, long ones (Butler, Beal, Porzingis, Ingram...) are still halved.
+  Real games in the blend = only games of MIN_GAME_MINUTES (10)+ (owner, Oct 2026: garbage-time cameos like
+  Tarris Reed's 1.2 min / 0 FP shouldn't dock a prospect; DNPs never counted): seasonActuals() sums per-game
+  box scores /stats/nba/{season}/{w} for weeks 1..current -> { pid: [fp, games] }; update.mjs saves it as
+  dynasty-proj.json `actual` { season, at, games }; pages pass it to loadDynasty (DYN_ACTUAL), and build it
+  themselves only when no saved copy exists.
   Next: step 4 Playoff odds (after 3-4 weeks of games).
 - `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has

@@ -4,7 +4,7 @@ import { PARTS, PRESEASON_PARTS, powerRankings, powerSeasons, preseasonRankings,
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, isRivalry, moments, seasonSeries, seasonWeeks, seriesBefore, standingsBefore, trophyHistory, trophyImg, trophyOf, weekPairs } from './hype.js';
-import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
+import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, get, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
 import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach, lockedPoints } from './gm.js';
 import { PROSPECT_LIST, PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, prospectRanking, taxiLeft } from './dynasty.js';
 import { CENTERPIECE, evaluateTrade, moveImpacts, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, teamSnapshot, tradeContext, unpackTeam } from './tradefinder.js';
@@ -15,6 +15,7 @@ import { SORTS, playerIndex } from './players.js';
 import { LEAGUE_START, RULES } from './rules.js';
 import { buildTimeline } from './timeline.js';
 import { MIN_GAMES, TIERS, draftClasses, draftGrades, draftOfYear, draftedPlayers, projectedOrder, reportCards, seasonPoints } from './draft.js';
+import { gradeOf } from './scout.js';
 
 // ---------- Navigation ----------
 
@@ -2954,10 +2955,15 @@ async function loadDynProj() {
   if (DYN_PROJ) return DYN_PROJ;
   try {
     const res = await fetch(`data/dynasty-proj.json?t=${Date.now()}`, { cache: 'no-store' });
-    DYN_PROJ = res.ok ? (await res.json()).states ?? [] : [];
+    const file = res.ok ? await res.json() : {};
+    DYN_PROJ = file.states ?? [];
+    DYN_PRESEASON = file.preseason ?? null;
+    DYN_ACTUAL = file.actual?.season === DATA.seasons.at(-1)?.season ? file.actual.games : null;
   } catch { DYN_PROJ = []; }
   return DYN_PROJ;
 }
+let DYN_PRESEASON = null; // frozen preseason projections (dynasty.js seasonFeedOk)
+let DYN_ACTUAL = null; // this season's games of 10+ minutes, saved nightly (dynasty.js seasonActuals)
 // Draft Scout classes (data/draft-scout.json, built weekly); missing file = no class strength.
 let SCOUT_DATA;
 async function loadScout() {
@@ -2968,7 +2974,22 @@ async function loadScout() {
   } catch { SCOUT_DATA = null; }
   return SCOUT_DATA;
 }
-const loadDynastyFeeds = async () => loadDynasty(DATA, { projStates: await loadDynProj(), scout: await loadScout() });
+// Draft night snapshots (owner, Oct 2026): a finished draft graded once as Draft Scout would have on
+// draft night (assets/draft-night-{year}.json, built by scout.js buildDraftNight; never rebuilt).
+const DRAFT_NIGHTS = [2026];
+let DRAFT_NIGHT_DATA;
+async function loadDraftNights() {
+  if (DRAFT_NIGHT_DATA) return DRAFT_NIGHT_DATA;
+  const got = await Promise.all(DRAFT_NIGHTS.map(async y => {
+    try {
+      const res = await fetch(`assets/draft-night-${y}.json?t=${Date.now()}`, { cache: 'no-store' });
+      return res.ok ? [String(y), await res.json()] : null;
+    } catch { return null; }
+  }));
+  DRAFT_NIGHT_DATA = Object.fromEntries(got.filter(Boolean));
+  return DRAFT_NIGHT_DATA;
+}
+const loadDynastyFeeds = async () => loadDynasty(DATA, { projStates: await loadDynProj(), preseason: DYN_PRESEASON, actual: DYN_ACTUAL, scout: await loadScout() });
 async function gmDynasty(params) {
   const cur = DATA.seasons.at(-1);
   const me = cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH;
@@ -3471,7 +3492,7 @@ function scoutGradeChanges(sc, cls) {
 }
 
 async function renderDraftScout(body, params) {
-  const [{ season, me, v }, sc] = await Promise.all([gmDynasty(params), loadScout()]);
+  const [{ season, me, v, f }, sc, nights] = await Promise.all([gmDynasty(params), loadScout(), loadDraftNights()]);
   if (route().page !== 'commish') return;
   if (!sc?.classes || !Object.keys(sc.classes).length) {
     body.innerHTML = `<div class="gm-page">${gmTeamPick(me, season, 'draftscout')}<section class="card"><div class="card-head"><h2>Draft Scout</h2></div>
@@ -3480,9 +3501,11 @@ async function renderDraftScout(body, params) {
     return;
   }
   const years = Object.keys(sc.classes).sort();
-  const year = years.includes(params.get('year')) ? params.get('year') : years[0];
+  const nightYears = Object.keys(nights).filter(y => !sc.classes[y]).sort();
+  const year = [...nightYears, ...years].includes(params.get('year')) ? params.get('year') : years[0];
   const pos = DS_POS.some(([id]) => id === params.get('pos')) ? params.get('pos') : 'all';
-  const cls = sc.classes[year];
+  const night = nights[year] ?? null;
+  const cls = sc.classes[year] ?? night;
   const link = (o = {}) => `#/commish?${new URLSearchParams(Object.entries({ tab: 'draftscout', ...(me === COMMISH ? {} : { team: me }), year, ...(pos === 'all' ? {} : { pos }), ...o }).filter(([, x]) => x))}`;
   // This league drafts the best fantasy rookies first: expected value (college class) or rank (high school).
   const leagueOrder = c => [...c.prospects].sort((a, b) => (c.kind === 'college' ? b.value - a.value || a.rank - b.rank : a.rank - b.rank));
@@ -3549,7 +3572,7 @@ async function renderDraftScout(body, params) {
   const shown = cls.prospects.filter(p => pos === 'all' || dsGroup(p) === pos);
   const leagueSlot = Object.fromEntries(leagueOrder(cls).map((p, i) => [p.key, i + 1]));
   const statLine = s => {
-    const when = s.from === 'tank' ? 'College numbers (Tankathon)' : s.from === 'this' ? 'This season' : `Last season (${s.season - 1}–${String(s.season).slice(2)})`;
+    const when = s.from === 'tank' ? 'College numbers (Tankathon)' : night && s.from === 'this' ? `Final college season (${year - 1}–${String(year).slice(2)})` : s.from === 'this' ? 'This season' : `Last season (${s.season - 1}–${String(s.season).slice(2)})`;
     const bits = [s.gp != null ? `${s.gp} games` : '', s.mpg != null ? `${num(s.mpg)} min` : '', s.ppg != null ? `${num(s.ppg)} pts` : '', s.rpg != null ? `${num(s.rpg)} reb` : '', s.apg != null ? `${num(s.apg)} ast` : '',
       s.spg != null ? `${num(s.spg)} stl` : '', s.bpg != null ? `${num(s.bpg)} blk` : '', s.ts != null ? `${Math.round(s.ts)}% TS` : '', s.tpa ? `${Math.round((s.tpp ?? 0) * 100)}% from 3 (${s.tpa} att.)` : '', s.ftp != null ? `${Math.round(s.ftp * 100)}% FT` : '', s.usg != null && s.from === 'tank' ? `${num(s.usg)}% usage` : '', s.bpm != null ? `BPM ${num(s.bpm)}` : ''].filter(Boolean);
     return `<p class="ds-stats"><b>${when}${s.from === 'tank' ? '' : ` at ${esc(s.team)}`}:</b> ${bits.join(' · ')}${s.role ? ` · plays as a <i>${esc(s.role)}</i>` : ''}</p>`;
@@ -3587,7 +3610,7 @@ async function renderDraftScout(body, params) {
         <div class="ds-body">${gradeWhy(p)}${p.stats ? statLine(p.stats) : ''}${traitChips(p)}${compList(p)}<div class="ds-chart" data-key="${esc(p.key)}"></div></div>
       </details>
     </li>`;
-  const board = `
+  const board = night ? '' : `
     <section class="card">
       <div class="card-head"><h2>${year} prospects</h2><span class="card-sub">${cls.kind === 'hs' ? '247Sports top 30' : 'Consensus of the sources'}${cls.since ? ` · ▲▼ since ${esc(shortMd(cls.since))}` : ''}</span></div>
       <div class="st-stage tf-filter dy-filter" role="group">${DS_POS.map(([id, l]) => `<a href="${link({ pos: id === 'all' ? '' : id })}" class="${id === pos ? 'on' : ''}">${l}</a>`).join('')}</div>
@@ -3610,10 +3633,107 @@ async function renderDraftScout(body, params) {
       <p><b>Updates.</b> Rebuilt every Sunday by the nightly update: rankings, college stats and comps refresh on their own. A source that can’t be read keeps its last good copy and is marked above (the update tries once more on Monday). Bart Torvik’s college stats and the high school rankings sometimes turn GitHub’s servers away; then Tankathon’s college numbers are used (per 36 minutes, true shooting, usage, BPM; assist rate estimated from assists per 36), and the high school lists keep their last copy. Sources are read once a week as a labeled bot; sites that block bots aren’t used. Sources: Tankathon, CBS Sports, 247Sports, On3, Bart Torvik (barttorvik.com), Sleeper.</p>
     </section>`;
 
+  // Draft night (owner, Oct 2026): a finished class as graded on draft night (never changes), next to
+  // how each player is doing now (today's dynasty values) and the live board's next class.
+  let nightCards = '';
+  if (night) {
+    const scoring = f.league?.scoring_settings ?? {};
+    const rows = await get(`/stats/nba/${season}?season_type=regular`, []);
+    if (route().page !== 'commish') return;
+    const fp = st => Object.entries(scoring).reduce((a, [k, w]) => a + (Number(st?.[k]) || 0) * w, 0);
+    const games = Object.fromEntries((rows ?? []).filter(x => x.stats?.gp).map(x => [x.player_id, { gp: x.stats.gp, fpg: fp(x.stats) / x.stats.gp }]));
+    // Today: his prospect grade (24 and under) or the veteran chances, graded with the same letters.
+    const now = Object.fromEntries(night.prospects.map(p => {
+      const d = p.sid ? v.players[p.sid] ?? null : null;
+      const q = d?.prospect ?? d?.chances ?? null;
+      return [p.key, { d, q, grade: d?.prospect?.grade ?? (q ? gradeOf(q) : null), g: games[p.sid] ?? null }];
+    }));
+    const pgChip = (g, title) => `<span class="pg pg-${esc(g[0])}" title="${esc(title)}">${esc(g)}</span>`;
+    const ownerText = d => (d?.owner ? `${teamName(d.owner, season)}${d.where === 'taxi' ? ' (taxi)' : d.where === 'ir' ? ' (IR)' : ''}` : 'Free agent');
+    const yy = y => `${y}–${String(Number(y) + 1).slice(2)}`;
+    const maxGp = Math.max(0, ...night.prospects.map(p => now[p.key].g?.gp ?? 0));
+
+    // Then vs now: the top 5 picks on draft night next to the top 5 on the live board.
+    const next = sc.classes[years[0]];
+    const side = p => (p ? `<span><b>${esc(p.name)}</b> ${gradeChip(p)}<small>Starter ${pctOf(p.chances.starter)} · Star ${pctOf(p.chances.star)}</small></span>` : '<span></span>');
+    const cmpRows = Array.from({ length: 5 }, (_, i) => `<li><span class="pr-rank">${i + 1}</span>${side(night.prospects[i])}${side(next?.prospects[i])}</li>`).join('');
+    // How the draft-night grades are holding up (early: one preseason + a few games).
+    const both = night.prospects.filter(p => now[p.key].grade);
+    const at = g => GRADE_ORDER.indexOf(g);
+    const higher = both.filter(p => at(now[p.key].grade) < at(p.grade)), lower = both.filter(p => at(now[p.key].grade) > at(p.grade));
+    const moved = both.map(p => ({ p, d: now[p.key].q.starter - p.chances.starter })).sort((a, b) => b.d - a.d);
+    const jump = p => `<a href="${link({ p: p.key, pos: '' })}" class="ds-jump" data-year="${esc(year)}" data-key="${esc(p.key)}">${esc(p.name)}</a> (${esc(p.grade)} → ${esc(now[p.key].grade)})`;
+    const ups = moved.filter(x => higher.includes(x.p)).slice(0, 3).map(x => jump(x.p)), downs = moved.filter(x => lower.includes(x.p)).slice(-3).reverse().map(x => jump(x.p));
+    const no1 = night.prospects[0], n1 = now[no1.key];
+    const compare = `
+      <section class="card">
+        <div class="card-head"><h2>Then vs now</h2><span class="card-sub">${year} on draft night · ${years[0]} board today</span></div>
+        <ol class="aw-race dn-cmp"><li class="dn-cmp-head"><span class="pr-rank">No.</span><span>${year} draft night</span><span>${years[0]} today</span></li>${cmpRows}</ol>
+        <p class="cm-rule">On draft night ${esc(no1.name)} went No. 1 graded ${esc(no1.grade)} (starter ${pctOf(no1.chances.starter)}, star ${pctOf(no1.chances.star)}); the ${years[0]} No. 1${next?.prospects[0] ? `, ${esc(next.prospects[0].name)}, is ${esc(next.prospects[0].grade)} today (starter ${pctOf(next.prospects[0].chances.starter)}, star ${pctOf(next.prospects[0].chances.star)})` : ' isn’t known yet'}. A board ${next?.months != null ? `${Math.max(0, Math.round(next.months))} months` : 'months'} before the draft can still be wrong about who goes where, so its chances are spread wider; on draft night the slot is known.${n1.grade ? ` Today ${esc(no1.name)} grades ${esc(n1.grade)} in this league.` : ''}</p>
+        <p class="cm-rule"><b>How the draft-night grades are holding up:</b> of the ${both.length} player${both.length === 1 ? '' : 's'} with a grade today${both.length < night.prospects.length ? ` (${night.prospects.length - both.length} have no Sleeper season projection right now, so no grade)` : ''}, ${higher.length} grade higher, ${both.length - higher.length - lower.length} the same and ${lower.length} lower.${ups.length ? ` Biggest risers: ${ups.join(', ')}.` : ''}${downs.length ? ` Biggest drops: ${downs.join(', ')}.` : ''} Early read only: today’s grades come mostly from Sleeper’s season projections (${maxGp ? `${maxGp} NBA game${maxGp === 1 ? '' : 's'} at most so far` : 'no NBA games yet'}); the real test is their 3rd season (${yy(Number(year) + 2)}).</p>
+      </section>`;
+
+    const nightWhy = p => {
+      const move = p.rank - p.effPick;
+      const shownBy = p.intl || !p.stats ? 'his age (no college numbers: international)' : p.weight >= 0.99 ? 'his college numbers and age' : 'his age and his few college games';
+      return `<p class="ds-why">Picked No. ${p.pick}${p.nba ? ` by ${esc(p.nba)}` : ''}. ${Math.abs(move) >= 1 ? `By ${shownBy} he projected like a typical No. ${Math.round(p.effPick)} pick (${move > 0 ? 'better' : 'worse'} than his slot).` : `By ${shownBy} he projected right at his slot.`} Expected in year 3: about ${num(p.fpg)} fantasy points a game.</p>`;
+    };
+    const nowBlock = p => {
+      const { d, q, grade, g } = now[p.key];
+      if (!d) return '<div class="dn-now"><b>How he’s doing now</b><p>Not in Sleeper’s projections or on a roster in this league yet.</p></div>';
+      const ch = k => `${pctOf(p.chances[k])} → ${q ? pctOf(q[k]) : '–'}`;
+      return `<div class="dn-now"><b>How he’s doing now</b>
+        <p>${pgChip(p.grade, 'Draft-night grade')} on draft night → ${grade ? `${pgChip(grade, 'Grade today')} today` : 'no grade today: Sleeper has no season projection for him right now, so his dynasty score is 0 until it does'}</p>
+        ${q ? `<p class="dy-chances">Starter ${ch('starter')} · Star ${ch('star')} · Rotation ${ch('rotation')}</p>` : ''}
+        <p>Dynasty score <b>${d.score}</b> ${tierTag(d.score)} · ${g ? `${g.gp} NBA game${g.gp === 1 ? '' : 's'}, ${num(g.fpg)} fantasy pts a game` : 'no NBA games yet'}${d.projUsed != null ? ` · Sleeper projects ${num(d.projUsed)} a game` : ''}</p>
+        <p>${d.owner ? `On <b>${esc(ownerText(d))}</b>` : '<b>Free agent</b> in this league'} · NBA: ${esc(d.team || 'no team')}</p></div>`;
+    };
+    const nightRow = p => {
+      const n = now[p.key];
+      return `
+      <li id="ds-${esc(p.key)}">
+        <details class="ds-row">
+          <summary>
+            <span class="pr-rank">${p.pick}</span>
+            <span class="pr-main">${esc(p.name)} ${gradeChip(p)}${n.grade ? ` <span class="dn-to" aria-label="today">→</span> ${pgChip(n.grade, 'Grade today')}` : ''}
+              <small>${esc([p.nba, p.pos, p.school, p.cls, p.age != null ? `age ${p.age}` : '', feetIn(p.ht)].filter(Boolean).join(' · '))}</small>
+              <small class="dy-chances">Draft night: Star ${pctOf(p.chances.star)} · Starter ${pctOf(p.chances.starter)} · Rotation ${pctOf(p.chances.rotation)}</small>
+              <small class="dn-own">Now: ${esc(ownerText(n.d))}</small></span>
+            <span class="ds-lg" title="Dynasty score today">${n.d ? `Score<br><b>${n.d.score}</b>` : ''}</span>
+          </summary>
+          <div class="ds-body">${nightWhy(p)}${p.stats ? statLine(p.stats) : ''}${traitChips(p)}${compList(p)}${nowBlock(p)}</div>
+        </details>
+      </li>`;
+    };
+    nightCards = `
+      <section class="card">
+        <div class="card-head"><h2>${year} draft night</h2><span class="card-sub">Frozen snapshot · graded as of June 25, ${year}</span></div>
+        <div class="ds-outlook">
+          <div><b class="ds-big">${esc(strengthText(cls))}</b>
+            <small>Graded the way Draft Scout grades the live board, as if on draft night: slot = his real pick, his final college season, nothing left to guess about where he goes. This snapshot never changes; only the “now” parts update.</small></div>
+          <div class="ds-grades">${counts.map(([g, n]) => `<span><span class="pg pg-${g}">${g}</span> ${n}</span>`).join('')}</div>
+        </div>
+      </section>
+      ${compare}
+      <section class="card">
+        <div class="card-head"><h2>${year} draft</h2><span class="card-sub">Real picks 1–${night.prospects.length} · grade on draft night → today</span></div>
+        <div class="st-stage tf-filter dy-filter" role="group">${DS_POS.map(([id, l]) => `<a href="${link({ pos: id === 'all' ? '' : id })}" class="${id === pos ? 'on' : ''}">${l}</a>`).join('')}</div>
+        ${shown.length ? `<ol class="aw-race pr-list ds-list">${shown.map(nightRow).join('')}</ol>` : '<p class="empty">Nobody here.</p>'}
+        <p class="cm-rule">First letter = his grade on draft night, the second = his grade in this league today (Dynasty tab). “Score” = his dynasty score today. Tap a player for why he graded where he did, his last college season, what translates, his comps and how he’s doing now.</p>
+      </section>
+      <section class="card ds-fine">
+        <div class="card-head"><h2>How the draft-night view works</h2></div>
+        <p><b>Draft night.</b> The same model as the live board, run once with what was known on draft night: his <b>real pick</b> as the slot (one source, so no disagreement and no months of guessing: the narrowest spread the model uses), his <b>final college season</b> (Bart Torvik; international players have no college numbers, same as on the live board), his age at the draft, the same scouting notes, and comps only from the ${night.poolSize}+ drafted players before ${year}, with NBA results through ${yy(Number(year) - 1)}. Built ${esc(shortMd(night.built))}; it never changes.</p>
+        <p><b>Now.</b> Today’s grade is the Prospect grade from the Dynasty tab (players 24 and under; older players get the same letters from the veteran chances). It comes from Sleeper’s season projection for him, so early in his first season it says more about how the NBA sees him than how he has played. Fantasy points a game = his NBA games this season with this league’s scoring. Both update every time the page opens.</p>
+        <p><b>Then vs now</b> lines up the top 5 picks on draft night with the top 5 on the ${years[0]} board today. The ${years[0]} board is still ${next?.months != null ? `${Math.max(0, Math.round(next.months))} months` : 'months'} away from its draft, so its chances are spread wider (where a player goes can still change); that alone keeps its top grades a little lower than a No. 1 pick’s on draft night.</p>
+      </section>`;
+  }
+
+  const chipYears = [...nightYears, ...years];
   body.innerHTML = `<div class="gm-page">
     ${gmTeamPick(me, season, 'draftscout')}
-    <div class="st-stage ds-years" role="tablist">${years.map(y => `<a role="tab" href="${link({ year: y, pos: '' })}" class="${y === year ? 'on' : ''}">${y}${sc.classes[y].kind === 'hs' ? ' <small>early</small>' : ''}</a>`).join('')}</div>
-    ${picksCard}${outlook}${changesCard}${board}${finePrint}</div>`;
+    <div class="st-stage ds-years" role="tablist" style="grid-template-columns: repeat(${chipYears.length}, 1fr)">${chipYears.map(y => `<a role="tab" href="${link({ year: y, pos: '' })}" class="${y === year ? 'on' : ''}">${y}${nights[y] && !sc.classes[y] ? ' <small>draft night</small>' : sc.classes[y].kind === 'hs' ? ' <small>early</small>' : ''}</a>`).join('')}</div>
+    ${night ? nightCards : `${picksCard}${outlook}${changesCard}${board}${finePrint}`}</div>`;
   bindTeamPick(body);
   // His weekly chart, drawn the first time his row opens (the strip needs its width).
   body.querySelectorAll('.ds-row').forEach(d => d.addEventListener('toggle', () => {

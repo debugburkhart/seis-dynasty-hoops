@@ -141,15 +141,23 @@ try {
 // per night: { days: { date: { pid: score, or [score, fullValueScore] when he's listed Out } } }.
 // Players on a roster or with a score above 0. A problem here never stops the nightly update.
 try {
-  const { loadDynasty, dynastyValues, historyDay, historyExtra, backfillSeason, prospectRanking, prospectFor, rebuildSeasonDays } = await import('../assets/dynasty.js');
+  const { loadDynasty, dynastyValues, historyDay, historyExtra, backfillSeason, prospectRanking, prospectFor, rebuildSeasonDays, seasonFeedOk, preseasonOf } = await import('../assets/dynasty.js');
   const { teamSnapshot } = await import('../assets/tradefinder.js');
   // Smoothed this-season projections (dynasty.js PROJ_SMOOTH): last 3 nights kept.
   const projFile = (await readJson('data/dynasty-proj.json')) ?? { states: [] };
-  const feeds = await loadDynasty(data, { projStates: projFile.states, scout });
+  const feeds = await loadDynasty(data, { projStates: projFile.states, preseason: projFile.preseason, scout });
   feeds.today = today;
+  // This season's games of 10+ minutes (dynasty.js seasonActuals: loadDynasty builds them fresh
+  // when none are passed in), saved for the pages.
+  if (feeds.week && feeds.actual) projFile.actual = { season: feeds.season, at: today, games: feeds.actual };
   const cut = dynastyValues(data, feeds);
   const full = dynastyValues(data, feeds, { fullInjured: true });
   const pg = Object.fromEntries(Object.entries(cut.projPg).map(([pid, x]) => [pid, Math.round(x * 100) / 100]));
+  // Frozen preseason projections (dynasty.js seasonFeedOk): refreshed while Sleeper's season feed is
+  // still real projections; once games start (the feed turns into last box scores) it stays fixed.
+  // First run after the switch without one: the oldest saved night (all preseason then).
+  if (seasonFeedOk(feeds.proj)) projFile.preseason = { season: feeds.season, at: today, pg };
+  else if (projFile.preseason?.season !== feeds.season) projFile.preseason = { season: feeds.season, at: [...projFile.states].sort((a, b) => (a.date < b.date ? -1 : 1))[0]?.date ?? today, pg: preseasonOf(feeds) };
   projFile.states = [...projFile.states.filter(s => s.date < today), { date: today, pg }].slice(-3);
   await writeFile('data/dynasty-proj.json', JSON.stringify(projFile));
   // Projection log (owner asked, Oct 2026: how often does Sleeper/Rotowire really change its

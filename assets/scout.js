@@ -416,7 +416,8 @@ function consensus(boards) {
   return Object.values(players).sort((a, b) => a.score - b.score).slice(0, SCOUT_LIST);
 }
 
-function collegeClass(year, boards, torvik, pool, scale, ref, today, line) {
+// opts.oneSource: the board is the real draft (Draft night): nobody disagrees on the slot.
+function collegeClass(year, boards, torvik, pool, scale, ref, today, line, opts = {}) {
   const months = (new Date(`${year}-06-25`) - new Date(`${today}T12:00:00`)) / (30.4 * 864e5);
   const list = consensus(boards);
   // College stats: this season's when he has played, else last season's.
@@ -459,7 +460,7 @@ function collegeClass(year, boards, torvik, pool, scale, ref, today, line) {
     const s = { bpm: weight * (stats?.bpm ?? 0) + (1 - weight) * t.bpm, ast: weight * (stats?.ast ?? 0) + (1 - weight) * t.ast, age: age ?? t.age };
     const shift = traitShift(x, s);
     const xe = slotFor(baseValue(x) + shift);
-    const spread = Math.sqrt(spreadFor(months) ** 2 + (p.disagree * 0.7) ** 2);
+    const spread = Math.sqrt(spreadFor(months) ** 2 + (opts.oneSource ? 0 : p.disagree * 0.7) ** 2);
     const q = draftChances(xe, spread);
     const prof = { ...(stats ?? {}), ht: p.info.ht ?? row?.ht ?? null, age, group, lp: xe };
     const hasStats = Boolean(stats && (row ? row.gp >= 5 : weight >= 0.4));
@@ -647,3 +648,55 @@ export const classStrength = (scout, season) => {
   const s = scout?.classes?.[season]?.strength;
   return Number.isFinite(s) && s > 0 ? Math.max(0.85, Math.min(1.15, s)) : 1;
 };
+
+// ---------- Draft night (owner, Oct 2026) ----------
+// A finished draft graded exactly as the weekly build would have on draft night: slot = his real
+// pick (one source, so no disagreement), stats = his final college season, no months left (spread
+// 0.25), the same age, traits and comps rules, comps only from earlier drafts with NBA results
+// through the season before. Built once in a browser (Torvik turns GitHub's servers away) into
+// assets/draft-night-{year}.json, which the Draft Scout page reads; never rebuilt by the nightly job.
+export const DRAFT_NIGHT_VERSION = 1;
+// Tankathon's past-draft page (tankathon.com/past-drafts/{year}): the picks with position, school,
+// size, class, age at the draft and college numbers. Undrafted players listed after pick 60 are left out.
+export function parsePastDraft(html) {
+  const year = Number(/(\d{4}) NBA Draft Results/.exec(html)?.[1]) || null;
+  const rows = [];
+  for (const chunk of html.split('<div class="mock-row"').slice(1)) {
+    const name = decode(/mock-row-name">([^<]+)/.exec(chunk)?.[1] ?? '').trim();
+    const pick = Number(/mock-row-pick-number">(\d+)/.exec(chunk)?.[1]);
+    if (!name || !pick) continue;
+    const [pos, school] = decode(/mock-row-school-position">([^<]+)/.exec(chunk)?.[1] ?? '').split('|').map(s => s.trim());
+    const hw = /height-weight"><div>([^<]+)<\/div><div>(\d+)/.exec(chunk);
+    const ya = /year-age[^"]*"><div>([^<]+)<\/div><div>([\d.]+) yrs/.exec(chunk);
+    const team = /mock-row-logo">.*?alt="([^"]+)"/.exec(chunk)?.[1] ?? null;
+    const group = cls => {
+      const g = new RegExp(`class="${cls}"[^>]*>([\\s\\S]*?)(?=<div class="stats-|<\\/div><\\/div> <\\/div>|$)`).exec(chunk)?.[1] ?? '';
+      return Object.fromEntries([...g.matchAll(/class="value[^"]*">([^<]+)<\/div>\s*<div class="label">([^<]+)/g)].map(m => [m[2].trim().toLowerCase(), parseFloat(m[1])]).filter(([, v]) => Number.isFinite(v)));
+    };
+    const pg = group('stats-per-game'), p36 = group('stats-per-36'), adv = group('stats-advanced');
+    const st = Object.keys(p36).length && adv.bpm != null ? { pg, p36, ts: adv['ts%'] != null ? r1(adv['ts%'] * (adv['ts%'] <= 1 ? 100 : 1)) : null, usg: adv.usg ?? null, bpm: adv.bpm, obpm: adv.obpm ?? null, dbpm: adv.dbpm ?? null } : null;
+    rows.push({ rank: pick, name, pos, school, team, ht: hw ? inches(decode(hw[1])) : null, wt: hw ? Number(hw[2]) : null, cls: ya?.[1] ?? null, age: ya ? Number(ya[2]) : null, ...(st ? { st } : {}) });
+  }
+  if (!year || rows.length < 30) throw new Error('page layout changed');
+  return { year, rows: rows.sort((a, b) => a.rank - b.rank) };
+}
+// picks: parsePastDraft rows (+ sid = Sleeper id, nba = drafting team); torvik: { cur, prev } parsed
+// files for the draft year and the year before; pool: the comps pool (scripts/scout-pool.json).
+export async function buildDraftNight({ year, picks, torvik, getJson, scoring, pool, log = console.log, now = new Date() }) {
+  const nba = await nbaSeasons(getJson, 2013, year - 1, scoring, log);
+  const players = pool.players.filter(p => p.D < year).map(p => ({ ...p, nba: careerOf(p.sid, nba), nm: nba.display[p.sid] ?? p.n }));
+  const scale = compScaler(players);
+  const ref = traitTable(players);
+  const line = nba.seasons[year - 1]?.line ?? 27.7;
+  const cls = collegeClass(year, [{ id: 'pick', weight: 1, rows: picks }], torvik, players, scale, ref, `${year}-06-25`, line, { oneSource: true });
+  const byKey = Object.fromEntries(picks.map(p => [key(p.name), p]));
+  for (const p of cls.prospects) {
+    const x = byKey[p.key];
+    Object.assign(p, { pick: p.rank, sid: x?.sid ?? null, nba: x?.nba ?? null });
+    delete p.ranks; delete p.range;
+  }
+  return {
+    version: DRAFT_NIGHT_VERSION, year, kind: 'draftNight', built: CHI(now), asOf: `${year}-06-25`, starterLine: r1(line),
+    poolSize: players.filter(p => p.nba).length, strength: cls.strength, statsTop24: cls.statsTop24, prospects: cls.prospects,
+  };
+}

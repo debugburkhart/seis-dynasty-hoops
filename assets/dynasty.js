@@ -108,11 +108,13 @@ export function smoothProjections(raw, states, today) {
 // Everything the model needs, fetched once (Sleeper responses are cached 2 minutes).
 // projStates: the saved smoothing states (see above); without them, raw projections.
 // scout: data/draft-scout.json (Draft Scout), for how strong each coming draft class looks.
-export async function loadDynasty(DATA, { projStates = null, scout = null } = {}) {
+// preseason: { season, pg } = the frozen preseason projections (dynasty-proj.json; see seasonFeedOk).
+// actual: saved seasonActuals() (dynasty-proj.json); without it, Sleeper's season totals (every game).
+export async function loadDynasty(DATA, { projStates = null, preseason = null, actual = null, scout = null } = {}) {
   const cur = DATA.seasons.at(-1);
   const season = cur.season;
   const prev = n => String(Number(season) - n);
-  const [league, rosters, proj, last, prev2, prev3, traded] = await Promise.all([
+  const [league, rosters, proj, last, prev2, prev3, traded, state, now] = await Promise.all([
     get(`/v1/league/${cur.leagueId}`, {}),
     get(`/v1/league/${cur.leagueId}/rosters`, []),
     get(`/projections/nba/${season}?season_type=regular`, []),
@@ -120,7 +122,12 @@ export async function loadDynasty(DATA, { projStates = null, scout = null } = {}
     get(`/v1/stats/nba/regular/${prev(2)}`, {}),
     get(`/v1/stats/nba/regular/${prev(3)}`, {}),
     loadTradedPicks(DATA),
+    get('/v1/state/nba', {}),
+    get(`/v1/stats/nba/regular/${season}`, {}),
   ]);
+  // Per-game projections for this week's and next week's games (see seasonFeedOk below).
+  const wk = state?.season === season && state?.season_type === 'regular' ? Number(state.week) || 0 : 0;
+  const weekProj = wk ? (await Promise.all([wk, wk + 1].map(w => get(`/projections/nba/${season}/${w}?season_type=regular`, [])))).flat() : [];
   // Birth dates: saved nightly (DATA.birth); before the first nightly run with them,
   // Sleeper's full player list (2.5 MB) instead.
   let birth = DATA.birth;
@@ -128,7 +135,71 @@ export async function loadDynasty(DATA, { projStates = null, scout = null } = {}
     const all = await get('/v1/players/nba', {});
     birth = Object.fromEntries(Object.entries(all ?? {}).filter(([, p]) => p?.birth_date).map(([pid, p]) => [pid, p.birth_date]));
   }
-  return { season, league, rosters, proj, last, prior: [last, prev2, prev3], traded, birth, projStates, scout };
+  // No saved 10+ minute games yet (before the first nightly run that saves them): build them here.
+  if (!actual && wk) actual = await seasonActuals(season, wk, league?.scoring_settings ?? {});
+  return { season, week: wk, league, rosters, proj, weekProj, now, actual, last, prior: [last, prev2, prev3], traded, birth, projStates, preseason, scout };
+}
+
+// This season's real games for the blend, from per-game box scores: only games of MIN_GAME_MINUTES+
+// (owner, Oct 2026: a garbage-time cameo shouldn't count against a prospect). { pid: [fantasy pts, games] }.
+// Built by the nightly job (one request per week so far) and saved in dynasty-proj.json `actual`.
+export const MIN_GAME_MINUTES = 10;
+export async function seasonActuals(season, week, scoring) {
+  const out = {};
+  for (let w = 1; w <= week; w++) {
+    const rows = await get(`/stats/nba/${season}/${w}?season_type=regular`, []);
+    for (const g of rows ?? []) {
+      if (!/^\d+$/.test(g.player_id) || !(g.stats?.gp || g.stats?.sp) || !((g.stats.min ?? 0) >= MIN_GAME_MINUTES)) continue;
+      const s = (out[g.player_id] ??= [0, 0]);
+      s[0] = Math.round((s[0] + fantasy(g.stats, scoring)) * 10) / 10;
+      s[1]++;
+    }
+  }
+  return out;
+}
+
+// Sleeper's SEASON projection feed is one average game per player (gp = 1) only before the
+// season. Once games start (seen Oct 21 2026, day 2 of the season) it turns into each player's
+// LATEST box score with no gp (Paul George's 38-point opener read as a 38-point projection, SGA
+// went to 100, anyone who sat got nothing). Rows without gp >= 1 don't count as projections.
+export const seasonFeedOk = proj => {
+  const rows = (proj ?? []).filter(x => x?.stats && Object.keys(x.stats).length);
+  return rows.length > 0 && rows.filter(x => x.stats.gp >= 1).length >= rows.length / 2;
+};
+// In season (owner, Oct 21 2026, after day-1 overreactions): this season = his PRESEASON
+// projection (frozen in dynasty-proj.json `preseason`) blended with what he really averages this
+// season, the real games weighing in as they pile up: (preseason x 15 + actual x games) / (15 +
+// games), so one big night barely moves him and after 15 games it's half and half. No preseason
+// projection (signed later, etc.): his actual average once he has 5+ games, else his average over
+// the games Sleeper projects him to play this week and next (per-game projections, gp = 1).
+// The weekly per-game projections were tried as the main source and were too jumpy (median 0.97 of
+// preseason, 1 in 10 players 30%+ lower: rest days, minutes limits, opponents).
+export const PRESEASON_GAMES = 15;
+export const preseasonOf = f => (f.preseason?.season === f.season ? f.preseason.pg
+  : [...(f.projStates ?? [])].sort((a, b) => (a.date < b.date ? -1 : 1))[0]?.pg) ?? {};
+function inSeasonProjections(f, scoring) {
+  const base = preseasonOf(f);
+  const week = {};
+  for (const x of f.weekProj ?? []) {
+    if (!/^\d+$/.test(x.player_id) || !(x.stats?.gp >= 1)) continue;
+    const fp = fantasy(x.stats, scoring) / x.stats.gp;
+    if (fp <= 0) continue;
+    const s = (week[x.player_id] ??= [0, 0]);
+    s[0] += fp; s[1]++;
+  }
+  const out = {};
+  // Real games: games of 10+ minutes (f.actual, nightly), else Sleeper's season totals.
+  const games = f.actual ?? Object.fromEntries(Object.entries(f.now ?? {}).filter(([, st]) => st?.gp).map(([pid, st]) => [pid, [fantasy(st, scoring), st.gp]]));
+  for (const pid of new Set([...Object.keys(base), ...Object.keys(games), ...Object.keys(week)])) {
+    if (!/^\d+$/.test(pid)) continue;
+    const gp = games[pid]?.[1] || 0;
+    const act = gp ? games[pid][0] / gp : null;
+    const b = base[pid] > 0 ? base[pid] : null;
+    const pg = b != null ? (b * PRESEASON_GAMES + (act ?? 0) * gp) / (PRESEASON_GAMES + gp)
+      : gp >= 5 ? act : week[pid] ? week[pid][0] / week[pid][1] : null;
+    if (pg > 0) out[pid] = pg;
+  }
+  return out;
 }
 
 // Values for every player with a projection or on a roster, every future rookie pick,
@@ -146,12 +217,17 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
   }
   const info = {};
   const projPg = {};
+  const feedOk = seasonFeedOk(f.proj);
   for (const x of f.proj ?? []) {
     if (!/^\d+$/.test(x.player_id)) continue;
     if (x.player) info[x.player_id] = { ...x.player, team: x.team ?? x.player.team };
-    const fp = fantasy(x.stats, scoring) / (x.stats?.gp || 1);
-    if (!f.projPg && fp > 0) projPg[x.player_id] = fp;
+    if (f.projPg || !feedOk || !(x.stats?.gp >= 1)) continue;
+    const fp = fantasy(x.stats, scoring) / x.stats.gp;
+    if (fp > 0) projPg[x.player_id] = fp;
   }
+  if (!f.projPg && !feedOk) Object.assign(projPg, inSeasonProjections(f, scoring));
+  const soon = f.today ?? chicagoDate();
+  const playsSoon = new Set((f.weekProj ?? []).filter(x => x.date >= soon && x.stats?.gp >= 1 && fantasy(x.stats, scoring) > 0).map(x => x.player_id));
   // Past weeks (backfill): per-game projections and who was out are given directly.
   if (f.projPg) Object.assign(projPg, f.projPg);
   // Today: smoothed against the saved nights (rawProj kept for the nightly save + the notes).
@@ -171,7 +247,9 @@ export function dynastyValues(DATA, f, { fullInjured = false } = {}) {
     const i = info[pid];
     const base = projPg[pid] ?? lastPg(pid) ?? 0;
     const age = ageOn(f.birth?.[pid], season);
-    const out = f.outSet ? f.outSet.has(pid) : /^out$/i.test(i?.injury_status ?? '');
+    // Listed Out = half this season, unless Sleeper already projects him to play a game in the
+    // next two weeks (a short absence, e.g. Dybantsa's ankle sprain on opening night, Oct 2026).
+    const out = f.outSet ? f.outSet.has(pid) : /^out$/i.test(i?.injury_status ?? '') && !playsSoon.has(pid);
     const v1 = base * (out && !fullInjured ? OUT_THIS_SEASON : 1);
     const v2 = base * ageMult(age);
     const v3 = v2 * ageMult(age == null ? null : age + 1);
