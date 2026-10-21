@@ -1,0 +1,5 @@
+Draft picks recorded as a duplicate Sleeper player entry (these never score):
+
+2024 draft, pick 11 by loganzarvell: "Ron Holland DUPLICATE"
+
+Add the player actually drafted to DRAFT_CORRECTIONS in assets/corrections.js.
