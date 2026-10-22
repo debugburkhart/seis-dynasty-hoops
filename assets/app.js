@@ -16,6 +16,7 @@ import { LEAGUE_START, RULES } from './rules.js';
 import { buildTimeline } from './timeline.js';
 import { MIN_GAMES, TIERS, draftClasses, draftGrades, draftOfYear, draftedPlayers, projectedOrder, reportCards, seasonPoints } from './draft.js';
 import { gradeOf } from './scout.js';
+import { CONTRACTS_SOURCE, contractText, readContract } from './contracts.js';
 
 // ---------- Navigation ----------
 
@@ -3013,6 +3014,65 @@ async function loadScout() {
   } catch { SCOUT_DATA = null; }
   return SCOUT_DATA;
 }
+// NBA contracts (data/contracts.json, read weekly from Basketball-Reference by the nightly job,
+// assets/contracts.js). Information only: never part of a score. Missing file = no contract lines.
+let CONTRACTS;
+async function loadContracts() {
+  if (CONTRACTS !== undefined) return CONTRACTS;
+  try {
+    const res = await fetch(`data/contracts.json?t=${Date.now()}`, { cache: 'no-store' });
+    CONTRACTS = res.ok ? await res.json() : null;
+  } catch { CONTRACTS = null; }
+  return CONTRACTS;
+}
+// Contract line under a player row (Dynasty roster, Waiver wire, Trade finder), e.g.
+// "$12.4M · 2 more yrs · team option 2028-29" + flags (tap/hover a flag for what it means).
+// p = a dynastyValues player (pid, team, nbaSeasons).
+const contractLine = p => {
+  if (!CONTRACTS?.players || !p) return '';
+  const season = DATA.seasons.at(-1).season;
+  const c = CONTRACTS.players[p.pid];
+  if (!c) return p.team ? '<small class="dy-contract ct-none">No standard NBA contract (two-way, Exhibit 10 or unsigned)</small>' : '';
+  const r = readContract(c, season, p.nbaSeasons);
+  return `<small class="dy-contract"><span class="ct-label">Contract</span> ${esc(contractText(c, season, p.nbaSeasons))}${p.team && c.team !== p.team ? ` <span class="ct-team">(listed with ${esc(c.team)})</span>` : ''}${r.flags.map(f => ` <span class="ct-flag ct-${f.id}" title="${esc(f.why)}">${esc(f.label)}</span>`).join('')}</small>`;
+};
+// Team card on the Dynasty tab: how much of the roster's dynasty value has a contract that ends
+// (or can end) after this season, and who.
+const CT_ENDS = new Set(['contract-year', 'rookie-end']);
+const CT_MAYBE = new Set(['opt-out', 'team-option', 'rookie-option']);
+function contractsCard(v, rosters, me) {
+  if (!CONTRACTS?.players) return '';
+  const season = DATA.seasons.at(-1).season;
+  const teamOf = o => Object.values(v.players).filter(p => p.owner === o || (rosters.find(r => r.owner_id === o)?.taxi ?? []).includes(p.pid));
+  const flagsOf = p => (CONTRACTS.players[p.pid] ? readContract(CONTRACTS.players[p.pid], season, p.nbaSeasons)?.flags ?? [] : []);
+  const has = (p, set) => flagsOf(p).some(f => set.has(f.id));
+  const shareOf = (players, set) => { const all = players.reduce((a, p) => a + p.score, 0); return all ? players.filter(p => has(p, set)).reduce((a, p) => a + p.score, 0) / all : 0; };
+  const owners = rosters.map(r => r.owner_id).filter(Boolean);
+  const league = owners.map(o => ({ o, ends: shareOf(teamOf(o), CT_ENDS), maybe: shareOf(teamOf(o), CT_MAYBE) })).sort((a, b) => b.ends - a.ends);
+  const mine = league.find(x => x.o === me);
+  if (!mine) return '';
+  const roster = teamOf(me).sort((a, b) => b.score - a.score);
+  const avg = league.reduce((a, x) => a + x.ends, 0) / league.length;
+  const group = (title, list, note) => (list.length ? `<div class="tf-side-head">${title} <small>${list.length}</small></div><ol class="aw-race ct-list">${list.map(p => `<li><span>${esc(p.name)} ${tierTag(p.score)}<small>${esc(contractText(CONTRACTS.players[p.pid], season, p.nbaSeasons) ?? '')}${note ? ` · ${esc(note(p))}` : ''}</small></span><b>${p.score}</b></li>`).join('')}</ol>` : '');
+  const by = id => roster.filter(p => flagsOf(p).some(f => f.id === id));
+  const none = roster.filter(p => !CONTRACTS.players[p.pid] && p.team);
+  const read = CONTRACTS.source?.read ?? CONTRACTS.at;
+  return `<section class="card" id="dy-contracts">
+    <div class="card-head"><h2>Contracts</h2><span class="card-sub">NBA deals · ${esc(CONTRACTS_SOURCE)}, read ${esc(shortMd(read))}</span></div>
+    <p class="ct-share"><b>${pctOf(mine.ends)}</b> of your roster’s dynasty value is in a contract year <small>(league average ${pctOf(avg)}; No. ${league.indexOf(mine) + 1} of ${league.length}, most first)</small>${mine.maybe ? `<br><b>${pctOf(mine.maybe)}</b> more has an option after this season <small>(he or his team can end the deal)</small>` : ''}</p>
+    ${group('Contract year', by('contract-year'))}
+    ${group('Rookie deal ends', by('rookie-end'))}
+    ${group('Extension next summer', by('rookie-ext'))}
+    ${group('Option after this season', roster.filter(p => has(p, CT_MAYBE)), p => flagsOf(p).find(f => CT_MAYBE.has(f.id)).label)}
+    ${group('Easy to waive', by('waivable'))}
+    ${none.length ? `<div class="tf-side-head">No standard contract <small>${none.length}</small></div><p class="cm-rule">${none.map(p => esc(p.name)).join(', ')}: on a two-way or Exhibit 10 deal (not on the contracts page), or unsigned.</p>` : ''}
+    <details class="cm-group"><summary>Every team</summary>
+      <div class="cm-scroll"><table class="cm-table"><thead><tr><th>Team</th><th>Contract year</th><th>Option after</th></tr></thead>
+      <tbody>${league.map(x => `<tr class="${x.o === me ? 'cm-me' : ''}"><td>${esc(name(x.o))}</td><td>${pctOf(x.ends)}</td><td>${pctOf(x.maybe)}</td></tr>`).join('')}</tbody></table></div>
+    </details>
+    <p class="cm-rule">Share of dynasty value = his dynasty score over the team’s total (taxi and IR included). <b>Contract year</b>: his NBA deal ends after this season, so he may change teams or roles. <b>Rookie deal ends</b>: his first contract ends; his team can extend him or match offers as a restricted free agent. <b>Extension next summer</b>: one rookie year left after this one. <b>Easy to waive</b>: a near-minimum or not fully guaranteed deal, so his team can cut him cheaply. On a computer, hover a flag for details. Contracts are information only: they don’t change dynasty scores or prospect grades.</p>
+  </section>`;
+}
 // Draft night snapshots (owner, Oct 2026): a finished draft graded once as Draft Scout would have on
 // draft night (assets/draft-night-{year}.json, built by scout.js buildDraftNight; never rebuilt).
 const DRAFT_NIGHTS = [2026];
@@ -3032,7 +3092,7 @@ const loadDynastyFeeds = async () => loadDynasty(DATA, { projStates: await loadD
 async function gmDynasty(params) {
   const cur = DATA.seasons.at(-1);
   const me = cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH;
-  const f = await loadDynastyFeeds();
+  const [f] = await Promise.all([loadDynastyFeeds(), loadContracts()]);
   return { season: cur.season, me, f, v: dynastyValues(DATA, f, { fullInjured: gmLoad('gm-dyn-full', false) }) };
 }
 const scoreBar = s => `<span class="dy-bar" aria-hidden="true"><i style="width:${s}%"></i></span><b class="dy-score">${s}</b>`;
@@ -3928,8 +3988,8 @@ async function renderDynasty(body, params) {
         <div class="st-stage tf-filter dy-filter" role="group" aria-label="Position">${[['', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']].map(([id, l]) => `<a href="#" data-pos="${id}" class="${id === rosterPos ? 'on' : ''}">${l}</a>`).join('')}</div>
         <div class="dy-toggles"><label class="dy-taxi-toggle"><input type="checkbox"${hideTaxi ? ' checked' : ''}> Hide taxi (${taxi.length})</label><label class="dy-taxi-toggle dy-sec-toggle"><input type="checkbox"${gmLoad('gm-dyn-sec', true) !== false ? ' checked' : ''}> Include secondary positions</label></div>
         <p class="dy-week" id="dy-week"></p>
-        <ol class="aw-race dy-list">${roster.map(p => `<li class="dy-row" data-pid="${esc(p.pid)}" data-pos="${posGroups(p).main}" data-sec="${posGroups(p).sec.join(' ')}" data-taxi="${p.where === 'taxi' ? 1 : 0}" tabindex="0" role="button" aria-expanded="false"><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([posText(p), p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))}<span class="dy-sec-note"></span> · ${trendOf(p)}${projNote(p)}${p.out ? ` · <span class="${p.outCut ? 'dy-down' : 'dy-flat'}">listed Out: ${p.outCut ? 'this season at half' : 'full value'}</span>` : ''}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small>${p.chances ? `<small class="dy-chances">In 3 seasons: ${chances(p.chances)}</small>` : ''}</span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
-        <p class="cm-rule"><b>▲/▼ next to the score</b> = how much his score moved over the last 7 days (the line above the list adds up your whole team); the ↑/↓ % after his age is different: his value in 2 seasons vs this one. Filters use each player’s main Sleeper position; with <b>Include secondary positions</b> on, players who can also play there (another position Sleeper lists for him) show too, marked “secondary position”. <b>In 3 seasons</b>: his chances of being a rotation player (top 120), a weekly starter (top 72) or a star (top 24) by points per game three seasons from now; players ${PROSPECT_MAX_AGE} and under use the prospect model, older players a model fitted the same way on 2,453 NBA veterans (2013–2022), which counts players who decline or retire.</p>
+        <ol class="aw-race dy-list">${roster.map(p => `<li class="dy-row" data-pid="${esc(p.pid)}" data-pos="${posGroups(p).main}" data-sec="${posGroups(p).sec.join(' ')}" data-taxi="${p.where === 'taxi' ? 1 : 0}" tabindex="0" role="button" aria-expanded="false"><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)} ${tag(p)} ${injuryTag(p)}<small>${esc([posText(p), p.team || 'No team', p.age != null ? `age ${p.age}` : ''].filter(Boolean).join(' · '))}<span class="dy-sec-note"></span> · ${trendOf(p)}${projNote(p)}${p.out ? ` · <span class="${p.outCut ? 'dy-down' : 'dy-flat'}">listed Out: ${p.outCut ? 'this season at half' : 'full value'}</span>` : ''}${p.source !== 'projection' ? ` · ${p.source === 'none' ? 'no projection' : 'from last season'}` : ''}</small>${p.chances ? `<small class="dy-chances">In 3 seasons: ${chances(p.chances)}</small>` : ''}${contractLine(p)}</span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>
+        <p class="cm-rule"><b>▲/▼ next to the score</b> = how much his score moved over the last 7 days (the line above the list adds up your whole team); the ↑/↓ % after his age is different: his value in 2 seasons vs this one. Filters use each player’s main Sleeper position; with <b>Include secondary positions</b> on, players who can also play there (another position Sleeper lists for him) show too, marked “secondary position”. <b>In 3 seasons</b>: his chances of being a rotation player (top 120), a weekly starter (top 72) or a star (top 24) by points per game three seasons from now; players ${PROSPECT_MAX_AGE} and under use the prospect model, older players a model fitted the same way on 2,453 NBA veterans (2013–2022), which counts players who decline or retire.${CONTRACTS?.players ? ' <b>Contract</b>: his NBA deal from this season on (see the Contracts card).' : ''}</p>
       </section>
       <div class="dy-side">
         <section class="card">
@@ -3944,6 +4004,7 @@ async function renderDynasty(body, params) {
           ${taxi.length ? `<ol class="aw-race">${taxi.map(p => `<li><span>${esc(p.name)} ${tierTag(p.score)} ${grade(p)}<small>${p.nbaSeasons} NBA season${p.nbaSeasons === 1 ? '' : 's'} before this one · score ${p.score}${p.prospect ? ` · starter ${pct(p.prospect.starter)}` : ''}</small></span><b class="cm-pill ${taxiLeft(p) <= 0 ? 'bad' : ''}">${esc(taxiText(taxiLeft(p)))}</b></li>`).join('')}</ol>` : '<p class="empty">Nobody on taxi.</p>'}
           <p class="cm-rule">A player can stay on taxi through his 3rd NBA season (seasons counted from real games). <b>Last year</b> = this is his last season on taxi; <b>1 more yr</b> = he can stay one more season after this.${taxi.length > 15 ? ` <b>${taxi.length - 15} over the 15-player limit.</b>` : ''}</p>
         </section>
+        ${contractsCard(v, f.rosters, me)}
         <section class="card">
           <div class="card-head"><h2>Picks</h2><span class="card-sub">Next 3 drafts</span></div>
           ${picks.length ? `<ol class="aw-race">${picks.map(p => `<li><span>${esc(p.label)}<small>${p.orig === me ? 'Own pick' : `From ${esc(name(p.orig))}`}</small></span><span class="dy-val">${scoreBar(p.score)}</span></li>`).join('')}</ol>` : '<p class="empty">No picks in the next 3 drafts.</p>'}
@@ -4405,7 +4466,7 @@ async function renderTrades(body, params) {
     note = sell ? (offers.length ? `The best fair returns for ${esc(sell.name)} (${sell.score}) from each team, best for your timeline first.` : `No fair return found for ${esc(sell.name)}.`) : 'Pick one of your players (or picks) to see what other teams could give.';
   }
 
-  const assetRow = a => `<li><span>${esc(a.name)} ${a.kind === 'player' ? tierTag(a.score) : ''} ${a.prospect ? prospectChip({ prospect: a.prospect }) : ''}${a.where === 'taxi' ? ' <span class="cm-pill">Taxi</span>' : ''}<small>${a.kind === 'pick' ? 'Rookie pick' : esc([a.pos, a.age != null ? `age ${a.age}` : ''].filter(Boolean).join(' · '))}</small></span><b>${a.score}</b></li>`;
+  const assetRow = a => `<li><span>${esc(a.name)} ${a.kind === 'player' ? tierTag(a.score) : ''} ${a.prospect ? prospectChip({ prospect: a.prospect }) : ''}${a.where === 'taxi' ? ' <span class="cm-pill">Taxi</span>' : ''}<small>${a.kind === 'pick' ? 'Rookie pick' : esc([a.pos, a.age != null ? `age ${a.age}` : ''].filter(Boolean).join(' · '))}</small>${a.kind === 'player' ? contractLine(v.players[a.id]) : ''}</span><b>${a.score}</b></li>`;
   const card = o => {
     const share = Math.round(100 * o.giveTV / (o.giveTV + o.getTV));
     return `
@@ -4584,6 +4645,7 @@ async function renderWaivers(body, params) {
   const [ctx, extra, dyn] = await Promise.all([
     loadWeek(DATA, at.season, at.week), loadWaivers(at.season, at.week, at.started),
     loadDynastyFeeds().then(f => dynastyValues(DATA, f, { fullInjured: gmLoad('gm-dyn-full', false) })).catch(() => null),
+    loadContracts(),
   ]);
   if (route().page !== 'commish') return;
   const pos = ['G', 'F', 'C'].includes(params.get('pos')) ? params.get('pos') : 'all';
@@ -4611,7 +4673,7 @@ async function renderWaivers(body, params) {
   // and his rotation / starter / star chances 3 seasons out.
   const secNote = p => (isSec(p) ? ` · <span class="dy-sec">secondary position: ${POS_WORD[pos][0]}</span>` : '');
   const dynLine = d => (d ? ` · dynasty ${d.score} ${trendOf(d)}${projNote(d)}` : '');
-  const chanceLine = d => (d?.chances ? `<small class="dy-chances">In 3 seasons: ${chances(d.chances)}</small>` : '');
+  const chanceLine = d => (d?.chances ? `<small class="dy-chances">In 3 seasons: ${chances(d.chances)}</small>` : '') + contractLine(d);
   const meta = p => esc([posText({ pos: p.pos, fpos: dy(p)?.fpos }), p.team || 'No team', dy(p)?.age != null ? `age ${dy(p).age}` : '', p.games ? `${p.games} game${p.games === 1 ? '' : 's'} this week` : 'no games this week'].filter(Boolean).join(' · ')) + secNote(p);
   // Tap a player (one with a dynasty value) for his score chart, same as the Dynasty roster.
   const chartAttrs = d => (d ? ` class="dy-row" data-pid="${esc(d.pid)}" tabindex="0" role="button" aria-expanded="false"` : '');
@@ -5041,10 +5103,31 @@ function scoutHealthCard(sc, ok) {
   </section>`;
 }
 
+// NBA contracts (data/contracts.json, read weekly on Sundays from Basketball-Reference): was the
+// page read, or is the Dynasty tab showing an older copy; which names didn't match a Sleeper player.
+function contractsHealthCard(ct, ok) {
+  const head = '<div class="card-head"><h2>NBA contracts</h2><span class="card-sub">Read weekly (Sundays) · <a href="#/commish?tab=dynasty">Dynasty</a></span></div>';
+  if (!ct?.players) return `<section class="card">${head}<ul class="cm-checks"><li>${ok(false, '<b>Not built yet.</b> <small>The next update builds it (any day, since the file is missing).</small>')}</li></ul></section>`;
+  const today = ctDate();
+  const age = Math.max(0, Math.round((new Date(`${today}T12:00:00`) - new Date(`${ct.at}T12:00:00`)) / 864e5));
+  const s = ct.source ?? {};
+  const copy = s.fallback === 'seed' ? `the copy saved from a home PC (${esc(shortMd(s.read))})` : `the last good copy (${esc(shortMd(s.read))})`;
+  return `<section class="card">${head}
+    <ul class="cm-checks">
+      <li>${ok(age <= 8, `<b>Built ${esc(shortMd(ct.at))}</b> <small>${age === 0 ? 'today' : `${age} day${age === 1 ? '' : 's'} ago`}${age > 8 ? ' · older than a week: check the latest nightly run' : ''}</small>`)}</li>
+      <li>${s.ok ? ok(true, `<b>${esc(s.name)} read</b> <small>${esc(shortMd(s.read))} · ${num(s.count)} contracts</small>`)
+        : ok(false, `<b>${esc(s.name ?? 'Contracts page')} couldn’t be read</b> <small>using ${copy}, ${num(s.count ?? 0)} contracts; the update tries again Monday, then next Sunday</small><span class="cm-issues">${esc(s.error ?? '')}</span>`)}</li>
+      <li>${ok(!ct.unmatched?.length, `<b>${num(Object.keys(ct.players).length)} matched to Sleeper players</b> <small>${ct.unmatched?.length ? `not matched: ${esc(ct.unmatched.map(u => `${u.name} (${u.team})`).join(', '))} · add them to CONTRACT_IDS in assets/contracts.js` : 'every contract matched'}</small>`)}</li>
+      <li><span class="cm-status">i</span><b>Rostered players with no contract row: ${ct.missing?.length ?? 0}</b> <small>${ct.missing?.length ? esc(ct.missing.map(m => `${m.name} (${m.team})`).join(', ')) : 'none'} · usually two-way or Exhibit 10 deals, which the page doesn’t list</small></li>
+    </ul>
+    <p class="cm-rule">One page, read once a week by the site’s labeled bot (Sports Reference asks bots to go easy). A failed read keeps the last good copy. Contracts are information only.</p>
+  </section>`;
+}
+
 async function renderHealth(body) {
   const fo = ledger();
   const at = await scoutWeek().catch(() => null);
-  const [runs, check, guard, ctx, projLog, scoutData, taxiLog] = await Promise.all([
+  const [runs, check, guard, ctx, projLog, scoutData, taxiLog, contracts] = await Promise.all([
     fetch('https://api.github.com/repos/debugburkhart/seis-dynasty-hoops/actions/runs?per_page=5').then(r => (r.ok ? r.json() : null)).catch(() => null),
     fetch(`data/scoring-check.txt?t=${Date.now()}`).then(r => (r.ok ? r.text() : null)).catch(() => null),
     fetch(`data/week-guard.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
@@ -5052,6 +5135,7 @@ async function renderHealth(body) {
     fetch(`data/projection-log.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
     loadScout().catch(() => null),
     fetch(`data/taxi-log.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
+    loadContracts().catch(() => null),
   ]);
   if (route().page !== 'commish') return;
   const when = x => new Date(x).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -5098,6 +5182,8 @@ async function renderHealth(body) {
     ${projectionLogCard(projLog, when)}
 
     ${scoutHealthCard(scoutData, ok)}
+
+    ${contractsHealthCard(contracts, ok)}
 
     <section class="card">
       <div class="card-head"><h2>Lineup check</h2><span class="card-sub">${at ? `Week ${at.week}${at.started ? '' : ' (before tip-off)'}` : 'No week to check'}</span></div>

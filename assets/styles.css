@@ -2530,3 +2530,20 @@ a.tl-event:hover { background: #fbf6e6; }
 .dn-cmp .pg { min-width: 22px; height: 17px; font-size: 10px; }
 .dn-cmp-head > span { font: 800 9.5px/1.3 var(--display) !important; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .dn-cmp-head .pr-rank { font-size: 9.5px; }
+
+/* NBA contracts (Dynasty roster, Waiver wire, Trade finder rows + Contracts card) */
+.aw-race li small.dy-contract { margin-top: 1px; color: #3c4556; overflow-wrap: anywhere; }
+.aw-race li small.ct-none { color: var(--muted); font-style: italic; }
+.ct-label { font: 800 8.5px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+.ct-team { color: var(--muted); }
+.ct-flag { display: inline-block; padding: 1px 5px; border-radius: 4px; font: 800 8.5px/1.4 var(--display); letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; vertical-align: 1px; cursor: help; background: #efece3; color: #5b6070; }
+.ct-contract-year, .ct-rookie-end { background: var(--gold); color: var(--navy-900); }
+.ct-rookie-ext, .ct-rookie-option { background: #dce6f3; color: var(--navy-800); }
+.ct-opt-out, .ct-team-option { background: #f6e7c8; color: var(--gold-ink); }
+.ct-waivable { background: #f6dcd7; color: #a03a2d; }
+.ct-share { margin: 0 0 10px; font-size: 13px; line-height: 1.5; }
+.ct-share b { font-family: var(--display); font-size: 15px; color: var(--navy-800); }
+.ct-share small { color: var(--muted); }
+#dy-contracts .tf-side-head { margin-top: 8px; }
+#dy-contracts .tf-side-head small { color: var(--muted); font-weight: 600; }
+.ct-list li small { overflow-wrap: anywhere; }

@@ -630,6 +630,32 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   box scores /stats/nba/{season}/{w} for weeks 1..current -> { pid: [fp, games] }; update.mjs saves it as
   dynasty-proj.json `actual` { season, at, games }; pages pass it to loadDynasty (DYN_ACTUAL), and build it
   themselves only when no saved copy exists.
+  NBA CONTRACTS (owner, Oct 22 2026; information only, never in scores/grades): `assets/contracts.js`
+  (no DOM/Node APIs). Source = Basketball-Reference /contracts/players.html (Spotrac 403s and HoopsHype 402s
+  bots: never use or work around them). update.mjs reads that ONE page weekly like Draft Scout (Sunday, a
+  Monday retry when Sunday's read failed, or any run when data/contracts.json is missing or its version !=
+  CONTRACTS_VERSION), with the shared getText (labeled UA, Node fetch then curl; hoisted above Draft Scout,
+  plus getSleeperPlayers() cache). Failed read -> prev.raw (last good parse), else scripts/contracts-seed.json
+  (parsed rows read from a home PC Oct 22 2026); Health report "NBA contracts" card says which. NOT YET KNOWN
+  whether Actions' IPs are blocked: the first Sunday run (or the first run, since the file is missing) shows it.
+  parseContracts(): table #player-contracts (no </tbody> on the page; header rows repeat in the body), columns
+  y1..y6 = seasons from the header (2026-27 -> 2026), cell classes salary-pl / salary-tm (/ et) = player /
+  team / early-termination option, remain_gtd = guaranteed. matchContracts(): normName (scout.js) -> Sleeper
+  id, ties by team then active; CONTRACT_IDS = BRef id -> Sleeper id overrides (Ron Holland); BRef BRK/CHO/PHO
+  = Sleeper BKN/CHA/PHX. Waived players have a row per team with the old deal repeated: the Sleeper-team row
+  is used, others = `waived`, line shows only guaranteed money, no flags. Oct 22: 460 rows, 0 unmatched, 11
+  rostered players without a row (two-way types). data/contracts.json { version, at, source { ok, read,
+  count, error, fallback }, players { pid: { team, seasons [{season, salary, option}], guaranteed, exp
+  (Sleeper years_exp), waived? } }, unmatched, missing (rostered, NBA team, no row), raw }. readContract():
+  options the guaranteed amount still covers were already picked up (Flagg's 2027-28) and drop out; rookie =
+  NBA seasons before this one (p.nbaSeasons, only counts the last 3, so 3 needs exp <= 3) + seasons left <= 4;
+  flags: Contract year / Rookie deal ends (no later seasons), Extension next summer (rookie, 1 more year),
+  Can opt out (player/ET option next), Team option / Rookie team option, Easy to waive (<= MIN_DEAL $3.5M
+  and not a rookie, or not fully guaranteed). UI (app.js): loadContracts() (gmDynasty + Waiver wire load it),
+  contractLine(p) under Dynasty roster, Waiver wire and Trade finder offer rows ("No standard NBA contract"
+  when he has an NBA team but no row; "(listed with X)" when BRef's team differs); flag tooltips = why;
+  contractsCard() in the Dynasty side column: share of roster dynasty score in a contract year (+ options
+  after this season), league average/rank, groups, every-team table; contractsHealthCard() on Health.
   Next: step 4 Playoff odds (after 3-4 weeks of games).
 - `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has
@@ -639,7 +665,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
 - `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, taxi-log.json,
-  dynasty files, draft-scout.json + scout-pool.json weekly).
+  dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 
 ## Data rules decided with the owner
