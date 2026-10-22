@@ -41,7 +41,7 @@ function applyFrozenCorrections(b, season, owners, findPlayer) {
     d.picks = d.picks.filter(p => !DRAFT_CORRECTIONS.some(c => c.ignore && c.season === season && Number(c.pick) === p.no));
     for (const p of d.picks) {
       const fix = DRAFT_CORRECTIONS.find(c => !c.ignore && c.season === season && Number(c.pick) === p.no);
-      if (fix) p.pid = findPlayer(fix.player) ?? p.pid;
+      if (fix) p.pid = fix.pid ?? findPlayer(fix.player) ?? p.pid;
     }
   }
 }
@@ -422,7 +422,7 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
           const fix = DRAFT_CORRECTIONS.find(c => c.season === season && Number(c.pick) === p.pick_no);
           let pid = p.player_id;
           if (fix) {
-            pid = findPlayer(fix.player) ?? pid;
+            pid = fix.pid ?? findPlayer(fix.player) ?? pid;
             if (pid === p.player_id) warnings.push(`${season} draft pick ${p.pick_no}: corrections.js lists "${fix.player}", but no Sleeper player has that name. Check the spelling.`);
           }
           usedPlayers.add(pid);

@@ -40,6 +40,7 @@ export const CORRECTIONS = [
 // commissioner added the real player to the same team, the site links them. If
 // the nightly Action emails about a duplicate draft pick, add the real player here:
 //   { season: '2024', pick: 23, player: 'Player Name' }   (pick = overall pick number)
+// Add pid: 'Sleeper id' when you know it: names can change (Ronald Holland -> Ronald Holland II).
 // Or, if nobody knows who was really drafted, leave the pick out of the draft records:
 //   { season: '2024', pick: 23, ignore: true }
 export const DRAFT_CORRECTIONS = [
@@ -48,9 +49,10 @@ export const DRAFT_CORRECTIONS = [
   { season: '2024', pick: 23, ignore: true },
   // loganzarvell's picks 5 and 11 were recorded as "Matas Buzelis DUPLICATE" and
   // "Ron Holland DUPLICATE" (he dropped both entries in week 1). Sleeper lists the
-  // real Ron Holland as "Ronald Holland".
-  { season: '2024', pick: 5, player: 'Matas Buzelis' },
-  { season: '2024', pick: 11, player: 'Ronald Holland' },
+  // real Ron Holland as "Ronald Holland" (renamed "Ronald Holland II" on Oct 21 2026, which broke the
+  // name match and failed the nightly check), so these use Sleeper's player id (pid), which never changes.
+  { season: '2024', pick: 5, player: 'Matas Buzelis', pid: '2835' },
+  { season: '2024', pick: 11, player: 'Ronald Holland II', pid: '2836' },
 ];
 
 // Player photos Sleeper has wrong (its photo for LeBron James is Bronny James).

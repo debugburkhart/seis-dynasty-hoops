@@ -227,7 +227,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   squares a + b*ln(overall pick) per kind (rookie/startup), b <= 0; z = (value - expected)/sd;
   class grade from sum of z (letterFor thresholds); report card = GPA of class grades.
   2024 picks 5 and 11 were filed by Sleeper under "DUPLICATE" entries; fixed site-wide
-  with DRAFT_CORRECTIONS (Matas Buzelis 2835, Ronald Holland 2836). Tested: no change to
+  with DRAFT_CORRECTIONS (Matas Buzelis 2835, Ronald Holland 2836). Corrections now take `pid` (used before the
+  name lookup): Sleeper renamed him "Ronald Holland II" on Oct 21 2026, the name match failed and the nightly
+  Scoring check failed 4 runs in a row on the duplicate-pick warning (site still deployed: deploy runs first). Tested: no change to
   any Front Office value, record top 5 or GM of the Year, only the pick-11 name.
 - `assets/players.js`: Player Index (#/players, under Hall of Fame): every player's locked
   points with season/manager filters, sort (points, weeks, per start: 5+ starts first),
