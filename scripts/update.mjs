@@ -41,7 +41,9 @@ const previous = await readJson('data/league.json'); // last night's data, for t
 // are worked out once, then carried forward from last night's data.
 const pulled = await buildLeagueData(LEAGUE_ID, undefined, {
   frozen, allStars: previous?.allStars ?? {}, rookies: previous?.rookies ?? {}, rookiesScoring: previous?.rookiesScoring ?? {},
-  rookiePool: previous?.rookiePool ?? {}, preseason: previous?.preseason ?? {},
+  // scripts/preseason-fix.json: hand-restored editions (Oct 21 2026: the 2026 one was rebuilt from Sleeper's
+  // broken in-season feed; this is the copy saved Oct 20, 5:56 PM CT, before tip-off). It wins over last night's.
+  rookiePool: previous?.rookiePool ?? {}, preseason: { ...(previous?.preseason ?? {}), ...((await readJson('scripts/preseason-fix.json')) ?? {}) },
 });
 
 // Week guard: finished weeks of the season in progress that come back from

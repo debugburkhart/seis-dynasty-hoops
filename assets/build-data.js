@@ -561,11 +561,16 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   if (nowSeason && !nowSeason.weeksPlayed && nowSeason.status !== 'complete') {
     const { lg, rosters, ownerOf } = latestRosters;
     const res = await fetchImpl(`https://api.sleeper.com/projections/nba/${lg.season}?season_type=regular&t=${bust}`).catch(() => null);
-    const proj = res?.ok ? await res.json() : [];
+    let proj = res?.ok ? await res.json() : [];
+    // Once games start, this feed turns into each player's latest box score with no gp (Oct 21 2026:
+    // SGA's opener read as a 52-a-game projection and rebuilt the edition mid-week, moving the hype
+    // scores and the Main event). Then the edition stays as it was (same test as dynasty.js seasonFeedOk).
+    const statRows = (proj ?? []).filter(x => x?.stats && Object.keys(x.stats).length);
+    if (statRows.filter(x => x.stats.gp >= 1).length < statRows.length / 2) proj = [];
     const rules = Object.entries(lg.scoring_settings ?? {});
     const byPid = {};
     for (const x of proj ?? []) {
-      if (!x?.player_id || !x.stats) continue;
+      if (!x?.player_id || !x.stats || !(x.stats.gp >= 1)) continue;
       const fp = rules.reduce((sum, [k, v]) => sum + (Number(x.stats[k]) || 0) * v, 0) / (x.stats.gp || 1);
       byPid[x.player_id] = { fp, out: x.player?.injury_status === 'Out', pos: x.player?.fantasy_positions ?? allPlayers[x.player_id]?.fantasy_positions ?? [] };
     }

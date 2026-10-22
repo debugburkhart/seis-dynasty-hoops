@@ -101,7 +101,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   20% (last finish), SCHED 10% (opponents' LINEUP). build-data saves DATA.preseason[season]
   nightly until week 1 is played, then update.mjs carries it over unchanged. Default edition
   while a season has no games; Home's Power card uses it too; Week 1 arrows = vs preseason.
-  No preseason editions for 2023-2025 (no saved projections). `assets/freeze.js`: frozen seasons + week guard.
+  No preseason editions for 2023-2025 (no saved projections). Oct 21 2026: a mid-week run rebuilt the 2026
+  edition from Sleeper's in-season feed (last box scores, no gp: SGA 52/game), which changed the hype scores and
+  the week 1 Main event (jimmy-bigtrey 77 over tzola-burk 59). Fixed: build-data only rebuilds when the feed
+  is real projections (rows with gp >= 1 are half or more; same test as dynasty.js seasonFeedOk), else keeps
+  the saved edition; scripts/preseason-fix.json = the edition saved Oct 20 5:56 PM CT (before tip-off), merged
+  over last night's by update.mjs (verified: slate back to tzola-burk 59, jimmy-bigtrey 47, logan-simeon 34,
+  TRT3-BenDover 30). `assets/freeze.js`: frozen seasons + week guard.
 - `assets/hype.js`: Matchup Hype (hype score, Main event, labels, moments). TUNING (owner chose
   "V5", Oct 2026, so 100 is reachable): Quality relative to that week's league (top-2 pair =
   100, average pair = 50), Closeness free within 2 Power pts then -3.5/pt, History x1.5
