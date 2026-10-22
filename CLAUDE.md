@@ -381,8 +381,17 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (whatIfBanner/bindWhatIfs in app.js). "I locked him" marks stay the real ones (this device only).
   Also fixed: .mb-locked/.mb-live were colouring whole board rows; now scoped to .mb-pts.
   Briefing: lock calls, this week (gameCoach's expected finals + win/median chances), lineup tips
-  (swaps), tonight's games, injury news (localStorage gm-inj-{owner}, rolls over daily), top 3
-  waiver risers.
+  (swaps), "Games by day" (owner, Oct 22 2026, for streaming; replaced "Tonight": day buttons for every
+  date of the week with games + player count, today selected, choice kept across auto-refresh in GM_DAY;
+  panel = active roster (starters + bench) who play that day in tip-off order, slot/Bench, matchup, score
+  / Live / DNP / tip time), injury news (localStorage gm-inj-{owner}, rolls over daily), top 3
+  waiver risers. TIP-OFF TIMES (owner, Oct 22 2026): Sleeper's schedule has dates only, so gm.js
+  loadSlate() adds g.tip (UTC ISO) from ESPN's public scoreboard site.api.espn.com/.../nba/scoreboard?
+  dates=YYYYMMDD (one request per date, CORS *, no date ranges; cdn.nba.com refuses browsers), cached
+  6 h in localStorage gm-tips-{date}; ESPN codes GS/NO/NY/SA/UTAH/WSH -> Sleeper GSW/NOP/NYK/SAS/UTA/WAS;
+  browser only (no localStorage = no times). tipTime(g) = "6:30 PM" Central; app.js tipShort = "6:30p".
+  Shown on Lock-in coach game chips (upcoming games), the board's "Today vs X · 8:30p" tag (.mb-tip keeps
+  it lowercase) and Games by day.
   scoutWeek().started is false in preseason (HYPE_NOW.pre), fixed Oct 2026.
   STEP 2 (built Oct 2026): `assets/dynasty.js` dynasty values (owner: weights 50/30/20, 0-100 score,
   blunt Managers tone). Per player: v1 = Sleeper season per-game projection (league scoring;

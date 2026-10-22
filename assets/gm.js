@@ -69,7 +69,39 @@ export async function loadBoxes(season, week, scoring) {
   return out;
 }
 
-// NBA schedule this week by team, with opponent and status: { BOS: [{ date, opp, home, status }] }
+// Tip-off times (owner, Oct 2026: for streaming). Sleeper's schedule has dates only, so the time comes
+// from ESPN's public scoreboard (one request per date, CORS open; the official NBA feed refuses
+// browsers), cached in this browser for 6 hours. { 'YYYY-MM-DD': { BOS: '2026-10-22T23:00Z' } };
+// a failed day just has no times.
+const ESPN_TEAM = { GS: 'GSW', NO: 'NOP', NY: 'NYK', SA: 'SAS', UTAH: 'UTA', WSH: 'WAS' };
+async function tipoffsFor(dates) {
+  const out = {};
+  await Promise.all(dates.map(async date => {
+    const key = `gm-tips-${date}`;
+    try {
+      const hit = JSON.parse(localStorage.getItem(key) ?? 'null');
+      if (hit && Date.now() - hit.at < 6 * 3600e3) { out[date] = hit.t; return; }
+    } catch { /* no cache */ }
+    try {
+      const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${date.replace(/-/g, '')}`);
+      if (!res.ok) return;
+      const t = {};
+      for (const ev of (await res.json())?.events ?? []) {
+        for (const c of ev.competitions?.[0]?.competitors ?? []) {
+          const ab = c.team?.abbreviation;
+          if (ab && ev.date) t[ESPN_TEAM[ab] ?? ab] = ev.date;
+        }
+      }
+      out[date] = t;
+      try { localStorage.setItem(key, JSON.stringify({ at: Date.now(), t })); } catch { /* full or blocked */ }
+    } catch { /* offline: no times */ }
+  }));
+  return out;
+}
+// "6:30 PM" Central for a game with a known tip-off, else ''.
+export const tipTime = g => (g?.tip ? new Date(g.tip).toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }) : '');
+
+// NBA schedule this week by team, with opponent, status and tip-off: { BOS: [{ date, opp, home, status, tip }] }
 export async function loadSlate(season, week) {
   const schedule = await get(`/schedule/nba/regular/${season}`, []);
   const out = {};
@@ -81,6 +113,10 @@ export async function loadSlate(season, week) {
     if (a) (out[a] ??= []).push({ date: g.date, opp: h, home: false, status: g.status });
   }
   for (const list of Object.values(out)) list.sort((x, y) => (x.date < y.date ? -1 : 1));
+  if (typeof localStorage !== 'undefined') {
+    const tips = await tipoffsFor([...new Set(Object.values(out).flat().map(g => g.date))]);
+    for (const [team, list] of Object.entries(out)) for (const g of list) g.tip = tips[g.date]?.[team] ?? null;
+  }
   return out;
 }
 

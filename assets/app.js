@@ -5,7 +5,7 @@ import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from '.
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, isRivalry, moments, seasonSeries, seasonWeeks, seriesBefore, standingsBefore, trophyHistory, trophyImg, trophyOf, weekPairs } from './hype.js';
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, get, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
-import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach, lockedPoints } from './gm.js';
+import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach, lockedPoints, tipTime } from './gm.js';
 import { PROSPECT_LIST, PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, prospectRanking, taxiLeft } from './dynasty.js';
 import { CENTERPIECE, evaluateTrade, moveImpacts, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, teamSnapshot, tradeContext, unpackTeam } from './tradefinder.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
@@ -2639,6 +2639,8 @@ function swapList(w, swaps) {
 
 const CALL_LABEL = { lock: 'Lock', wait: 'Wait', locked: 'Locked', final: 'Done', live: 'Live', plan: 'Plan', none: 'No games' };
 const shortDay = date => new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
+// Tip-off in Central time, short: "6:30p" (gm.js tipTime; '' when ESPN had no time for it).
+const tipShort = g => tipTime(g).replace(/ ([AP])M$/, (_, x) => x.toLowerCase());
 const longDay = date => new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 
 // Refresh a GM tab every 2 minutes while games are being played today.
@@ -2676,7 +2678,7 @@ async function renderCoach(body, params) {
   const game = (r, g) => {
     const isLocked = r.call === 'locked' && g.pts != null && Math.abs(g.pts - r.score) < 0.05;
     const cls = g.playing ? 'playing' : g.done ? (g.pts == null ? 'dnp' : 'done') : 'next';
-    return `<span class="gm-game ${cls}${isLocked ? ' locked' : ''}"><small>${shortDay(g.date)}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</span><b>${g.pts != null ? num(g.pts) : g.done ? 'DNP' : g.playing ? 'Live' : '–'}</b></span>`;
+    return `<span class="gm-game ${cls}${isLocked ? ' locked' : ''}"><small>${shortDay(g.date)}${!g.done && !g.playing && tipShort(g) ? ` <span class="mb-tip">${tipShort(g)}</span>` : ''}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</span><b>${g.pts != null ? num(g.pts) : g.done ? 'DNP' : g.playing ? 'Live' : '–'}</b></span>`;
   };
   const markable = r => r.call === 'lock' || r.call === 'wait' || r.marked;
   const label = r => (r.whatIf ? 'What-if' : CALL_LABEL[r.call]);
@@ -2749,7 +2751,7 @@ async function renderCoach(body, params) {
   // Tags line under a name: dynasty tier, injury, plays today.
   const tags = p => {
     const g = todayGame(p);
-    return `${tier(p)}${p.injury ? injuryTag(p) : ''}${g ? `<span class="mb-today">${['in_progress', 'in_game'].includes(g.status) ? 'Live' : 'Today'} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</span>` : ''}`;
+    return `${tier(p)}${p.injury ? injuryTag(p) : ''}${g ? `<span class="mb-today">${['in_progress', 'in_game'].includes(g.status) ? 'Live' : 'Today'} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${!['complete', 'in_progress', 'in_game'].includes(g.status) && tipShort(g) ? ` · <span class="mb-tip">${tipShort(g)}</span>` : ''}</span>` : ''}`;
   };
   const nameHtml = p => `<b><span class="mb-full">${esc(p.name)}</span><span class="mb-short">${esc(short(p.name))}</span></b>`;
   // A tappable player: key = side + pid, opens his card (data-for) below the row.
@@ -2904,9 +2906,27 @@ async function renderBriefing(body, params) {
 
   // Tonight: every player on the roster with an NBA game today.
   const all = [...team.starters.filter(p => !p.empty).map(p => ({ ...p, starter: true })), ...team.bench];
-  const tonight = all.map(p => ({ p, g: (w.slate[p.team] ?? []).find(g => g.date === ctx.today) })).filter(x => x.g);
-  const box = pid => (w.boxes[pid] ?? []).find(b => b.date === ctx.today);
-  const nextDate = Object.values(w.slate).flat().map(g => g.date).filter(d => d > ctx.today).sort()[0];
+  // Games by day (owner, Oct 2026, for streaming): every day of this week with games, today first
+  // selected; each day lists the active roster's players who play, in tip-off order (Central time).
+  const weekDays = [...new Set(Object.values(w.slate).flat().map(g => g.date))].sort();
+  const dayStart = weekDays.includes(GM_DAY) ? GM_DAY : weekDays.includes(ctx.today) ? ctx.today : weekDays.find(d => d > ctx.today) ?? weekDays.at(-1);
+  const playsOn = d => all.map(p => ({ p, g: (w.slate[p.team] ?? []).find(g => g.date === d) })).filter(x => x.g)
+    .sort((a, b) => (a.g.tip ?? '9') < (b.g.tip ?? '9') ? -1 : (a.g.tip ?? '9') > (b.g.tip ?? '9') ? 1 : (b.p.starter ? 1 : 0) - (a.p.starter ? 1 : 0));
+  const boxOn = (pid, d) => (w.boxes[pid] ?? []).find(b => b.date === d);
+  const dayLabel = d => `${d === ctx.today ? 'Today' : shortDay(d)} ${Number(d.slice(8))}`;
+  const dayPanel = d => {
+    const list = playsOn(d);
+    const st = list.filter(x => x.p.starter).length;
+    return `<div class="gm-day" data-day="${d}"${d === dayStart ? '' : ' hidden'}>
+      <p class="cm-rule">${esc(longDay(d))}: ${list.length ? `${list.length} of your players (${st} starting, ${list.length - st} on the bench).` : 'none of your players play.'} Times are Central.</p>
+      ${list.length ? `<ol class="aw-race">${list.map(({ p, g }) => {
+        const bx = boxOn(p.pid, d);
+        const live = ['in_progress', 'in_game'].includes(g.status);
+        const right = bx && !live ? num(bx.pts) : live ? `Live${bx ? ` ${num(bx.pts)}` : ''}` : g.status === 'complete' || d < ctx.today ? 'DNP' : tipShort(g) || '–';
+        return `<li><span>${esc(p.name)} ${injuryTag(p)}<small>${p.starter ? esc(p.slot) : 'Bench'} · ${esc(p.team)} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${tipTime(g) && right !== tipShort(g) ? ` · ${esc(tipTime(g))}` : ''}</small></span><b>${right}</b></li>`;
+      }).join('')}</ol>` : ''}
+    </div>`;
+  };
 
   // Injury news since the day before: the snapshot rolls over once a day, so news stays up all day.
   const injKey = `gm-inj-${me}`;
@@ -2962,9 +2982,9 @@ async function renderBriefing(body, params) {
         ${swapList(w, coach.swaps)}
       </section>
       <section class="card">
-        <div class="card-head"><h2>Tonight</h2></div>
-        ${tonight.length ? `<ol class="aw-race">${tonight.map(({ p, g }) => `<li><span>${esc(p.name)} ${injuryTag(p)}<small>${p.starter ? esc(p.slot) : 'Bench'} · ${esc(p.team)} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</small></span><b>${box(p.pid) ? num(box(p.pid).pts) : g.status === 'complete' ? 'DNP' : '–'}</b></li>`).join('')}</ol>`
-          : `<p class="empty">None of your players play today.${nextDate ? ` Next games: ${esc(longDay(nextDate))}.` : ''}</p>`}
+        <div class="card-head"><h2>Games by day</h2><span class="card-sub">This week</span></div>
+        ${weekDays.length ? `<div class="gm-days" role="tablist">${weekDays.map(d => `<button type="button" role="tab" data-day="${d}" class="${d === dayStart ? 'on' : ''}" aria-selected="${d === dayStart}">${esc(dayLabel(d))}<small>${playsOn(d).length}</small></button>`).join('')}</div>
+          ${weekDays.map(dayPanel).join('')}` : '<p class="empty">No NBA games scheduled this week.</p>'}
       </section>
       <section class="card">
         <div class="card-head"><h2>Injury news</h2></div>
@@ -2978,8 +2998,17 @@ async function renderBriefing(body, params) {
     </div></div>`;
   bindTeamPick(body);
   bindWhatIfs(body, w, () => renderBriefing(body, params).catch(() => {}));
+  body.querySelectorAll('.gm-days button').forEach(b => b.addEventListener('click', () => {
+    GM_DAY = b.dataset.day;
+    body.querySelectorAll('.gm-days button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); });
+    body.querySelectorAll('.gm-day').forEach(p => { p.hidden = p.dataset.day !== GM_DAY; });
+  }));
+  const dayRow = body.querySelector('.gm-days');
+  const dayOn = dayRow?.querySelector('.on');
+  if (dayOn) dayRow.scrollLeft = dayOn.offsetLeft - dayRow.offsetLeft - (dayRow.clientWidth - dayOn.offsetWidth) / 2; // row only, never the page
   gmAutoRefresh(body, params, renderBriefing, w);
 }
+let GM_DAY = null; // the Briefing's chosen day in "Games by day" (kept across its auto-refresh)
 
 // ---- My GM: Dynasty and Managers (dynasty values in assets/dynasty.js) ----
 
