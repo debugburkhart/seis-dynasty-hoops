@@ -1453,6 +1453,19 @@ a.tx-row.tx-link:hover { background: #fbf6e6; }
 }
 .hm-main:hover { box-shadow: 0 0 0 2px var(--gold), 0 6px 18px rgba(7,20,43,.18); }
 .hm-loading p { margin: 0; color: #a9b7cc; }
+/* Home: every game of the week as slides (bindHomeSlides). All slides share one grid cell, so the box
+   keeps the tallest slide's height and nothing below jumps; desktop auto-cycles, phones use the arrows. */
+.hm-slides { display: grid; }
+.hm-slide { grid-area: 1 / 1; visibility: hidden; opacity: 0; transition: opacity .35s ease, visibility 0s linear .35s; }
+.hm-slide.on { visibility: visible; opacity: 1; transition: opacity .35s ease; }
+.hm-nav { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
+.hm-dots { display: flex; gap: 6px; }
+.hm-dot { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: var(--line, #d9dee8); cursor: pointer; }
+.hm-dot.on { background: var(--navy-800); }
+.hm-arrow { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--line, #d9dee8); border-radius: 50%; background: #fff; color: var(--navy-800); font: 800 20px/1 var(--display); cursor: pointer; }
+.hm-arrow:active { background: var(--navy-800); color: var(--gold); }
+@media (hover: hover) and (pointer: fine) { .hm-arrow { display: none; } }
+@media (prefers-reduced-motion: reduce) { .hm-slide, .hm-slide.on { transition: none; } }
 .hm-main-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .hm-kicker { display: inline-flex; align-items: center; gap: 6px; font: 800 10.5px/1.2 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
 .hm-kicker .ic { width: 14px; height: 14px; }
@@ -1478,7 +1491,6 @@ a.tx-row.tx-link:hover { background: #fbf6e6; }
 .hm-score span.won { color: var(--gold); }
 .hm-score i { font-style: normal; color: #6f82a3; }
 .hm-status { max-width: 120px; text-align: center; font: 800 9.5px/1.3 var(--display); letter-spacing: .12em; text-transform: uppercase; color: #a9b7cc; }
-.hm-live { font: 700 11px/1.2 var(--display); color: #c9d4e6; font-variant-numeric: tabular-nums; text-align: center; opacity: .85; }
 .hm-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
 .hm-chips .hy-chip:not(.hy-gold) { background: rgba(255,255,255,.1); color: #dfe6f1; }
 .hm-why { margin: 0; text-align: center; font-size: 13px; color: #dfe6f1; }

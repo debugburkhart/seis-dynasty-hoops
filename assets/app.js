@@ -1186,9 +1186,17 @@ async function hypeNow() {
 }
 
 // Live scores (and, in the playoffs, the bracket pairings) for the week under way.
-async function liveWeek(season, week) {
+// { locked: true } (commish office only): also estimate each team's locked points (gm.js).
+// Public pages show Sleeper's live total, labeled live (owner, Oct 22 2026: locks can't be read
+// reliably mid-week; finished weeks show the saved final = locked score).
+async function liveWeek(season, week, { locked: wantLocked = false } = {}) {
   const key = `${season}|${week}`;
-  if (LIVE[key] && Date.now() - LIVE[key].at < 50_000) return LIVE[key];
+  const hit = LIVE[key];
+  if (hit && Date.now() - hit.at < 50_000) {
+    if (!wantLocked || hit.locked !== undefined) return hit;
+    hit.locked = await lockedFor(season, week, hit.rows);
+    return hit;
+  }
   const s = DATA.seasons.find(x => x.season === season);
   const ownerOf = Object.fromEntries(s.teams.map(t => [t.rosterId, t.owner]));
   const rows = await withTimeout(sleeper(`/league/${s.leagueId}/matchups/${week}`), 8000);
@@ -1217,13 +1225,18 @@ async function liveWeek(season, week) {
   } else if (!weekPairs(DATA, season, week).length) {
     pairs = Object.values(byMatch).filter(x => x.length === 2).map(([a, b]) => ({ a, b, t: 'R', label: null, final: null }));
   }
-  // Locked points per owner (gm.js); null if the box scores can't be read, then pages show Sleeper's total.
-  let locked = null;
+  const out = { scores, pairs, rows, at: Date.now() };
+  if (wantLocked) out.locked = await lockedFor(season, week, rows);
+  return (LIVE[key] = out);
+}
+// Locked points per owner (gm.js); null if the box scores can't be read, then the commish pages show Sleeper's total.
+async function lockedFor(season, week, rows) {
+  const s = DATA.seasons.find(x => x.season === season);
+  const ownerOf = Object.fromEntries(s.teams.map(t => [t.rosterId, t.owner]));
   try {
     const byRoster = await withTimeout(lockedPoints(season, week, s.leagueId, rows), 8000);
-    locked = Object.fromEntries(Object.entries(byRoster).map(([r, v]) => [ownerOf[r], v]));
-  } catch { /* fall back to the live total */ }
-  return (LIVE[key] = { scores, locked, pairs, at: Date.now() });
+    return Object.fromEntries(Object.entries(byRoster).map(([r, v]) => [ownerOf[r], v]));
+  } catch { return null; }
 }
 
 const HYPE_TONES = { gold: 'hy-gold', red: 'hy-red', navy: 'hy-navy' };
@@ -1419,11 +1432,11 @@ async function renderHype(main, params, preview = null) {
   const B = g.b;
   const score = o => {
     if (g.final) return o === A ? g.final.ap : g.final.bp;
-    return liveData?.locked?.[o] ?? liveData?.scores?.[o] ?? 0;
+    return liveData?.scores?.[o] ?? 0;
   };
-  // Sleeper's live total (every starter's latest game, locked or not); the big number is locked points.
-  const liveTotal = o => liveData?.scores?.[o] ?? 0;
-  const lockedOn = () => !g.final && Boolean(liveData?.locked);
+  // Mid-week the number is Sleeper's live total (every starter's latest game, locked or not):
+  // labeled live, not locked. A finished week shows the saved final (= the locked score).
+  const isLive = !g.final && live && Boolean(liveData);
   const pa = score(A);
   const pb = score(B);
   const lastSeason = slate.prevSeason;
@@ -1443,8 +1456,7 @@ async function renderHype(main, params, preview = null) {
         <div class="hy-owner">${esc(name(o))}</div>
         <div class="hy-rec">${t ? rec(t.w, t.l, t.t) : '—'}</div>
         <div class="hy-pts" data-o="${esc(o)}">${num(score(o))}</div>
-        <div class="hy-pts-label">${g.final ? 'Final' : lockedOn() ? 'Locked' : 'Points'}</div>
-        ${lockedOn() ? `<div class="hy-pts-live">Live <b data-live="${esc(o)}">${num(liveTotal(o))}</b></div>` : ''}
+        <div class="hy-pts-label">${g.final ? 'Final · locked' : isLive ? 'Live · not locked' : 'Points'}</div>
       </div>`;
   };
   const leadLine = () => {
@@ -1457,17 +1469,12 @@ async function renderHype(main, params, preview = null) {
       return x === y ? `${esc(name(w))} advanced on the tiebreaker · ${total} combined points`
         : `${esc(name(w))} won by ${num(Math.abs(x - y))} · ${total} combined points`;
     }
-    if (lockedOn()) {
-      const lv = `live ${num(liveTotal(A))}–${num(liveTotal(B))}`;
-      if (!x && !y) return `No locked points yet · ${lv}`;
-      if (x === y) return `All square on locked points · ${lv}`;
-      return `${esc(name(x > y ? A : B))} leads by ${num(Math.abs(x - y))} locked · ${lv}`;
-    }
     if (!x && !y) return 'No points on the board yet · tip-off pending';
-    if (x === y) return `All square · ${total} combined live points`;
-    return `${esc(name(x > y ? A : B))} leads by ${num(Math.abs(x - y))} · ${total} combined live points`;
+    const note = ' · live scores count each starter’s latest game, locked or not; the final locked score shows when the week ends';
+    if (x === y) return `All square · ${total} combined live points${note}`;
+    return `${esc(name(x > y ? A : B))} leads by ${num(Math.abs(x - y))} live · ${total} combined live points${note}`;
   };
-  const status = g.final ? 'Final' : live && liveData ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : preview ? 'Tip-off pending' : 'Scores load from Sleeper';
+  const status = g.final ? 'Final · locked scores' : live && liveData ? `Live (not locked) · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : preview ? 'Tip-off pending' : 'Scores load from Sleeper';
 
   // ----- The hype -----
   const rankOnSlate = slate.games.indexOf(g) + 1;
@@ -1547,11 +1554,9 @@ async function renderHype(main, params, preview = null) {
     <section class="card hy-slate">
       <div class="card-head"><h2>The full slate</h2><span class="card-sub">Week ${week} · ranked by hype</span></div>
       ${slate.games.map((x, i) => {
-        const sa = x.final ? x.final.ap : liveData?.locked?.[x.a] ?? liveData?.scores?.[x.a];
-        const sb = x.final ? x.final.bp : liveData?.locked?.[x.b] ?? liveData?.scores?.[x.b];
-        const la = liveData?.scores?.[x.a];
-        const lb = liveData?.scores?.[x.b];
-        const liveLine = !x.final && liveData?.locked && (la || lb) ? `<small>live ${num(la ?? 0)}–${num(lb ?? 0)}</small>` : '';
+        const sa = x.final ? x.final.ap : liveData?.scores?.[x.a];
+        const sb = x.final ? x.final.bp : liveData?.scores?.[x.b];
+        const liveLine = !x.final && (sa || sb) ? '<small>live</small>' : '';
         return `
         <a class="hy-game${x === g ? ' on' : ''}" href="${hash({ m: x.a })}">
           <span class="hy-g-rank">${i + 1}</span>
@@ -1604,12 +1609,11 @@ async function renderHype(main, params, preview = null) {
       try {
         const d = await liveWeek(season, week);
         liveData = d;
-        main.querySelectorAll('.hy-pts[data-o]').forEach(el => { el.textContent = num(d.locked?.[el.dataset.o] ?? d.scores[el.dataset.o] ?? 0); });
-        main.querySelectorAll('[data-live]').forEach(el => { el.textContent = num(d.scores[el.dataset.live] ?? 0); });
+        main.querySelectorAll('.hy-pts[data-o]').forEach(el => { el.textContent = num(d.scores[el.dataset.o] ?? 0); });
         const lead = $('#hy-lead', main);
         if (lead) lead.innerHTML = leadLine();
         const st = $('#hy-status', main);
-        if (st) st.textContent = `Live · updated ${new Date(d.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+        if (st) st.textContent = `Live (not locked) · updated ${new Date(d.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
       } catch { /* try again next time */ }
     }, 60_000); // every minute while the page is open
   }
@@ -2459,7 +2463,7 @@ async function renderScouting(body, params) {
   const tb = table.by[opp];
   const live = ctx.live && A?.liveScore != null;
   // Locked points are the big number while the week is live (liveWeek, cached for a minute).
-  const lockedNow = live ? (await liveWeek(season, week).catch(() => null))?.locked ?? null : null;
+  const lockedNow = live ? (await liveWeek(season, week, { locked: true }).catch(() => null))?.locked ?? null : null;
   const projA = A?.projStarters ?? 0;
   const projB = B?.projStarters ?? 0;
   const gamesOf = t => t.starters.reduce((s, p) => s + (ctx.live ? p.left || 0 : p.games || 0), 0);
@@ -2894,7 +2898,7 @@ async function renderBriefing(body, params) {
   const opp = coach.opp;
   const oppTeam = coach.oppCoach?.team;
   const live = ctx.live && team.liveScore != null;
-  const lockedNow = live ? (await liveWeek(season, week).catch(() => null))?.locked ?? null : null;
+  const lockedNow = live ? (await liveWeek(season, week, { locked: true }).catch(() => null))?.locked ?? null : null;
   const duelSide = (o, t) => `<div><small>${esc(teamName(o, season))}</small><b>${num(live ? lockedNow?.[o] ?? t.liveScore : coach.now.avg[o])}</b><small>${live ? `${lockedNow ? `locked · live ${num(t.liveScore)}` : 'live'} · expected ${num(coach.now.avg[o])}` : 'expected'}</small></div>`;
 
   // Tonight: every player on the roster with an NBA game today.
@@ -5388,19 +5392,69 @@ async function homeHype(box, refresh = false, preview = null) {
   }
   const pairs = liveData?.pairs ?? weekPairs(DATA, season, week);
   const slate = hypeSlate(DATA, season, week, pairs);
-  const g = slate.games[0];
-  if (!g) {
+  if (!slate.games.length) {
     box.innerHTML = `<a class="card hm-card hm-link" href="#/hype"><p class="empty">Week ${week}’s matchups show up once Sleeper sets them.</p></a>`;
     return live;
   }
-  // Big numbers = locked points; Sleeper's live total (every latest game) goes underneath.
-  const score = o => (g.final ? (o === g.a ? g.final.ap : g.final.bp) : liveData?.locked?.[o] ?? liveData?.scores?.[o]);
+  const waiting = !(now.done || now.week >= 1) && now.tipoff && cur.season !== season;
+  const when = waiting ? `Last Main event · ${season} Week ${week}` : live && now.pre ? `Opening week${now.tipoff ? ` · tips off ${prettyDate(now.tipoff)}` : ''}` : live ? `This week · Week ${week}` : `${season} · Week ${week}`;
+  // Every game of the week, Main event first (owner, Oct 2026): desktop cycles through them, phones
+  // use the arrows (bindHomeSlides). The shown slide survives the minute-by-minute score refresh.
+  const n = slate.games.length;
+  const at = Math.min(Number(box.dataset.slide) || 0, n - 1);
+  box.innerHTML = `
+    <div class="hm-slides" aria-roledescription="carousel" aria-label="This week’s games">
+      ${slate.games.map((g, i) => homeSlide(g, i, n, { season, week, live, liveData, when, isPreview, on: i === at })).join('')}
+      ${n > 1 ? `<div class="hm-nav">
+        <button type="button" class="hm-arrow" data-step="-1" aria-label="Previous game">‹</button>
+        <span class="hm-dots">${slate.games.map((_, i) => `<button type="button" class="hm-dot${i === at ? ' on' : ''}" data-go="${i}" aria-label="Game ${i + 1} of ${n}"></button>`).join('')}</span>
+        <button type="button" class="hm-arrow" data-step="1" aria-label="Next game">›</button>
+      </div>` : ''}
+    </div>
+    ${waiting ? `<p class="hm-note">${icon('clock')}<span>The ${esc(cur.season)} season tips off ${esc(prettyDate(now.tipoff))}. Week 1’s Main event appears once Sleeper sets the schedule.</span></p>` : ''}`;
+  box.dataset.slide = at;
+  bindHomeSlides(box);
+  return live && !now.pre && !isPreview; // no point refreshing scores before tip-off (or in a preview)
+}
+
+// Desktop (a mouse): the games change every HM_CYCLE_MS, paused while the pointer is over them (owner
+// asked for cycling; with Reduce Motion on it still cycles, just without the fade: CSS). Phones: arrows
+// (and dots) only, no auto-advance.
+const HM_CYCLE_MS = 8000;
+function bindHomeSlides(box) {
+  const slides = [...box.querySelectorAll('.hm-slide')];
+  if (slides.length < 2) return;
+  const show = i => {
+    const k = (i + slides.length) % slides.length;
+    slides.forEach((s, j) => { s.classList.toggle('on', j === k); s.setAttribute('aria-hidden', j === k ? 'false' : 'true'); s.tabIndex = j === k ? 0 : -1; });
+    box.querySelectorAll('.hm-dot').forEach((d, j) => d.classList.toggle('on', j === k));
+    box.dataset.slide = k;
+  };
+  const cur = () => Number(box.dataset.slide) || 0;
+  box.querySelectorAll('.hm-arrow').forEach(b => b.addEventListener('click', () => show(cur() + Number(b.dataset.step))));
+  box.querySelectorAll('.hm-dot').forEach(b => b.addEventListener('click', () => show(Number(b.dataset.go))));
+  clearInterval(box._cycle);
+  const desktop = matchMedia('(hover: hover) and (pointer: fine)').matches;
+  if (!desktop) return;
+  let paused = false;
+  const wrap = box.querySelector('.hm-slides');
+  wrap.addEventListener('mouseenter', () => { paused = true; });
+  wrap.addEventListener('mouseleave', () => { paused = false; });
+  wrap.addEventListener('focusin', () => { paused = true; });
+  wrap.addEventListener('focusout', () => { paused = false; });
+  box._cycle = setInterval(() => {
+    if (!box.isConnected) return clearInterval(box._cycle);
+    if (!paused && !document.hidden) show(cur() + 1);
+  }, HM_CYCLE_MS);
+}
+
+// One game's slide on Home (the first is the week's Main event).
+function homeSlide(g, i, n, { season, week, live, liveData, when, isPreview, on }) {
+  // Mid-week: Sleeper's live total (every starter's latest game, locked or not), labeled live.
+  const score = o => (g.final ? (o === g.a ? g.final.ap : g.final.bp) : liveData?.scores?.[o]);
   const sa = score(g.a);
   const sb = score(g.b);
-  const la = liveData?.scores?.[g.a] ?? 0;
-  const lb = liveData?.scores?.[g.b] ?? 0;
-  const showLive = !g.final && liveData?.locked && (la || lb);
-  const hasScore = sa != null && (sa || sb || showLive);
+  const hasScore = sa != null && (sa || sb);
   const winner = g.final && g.final.win !== 'tie' ? (g.final.win === 'A' ? g.a : g.b) : null;
   const side = (o, t) => {
     const av = avatarUrl(DATA.owners[o]?.avatar);
@@ -5411,20 +5465,18 @@ async function homeHype(box, refresh = false, preview = null) {
         <div class="hm-owner">${esc(name(o))}${t ? ` · <span class="nw">${rec(t.w, t.l, t.t)}</span>` : ''}</div>
       </div>`;
   };
-  const waiting = !(now.done || now.week >= 1) && now.tipoff && cur.season !== season;
-  const when = waiting ? `Last Main event · ${season} Week ${week}` : live && now.pre ? `Opening week${now.tipoff ? ` · tips off ${prettyDate(now.tipoff)}` : ''}` : live ? `This week · Week ${week}` : `${season} · Week ${week}`;
-  const status = g.final ? 'Final' : live && hasScore ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : live ? 'Tip-off pending' : '';
+  const status = g.final ? 'Final · locked scores' : live && hasScore ? `Live (not locked) · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : live ? 'Tip-off pending' : '';
   const why = g.labels.find(l => l.id === 'main')?.why ?? g.labels[0]?.why;
-  box.innerHTML = `
-    <a class="hm-main" href="${isPreview ? `#/commish?${new URLSearchParams({ tab: 'hype', view: 'page', week, m: g.a })}` : `#/hype?${new URLSearchParams({ season, week, m: g.a })}`}">
+  return `
+    <a class="hm-main hm-slide${on ? ' on' : ''}" aria-hidden="${on ? 'false' : 'true'}" tabindex="${on ? 0 : -1}" aria-label="Game ${i + 1} of ${n}" href="${isPreview ? `#/commish?${new URLSearchParams({ tab: 'hype', view: 'page', week, m: g.a })}` : `#/hype?${new URLSearchParams({ season, week, m: g.a })}`}">
       <div class="hm-main-top">
-        <span class="hm-kicker">${icon('bolt')} ${esc(when)}${g.label ? ` · ${esc(g.label)}` : ''}</span>
+        <span class="hm-kicker">${icon('bolt')} ${esc(when)}${g.label ? ` · ${esc(g.label)}` : ''}${n > 1 ? ` · ${i === 0 ? 'Main event' : `Game ${i + 1} of ${n}`}` : ''}</span>
         <span class="hm-hype"><b>${g.hype}</b> Hype</span>
       </div>
       <div class="hm-duel">
         ${side(g.a, g.tA)}
         <div class="hm-mid">
-          ${hasScore ? `<div class="hm-score"><span${winner === g.a ? ' class="won"' : ''}>${num(sa)}</span><i>–</i><span${winner === g.b ? ' class="won"' : ''}>${num(sb)}</span></div>${showLive ? `<div class="hm-live">Locked · live ${num(la)}–${num(lb)}</div>` : ''}` : '<div class="hm-vs">VS</div>'}
+          ${hasScore ? `<div class="hm-score"><span${winner === g.a ? ' class="won"' : ''}>${num(sa)}</span><i>–</i><span${winner === g.b ? ' class="won"' : ''}>${num(sb)}</span></div>` : '<div class="hm-vs">VS</div>'}
           ${status ? `<div class="hm-status">${esc(status)}</div>` : ''}
         </div>
         ${side(g.b, g.tB)}
@@ -5433,9 +5485,7 @@ async function homeHype(box, refresh = false, preview = null) {
       ${why ? `<p class="hm-why">${esc(why)}</p>` : ''}
       ${trophyOf(g.a, g.b) && Number(season) >= Number(RIVALRIES_FROM) ? `<p class="hm-trophy">${trophyPic(trophyOf(g.a, g.b), 'mini')}<span>Playing for the <b>${esc(trophyOf(g.a, g.b)[2].replace(/^The /, ''))}</b> trophy · ${esc(seriesLine(seasonSeries(DATA, season, g.a, g.b, week)))}</span></p>` : ''}
       <span class="hm-go">Full matchup ${icon('arrow')}</span>
-    </a>
-    ${waiting ? `<p class="hm-note">${icon('clock')}<span>The ${esc(cur.season)} season tips off ${esc(prettyDate(now.tipoff))}. Week 1’s Main event appears once Sleeper sets the schedule.</span></p>` : ''}`;
-  return live && !now.pre && !isPreview; // no point refreshing scores before tip-off (or in a preview)
+    </a>`;
 }
 
 // Newest record changes, league and personal together.

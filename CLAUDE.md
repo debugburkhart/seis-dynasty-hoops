@@ -41,7 +41,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `assets/app.js`: all pages (hash routes: home, rules, timeline, rivalry, records, power, hype, standings,
   transactions, awards, players), sidebar.
 - Home (#/home, the default page; renderHome in app.js): Main event = top of hypeSlate for
-  the week the Hype page opens on (preseason: last season's final week + tip-off note);
+  the week the Hype page opens on (preseason: last season's final week + tip-off note). Since Oct 22 2026
+  (owner) the card holds EVERY game of that week as slides in hype order (homeSlide per game, kicker says
+  "Main event" / "Game N of M"): desktop ((hover: hover) and (pointer: fine)) auto-advances every
+  HM_CYCLE_MS 8 s, paused while hovered/focused or the tab is hidden (cycles even with Reduce Motion, owner
+  asked; that only drops the fade); phones get ‹ › arrows + dots, no auto-advance (bindHomeSlides). Slides
+  share one grid cell (.hm-slides) so the card keeps the tallest slide's height; the shown slide
+  (box.dataset.slide) survives the minute score refresh;
   "Record watch" ticker (newest 8 league + 6 personal record events): desktop auto-scrolls;
   phones (<=560px, owner's request) get a swipe row, one card + next peeking, dots and
   "1 of N · Swipe" (bindTicker); plain
@@ -145,12 +151,14 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   schedule is saved (owner, Oct 2026: every season; HYPE_NOW.pre = preseason, labeled "Opening
   week", no live refresh before tip-off). Live scores
   refresh every minute while the page is open (Home's Main event card too). LOCKED POINTS (owner, Oct 20
-  2026): Sleeper's matchup score counts every starter's latest game, locked or not, so every live score
-  (Hype duel + lead line + slate, Home Main event, Scouting report, Briefing) shows LOCKED points big and
-  Sleeper's live total small ("Live N"). liveWeek() returns { scores, locked, pairs }; locked = gm.js
-  lockedPoints(): a starter counts when his counted score is an earlier game than his latest (coach rule),
-  he has no games left this week (schedule status 'complete' or past date), or "I locked him" was marked in
-  this browser; null on failure -> pages fall back to the live total. Wager tracker still uses live totals.
+  2026): Sleeper's matchup score counts every starter's latest game, locked or not. REVISED Oct 22 2026
+  (owner: locks can't be read reliably mid-week): PUBLIC pages (Hype duel + lead line + slate, Home Main
+  event, Wager) show Sleeper's live total, labeled "Live · not locked" / "Live (not locked) · updated" + a
+  lead-line note; finished weeks show the saved final ("Final · locked scores") = the locked score. Only the
+  commish office (Scouting report, Briefing) shows LOCKED points big + live small: liveWeek(season, week,
+  { locked: true }) adds `locked` (lockedFor -> gm.js lockedPoints(): a starter counts when his counted score
+  is an earlier game than his latest, he has no games left this week, or "I locked him" was marked in this
+  browser; null on failure). Public calls never fetch box scores.
   PULL TO REFRESH (owner, Oct 2026): pullToRefresh() in app.js, touch screens only, from the very top of
   any page: arrow follows the finger (.ptr in styles.css), spins past 64px, release = location.reload();
   sideways swipes never start it; html.ptr-on sets overscroll-behavior-y: contain. The nightly
