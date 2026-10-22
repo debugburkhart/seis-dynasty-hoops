@@ -16,10 +16,16 @@ const fantasy = (stats, scoring) => Object.entries(scoring).reduce((sum, [k, v])
 // 53,100; perfect hindsight: 68,300). bigdaddyburk: 8,700 vs 8,400.
 export const LOCK_CAL = 1.04;
 export const LOCK_SPREAD = 0.3;
-// Simulated SCORES use the measured average game instead: 1.082 x the projection (same test,
-// 4,965 games). LOCK_CAL stays the setting for lock decisions (it made the best calls); using
-// it for scores ran projected team totals about 6% low vs the Scouting report.
-export const SCORE_CAL = 1.082;
+// Simulated SCORES (recalibrated Oct 2026): your players' games draw around 0.975 x the
+// projection, the average game of every active-roster player in 2024-25 (8,693 games; 2025-26:
+// 0.981). The old 1.082 came from managers' final lineups, which carry hindsight. Other teams'
+// games draw around 1.0 x: that made the simulated opponents match their real final scores in
+// 2024-25 (managers' own moves and news). LOCK_CAL stays 1.04 for lock bars: 0.975 bars did
+// worse on the 2025-26 test season.
+export const SCORE_CAL = 0.975;
+export const OPP_CAL = 1.0;
+// Settings the backtests tune (see CLAUDE.md for how they were fitted).
+export const TUNE = { score: SCORE_CAL, lock: LOCK_CAL, opp: OPP_CAL };
 // Risk setting: moves every lock bar by a quarter of the spread. Balanced = the most
 // points on average (same test: Safe 64,800, Bold 64,900).
 export const RISK = { safe: -0.25, balanced: 0, bold: 0.25 };
@@ -42,7 +48,7 @@ const expectedMax = (mu, sd, t) => {
 // above bars[k] (shifted by the risk setting). With 1 game left it's his average
 // game; every extra game raises the bar, since waiting gets another chance.
 export function lockBars(perGame, n, risk = 'balanced') {
-  const mu = perGame * LOCK_CAL;
+  const mu = perGame * TUNE.lock;
   const sd = Math.max(1, mu * LOCK_SPREAD);
   const value = [null, mu];
   for (let k = 2; k <= n; k++) value[k] = expectedMax(mu, sd, value[k - 1]);
@@ -124,12 +130,12 @@ export async function lockedPoints(season, week, leagueId, rows) {
 // players_points is the score that counts right now (his locked game, or else his
 // latest game). If that differs from his latest game, he must be locked on an earlier
 // one. Otherwise the manager can mark "I locked him" (saved in this browser).
-function coachCall(p, ctx, boxes, slate, live, risk, marked) {
+function coachCall(p, ctx, boxes, slate, live, risk, marked, whatif) {
   const today = ctx.today;
   const sched = (slate[p.team] ?? []).map(g => {
     const box = (boxes[p.pid] ?? []).find(b => b.date === g.date);
     const done = g.status === 'complete' || g.date < today;
-    const playing = !done && g.date === today && (g.status === 'in_progress' || Boolean(box));
+    const playing = !done && g.date === today && (['in_progress', 'in_game'].includes(g.status) || Boolean(box));
     return { ...g, pts: box?.pts ?? null, done, playing };
   });
   const played = sched.filter(g => g.done && g.pts != null);
@@ -150,6 +156,12 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked) {
   }
   if (marked != null && played.length) {
     return { ...base, call: 'locked', score: counted ?? marked, text: `Locked at ${counted ?? marked} (marked on this device).`, marked: true };
+  }
+  // What-if lock (coach's page only): counts in the coach's math, never in the live scores
+  // on Home or the Hype page. Only valid until his next game (a new game would replace it).
+  if (whatif && latest && whatif.date === latest.date) {
+    return { ...base, call: 'locked', score: latest.pts, whatIf: true, whatIfSlot: whatif.slot ?? null,
+      text: `What-if lock at ${latest.pts}: the coach plans as if he's locked, but you haven't locked him in Sleeper. Undo it any time.` };
   }
   if (playingNow) {
     const bars = lockBars(perGame, upcoming.length, risk);
@@ -177,11 +189,11 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked) {
 const dayName = date => new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
 
 // Every starter's lock call for one team, in lineup order.
-export function lockCoach(DATA, ctx, boxes, slate, owner, risk = 'balanced', marks = {}) {
+export function lockCoach(DATA, ctx, boxes, slate, owner, risk = 'balanced', marks = {}, whatifs = {}) {
   const team = teamRoster(DATA, ctx, owner);
   if (!team) return null;
   const live = (ctx.matchups ?? []).find(m => m.roster_id === team.rosterId);
-  const rows = team.starters.map(p => (p.empty ? p : { ...p, ...coachCall(p, ctx, boxes, slate, live, risk, marks[p.pid]) }));
+  const rows = team.starters.map(p => (p.empty ? p : { ...p, ...coachCall(p, ctx, boxes, slate, live, risk, marks[p.pid], whatifs[p.pid]) }));
   for (const r of rows) r.state = simState(r);
   return { team, rows, calls: rows.filter(r => r.call === 'lock') };
 }
@@ -193,8 +205,8 @@ export function lockCoach(DATA, ctx, boxes, slate, owner, risk = 'balanced', mar
 // One game for the simulator: draws around the average game (SCORE_CAL); lock bars and
 // player values use the decision setting (LOCK_CAL), like the coach's own calls.
 const gameDist = pg => ({
-  mu: pg * SCORE_CAL, sd: Math.max(1, pg * SCORE_CAL * LOCK_SPREAD),
-  barMu: pg * LOCK_CAL, barSd: Math.max(1, pg * LOCK_CAL * LOCK_SPREAD),
+  mu: pg * TUNE.score, sd: Math.max(1, pg * TUNE.score * LOCK_SPREAD),
+  barMu: pg * TUNE.lock, barSd: Math.max(1, pg * TUNE.lock * LOCK_SPREAD),
 });
 export function simState(r) {
   if (r.empty || r.call === 'none') return { fixed: 0 };
@@ -369,7 +381,7 @@ const MAX_GAMES = 7;
 // starter's score is gone. After each game a starter locks when his score beats his
 // slot-aware bar. A player's luck depends only on the run and his place in the list, so two
 // versions of a team see the same games. noBench = the lineup as set (no moves).
-export function simTeam(plan, runs = 3000, seed = 7, { noBench = false } = {}) {
+export function simTeam(plan, runs = 3000, seed = 7, { noBench = false, skill = 1, scale = 1 } = {}) {
   const P = plan.pieces, nP = P.length, D = plan.days.length;
   const { slots, openIdx } = plan;
   const nO = openIdx.length;
@@ -403,7 +415,7 @@ export function simTeam(plan, runs = 3000, seed = 7, { noBench = false } = {}) {
   };
   const totals = new Float64Array(runs);
   const z = new Float64Array(nP * MAX_GAMES + 1);
-  const inL = new Uint8Array(nP), lk = new Uint8Array(nP), cur = new Float64Array(nP);
+  const inL = new Uint8Array(nP), lk = new Uint8Array(nP), cur = new Float64Array(nP), sloppy = new Uint8Array(nP);
   const val = new Float64Array(nP);
   const ins = [];
   const order = [];
@@ -418,6 +430,9 @@ export function simTeam(plan, runs = 3000, seed = 7, { noBench = false } = {}) {
       const p = P[i];
       inL[i] = !p.skip && p.start >= 0 ? 1 : 0;
       lk[i] = plan.nowLock[i] ? 1 : 0;
+      // skill < 1 (other managers): this share of his starters follow the bars, the rest never lock (last game counts).
+      sloppy[i] = skill < 1 && rand() > skill ? 1 : 0;
+      if (sloppy[i]) lk[i] = 0;
       cur[i] = p.fixed ?? p.cur ?? NaN;
     }
     for (let d = 0; d < D; d++) {
@@ -465,11 +480,11 @@ export function simTeam(plan, runs = 3000, seed = 7, { noBench = false } = {}) {
         const j = gameOn[i][d];
         if (j < 0 || !inL[i] || lk[i] || P[i].fixed != null) continue;
         const p = P[i];
-        let g = p.mu + p.sd * z[i * MAX_GAMES + Math.min(j, MAX_GAMES - 1)];
+        let g = (p.mu + p.sd * z[i * MAX_GAMES + Math.min(j, MAX_GAMES - 1)]) * scale;
         if (g < 0) g = 0;
         if (d === 0 && p.floor != null && g < p.floor) g = p.floor;
         cur[i] = g;
-        if (g >= bars[i][d]) lk[i] = 1;
+        if (!sloppy[i] && g >= bars[i][d]) lk[i] = 1;
       }
     }
     let sum = plan.base;
@@ -541,10 +556,20 @@ export function teamPlan(c, slate, today, boxes = {}, sits = OUT, risk = 'balanc
     const pg = b.perPlay || b.perGame || b.fpg || b.fpgLast || 0;
     const miss = new Set(b.missDates ?? []);
     const sched = (slate[b.team] ?? []).filter(g => !miss.has(g.date) && (g.date > today
-      || (g.date === today && !['complete', 'in_progress'].includes(g.status) && !(boxes[b.pid] ?? []).some(x => x.date === today))));
+      || (g.date === today && !['complete', 'in_progress', 'in_game'].includes(g.status) && !(boxes[b.pid] ?? []).some(x => x.date === today))));
     if (!pg || !sched.length) continue;
     pieces.push(makePiece({ pid: b.pid, name: b.name, elig: b.elig, pg, games: sched.map(g => di(g.date)), row: { ...b, call: 'plan', sched: slate[b.team] ?? [] } }));
   }
+  // A what-if lock in the slot the coach suggested (not where he sits now): that slot closes and
+  // the player sitting there now takes his old one.
+  c.rows.forEach((r, i) => {
+    const j = r.whatIf ? r.whatIfSlot : null;
+    if (j == null || j === i || !open[j] || c.rows[j]?.call === 'locked' || !fits(slots[j], r.elig)) return;
+    open[j] = false;
+    open[i] = true;
+    const q = pieces.find(x => x.start === j);
+    if (q) q.start = i;
+  });
   return makePlan({ slots, open, base, pieces, days, risk });
 }
 
@@ -686,14 +711,14 @@ function lineupMoves(plan, c, today) {
 // best fit of the whole roster into the 9 slots, slot-aware lock bars, bench players moved in
 // when they're worth more (the owner: assume opponents play smart too). Your odds assume you
 // follow the coach; asSet = your lineup exactly as set (no moves).
-export function gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode = 'win', marks = {}, medianOn = false, runs = 2000 } = {}) {
+export function gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode = 'win', marks = {}, whatifs = {}, medianOn = false, runs = 2000 } = {}) {
   const risk = mode === 'win' ? 'balanced' : mode;
   const pair = pairs.find(p => p.a === me || p.b === me);
   const opp = pair ? (pair.a === me ? pair.b : pair.a) : null;
   const all = {};
   // Marks are saved per player, so a lock marked while viewing any team counts for that team everywhere.
   for (const r of ctx.rosters ?? []) {
-    const c = lockCoach(DATA, ctx, boxes, slate, r.owner_id, risk, marks);
+    const c = lockCoach(DATA, ctx, boxes, slate, r.owner_id, risk, marks, whatifs);
     if (c) all[r.owner_id] = c;
   }
   const mine = all[me];
@@ -705,7 +730,8 @@ export function gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode = 'win', ma
   }
   const owners = Object.keys(all);
   const seedOf = o => 11 + owners.indexOf(o);
-  const totals = Object.fromEntries(owners.map(o => [o, simTeam(plans[o], runs, seedOf(o))]));
+  // Other teams score like real managers did (OPP_CAL); yours follows the coach (SCORE_CAL).
+  const totals = Object.fromEntries(owners.map(o => [o, simTeam(plans[o], runs, seedOf(o), o === me ? {} : { scale: TUNE.opp / TUNE.score })]));
   const now = oddsOf(totals, me, opp, medianOn);
   const setPlan = makePlan({ ...plans[me], pieces: plans[me].pieces.map(p => (p.start < 0 ? { ...p, skip: true } : p)) });
   const asSet = oddsOf({ ...totals, [me]: simTeam(setPlan, runs, seedOf(me)) }, me, opp, medianOn);

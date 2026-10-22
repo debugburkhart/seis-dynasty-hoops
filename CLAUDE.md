@@ -302,7 +302,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   so marking an opponent's player (pick his team, or "They locked him" on the opponent's card on your
   board) shows in your board, odds, Briefing and live locked points; marking clears the LIVE cache.
   Box scores per game from /stats/nba/{season}/{week}. Assumes a DNP doesn't replace the counted
-  score (not verified yet: check in week 1 of 2026, along with the schedule's in-game status name).
+  score (not verified yet). Checked Oct 21 2026 (week 1, nobody had 2 games yet): every one-game starter's
+  players_points = his box score exactly, team points = sum of starters; schedule status names are
+  pre_game / in_game / complete (code now accepts in_game as well as in_progress); live box rows carry
+  sp (seconds) but no gp until the game ends. STILL TO CHECK once players have a 2nd game (Thu Oct 22 /
+  Fri Oct 23): that a locked earlier game still shows in players_points (Sleeper's OLD weeks lost many
+  locks, see SLEEPER'S OLD WEEKS ARE BROKEN) and whether a DNP replaces the counted score.
   Modes (localStorage gm-mode, was gm-risk): "Play to win" (Beta; was the default until Oct 20, 2026, see SLOT PLANNER),
   plus Safe/Balanced/Bold points modes. gameCoach(): builds every team's lockCoach rows -> sim
   states (simState: {fixed} or {cur,k,mu,sd}); winChance() plays out the week (seeded RNG, 3,000
@@ -341,18 +346,32 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   opponents play smart), Play to win compares planWith(lockSlot) vs planWith(playOn); asSet = your
   starters only. lineupMoves(): swaps (bench +3 hysteresis, "before {first game}", "X plays Mon
   first: lock only at T+") + slot moves; swapList shows odds as set vs following the coach.
-  ~0.6 s desktop mid-week. BACKTEST (Oct 2026, _bt harness, deleted; notes in the session notes
-  folder): managers' FINAL starters carry hindsight (in-week 0.965 vs bench 0.83 of 1.082 x proj;
-  labelled from the week before: 0.91 vs 0.90), so the old method (fixed final lineups) favors never
-  moving; there old Balanced 198, new 185. Fair method (lineup picked from projections at week
-  start), H2H+median wins of 336: old Balanced 168 / 57,721 pts, own bars + moves 178, new 176 /
-  58,681; with idle slots filled day by day (bench player who plays today into a starter's slot
-  with nothing at stake): own bars 178 / 58,899, NEW 185 / 59,178. Play to win BELOW Balanced in
-  every version (old 166 vs 168, new 176 vs 185): the sim expects other teams ~22/week above their
-  real scores (360 vs 336: SCORE_CAL fitted on hindsight lineups, real managers lock worse);
-  scaled down 0.935-0.96 it reaches 182-184. Owner (Oct 20, 2026): Balanced is now the DEFAULT
-  (localStorage key moved gm-risk -> gm-mode so old saved choices reset) and Play to win carries a
-  "Beta" tag (.gm-beta) until it is recalibrated.
+  ~0.6 s desktop mid-week. Owner (Oct 20, 2026): Balanced is the DEFAULT (localStorage key moved
+  gm-risk -> gm-mode so old saved choices reset) and Play to win carries a "Beta" tag (.gm-beta).
+  SLEEPER'S OLD WEEKS ARE BROKEN (found Oct 21 2026): /v1/league/{id}/matchups/{week} for 2024 and 2025
+  now drops many locks (players_points / starters_points = latest game or 0; e.g. 2025 wk 21 Parma
+  327 live vs 422 real; season totals 53,147 vs 59,653). Backtests MUST take real scores from
+  league.json games (ap/bp) and locked points from playerWeeks (bt useFrozen). Box scores and weekly
+  projections are fine. The Oct 20 backtest numbers (managers 167, Balanced 185, Play to win 176,
+  "opponents +22/week", "managers lock worse") used the broken feed and are WRONG.
+  RECALIBRATION (Oct 21 2026, fit 2024-25, test 2025-26, frozen scores, harness deleted): one game =
+  0.975 x proj for every active-roster player (2025-26: 0.981; old 1.082 came from hindsight lineups)
+  -> SCORE_CAL 0.975 (your team's draws); simulated opponents matched their real finals at ~1.0 x ->
+  OPP_CAL 1.0 (simTeam { scale } for other teams); managers lock about as well as the coach's own bars
+  (94% / 100% of the edge over last-game), so no lock-skill discount (simTeam { skill } exists, = 1).
+  LOCK_CAL stays 1.04 (0.975 bars: same on 2024-25, 3-6 wins WORSE on 2025-26). TUNE in gm.js holds
+  score/lock/opp for tests. Wins of 336 (fair start = lineup picked from projections; managers' real
+  168/165 are not comparable, their final lineups carry hindsight/news): idle slots filled: Balanced
+  155 / 143, Play to win old sim 151 / 143, CALIBRATED 161 / 145; lineup set once: Balanced 145 / 135,
+  old 146 / 131, calibrated 152 / 137; points equal. Slot-aware vs own bars (Balanced): filled +4 / +5
+  wins, set once +4 / -1, managers' final lineups +2 / -3.
+  WHAT-IF LOCKS (owner, Oct 21 2026): card button "What if I/they lock him (in SLOT)?" -> localStorage
+  gm-whatif-{season}-{week} { pid: { date (his latest game), slot } }; coachCall treats it as locked
+  (row.whatIf, valid only while that game is his latest), teamPlan closes the suggested slot (occupant
+  takes his old one); coach page + Briefing only (lockedPoints reads gm-locks only, so Home/Hype/live
+  scores never change); dashed .mb-whatif box, .mb-wi row, "What-if" label, banner with Clear
+  (whatIfBanner/bindWhatIfs in app.js). "I locked him" marks stay the real ones (this device only).
+  Also fixed: .mb-locked/.mb-live were colouring whole board rows; now scoped to .mb-pts.
   Briefing: lock calls, this week (gameCoach's expected finals + win/median chances), lineup tips
   (swaps), tonight's games, injury news (localStorage gm-inj-{owner}, rolls over daily), top 3
   waiver risers.

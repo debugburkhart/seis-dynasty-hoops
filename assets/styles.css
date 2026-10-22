@@ -1936,6 +1936,14 @@ a.tl-event:hover { background: #fbf6e6; }
 .gm-text { margin: 9px 0 0; font-size: 12.5px; line-height: 1.45; color: #3c4556; }
 .gm-mark { margin-top: 9px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 7px; background: #fbfaf6; color: var(--navy-700); font: 700 11.5px var(--font); cursor: pointer; }
 .gm-mark:hover { border-color: var(--navy-700); }
+.gm-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.gm-btns:empty { display: none; }
+.gm-whatif { margin-top: 9px; padding: 6px 11px; border: 1px dashed var(--navy-700); border-radius: 7px; background: #fff; color: var(--navy-700); font: 700 11.5px var(--font); cursor: pointer; }
+.gm-whatif.on { background: #eef2fa; }
+.gm-whatif-card { border-style: dashed; }
+.gm-whatif-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 10px 0; padding: 10px 12px; border: 1px dashed var(--navy-700); border-radius: 10px; background: #eef2fa; font-size: 13px; color: var(--navy-800); }
+.gm-whatif-bar p { flex: 1 1 220px; margin: 0; }
+.gm-whatif-clear { padding: 6px 11px; border: 1px solid var(--navy-700); border-radius: 7px; background: #fff; color: var(--navy-700); font: 700 11.5px var(--font); cursor: pointer; }
 .gm-hello h2 { margin: 4px 0 2px; font: 900 22px/1.15 var(--display); text-transform: uppercase; }
 .gm-more { font-size: 12px; font-weight: 700; color: var(--navy-700); text-decoration: none; white-space: nowrap; }
 .gm-more:hover { text-decoration: underline; }
@@ -1996,9 +2004,11 @@ a.tl-event:hover { background: #fbf6e6; }
 .mb-name .cm-inj { margin: 0; padding: 0 4px; font-size: 9px; }
 .mb-short { display: none; }
 .mb-pts { flex: none; display: grid; place-items: center; min-width: 42px; height: 30px; padding: 0 5px; border-radius: 7px; font: 900 15px/1 var(--display); }
-.mb-locked { background: var(--navy-800); color: var(--gold); }
-.mb-live { background: #fde3d3; color: #c2410c; }
+.mb-pts.mb-locked { background: var(--navy-800); color: var(--gold); }
+.mb-pts.mb-live { background: #fde3d3; color: #c2410c; }
 .mb-open { border: 1.5px solid var(--brass); color: var(--ink); background: #fffaf0; }
+.mb-whatif { border: 1.5px dashed var(--navy-700); color: var(--navy-800); background: #eef2fa; }
+.mb-p.mb-wi { background: #eef2fa; box-shadow: inset 0 0 0 1.5px var(--navy-700); }
 .mb-empty { color: #b7b2a4; background: #f6f3ec; }
 .mb-none .mb-name b { color: var(--muted); }
 .mb-head, .mb-rows, .mb-sec, .mb-key { max-width: 640px; margin-left: auto; margin-right: auto; }
