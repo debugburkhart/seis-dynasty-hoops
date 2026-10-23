@@ -1457,7 +1457,7 @@ async function renderHype(main, params, preview = null) {
         <div class="hy-owner">${esc(name(o))}</div>
         <div class="hy-rec">${t ? rec(t.w, t.l, t.t) : '—'}</div>
         <div class="hy-pts" data-o="${esc(o)}">${num(score(o))}</div>
-        <div class="hy-pts-label">${g.final ? 'Final · locked' : isLive ? 'Live · not locked' : 'Points'}</div>
+        <div class="hy-pts-label">${g.final ? 'Final · locked' : isLive ? 'Live' : 'Points'}</div>
       </div>`;
   };
   const leadLine = () => {
@@ -1475,7 +1475,7 @@ async function renderHype(main, params, preview = null) {
     if (x === y) return `All square · ${total} combined live points${note}`;
     return `${esc(name(x > y ? A : B))} leads by ${num(Math.abs(x - y))} live · ${total} combined live points${note}`;
   };
-  const status = g.final ? 'Final · locked scores' : live && liveData ? `Live (not locked) · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : preview ? 'Tip-off pending' : 'Scores load from Sleeper';
+  const status = g.final ? 'Final · locked scores' : live && liveData ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : preview ? 'Tip-off pending' : 'Scores load from Sleeper';
 
   // ----- The hype -----
   const rankOnSlate = slate.games.indexOf(g) + 1;
@@ -1614,7 +1614,7 @@ async function renderHype(main, params, preview = null) {
         const lead = $('#hy-lead', main);
         if (lead) lead.innerHTML = leadLine();
         const st = $('#hy-status', main);
-        if (st) st.textContent = `Live (not locked) · updated ${new Date(d.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+        if (st) st.textContent = `Live · updated ${new Date(d.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
       } catch { /* try again next time */ }
     }, 60_000); // every minute while the page is open
   }
@@ -2676,9 +2676,15 @@ async function renderCoach(body, params) {
   const count = c => coach.rows.filter(r => r.call === c).length;
   const summary = [[count('lock'), 'to lock'], [count('live'), 'playing now'], [count('wait'), 'waiting'], [count('locked'), 'locked'], [count('final'), 'done'], [count('plan'), 'not started']].filter(([n]) => n);
   const game = (r, g) => {
-    const isLocked = r.call === 'locked' && g.pts != null && Math.abs(g.pts - r.score) < 0.05;
+    const isLocked = r.call === 'locked' && !r.whatIf && g.pts != null && (r.lockDate ? r.lockDate === g.date : Math.abs(g.pts - r.score) < 0.05);
     const cls = g.playing ? 'playing' : g.done ? (g.pts == null ? 'dnp' : 'done') : 'next';
-    return `<span class="gm-game ${cls}${isLocked ? ' locked' : ''}"><small>${shortDay(g.date)}${!g.done && !g.playing && tipShort(g) ? ` <span class="mb-tip">${tipShort(g)}</span>` : ''}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</span><b>${g.pts != null ? num(g.pts) : g.done ? 'DNP' : g.playing ? 'Live' : '–'}</b></span>`;
+    const inner = `<small>${shortDay(g.date)}${!g.done && !g.playing && tipShort(g) ? ` <span class="mb-tip">${tipShort(g)}</span>` : ''}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</span><b>${g.pts != null ? num(g.pts) : g.done ? 'DNP' : g.playing ? 'Live' : '–'}</b>`;
+    // A starter's played game is a button: tap = "he was locked on this game" (tap again to undo).
+    if (r.pid && g.done && g.pts != null) {
+      const on = r.marked && isLocked;
+      return `<button class="gm-game ${cls}${isLocked ? ' locked' : ''} gm-pick" type="button" data-pid="${esc(r.pid)}" data-date="${esc(g.date)}" aria-pressed="${on}" title="${on ? 'Undo this lock' : 'Mark as the game he was locked on'}">${inner}</button>`;
+    }
+    return `<span class="gm-game ${cls}${isLocked ? ' locked' : ''}">${inner}</span>`;
   };
   const markable = r => r.call === 'lock' || r.call === 'wait' || r.marked;
   const label = r => (r.whatIf ? 'What-if' : CALL_LABEL[r.call]);
@@ -2699,8 +2705,9 @@ async function renderCoach(body, params) {
         <span class="gm-badge">${label(r)}</span>
       </div>
       ${r.sched.length ? `<div class="gm-games">${r.sched.map(g => game(r, g)).join('')}</div>` : ''}
+      ${r.sched.some(g => g.done && g.pts != null) ? `<p class="gm-hint">Tap the game ${mine ? 'you' : 'they'} locked to mark it${r.marked ? ', or the marked one again to undo' : ''}.</p>` : ''}
       <p class="gm-text">${esc(r.text)}</p>
-      <div class="gm-btns">${markable(r) ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-score="${r.score ?? ''}">${r.marked ? 'Undo: not locked' : mine ? 'I locked him' : 'They locked him'}</button>` : ''}${whatIfBtn(r, i, mine)}</div>
+      <div class="gm-btns">${markable(r) ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-date="${esc(r.sched.filter(g => g.done && g.pts != null).at(-1)?.date ?? '')}">${r.marked ? 'Undo: not locked' : mine ? 'I locked him' : 'They locked him'}</button>` : ''}${whatIfBtn(r, i, mine)}</div>
     </div>`);
   const riskBtns = GM_MODES.map(([k, label]) => `<a href="#" data-risk="${k}" class="${k === w.mode ? 'on' : ''}">${label}</a>`).join('');
   const opp = coach.opp;
@@ -2868,14 +2875,18 @@ async function renderCoach(body, params) {
     el.addEventListener('click', e => { if (!e.target.closest('a')) toggle(el); });
     el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(el); } });
   });
-  body.querySelectorAll('.gm-mark').forEach(b => b.addEventListener('click', () => {
+  // Real lock marks (this device): "I locked him" = his latest game; a tapped game chip = that game.
+  const setMark = (pid, date, toggleSame) => {
     const m = gmLoad(w.marksKey, {});
-    if (m[b.dataset.pid] != null) delete m[b.dataset.pid];
-    else m[b.dataset.pid] = Number(b.dataset.score) || 0;
+    const cur = m[pid];
+    if (cur != null && (!toggleSame || (typeof cur === 'object' && cur.date === date))) delete m[pid];
+    else m[pid] = { date };
     gmSave(w.marksKey, m);
     for (const k of Object.keys(LIVE)) delete LIVE[k]; // live locked points pick up the mark right away
     renderCoach(body, params).catch(() => {});
-  }));
+  };
+  body.querySelectorAll('.gm-mark').forEach(b => b.addEventListener('click', () => setMark(b.dataset.pid, b.dataset.date, false)));
+  body.querySelectorAll('.gm-pick').forEach(b => b.addEventListener('click', () => setMark(b.dataset.pid, b.dataset.date, true)));
   bindWhatIfs(body, w, () => renderCoach(body, params).catch(() => {}));
   gmAutoRefresh(body, params, renderCoach, w);
 }
@@ -5580,7 +5591,7 @@ function homeSlide(g, i, n, { season, week, live, liveData, when, isPreview, on 
         <div class="hm-owner">${esc(name(o))}${t ? ` · <span class="nw">${rec(t.w, t.l, t.t)}</span>` : ''}</div>
       </div>`;
   };
-  const status = g.final ? 'Final · locked scores' : live && hasScore ? `Live (not locked) · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : live ? 'Tip-off pending' : '';
+  const status = g.final ? 'Final · locked scores' : live && hasScore ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : live ? 'Tip-off pending' : '';
   const why = g.labels.find(l => l.id === 'main')?.why ?? g.labels[0]?.why;
   return `
     <a class="hm-main hm-slide${on ? ' on' : ''}" aria-hidden="${on ? 'false' : 'true'}" tabindex="${on ? 0 : -1}" aria-label="Game ${i + 1} of ${n}" href="${isPreview ? `#/commish?${new URLSearchParams({ tab: 'hype', view: 'page', week, m: g.a })}` : `#/hype?${new URLSearchParams({ season, week, m: g.a })}`}">

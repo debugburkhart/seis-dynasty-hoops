@@ -1945,6 +1945,10 @@ a.tl-event:hover { background: #fbf6e6; }
 .gm-game.playing { border-color: #f0b48f; background: #fff4ec; }
 .gm-game.locked { border-color: var(--navy-700); background: var(--navy-800); color: #cfd6e4; }
 .gm-game.locked b { color: var(--gold); }
+button.gm-game { font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button.gm-game:not(.locked):hover { border-color: var(--navy-700); }
+button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 1px; }
+.gm-hint { margin: 5px 0 0; font-size: 11px; color: var(--muted); }
 .gm-text { margin: 9px 0 0; font-size: 12.5px; line-height: 1.45; color: #3c4556; }
 .gm-mark { margin-top: 9px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 7px; background: #fbfaf6; color: var(--navy-700); font: 700 11.5px var(--font); cursor: pointer; }
 .gm-mark:hover { border-color: var(--navy-700); }

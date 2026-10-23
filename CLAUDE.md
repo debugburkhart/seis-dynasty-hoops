@@ -153,7 +153,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   refresh every minute while the page is open (Home's Main event card too). LOCKED POINTS (owner, Oct 20
   2026): Sleeper's matchup score counts every starter's latest game, locked or not. REVISED Oct 22 2026
   (owner: locks can't be read reliably mid-week): PUBLIC pages (Hype duel + lead line + slate, Home Main
-  event, Wager) show Sleeper's live total, labeled "Live · not locked" / "Live (not locked) · updated" + a
+  event, Wager) show Sleeper's live total, labeled "Live" / "Live · updated" (owner removed the "not locked" words Oct 22 2026) + a
   lead-line note; finished weeks show the saved final ("Final · locked scores") = the locked score. Only the
   commish office (Scouting report, Briefing) shows LOCKED points big + live small: liveWeek(season, week,
   { locked: true }) adds `locked` (lockedFor -> gm.js lockedPoints(): a starter counts when his counted score
@@ -306,6 +306,11 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   8,402, flips weeks 6 and 18 losses + week 12 tie to wins. Sleeper's public API doesn't show
   locks: players_points = score counting now; if it differs from his latest game and equals an
   earlier one, he's locked; else the "I locked him" button (localStorage gm-locks-{season}-{week}).
+  PICK THE LOCKED GAME (owner, Oct 22 2026: "sometimes I miss a lock"): a mark is { date } = locked on
+  that game; every PLAYED game chip on a starter's card (both teams) is a button (.gm-pick): tap = he was
+  locked on that game, tap the marked one again = undo; "I locked him" = his latest game. A mark beats
+  Sleeper's own reading (coachCall checks it first) and lockedPoints counts the marked game's score. Old
+  number marks still work (= the counted score). row.lockDate = the locked game (marked or inferred).
   Marks are per player and count for EVERY team (owner, Oct 2026): gameCoach passes them to all teams,
   so marking an opponent's player (pick his team, or "They locked him" on the opponent's card on your
   board) shows in your board, odds, Briefing and live locked points; marking clears the LIVE cache.
