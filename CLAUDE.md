@@ -396,7 +396,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   6 h in localStorage gm-tips-{date}; ESPN codes GS/NO/NY/SA/UTAH/WSH -> Sleeper GSW/NOP/NYK/SAS/UTA/WAS;
   browser only (no localStorage = no times). tipTime(g) = "6:30 PM" Central; app.js tipShort = "6:30p".
   Shown on Lock-in coach game chips (upcoming games), the board's "Today vs X · 8:30p" tag (.mb-tip keeps
-  it lowercase) and Games by day.
+  it lowercase) and Games by day. Board rows with a lock call say "TEAM · Lock by 8:30pm on Fri"
+  (owner, Oct 22 2026; next game's tip, "today" for today, "Lock before Fri" without a time; .mb-lockby wraps).
   scoutWeek().started is false in preseason (HYPE_NOW.pre), fixed Oct 2026.
   STEP 2 (built Oct 2026): `assets/dynasty.js` dynasty values (owner: weights 50/30/20, 0-100 score,
   blunt Managers tone). Per player: v1 = Sleeper season per-game projection (league scoring;

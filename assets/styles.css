@@ -2017,6 +2017,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .mb-name b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 .mb-name i { color: var(--muted); }
 .mb-name small { display: block; margin-top: 2px; font-size: 10.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mb-name small.mb-lockby { white-space: normal; color: var(--navy-700); font-weight: 700; }
 .mb-name .cm-inj { margin: 0; padding: 0 4px; font-size: 9px; }
 .mb-short { display: none; }
 .mb-pts { flex: none; display: grid; place-items: center; min-width: 42px; height: 30px; padding: 0 5px; border-radius: 7px; font: 900 15px/1 var(--display); }

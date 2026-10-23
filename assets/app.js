@@ -2766,9 +2766,18 @@ async function renderCoach(body, params) {
   const who = (r, side) => {
     if (!r) return `<div class="mb-p mb-${side}"></div>`;
     if (r.empty) return `<div class="mb-p mb-${side}"><span class="mb-name"><i>Empty</i></span>${scoreBox(r)}</div>`;
-    const meta = [r.team || 'FA', r.call === 'none' ? 'No games' : r.call === 'plan' ? `${r.sched.length} game${r.sched.length === 1 ? '' : 's'}` : label(r)].join(' · ');
+    // A lock call says by when: his next game's tip-off ("Lock by 6:30pm on Fri"), or the day if no time is known.
+    const lockBy = () => {
+      const next = r.sched.find(g => !g.done && !g.playing);
+      if (!next) return 'Lock';
+      const t = tipTime(next).replace(/ ([AP])M$/, (_, x) => `${x.toLowerCase()}m`);
+      const day = next.date === today ? 'today' : `on ${shortDay(next.date)}`;
+      return t ? `Lock by ${t} ${day}` : `Lock before ${next.date === today ? 'tonight' : shortDay(next.date)}`;
+    };
+    const isLock = r.call === 'lock' && !r.whatIf;
+    const meta = [r.team || 'FA', r.call === 'none' ? 'No games' : r.call === 'plan' ? `${r.sched.length} game${r.sched.length === 1 ? '' : 's'}` : isLock ? lockBy() : label(r)].join(' · ');
     return `<div class="mb-p mb-${side} mb-${r.whatIf ? 'wi' : r.call}${todayGame(r) ? ' mb-on' : ''}" ${tapAttrs(`${side}-${r.pid}`)}>
-      <span class="mb-name">${nameHtml(r)}<span class="mb-tags">${tags(r)}</span><small>${esc(meta)}</small></span>
+      <span class="mb-name">${nameHtml(r)}<span class="mb-tags">${tags(r)}</span><small${isLock ? ' class="mb-lockby"' : ''}>${esc(meta)}</small></span>
       ${scoreBox(r)}</div>`;
   };
   // Bench and IR players: no score (bench points never count); red + struck out with no games left.
