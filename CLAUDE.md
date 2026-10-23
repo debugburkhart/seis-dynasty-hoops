@@ -415,7 +415,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   best spare bench player tipping after his game ends) when that beats his own later games; swapIn() checks slot
   fit, letting only players whose game hasn't started (or who don't play that day) shift slots; lock bar = plan.T
   (or the row's bar once played); bar = red under x / grey keep / navy lock, gold marker = his score (live/done);
-  one more link (r.next) when the replacement has his own later backup. Players holding a score the coach says to
+  one more link (r.next) when the replacement has his own later backup. Every player shows "worth about N" = valueNow() (owner, Oct 2026: same number as Bench players to start; whole-week value, so it can differ a little from the line, which uses that game's projection). Players holding a score the coach says to
   lock show that call instead. Locked / what-if spots are closed (what-if shows in its suggested slot). Re-renders
   with every lock mark / what-if (same gmWeek). Known limits: later days assume today's lineup; a spare bench
   player can be the backup for 2 rows (said in the text); a played-and-low starter is usually swapped through the

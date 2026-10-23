@@ -5,7 +5,7 @@ import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from '.
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, isRivalry, moments, seasonSeries, seasonWeeks, seriesBefore, standingsBefore, trophyHistory, trophyImg, trophyOf, weekPairs } from './hype.js';
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, get, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
-import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach, lockedPoints, startingPipeline, tipTime } from './gm.js';
+import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach, lockedPoints, startingPipeline, tipTime, valueNow } from './gm.js';
 import { PROSPECT_LIST, PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, prospectRanking, taxiLeft } from './dynasty.js';
 import { CENTERPIECE, evaluateTrade, moveImpacts, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, teamSnapshot, tradeContext, unpackTeam } from './tradefinder.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
@@ -2665,6 +2665,8 @@ const coachDynasty = () => (COACH_DYN ??= loadDynastyFeeds().then(f => dynastyVa
 let PIPE_DAY = null;
 const tipAt = ms => (ms == null ? '' : tipShort({ tip: new Date(ms).toISOString() }));
 function pipelineCard(w) {
+  // "Worth about N": same number as Bench players to start (gm.js valueNow).
+  const worth = q => `worth about ${num(valueNow(q))}`;
   const c = w.coach;
   const today = w.ctx.today;
   // Today only while some of this team's games are still to come (or one just ended with a call to make).
@@ -2678,7 +2680,7 @@ function pipelineCard(w) {
     const by = (t, d) => (t ? `before ${tipAt(t)}${d && d !== p.date ? ` ${shortDay(d)}` : ''}` : d && d !== p.date ? `before his ${shortDay(d)} game` : 'before his game');
     const first = p.tips.find(t => t.tip != null && (p.date !== today || t.tip > Date.now()));
     const pre = [
-      ...p.moves.map(m => (m.o ? `start <b>${esc(m.o.q.name)}</b> in ${esc(m.slot)}${m.out ? ` (bench ${esc(m.out.q.name)}${m.later ? ': he goes back in later' : ''})` : ''}` : `bench <b>${esc(m.out.q.name)}</b>`)),
+      ...p.moves.map(m => (m.o ? `start <b>${esc(m.o.q.name)}</b> (${worth(m.o.q)}) in ${esc(m.slot)}${m.out ? ` (bench ${esc(m.out.q.name)}, ${worth(m.out.q)}${m.later ? ': he goes back in later' : ''})` : ''}` : `bench <b>${esc(m.out.q.name)}</b>`)),
       ...p.shifts.map(s => `move <b>${esc(s.o.q.name)}</b> from ${esc(s.from)} to ${esc(s.to)}`),
     ];
     // A bench player who's the backup in more than one row can replace only one of them.
@@ -2706,7 +2708,7 @@ function pipelineCard(w) {
       const st = a.kind === 'live' ? `<span class="sp-st sp-live">Live ${num(q.floor ?? 0)}</span>`
         : a.kind === 'done' ? `<span class="sp-st sp-${r.verdict ?? 'keep'}">${num(a.held ?? 0)}${r.verdict ? ` · ${{ swap: 'Swap', keep: 'Keep', lock: 'Lock' }[r.verdict]}` : ''}</span>`
           : a.held != null ? `<span class="sp-st">holds ${num(a.held)}</span>` : '';
-      const who = `<div class="sp-who"><span class="sp-t">${a.kind === 'off' || a.kind === 'fixed' ? '' : tipAt(a.tip)}</span><b>${esc(q.name)}</b> ${injuryTag(q.row ?? {})}<small>${vs}${r.waiting ? `${vs ? ' · ' : ''}keeps it warm` : ''}</small>${st}</div>`;
+      const who = `<div class="sp-who"><span class="sp-t">${a.kind === 'off' || a.kind === 'fixed' ? '' : tipAt(a.tip)}</span><b>${esc(q.name)}</b> ${injuryTag(q.row ?? {})}<small>${[vs, r.waiting ? 'keeps it warm' : '', worth(q)].filter(Boolean).join(' · ')}</small>${st}</div>`;
       let text = '';
       let steps = '';
       if (a.kind === 'fixed') text = q.row?.call === 'none' ? 'No games this week.' : q.sitsOut ? `Sleeper projects him to sit; he keeps ${num(q.fixed)}.` : `Done for the week: his ${num(q.fixed)} counts.`;
@@ -2725,11 +2727,11 @@ function pipelineCard(w) {
           const shift = o.shift.length ? ` (move ${o.shift.map(s => `${esc(s.o.q.name)} from ${esc(s.from)} to ${esc(s.to)}`).join(', ')})` : '';
           const also = (backups[b.qi] ?? []).filter(n => n !== q.name);
           text = `If ${esc(shortName)} finishes under ${num(o.x)}, bench him ${by(o.by, o.byDate)} and start <b>${esc(b.q.name)}</b> in ${esc(o.slot)}${shift}.${rest(o.x)}${also.length ? ` ${esc(b.q.name)} is also the backup for ${esc(also.join(', '))}: he can replace only one.` : ''}`;
-          steps = `<div class="sp-who sp-then"><span class="sp-t">${tipAt(o.by)}${o.byDate && o.byDate !== p.date ? ` ${shortDay(o.byDate)}` : ''}</span><span>then <b>${esc(b.q.name)}</b> in ${esc(o.slot)}</span></div>`;
+          steps = `<div class="sp-who sp-then"><span class="sp-t">${tipAt(o.by)}${o.byDate && o.byDate !== p.date ? ` ${shortDay(o.byDate)}` : ''}</span><span>then <b>${esc(b.q.name)}</b> in ${esc(o.slot)} <small>· ${worth(b.q)}</small></span></div>`;
           if (r.next?.b) {
             const n = r.next;
             text += ` If ${esc(b.q.name.split(' ').slice(-1)[0])} then finishes under ${num(n.x)}, bench him ${by(n.by, n.byDate)} for <b>${esc(n.b.q.name)}</b> in ${esc(n.slot)}.`;
-            steps += `<div class="sp-who sp-then"><span class="sp-t">${tipAt(n.by)}</span><span>then <b>${esc(n.b.q.name)}</b> in ${esc(n.slot)}</span></div>`;
+            steps += `<div class="sp-who sp-then"><span class="sp-t">${tipAt(n.by)}</span><span>then <b>${esc(n.b.q.name)}</b> in ${esc(n.slot)} <small>· ${worth(n.b.q)}</small></span></div>`;
           }
         } else text = lock == null ? `Nobody who plays later is worth his spot, and it's his last game of the week: whatever he scores counts.`
           : `Nobody who plays later is worth his spot.${rest(0)}`;
@@ -2742,7 +2744,7 @@ function pipelineCard(w) {
       ${p.noTimes ? '<p class="cm-rule">Tip-off times didn’t load (ESPN), so the plan can’t split the day by game time.</p>' : `<div class="sp-tips">${p.tips.map(t => `<span>${t.tip != null ? tipAt(t.tip) : 'Time?'} <b>${t.players.length}</b></span>`).join('')}</div>`}
       ${pre.length ? `<p class="gm-alert sp-moves">${first && (p.date !== today || p.tips[0].tip > Date.now()) ? `Before ${tipAt(first.tip)}` : 'Now'}: ${pre.join('; ')}.</p>` : ''}
       <div class="sp-rows">${p.rows.map(row).join('')}</div>
-      ${p.bench.length ? `<p class="cm-rule">Not in the plan for ${dayWord(p.date)}: ${p.bench.map(o => `${esc(o.q.name)} (${tipAt(o.tip) || '?'})`).join(', ')}.</p>` : ''}
+      ${p.bench.length ? `<p class="cm-rule">Not in the plan for ${dayWord(p.date)}: ${p.bench.map(o => `${esc(o.q.name)} (${tipAt(o.tip) || '?'}, ${worth(o.q)})`).join(', ')}.</p>` : ''}
     </div>`;
   };
   return `<section class="card sp-card">${head}
