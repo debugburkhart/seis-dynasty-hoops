@@ -2011,6 +2011,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .mb-gap.up { color: #23704a; }
 .mb-gap.down { color: #a03a2d; }
 .mb-gap span { font-size: 11px; font-weight: 800; color: var(--muted); }
+.mb-per { font: 800 10px/1 var(--display); letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
 .mb-key { margin: 6px 0 8px; font-size: 11px; color: var(--muted); text-align: center; }
 .mb-key span { color: var(--gold-ink); }
 .mb-rows { display: grid; border-top: 1px solid var(--line); }

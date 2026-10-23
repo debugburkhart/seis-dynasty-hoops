@@ -2919,7 +2919,9 @@ async function renderCoach(body, params) {
     const d = Math.round((tMe.locked - tOpp.locked) * 10) / 10;
     const n = tMe.left - tOpp.left;
     const left = n ? `${Math.abs(n)} ${n < 0 ? 'less' : 'more'}` : 'even';
-    return `<b class="mb-gap ${d > 0 ? 'up' : d < 0 ? 'down' : ''}" title="Locked points ahead or behind (starters left to lock vs theirs)">${d > 0 ? '+' : d < 0 ? '-' : ''}${num(Math.abs(d))} <span>(${left})</span></b>`;
+    // Points per extra starter it takes to even it up: the gap divided by the difference in starters left.
+    const per = n && d ? Math.round((Math.abs(d) / Math.abs(n)) * 10) / 10 : null;
+    return `<b class="mb-gap ${d > 0 ? 'up' : d < 0 ? 'down' : ''}" title="Locked points ahead or behind (starters left to lock vs theirs)">${d > 0 ? '+' : d < 0 ? '-' : ''}${num(Math.abs(d))} <span>(${left})</span></b>${per != null ? `<small class="mb-per" title="The gap divided by the difference in starters left to lock">${num(per)} per slot</small>` : ''}`;
   };
   const board = `
     <div class="mb-head">${side(w.me, tMe)}<span class="mb-mid">${gap()}<span class="mb-vs">vs</span></span>${side(opp, tOpp)}</div>
