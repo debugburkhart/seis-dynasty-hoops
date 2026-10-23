@@ -400,6 +400,23 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Shown on Lock-in coach game chips (upcoming games), the board's "Today vs X · 8:30p" tag (.mb-tip keeps
   it lowercase) and Games by day. Board rows with a lock call say "TEAM · Lock by 8:30pm on Fri"
   (owner, Oct 22 2026; next game's tip, "today" for today, "Lock before Fri" without a time; .mb-lockby wraps).
+  STARTING PIPELINE (owner, Oct 22 2026, streaming; "Beta" tag until the owner has tested it): card under the board on the Lock-in coach (pipelineCard in
+  app.js, .sp-* in styles.css; logic startingPipeline(coach, slate, date, today, boxes) in gm.js on coach.plan's
+  pieces). Day buttons (days left with games; today only while a game is to come or one just ended; choice kept
+  in PIPE_DAY), tip-off chips, a "Before {first tip}" moves box, then one row per slot. Per day: values use
+  Sleeper's projection for THAT game (teamRoster dayProj = per-date projections from loadWeek) through seqWorth
+  (W table with per-game mus). Main lineup = best fit with that day's players (bench needs +3, bench players with
+  no game that day excluded); then OPENERS: a player whose game ends (GAME_LEN 2h15m after tip) before a main
+  player's tip (or, for a starter with no game that day and no held score, before his next game) keeps that slot
+  warm for free. Each row: line x = what the replacement is worth (opener: the player he warms it for; else the
+  best spare bench player tipping after his game ends) when that beats his own later games; swapIn() checks slot
+  fit, letting only players whose game hasn't started (or who don't play that day) shift slots; lock bar = plan.T
+  (or the row's bar once played); bar = red under x / grey keep / navy lock, gold marker = his score (live/done);
+  one more link (r.next) when the replacement has his own later backup. Players holding a score the coach says to
+  lock show that call instead. Locked / what-if spots are closed (what-if shows in its suggested slot). Re-renders
+  with every lock mark / what-if (same gmWeek). Known limits: later days assume today's lineup; a spare bench
+  player can be the backup for 2 rows (said in the text); a played-and-low starter is usually swapped through the
+  "Now:" moves box (main fit) rather than a row verdict.
   scoutWeek().started is false in preseason (HYPE_NOW.pre), fixed Oct 2026.
   STEP 2 (built Oct 2026): `assets/dynasty.js` dynasty values (owner: weights 50/30/20, 0-100 score,
   blunt Managers tone). Per player: v1 = Sleeper season per-game projection (league scoring;

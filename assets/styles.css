@@ -2570,3 +2570,32 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .gm-days button small { font: 700 10px/1 var(--display); letter-spacing: 0; text-transform: none; color: var(--muted); }
 .gm-days button.on { background: var(--navy-800); border-color: var(--navy-800); color: #fff; }
 .gm-days button.on small { color: var(--gold); }
+
+/* Lock-in coach "Starting pipeline" (app.js pipelineCard): per open spot, who starts it and the score lines. */
+.sp-card { margin-top: 14px; }
+.sp-tips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.sp-tips span { padding: 3px 8px; border-radius: 999px; background: #eef2f8; color: var(--navy-800); font: 700 11px/1.3 var(--display); }
+.sp-tips b { color: var(--gold-ink); }
+.sp-moves { margin: 0 0 8px; }
+.sp-row { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; padding: 9px 0; border-top: 1px solid var(--line); }
+.sp-row .cm-slot { align-self: start; }
+.sp-body { min-width: 0; }
+.sp-body p { margin: 4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink); }
+.sp-who { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; font-size: 13px; }
+.sp-who small { color: var(--muted); font-size: 11.5px; }
+.sp-t { min-width: 40px; font: 700 11px/1.3 var(--display); color: var(--navy-600); }
+.sp-st { padding: 1px 7px; border-radius: 6px; background: #eef2f8; color: var(--navy-800); font: 700 11px/1.5 var(--display); white-space: nowrap; }
+.sp-live { background: #fde7d2; color: #9a4a0b; }
+.sp-swap { background: #fbe1e1; color: #8c2020; }
+.sp-lock { background: var(--navy-800); color: #fff; }
+.sp-then { margin-top: 3px; color: var(--muted); }
+.sp-then b { color: var(--ink); }
+.sp-closed { opacity: .7; }
+.sp-closed .sp-body small { display: block; color: var(--muted); font-size: 12px; }
+.sp-now { background: #fff6f6; }
+.sp-bar { position: relative; display: flex; height: 17px; margin: 5px 0 2px; border-radius: 5px; overflow: hidden; font: 700 10.5px/17px var(--display); }
+.sp-bar span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: clip; text-align: center; padding: 0 3px; }
+.sp-bar .sp-bench { background: #fbe1e1; color: #8c2020; }
+.sp-bar .sp-keep { background: #ece8de; color: #4f4a3e; }
+.sp-bar .sp-lock { background: var(--navy-800); color: #fff; padding: 0 3px; border-radius: 0; }
+.sp-mark { position: absolute; top: -1px; bottom: -1px; width: 3px; margin-left: -1px; background: var(--gold); box-shadow: 0 0 0 1px var(--navy-900); }

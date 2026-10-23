@@ -750,6 +750,167 @@ function lineupMoves(plan, c, today) {
   return { swaps, moves };
 }
 
+// ---------- Starting pipeline: one day's lineup by tip-off time ----------
+
+// An NBA game takes about 2h15m: a player whose game tips this long after another's can still
+// replace him once that game is over (owner, Oct 2026: stream later games in for low scores).
+export const GAME_LEN = 2.25 * 3600e3;
+// What a run of games is worth when he follows his lock bars game by game. Same as the W table,
+// but each game has its own projection (Sleeper's daily projections differ by opponent).
+function seqWorth(mus) {
+  let v = 0;
+  for (let i = mus.length - 1; i >= 0; i--) {
+    const mu = mus[i] * TUNE.lock;
+    v = i === mus.length - 1 ? mu : expectedMax(mu, Math.max(1, mu * LOCK_SPREAD), v);
+  }
+  return v;
+}
+// One day's plan (date = today or later this week) for a team's open slots, from the slot planner's
+// pieces. Before the day's first tip: the best lineup for that day (a bench player 3+ better moves
+// in). Then for each starter who plays early: the score under which he should be benched for a
+// player whose game starts after his is over (the best fit of the open slots with his score vs
+// without him), the lock bar above which he locks, and the chain that follows. A player whose
+// game has started can't come in, and one benched after his game loses his score.
+export function startingPipeline(c, slate, date, today, boxes = {}) {
+  const plan = c.plan;
+  const dd = plan.days.indexOf(date);
+  if (dd < 0) return null;
+  const P = plan.pieces, { slots, openIdx } = plan;
+  const nO = openIdx.length;
+  const muOf = (q, d) => { const x = q.row?.dayProj?.[plan.days[d]]; return x > 0 ? x : q.pg; };
+  const live = s => ['in_game', 'in_progress'].includes(s);
+  const info = P.map((q, qi) => {
+    const g = (slate[q.row?.team] ?? []).find(x => x.date === date) ?? null;
+    const tip = g?.tip ? Date.parse(g.tip) : null;
+    const later = q.games.filter(x => x > dd).map(x => muOf(q, x));
+    const rest = q.fixed != null ? q.fixed : seqWorth(later);
+    const o = { qi, q, g, tip, rest, mu: q.games.includes(dd) ? muOf(q, dd) : null, held: q.start >= 0 ? q.cur : null };
+    if (q.skip || q.fixed != null) o.kind = 'fixed';
+    else if (date === today && g && q.start >= 0 && (live(g.status) || (q.floor != null && q.games.includes(dd)))) o.kind = 'live';
+    else if (date === today && g && q.start >= 0 && !q.games.includes(dd) && (g.status === 'complete' || (boxes[q.pid] ?? []).some(b => b.date === date))) o.kind = 'done';
+    else if (q.games.includes(dd)) o.kind = 'up';
+    else o.kind = 'off';
+    o.tonight = o.kind === 'up' || o.kind === 'live' ? seqWorth([o.mu, ...later]) : rest;
+    // His next game after that day (a player who comes in on a later day must be in before it).
+    const nd = q.games.find(x => x > dd);
+    if (nd != null) {
+      const ng = (slate[q.row?.team] ?? []).find(x => x.date === plan.days[nd]);
+      o.next = { date: plan.days[nd], tip: ng?.tip ? Date.parse(ng.tip) : null };
+    }
+    return o;
+  });
+  // Best fit of the open slots for the given values (null = can't play), a hair of preference for `pref` slots.
+  const fit = (vals, pref) => {
+    const f = bestFit(nO, P.length, (ci, s) => (vals[ci] == null || !fits(slots[openIdx[s]], P[ci].elig) ? null : vals[ci] + (openIdx[s] === pref[ci] ? 0.001 : 0)));
+    return P.map((q, ci) => (f.slotOf[ci] >= 0 ? openIdx[f.slotOf[ci]] : -1));
+  };
+  // What a player in the lineup is worth: a held score he could lock, or his games from that day on.
+  const kept = o => (o.kind === 'fixed' ? o.q.fixed : o.kind === 'done' ? Math.max(o.held ?? 0, o.rest)
+    : o.kind === 'live' ? Math.max(o.q.floor ?? 0, o.tonight) : Math.max(o.held ?? 0, o.tonight));
+  // The day's main lineup: who should hold each slot by the end of the day (a bench player needs
+  // +3 to take a playing starter's spot; one with no game that day comes in later, see optionFor).
+  const start = P.map(q => q.start);
+  const main = fit(info.map(o => (o.q.skip ? null : o.q.start >= 0 ? kept(o) : o.kind === 'up' ? o.tonight - 3 : null)), start);
+  // When a main player first needs his slot: his tip that day, or (no game that day and no score to
+  // lose) his next game. Until then an earlier player can use it for free: he plays first, and stays
+  // only if his score beats what the main player is worth (the opener).
+  const needs = o => (o.kind === 'up' ? o.tip : o.q.start >= 0 && o.kind === 'off' && o.held == null ? o.next?.tip ?? null : null);
+  const slot0 = [...main];
+  const waiting = {}; // slot -> the main player an opener keeps it warm for
+  const openers = info.filter(o => main[o.qi] < 0 && o.kind === 'up' && o.tip != null).sort((x, y) => y.tonight - x.tonight);
+  for (const o of openers) {
+    const ok = openIdx.filter(s => {
+      if (waiting[s] || !fits(slots[s], o.q.elig)) return false;
+      const h = info.find(x => slot0[x.qi] === s);
+      const t = h ? needs(h) : null;
+      return h && t != null && o.tip + GAME_LEN <= t;
+    });
+    if (!ok.length) continue;
+    // His own slot if it works, else the one needed latest (most time to decide).
+    const s = ok.includes(o.q.start) ? o.q.start : ok.sort((x, y) => needs(info.find(h => slot0[h.qi] === y)) - needs(info.find(h => slot0[h.qi] === x)))[0];
+    const h = info.find(x => slot0[x.qi] === s);
+    waiting[s] = h;
+    slot0[h.qi] = -1;
+    slot0[o.qi] = s;
+  }
+  // Moves before the day's first tip: bench players in, starters out (waiting = back in later).
+  const ins = info.filter(o => o.q.start < 0 && slot0[o.qi] >= 0);
+  const outs = info.filter(o => o.q.start >= 0 && slot0[o.qi] < 0);
+  const isWaiting = o => Object.values(waiting).includes(o);
+  const moves = ins.map(o => ({ o, slot: slots[slot0[o.qi]], out: outs.find(x => x.q.start === slot0[o.qi]) ?? null }));
+  for (const m of moves) if (!m.out && outs.length) m.out = outs.sort((x, y) => kept(x) - kept(y))[0];
+  for (const m of moves) if (m.out) outs.splice(outs.indexOf(m.out), 1);
+  moves.push(...outs.map(o => ({ o: null, slot: slots[o.q.start], out: o })));
+  for (const m of moves) m.later = Boolean(m.out && isWaiting(m.out));
+  const shifts = info.filter(o => o.q.start >= 0 && slot0[o.qi] >= 0 && slot0[o.qi] !== o.q.start).map(o => ({ o, from: slots[o.q.start], to: slots[slot0[o.qi]] }));
+
+  // Can b take a's slot at time t (that day; null = a later day)? Players in the lineup whose game
+  // hasn't started by then (or who don't play that day) can change slots to make room; the rest
+  // stay put. Returns the new lineup and who shifts, or null.
+  const swapIn = (a, b, L, t) => {
+    const moving = info.filter(o => o.qi !== a.qi && L[o.qi] >= 0 && (t == null || o.kind === 'off' || o.kind === 'fixed' || (o.kind === 'up' && o.tip != null && o.tip >= t)));
+    const free = [L[a.qi], ...moving.map(o => L[o.qi])];
+    const who = [b, ...moving];
+    const f = bestFit(free.length, who.length, (ci, s) => (fits(slots[free[s]], who[ci].q.elig) ? 1 + (free[s] === L[who[ci].qi] ? 0.001 : 0) : null));
+    if ([...f.slotOf].some(s => s < 0)) return null;
+    const after = [...L];
+    after[a.qi] = -1;
+    who.forEach((o, ci) => { after[o.qi] = free[f.slotOf[ci]]; });
+    return { after, shift: moving.filter(o => after[o.qi] !== L[o.qi]).map(o => ({ o, from: slots[L[o.qi]], to: slots[after[o.qi]] })) };
+  };
+  // The streaming call for player a in lineup L (piece -> slot): the score under which he should
+  // make way, for whom (b: the player he keeps the slot warm for, else the best bench player whose
+  // game starts after his is over), in which slot, by when, and who shifts slots to make room.
+  const spare = o => o.kind === 'up' && slot0[o.qi] < 0 && !isWaiting(o);
+  const optionFor = (a, L, warm, taken = new Set()) => {
+    if (a.kind === 'fixed' || a.kind === 'off' || (a.tip == null && a.kind !== 'done')) return null;
+    // Who can still come in once his game is over (already over: anyone whose game hasn't started).
+    const ready = a.kind === 'done' ? 0 : a.tip + GAME_LEN;
+    const tonight = o => o.kind === 'up' && (a.kind === 'done' || (o.tip != null && o.tip >= ready));
+    const cands = (warm ? [warm] : info.filter(o => spare(o) && tonight(o) && !taken.has(o.qi)))
+      .map(b => ({ b, v: tonight(b) ? b.tonight : b.rest, t: tonight(b) ? b.tip : null }))
+      .filter(c => c.v > a.rest).sort((x, y) => y.v - x.v);
+    for (const { b, v, t } of cands) {
+      const s = swapIn(a, b, L, t);
+      if (!s) continue;
+      // Keep him when his score (or his games after that day) beats what b is worth: the line is b's value.
+      return { x: r1(v), b, slot: slots[s.after[b.qi]], slotIdx: s.after[b.qi], by: t ?? b.next?.tip ?? null, byDate: t != null ? date : b.next?.date ?? null, shift: s.shift, after: s.after };
+    }
+    return { x: 0 };
+  };
+  const lockOf = a => {
+    if (!a.q.games.some(x => x > dd)) return null; // his last game of the week counts if he stays in
+    const pi = a.qi;
+    const t = a.kind === 'up' ? plan.T[pi]?.[dd] : a.q.row?.bar;
+    return t != null && Number.isFinite(t) ? r1(t) : null;
+  };
+  const rows = slots.map((slot, i) => {
+    // Closed: locked there, or a what-if lock moved into it (teamPlan).
+    if (!plan.open[i]) return { slot, locked: c.rows.find(r => r.whatIf && r.whatIfSlot === i) ?? c.rows[i] };
+    const a = info.find(o => slot0[o.qi] === i);
+    if (!a) return { slot, empty: true };
+    // An opener is judged against the player he keeps the slot warm for, anyone else against
+    // tonight's spare bench players.
+    const opt = optionFor(a, slot0, waiting[i]);
+    const row = { slot, a, lock: lockOf(a), opt, waiting: waiting[i] ?? null };
+    // The player who comes in may get his own streaming call later that night.
+    if (opt?.b) {
+      const next = optionFor(opt.b, opt.after, null, new Set([opt.b.qi]));
+      if (next?.b) row.next = { ...next, lock: lockOf(opt.b) };
+    }
+    // Played already (today): where his score falls.
+    const x = a.kind === 'done' ? a.held : null;
+    if (x != null && opt) row.verdict = opt.b && x < opt.x ? 'swap' : row.lock != null && x >= row.lock ? 'lock' : 'keep';
+    return row;
+  });
+  // Tip-off groups for the day: every piece with a game that day, earliest first.
+  const tips = {};
+  for (const o of info) if (o.g && (o.kind !== 'off' || o.q.start >= 0)) (tips[o.tip ?? 'none'] ??= []).push(o);
+  const order = Object.keys(tips).sort((x, y) => (x === 'none' ? 1 : y === 'none' ? -1 : Number(x) - Number(y)));
+  const bench = info.filter(o => slot0[o.qi] < 0 && o.kind === 'up' && !rows.some(r => r.opt?.b === o || r.next?.b === o));
+  return { date, rows, moves, shifts, bench, tips: order.map(t => ({ tip: t === 'none' ? null : Number(t), players: tips[t] })), noTimes: order.length > 0 && order.every(t => t === 'none') };
+}
+
 // Lock calls for every team, and for yours the week played out many times. "Play to win"
 // (mode 'win'): for each unlocked score, the week is played out both ways (lock it now in the
 // best slot / keep playing) and the coach picks whichever gives the better chance of beating
