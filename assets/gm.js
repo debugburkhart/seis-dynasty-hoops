@@ -152,11 +152,12 @@ export async function lockedPoints(season, week, leagueId, rows) {
       const played = boxes[pid] ?? [];
       const latest = played.at(-1);
       const left = (slate[team[pid]] ?? []).some(g => g.status !== 'complete' && g.date >= today);
-      const earlier = latest && Math.abs(latest.pts - counted) >= 0.05 && played.slice(0, -1).some(b => Math.abs(b.pts - counted) < 0.05);
+      const earlier = latest && latest.date < today && Math.abs(latest.pts - counted) >= 0.05 && played.slice(0, -1).some(b => Math.abs(b.pts - counted) < 0.05);
       // A mark on a given game counts that game's score (the manager says it was locked then).
       const mk = marks[pid];
-      const markedGame = mk && typeof mk === 'object' ? played.find(b => b.date === mk.date) : null;
+      const markedGame = mk && typeof mk === 'object' && !mk.none ? played.find(b => b.date === mk.date) : null;
       if (markedGame) sum += markedGame.pts;
+      else if (mk && typeof mk === 'object' && mk.none) { if (!left) sum += counted; } // marked "not locked"
       else if (earlier || !left || (mk != null && played.length)) sum += counted;
     }
     out[m.roster_id] = r1(sum);
@@ -189,6 +190,9 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked, whatif) {
   const base = { sched, perGame, counted, out };
 
   if (!sched.length) return { ...base, call: 'none', text: 'No games this week. A bench player with games would score more.' };
+  // { none: true } = the manager says he is NOT locked: skip the marks and Sleeper's reading.
+  const notLocked = Boolean(marked && typeof marked === 'object' && marked.none);
+  if (notLocked) { base.notLocked = true; marked = null; }
   // Marked by the manager (this device): { date } = locked on that game (any game he played, so
   // a missed or earlier lock can be fixed), or an old-style number = the score counting now.
   // A mark beats Sleeper's own reading: the manager knows which game he locked.
@@ -198,9 +202,12 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked, whatif) {
     return { ...base, call: 'locked', score, lockDate: g?.date ?? null,
       text: `Locked at ${score}${g ? ` (${dayName(g.date)}'s game)` : ''}, marked on this device. Tap another game above if it was a different one.`, marked: true };
   }
-  // Locked? Inferred from Sleeper's counted score, or marked by the manager.
+  // Locked? Inferred from Sleeper's counted score: it still counts an earlier game after a later one.
+  // Not from a game played today: right after a game Sleeper's counted score can lag the box score
+  // (Oct 22 2026: Holmgren read as locked on Tuesday's 30 after Thursday's 39 went final; Sleeper
+  // counted 39 by morning). Same-day locks: the manager can mark them.
   const earlier = played.slice(0, -1).find(g => counted != null && Math.abs(g.pts - counted) < 0.05);
-  if (latest && counted != null && Math.abs(latest.pts - counted) >= 0.05 && earlier) {
+  if (!notLocked && latest && latest.date < today && counted != null && Math.abs(latest.pts - counted) >= 0.05 && earlier) {
     return { ...base, call: 'locked', score: earlier.pts, lockDate: earlier.date, text: `Locked at ${earlier.pts} (from ${dayName(earlier.date)}).`, inferred: true };
   }
   // What-if lock (coach's page only): counts in the coach's math, never in the live scores

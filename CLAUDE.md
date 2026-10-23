@@ -321,9 +321,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   score (not verified yet). Checked Oct 21 2026 (week 1, nobody had 2 games yet): every one-game starter's
   players_points = his box score exactly, team points = sum of starters; schedule status names are
   pre_game / in_game / complete (code now accepts in_game as well as in_progress); live box rows carry
-  sp (seconds) but no gp until the game ends. STILL TO CHECK once players have a 2nd game (Thu Oct 22 /
-  Fri Oct 23): that a locked earlier game still shows in players_points (Sleeper's OLD weeks lost many
-  locks, see SLEEPER'S OLD WEEKS ARE BROKEN) and whether a DNP replaces the counted score.
+  sp (seconds) but no gp until the game ends. LOCKS ARE REPORTED this season (Oct 23 2026: SGA counted
+  Tue's 52 after Thu's 24). LAG BUG (owner, Oct 23 2026): right after a game Sleeper's counted score can still be the
+  earlier game, so Holmgren read as "locked on Tue's 30" after Thu's 39 went final (counted 39 by morning) and the
+  owner couldn't undo it. Fixed: no lock is inferred from a game played TODAY (coachCall + lockedPoints: latest.date <
+  today), and a "Not locked" button on every locked card sets the mark { none: true } (ignore marks + Sleeper's
+  reading; lockedPoints counts him only with no games left; "Undo 'not locked'" clears it; data-act on .gm-mark).
+  Still to check: whether a DNP replaces the counted score (Oct 23 9 am: no week-1 starter had played, then sat a later team game; only 4 starters had 2 games, all played both; re-check after Fri/Sat/Sun games).
   Modes (localStorage gm-mode, was gm-risk): "Play to win" (Beta; was the default until Oct 20, 2026, see SLOT PLANNER),
   plus Safe/Balanced/Bold points modes. gameCoach(): builds every team's lockCoach rows -> sim
   states (simState: {fixed} or {cur,k,mu,sd}); winChance() plays out the week (seeded RNG, 3,000

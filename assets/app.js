@@ -2802,7 +2802,8 @@ async function renderCoach(body, params) {
       ${r.sched.length ? `<div class="gm-games">${r.sched.map(g => game(r, g)).join('')}</div>` : ''}
       ${r.sched.some(g => g.done && g.pts != null) ? `<p class="gm-hint">Tap the game ${mine ? 'you' : 'they'} locked to mark it${r.marked ? ', or the marked one again to undo' : ''}.</p>` : ''}
       <p class="gm-text">${esc(r.text)}</p>
-      <div class="gm-btns">${markable(r) ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-date="${esc(r.sched.filter(g => g.done && g.pts != null).at(-1)?.date ?? '')}">${r.marked ? 'Undo: not locked' : mine ? 'I locked him' : 'They locked him'}</button>` : ''}${whatIfBtn(r, i, mine)}</div>
+      ${r.notLocked ? `<p class="gm-hint">Marked as not locked on this device: the coach ignores Sleeper's reading for him.</p>` : ''}
+      <div class="gm-btns">${markable(r) ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-act="${r.marked ? 'clear' : 'latest'}" data-date="${esc(r.sched.filter(g => g.done && g.pts != null).at(-1)?.date ?? '')}">${r.marked ? 'Undo this mark' : mine ? 'I locked him' : 'They locked him'}</button>` : ''}${r.call === 'locked' && !r.whatIf ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-act="none">${mine ? 'He’s not locked' : 'Not locked'}</button>` : ''}${r.notLocked ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-act="clear">Undo “not locked”</button>` : ''}${whatIfBtn(r, i, mine)}</div>
     </div>`);
   const riskBtns = GM_MODES.map(([k, label]) => `<a href="#" data-risk="${k}" class="${k === w.mode ? 'on' : ''}">${label}</a>`).join('');
   const opp = coach.opp;
@@ -3002,18 +3003,20 @@ async function renderCoach(body, params) {
     el.addEventListener('click', e => { if (!e.target.closest('a')) toggle(el); });
     el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(el); } });
   });
-  // Real lock marks (this device): "I locked him" = his latest game; a tapped game chip = that game.
-  const setMark = (pid, date, toggleSame) => {
+  // Real lock marks (this device): "I locked him" = his latest game; a tapped game chip = that game
+  // (tap it again to undo); "Not locked" = ignore Sleeper's reading for him ({ none: true }).
+  const setMark = (pid, act, date) => {
     const m = gmLoad(w.marksKey, {});
     const cur = m[pid];
-    if (cur != null && (!toggleSame || (typeof cur === 'object' && cur.date === date))) delete m[pid];
+    if (act === 'clear' || (act === 'pick' && cur && typeof cur === 'object' && cur.date === date)) delete m[pid];
+    else if (act === 'none') m[pid] = { none: true };
     else m[pid] = { date };
     gmSave(w.marksKey, m);
     for (const k of Object.keys(LIVE)) delete LIVE[k]; // live locked points pick up the mark right away
     renderCoach(body, params).catch(() => {});
   };
-  body.querySelectorAll('.gm-mark').forEach(b => b.addEventListener('click', () => setMark(b.dataset.pid, b.dataset.date, false)));
-  body.querySelectorAll('.gm-pick').forEach(b => b.addEventListener('click', () => setMark(b.dataset.pid, b.dataset.date, true)));
+  body.querySelectorAll('.gm-mark').forEach(b => b.addEventListener('click', () => setMark(b.dataset.pid, b.dataset.act, b.dataset.date)));
+  body.querySelectorAll('.gm-pick').forEach(b => b.addEventListener('click', () => setMark(b.dataset.pid, 'pick', b.dataset.date)));
   bindWhatIfs(body, w, () => renderCoach(body, params).catch(() => {}));
   // Starting pipeline day buttons.
   body.querySelectorAll('.sp-days button').forEach(b => b.addEventListener('click', () => {
