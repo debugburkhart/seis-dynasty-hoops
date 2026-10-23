@@ -2006,6 +2006,11 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .mb-team b span { margin-left: 4px; font-size: 16px; color: var(--brass); }
 .mb-team em { font: 700 12px/1 var(--display); font-style: normal; color: var(--muted); }
 .mb-vs { padding-bottom: 6px; font: 800 11px var(--display); color: var(--muted); text-transform: uppercase; }
+.mb-mid { display: grid; justify-items: center; gap: 4px; }
+.mb-gap { font: 900 15px/1 var(--display); color: var(--navy-800); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mb-gap.up { color: #23704a; }
+.mb-gap.down { color: #a03a2d; }
+.mb-gap span { font-size: 11px; font-weight: 800; color: var(--muted); }
 .mb-key { margin: 6px 0 8px; font-size: 11px; color: var(--muted); text-align: center; }
 .mb-key span { color: var(--gold-ink); }
 .mb-rows { display: grid; border-top: 1px solid var(--line); }

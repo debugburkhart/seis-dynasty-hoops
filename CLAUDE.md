@@ -288,7 +288,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   picture tab (Monte Carlo + "root for"), Draft helper last (before the 2027 rookie draft).
   Lock-in coach MATCHUP BOARD (owner's sketch, Oct 2026): top card shows both CURRENT starting 9s
   across from each other (you left, opponent right, slot in the middle; .mb-* in styles.css), team
-  header "locked points (starters left to lock)", score boxes next to the slot (locked = navy, live =
+  header "locked points (starters left to lock)" with the gap above "vs" (owner, Oct 22 2026: "+12 (2 more)" = your
+  locked lead, green up / red down, then starters left to lock vs theirs: N less / N more / even; what-if locks
+  count, tally() treats them as locked; .mb-gap), score boxes next to the slot (locked = navy, live =
   orange, unlocked score = outlined, none = dash), then Bench and IR sections (both teams, no
   scores); phones show "D. Fox" names. Every player (both teams, starters/bench/IR) taps open his
   card below the row (.mb-detail, open keys kept in MB_OPEN across refreshes): starters = the lock

@@ -2817,8 +2817,19 @@ async function renderCoach(body, params) {
     return `<div class="mb-sec"><span>${label}</span><span class="mb-slot"></span><span>${opp ? label : ''}</span></div><div class="mb-rows">${rows}</div>`;
   };
   const oppTeam = coach.oppCoach?.team;
+  // Between the two teams (owner, Oct 2026): your locked-points lead, then starters left to lock vs
+  // theirs ("+12 (2 more)"). What-if locks count, since the tally treats them as locked.
+  const tMe = tally(coach.rows);
+  const tOpp = tally(oppRows);
+  const gap = () => {
+    if (!opp) return '';
+    const d = Math.round((tMe.locked - tOpp.locked) * 10) / 10;
+    const n = tMe.left - tOpp.left;
+    const left = n ? `${Math.abs(n)} ${n < 0 ? 'less' : 'more'}` : 'even';
+    return `<b class="mb-gap ${d > 0 ? 'up' : d < 0 ? 'down' : ''}" title="Locked points ahead or behind (starters left to lock vs theirs)">${d > 0 ? '+' : d < 0 ? '-' : ''}${num(Math.abs(d))} <span>(${left})</span></b>`;
+  };
   const board = `
-    <div class="mb-head">${side(w.me, tally(coach.rows))}<span class="mb-vs">vs</span>${side(opp, tally(oppRows))}</div>
+    <div class="mb-head">${side(w.me, tMe)}<span class="mb-mid">${gap()}<span class="mb-vs">vs</span></span>${side(opp, tOpp)}</div>
     <p class="mb-key">Locked points <span>(starters left to lock)</span><br>Small number: if every unlocked score were locked now · tap a player for his card</p>
     <div class="mb-rows">${coach.rows.map((r, i) => {
       const o = oppRows[i];
