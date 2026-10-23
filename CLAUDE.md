@@ -401,6 +401,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Shown on Lock-in coach game chips (upcoming games), the board's "Today vs X · 8:30p" tag (.mb-tip keeps
   it lowercase) and Games by day. Board rows with a lock call say "TEAM · Lock by 8:30pm on Fri"
   (owner, Oct 22 2026; next game's tip, "today" for today, "Lock before Fri" without a time; .mb-lockby wraps).
+  Unlocked starters (Wait/Plan/Live) and bench players also get "· Next Fri 8:30pm" (owner, Oct 22 2026; nextTip in
+  renderCoach; skipped when the next game is today, the Today tag already has the time; .mb-wrap).
   STARTING PIPELINE (owner, Oct 22 2026, streaming; "Beta" tag until the owner has tested it): card under the board on the Lock-in coach (pipelineCard in
   app.js, .sp-* in styles.css; logic startingPipeline(coach, slate, date, today, boxes) in gm.js on coach.plan's
   pieces). Day buttons (days left with games; today only while a game is to come or one just ended; choice kept

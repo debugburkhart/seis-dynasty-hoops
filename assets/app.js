@@ -2856,6 +2856,13 @@ async function renderCoach(body, params) {
   const nameHtml = p => `<b><span class="mb-full">${esc(p.name)}</span><span class="mb-short">${esc(short(p.name))}</span></b>`;
   // A tappable player: key = side + pid, opens his card (data-for) below the row.
   const tapAttrs = key => `role="button" tabindex="0" data-key="${esc(key)}" aria-expanded="${MB_OPEN.has(key)}"`;
+  // Next game's tip-off for players who aren't locked ("Next Fri 8:30pm"); a game later today is
+  // already in the "Today vs X · time" tag, so it isn't repeated.
+  const nextTip = next => {
+    if (!next || next.date === today) return '';
+    const t = tipTime(next).replace(/ ([AP])M$/, (_, x) => `${x.toLowerCase()}m`);
+    return `Next ${shortDay(next.date)}${t ? ` ${t}` : ''}`;
+  };
   const who = (r, side) => {
     if (!r) return `<div class="mb-p mb-${side}"></div>`;
     if (r.empty) return `<div class="mb-p mb-${side}"><span class="mb-name"><i>Empty</i></span>${scoreBox(r)}</div>`;
@@ -2868,18 +2875,20 @@ async function renderCoach(body, params) {
       return t ? `Lock by ${t} ${day}` : `Lock before ${next.date === today ? 'tonight' : shortDay(next.date)}`;
     };
     const isLock = r.call === 'lock' && !r.whatIf;
-    const meta = [r.team || 'FA', r.call === 'none' ? 'No games' : r.call === 'plan' ? `${r.sched.length} game${r.sched.length === 1 ? '' : 's'}` : isLock ? lockBy() : label(r)].join(' · ');
+    const nextUp = ['wait', 'plan', 'live'].includes(r.call) && !r.whatIf ? nextTip(r.sched.find(g => !g.done && !g.playing)) : '';
+    const meta = [r.team || 'FA', r.call === 'none' ? 'No games' : r.call === 'plan' ? `${r.sched.length} game${r.sched.length === 1 ? '' : 's'}` : isLock ? lockBy() : label(r), nextUp].filter(Boolean).join(' · ');
     return `<div class="mb-p mb-${side} mb-${r.whatIf ? 'wi' : r.call}${todayGame(r) ? ' mb-on' : ''}" ${tapAttrs(`${side}-${r.pid}`)}>
-      <span class="mb-name">${nameHtml(r)}<span class="mb-tags">${tags(r)}</span><small${isLock ? ' class="mb-lockby"' : ''}>${esc(meta)}</small></span>
+      <span class="mb-name">${nameHtml(r)}<span class="mb-tags">${tags(r)}</span><small${isLock ? ' class="mb-lockby"' : nextUp ? ' class="mb-wrap"' : ''}>${esc(meta)}</small></span>
       ${scoreBox(r)}</div>`;
   };
   // Bench and IR players: no score (bench points never count); red + struck out with no games left.
   const reserve = (p, side, where) => {
     if (!p) return `<div class="mb-p mb-${side}"></div>`;
     const left = gamesLeft(p);
-    const meta = [p.team || 'FA', left ? `${left} game${left === 1 ? '' : 's'} left` : 'No games left'].join(' · ');
+    const nextUp = left ? nextTip((w.slate[p.team] ?? []).find(g => g.status !== 'complete' && (g.date > today || (g.date === today && g.status === 'pre_game')))) : '';
+    const meta = [p.team || 'FA', left ? `${left} game${left === 1 ? '' : 's'} left` : 'No games left', nextUp].filter(Boolean).join(' · ');
     return `<div class="mb-p mb-${side} mb-res${left ? '' : ' mb-gone'}${todayGame(p) ? ' mb-on' : ''}" ${tapAttrs(`${side}-${where}-${p.pid}`)}>
-      <span class="mb-name">${nameHtml(p)}<span class="mb-tags">${tags(p)}</span><small>${esc(meta)}</small></span></div>`;
+      <span class="mb-name">${nameHtml(p)}<span class="mb-tags">${tags(p)}</span><small${nextUp ? ' class="mb-wrap"' : ''}>${esc(meta)}</small></span></div>`;
   };
   // The card a tapped bench/IR player opens: his week's games and what he could still add.
   const reserveCard = (p, where, mine) => {
