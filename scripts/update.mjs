@@ -353,6 +353,18 @@ try {
   console.log(`Taxi log skipped: ${e.message}`);
 }
 
+// Coach track record (owner, Oct 2026): the Lock-in coach's odds for every team each morning,
+// before that day's games (missing mornings of the week are rebuilt), plus how its lock calls
+// turned out -> data/coach-log.json (assets/coachlog.js). Shown on the Lock-in coach page.
+// A problem here never stops the update.
+try {
+  const { updateCoachLog } = await import('../assets/coachlog.js');
+  const coachLog = await updateCoachLog(data, await readJson('data/coach-log.json'), { log: m => console.log(m) });
+  await writeFile('data/coach-log.json', JSON.stringify(coachLog));
+} catch (e) {
+  console.log(`Coach log skipped: ${e.message}`);
+}
+
 console.log(`Saved ${data.seasons.length} seasons, ${data.games.length} games, snapshot ${today}.`);
 
 // ---------- Scoring check ----------

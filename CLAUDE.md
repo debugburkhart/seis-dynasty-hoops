@@ -368,6 +368,26 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   starters only. lineupMoves(): swaps (bench +3 hysteresis, "before {first game}", "X plays Mon
   first: lock only at T+") + slot moves; swapList shows odds as set vs following the coach.
   Projected median (owner, Oct 24 2026): oddsOf() also returns medianScore = average over the runs of that run's  median ((4th + 5th of 8) / 2); gmOdds shows "Projected median N" next to Beat the median (coach + Briefing).
+  COACH TRACK RECORD (owner, Oct 24 2026: "track every win % ... look at past weeks as they accumulate"; owner OK'd
+  the mockup): `assets/coachlog.js` (no DOM/Node APIs) + update.mjs (try/catch) -> data/coach-log.json { version,
+  at, seasons: { s: { weeks: { w: { days: { date: { at, r (1 = rebuilt later), t: { owner: [h2h, median chance,
+  projected median, expected final, opp's expected final] }, c: { owner: [[pid, name, score, game date, later
+  scores, counted now]] } } } } } } } }. Every run: week = Sleeper state (regular/post), plus last week if logged;
+  each slate date <= today without an entry gets snapshotDay(): rewind() rolls the week back to that morning (boxes
+  and finished games before it, statuses pre_game, Sleeper's counted score = a lock only if his next played game was
+  before that day, else his latest game before it), gameCoach for all 8 teams (Balanced; odds same in every mode),
+  ~1 s a morning. First write wins per date (a 2 AM run = that morning); week 1 Tue-Sat 2026 rebuilt (owner chose
+  it; marked *: today's lineups/projections/injuries). refreshCalls() updates every call's later games + counted
+  score each run. Each team's own view assumes it follows the coach (SCORE_CAL) vs others at OPP_CAL, so the two
+  sides of a game add up to LESS than 100% (week 1 Tue: 30% + 50%): matchups use ctChance = average of both views.
+  Card "How the coach is doing" on the Lock-in coach (ctCard/fillTrack in app.js, .ct-* in styles.css, above "How
+  the coach decides"): Show picker = Season scorecard / Week N (CT_VIEW kept across refreshes); week = per matchup
+  each morning's chance for the left team (navy = favoured), expected (last morning) + final; your team morning by
+  morning (win, median, expected you-them, projected median, lock calls: held = no later game beat it, locked =
+  counted at the end) + a live "Now" row (coach.now) + Final row (DATA.games / medianGames). Scorecard (finished
+  weeks only; First / Every / Last morning chips): favourite won, Brier (win, median), expected final and median
+  miss, lock calls held + followed (only calls with a later game), calibration buckets 50-100% (bar = won, gold mark
+  = said), by weekday, by week (tap opens it). Tested on live week 1 + made-up results (local only).
   ~0.6 s desktop mid-week. Owner (Oct 20, 2026): Balanced is the DEFAULT (localStorage key moved
   gm-risk -> gm-mode so old saved choices reset) and Play to win carries a "Beta" tag (.gm-beta).
   SLEEPER'S OLD WEEKS ARE BROKEN (found Oct 21 2026): /v1/league/{id}/matchups/{week} for 2024 and 2025
@@ -707,7 +727,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   families/twins (Thompson, Murray, Champagnie, Lopez, Ball, Holiday...) are correct.
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, taxi-log.json,
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, taxi-log.json, coach-log.json,
   dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 

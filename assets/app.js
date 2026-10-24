@@ -2755,6 +2755,231 @@ function pipelineCard(w) {
   </section>`;
 }
 
+// ---------- Coach track record (owner, Oct 2026) ----------
+// "Track every win % ... I want to be able to look at past weeks as they accumulate." The nightly
+// update saves the coach's odds for all 8 teams each morning, before that day's games
+// (data/coach-log.json, built by coachlog.js); this card puts them next to the real results.
+// Each team's own chance assumes that team follows the coach, so the two sides of a game can add
+// up to less than 100%: matchups show the average of the two views.
+let COACH_LOG = null;
+let CT_VIEW = null; // 'season' or a week number (null = the coach page's week)
+let CT_MORNINGS = 'all'; // scorecard: the 'first', 'last' or 'all' mornings of each week
+async function loadCoachLog() {
+  if (COACH_LOG && Date.now() - COACH_LOG.at < 300_000) return COACH_LOG.data;
+  try {
+    const res = await fetch(`data/coach-log.json?t=${Date.now()}`, { cache: 'no-store' });
+    COACH_LOG = { at: Date.now(), data: res.ok ? await res.json() : null };
+  } catch { COACH_LOG = { at: Date.now(), data: null }; }
+  return COACH_LOG.data;
+}
+const ctPct = x => (x == null ? '–' : `${Math.round(x * 100)}%`);
+const ctWeeks = (log, season) => log?.seasons?.[season]?.weeks ?? {};
+const ctMean = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+// A team's real week: score, opponent's score, won (1 / 0.5 tie / 0), the median and beat it.
+function ctResult(season, week, o) {
+  const g = DATA.games.find(x => x.s === season && x.w === week && (x.a === o || x.b === o));
+  const m = (DATA.medianGames ?? []).find(x => x.s === season && x.w === week && x.o === o);
+  if (!g && !m) return null;
+  const isA = g?.a === o;
+  return {
+    pts: g ? (isA ? g.ap : g.bp) : m.p, opp: g ? (isA ? g.bp : g.ap) : null,
+    won: g ? (g.win === 'tie' ? 0.5 : (g.win === 'a') === isA ? 1 : 0) : null,
+    median: m?.median ?? null, beat: m ? (m.res === 'W' ? 1 : m.res === 'T' ? 0.5 : 0) : null,
+  };
+}
+// One morning's chance for team a in a vs b: a's own view and 1 - b's, averaged.
+function ctChance(day, a, b) {
+  const va = day?.t?.[a]?.[0], vb = day?.t?.[b]?.[0];
+  if (va == null && vb == null) return null;
+  return va == null ? 1 - vb : vb == null ? va : (va + 1 - vb) / 2;
+}
+// A lock call against what happened: held = none of his later games beat it; followed = the
+// score Sleeper counts at the end is that score. c = [pid, name, score, date, later, counted].
+function ctCall(c, done) {
+  const later = c[4] ?? [];
+  const beat = later.some(x => x > c[2]);
+  return {
+    held: later.length ? !beat : null, beat, later,
+    // Only a call with a later game says anything: with none, that score counts anyway.
+    followed: done && later.length && c[5] != null ? Math.abs(c[5] - c[2]) < 0.05 : null,
+  };
+}
+function ctCallText(c, done) {
+  const v = ctCall(c, done);
+  const short = String(c[1]).split(' ').slice(1).join(' ') || c[1];
+  const later = v.later.length ? `later ${v.later.map(num).join(', ')}` : done ? 'no later game' : 'no game since';
+  const tag = v.held == null ? '' : v.held ? ' <b class="ct-ok">held</b>' : ' <b class="ct-no">beaten</b>';
+  return `${esc(short)} ${num(c[2])} <small>(${later}${done && v.followed != null ? `; ${v.followed ? 'locked' : 'not locked'}` : ''})</small>${tag}`;
+}
+
+function ctWeekHtml(log, season, wk, w) {
+  const W = ctWeeks(log, season)[wk];
+  const dates = Object.keys(W?.days ?? {}).sort();
+  const live = season === w.season && wk === w.week;
+  const done = DATA.games.some(g => g.s === season && g.w === wk);
+  const me = w.me;
+  const pairs = weekPairs(DATA, season, wk).sort((x, y) => (y.a === me || y.b === me) - (x.a === me || x.b === me));
+  const lastDay = W?.days?.[dates.at(-1)];
+  const matchup = p => {
+    const mine = p.a === me || p.b === me;
+    const days = dates.map(d => {
+      const c = ctChance(W.days[d], p.a, p.b);
+      return `<span class="ct-d${c == null ? '' : c >= 0.5 ? ' ct-a' : ' ct-b'}"><small>${shortDay(d)}${W.days[d].r ? '*' : ''}</small><b>${c == null ? '–' : Math.round(c * 100)}</b></span>`;
+    }).join('');
+    const ea = lastDay?.t?.[p.a]?.[3], eb = lastDay?.t?.[p.b]?.[3];
+    const f = p.final;
+    const exp = ea != null && eb != null ? `Expected ${num(Math.round(ea))}–${num(Math.round(eb))}` : '';
+    const fin = f ? `Final <b>${num(f.ap)}–${num(f.bp)}</b>` : '';
+    return `<div class="ct-m${mine ? ' ct-mine' : ''}">
+      <div class="ct-mh"><span class="${f?.win === 'a' ? 'ct-won' : ''}">${esc(teamName(p.a, season))}</span><i>vs</i><span class="${f?.win === 'b' ? 'ct-won' : ''}">${esc(teamName(p.b, season))}</span></div>
+      ${dates.length ? `<div class="ct-days">${days}</div>` : ''}
+      ${exp || fin ? `<p class="ct-line">${[exp, fin].filter(Boolean).join(' · ')}</p>` : ''}
+    </div>`;
+  };
+  // Your team, morning by morning (+ the coach's live numbers this week, + the real result).
+  const opp = pairs.find(p => p.a === me || p.b === me);
+  const oppId = opp ? (opp.a === me ? opp.b : opp.a) : null;
+  const res = done ? ctResult(season, wk, me) : null;
+  const row = (label, h, m, f, o, ms, cls = '') => `<tr class="${cls}"><td>${label}</td><td>${ctPct(h)}</td>${w.medianOn ? `<td>${ctPct(m)}</td>` : ''}<td>${f == null ? '–' : num(Math.round(f))}${o == null ? '' : `–${num(Math.round(o))}`}</td>${w.medianOn ? `<td>${ms == null ? '–' : num(Math.round(ms))}</td>` : ''}</tr>`;
+  const cols = w.medianOn ? 5 : 3;
+  const body = dates.map(d => {
+    const day = W.days[d];
+    const t = day.t?.[me];
+    const calls = day.c?.[me] ?? [];
+    return (t ? row(`${shortDay(d)}${day.r ? '*' : ''}`, t[0], t[1], t[3], t[4], t[2]) : row(shortDay(d), null, null, null, null, null))
+      + (calls.length ? `<tr class="ct-calls"><td colspan="${cols}">Lock: ${calls.map(c => ctCallText(c, done)).join(' · ')}</td></tr>` : '');
+  }).join('');
+  const n = live ? w.coach?.now : null;
+  const nowRow = n ? row('Now', n.h2h, n.median, n.avg?.[me], oppId ? n.avg?.[oppId] : null, n.medianScore, 'ct-now') : '';
+  const finalRow = res ? `<tr class="ct-final"><td>Final</td><td>${res.won == null ? '–' : res.won === 1 ? 'Won' : res.won ? 'Tie' : 'Lost'}</td>${w.medianOn ? `<td>${res.beat == null ? '–' : res.beat === 1 ? 'Beat it' : res.beat ? 'Tied' : 'Missed'}</td>` : ''}<td>${num(res.pts)}${res.opp != null ? `–${num(res.opp)}` : ''}</td>${w.medianOn ? `<td>${res.median != null ? num(res.median) : '–'}</td>` : ''}</tr>` : '';
+  const team = `<h3 class="ct-h">${esc(teamName(me, season))}, morning by morning</h3>
+    <table class="cm-table ct-table"><thead><tr><th>Morning</th><th>Win</th>${w.medianOn ? '<th>Median</th>' : ''}<th>Expected</th>${w.medianOn ? '<th>Proj. median</th>' : ''}</tr></thead>
+    <tbody>${body || `<tr><td colspan="${cols}">No mornings saved for this week yet.</td></tr>`}${nowRow}${finalRow}</tbody></table>
+    ${!done ? `<p class="cm-rule">The real result shows here once the week is final (the night after its last games).</p>` : ''}`;
+  return `<p class="cm-rule">Each morning’s chance for the team on the left (navy = favoured, outlined = underdog).${dates.some(d => W.days[d].r) ? ' * = rebuilt later.' : ''}</p>
+    <div class="ct-ms">${pairs.map(matchup).join('')}</div>${team}`;
+}
+
+function ctSeasonHtml(log, season) {
+  const rows = []; // team-mornings with a real result
+  const games = []; // matchup-mornings: the favourite's chance and whether it won
+  const calls = new Map();
+  const weekStats = [];
+  for (const [wk, W] of Object.entries(ctWeeks(log, season))) {
+    const w = Number(wk);
+    const pairs = weekPairs(DATA, season, w);
+    if (!pairs.some(p => p.final)) continue;
+    const all = Object.keys(W.days).sort();
+    const dates = CT_MORNINGS === 'first' ? all.slice(0, 1) : CT_MORNINGS === 'last' ? all.slice(-1) : all;
+    const ws = { w, right: 0, n: 0, brier: [] };
+    for (const d of dates) {
+      const day = W.days[d];
+      const dow = shortDay(d);
+      for (const [o, t] of Object.entries(day.t ?? {})) {
+        const r = ctResult(season, w, o);
+        if (!r) continue;
+        rows.push({ dow, h: t[0], m: t[1], ms: t[2], f: t[3], ...r });
+        if (t[0] != null && r.won != null) ws.brier.push((t[0] - r.won) ** 2);
+      }
+      for (const p of pairs) {
+        const c = ctChance(day, p.a, p.b);
+        if (c == null || c === 0.5 || !p.final || p.final.win === 'tie') continue;
+        const right = (c > 0.5) === (p.final.win === 'a') ? 1 : 0;
+        games.push({ dow, p: Math.max(c, 1 - c), right });
+        ws.right += right;
+        ws.n++;
+      }
+    }
+    for (const day of Object.values(W.days)) for (const [o, cs] of Object.entries(day.c ?? {})) for (const c of cs) calls.set(`${w}|${o}|${c[0]}|${c[3]}`, c);
+    weekStats.push(ws);
+  }
+  if (!weekStats.length) return '<p class="cm-rule">The scorecard fills in once the first logged week is final (the night after its last games). Until then, pick a week above to follow the odds day by day.</p>';
+  const brierH = ctMean(rows.filter(r => r.h != null && r.won != null).map(r => (r.h - r.won) ** 2));
+  const brierM = ctMean(rows.filter(r => r.m != null && r.beat != null).map(r => (r.m - r.beat) ** 2));
+  const finMiss = ctMean(rows.filter(r => r.f != null && r.pts != null).map(r => Math.abs(r.f - r.pts)));
+  const medMiss = ctMean(rows.filter(r => r.ms != null && r.median != null).map(r => Math.abs(r.ms - r.median)));
+  const right = games.filter(g => g.right).length;
+  const cv = [...calls.values()].map(c => ctCall(c, true));
+  const judged = cv.filter(v => v.held != null);
+  const followed = cv.filter(v => v.followed != null);
+  const f2 = x => (x == null ? '–' : x.toFixed(2));
+  const tiles = `<div class="dy-stats ct-stats">
+    <span>Favourite won<b>${games.length ? `${right} of ${games.length}` : '–'}</b>${games.length ? ctPct(right / games.length) : ''}</span>
+    <span>Win odds score<b>${f2(brierH)}</b>coin flip 0.25, perfect 0</span>
+    ${brierM != null ? `<span>Median odds score<b>${f2(brierM)}</b>coin flip 0.25</span>` : ''}
+    <span>Expected final off by<b>${finMiss == null ? '–' : num(Math.round(finMiss))}</b>points on average</span>
+    ${medMiss != null ? `<span>Projected median off by<b>${num(Math.round(medMiss))}</b>points on average</span>` : ''}
+    <span>Lock calls held up<b>${judged.length ? `${judged.filter(v => v.held).length} of ${judged.length}` : '–'}</b>${followed.length ? `managers locked ${followed.filter(v => v.followed).length} of ${followed.length}` : 'no later game to judge yet'}</span>
+  </div>`;
+  const BUCKETS = [[0.5, 0.6], [0.6, 0.7], [0.7, 0.8], [0.8, 0.9], [0.9, 1.01]];
+  const calib = BUCKETS.map(([lo, hi]) => {
+    const g = games.filter(x => x.p >= lo && x.p < hi);
+    if (!g.length) return '';
+    const won = g.filter(x => x.right).length / g.length;
+    const said = ctMean(g.map(x => x.p));
+    return `<tr><td>${Math.round(lo * 100)}–${Math.min(100, Math.round(hi * 100))}%</td><td>${ctPct(said)}</td><td class="ct-bar-cell"><span class="ct-bar"><i style="width:${Math.round(won * 100)}%"></i><em style="left:${Math.round(said * 100)}%"></em></span></td><td>${ctPct(won)}</td><td>${g.length}</td></tr>`;
+  }).join('');
+  const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const byDay = DOW.map(dow => {
+    const r = rows.filter(x => x.dow === dow);
+    const g = games.filter(x => x.dow === dow);
+    if (!r.length && !g.length) return '';
+    const b = ctMean(r.filter(x => x.h != null && x.won != null).map(x => (x.h - x.won) ** 2));
+    const fm = ctMean(r.filter(x => x.f != null).map(x => Math.abs(x.f - x.pts)));
+    const mm = ctMean(r.filter(x => x.ms != null && x.median != null).map(x => Math.abs(x.ms - x.median)));
+    return `<tr><td>${dow}</td><td>${g.length ? ctPct(g.filter(x => x.right).length / g.length) : '–'}</td><td>${f2(b)}</td><td>${fm == null ? '–' : num(Math.round(fm))}</td>${medMiss != null ? `<td>${mm == null ? '–' : num(Math.round(mm))}</td>` : ''}</tr>`;
+  }).join('');
+  const perWeek = weekStats.sort((a, b) => b.w - a.w).map(s => `<tr class="ct-wk" data-w="${s.w}" tabindex="0" role="button"><td>Week ${s.w}</td><td>${s.n ? `${s.right} of ${s.n}` : '–'}</td><td>${f2(ctMean(s.brier))}</td></tr>`).join('');
+  const chips = [['first', 'First morning'], ['all', 'Every morning'], ['last', 'Last morning']]
+    .map(([k, t]) => `<button type="button" class="ct-chip${CT_MORNINGS === k ? ' on' : ''}" data-m="${k}">${t}</button>`).join('');
+  return `<div class="ct-chips" role="group" aria-label="Which mornings count">${chips}</div>
+    ${tiles}
+    <h3 class="ct-h">When the coach said…</h3>
+    <table class="cm-table ct-table"><thead><tr><th>Favourite</th><th>Said</th><th></th><th>Won</th><th>Games</th></tr></thead><tbody>${calib}</tbody></table>
+    <p class="cm-rule">Navy bar = how often the favourite really won; gold mark = what the coach said. Close together = honest odds.</p>
+    <h3 class="ct-h">By morning</h3>
+    <table class="cm-table ct-table"><thead><tr><th>Morning</th><th>Fav. won</th><th>Score</th><th>Final off</th>${medMiss != null ? '<th>Median off</th>' : ''}</tr></thead><tbody>${byDay}</tbody></table>
+    <h3 class="ct-h">By week</h3>
+    <table class="cm-table ct-table"><thead><tr><th>Week</th><th>Fav. won</th><th>Score</th></tr></thead><tbody>${perWeek}</tbody></table>`;
+}
+
+function ctCard() {
+  return `<section class="card ct-card" id="ct-card">
+    <div class="card-head"><h2>How the coach is doing</h2><span class="card-sub">odds saved every morning</span></div>
+    <div class="ct-body"><p class="cm-rule">Loading the coach’s track record…</p></div>
+  </section>`;
+}
+async function fillTrack(body, w) {
+  const box = $('#ct-card .ct-body', body);
+  if (!box) return;
+  const log = await loadCoachLog();
+  if (!box.isConnected) return;
+  const season = w.season;
+  const weeks = Object.keys(ctWeeks(log, season)).map(Number);
+  if (!weeks.includes(w.week)) weeks.push(w.week);
+  weeks.sort((a, b) => b - a);
+  const view = CT_VIEW === 'season' ? 'season' : weeks.includes(CT_VIEW) ? CT_VIEW : w.week;
+  const label = v => (v === 'season' ? 'Season scorecard' : `Week ${v}${v === w.week ? ' (this week)' : ''}`);
+  const options = ['season', ...weeks].map(v => `<option value="${v}"${v === view ? ' selected' : ''}>${label(v)}</option>`).join('');
+  box.innerHTML = `<label class="hy-pick cm-pick ct-pick"><span class="hy-pick-label">Show</span><span class="ed-select"><span class="hy-pick-val">${esc(label(view))}</span>
+      <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+      <select class="ct-week" aria-label="Week or season scorecard">${options}</select></span></label>
+    ${view === 'season' ? ctSeasonHtml(log, season) : ctWeekHtml(log, season, view, w)}
+    <details class="ct-how"><summary>How this works</summary>
+      <p class="cm-rule">The nightly update (about 2 AM Central) runs the coach for all 8 teams as things stood that morning, before that day’s games, and saves each team’s chance to win, chance to beat the median, expected final scores, the projected median and the lock calls (Balanced mode; the odds are the same in every mode). Mornings marked * were rebuilt afterwards from that week’s data (week 1, before the log started, or a missed night): same lineups and projections as later in the week, with Sleeper’s scores rolled back to that morning, so they’re a little rougher.</p>
+      <p class="cm-rule">Each team’s chance assumes that team follows the coach while the others play like real managers did, so the two sides of a game can add up to less than 100%. Matchups show the average of the two. Results come from the saved final scores once a week is over.</p>
+      <p class="cm-rule"><b>Odds score</b> (Brier score): the average of (chance − result)², result 1 for a win and 0 for a loss. 0 is perfect, 0.25 is what always saying 50% gets, lower is better. <b>Held up</b>: none of his later games that week beat the score the coach said to lock. <b>Locked</b>: Sleeper counted that score at the end of the week.</p>
+    </details>`;
+  const redo = () => fillTrack(body, w).catch(() => {});
+  $('.ct-week', box)?.addEventListener('change', e => { CT_VIEW = e.target.value === 'season' ? 'season' : Number(e.target.value); redo(); });
+  box.querySelectorAll('.ct-chip').forEach(b => b.addEventListener('click', () => { CT_MORNINGS = b.dataset.m; redo(); }));
+  box.querySelectorAll('.ct-wk').forEach(tr => {
+    const open = () => { CT_VIEW = Number(tr.dataset.w); redo(); };
+    tr.addEventListener('click', open);
+    tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+  });
+}
+
 async function renderCoach(body, params) {
   const [w, dyn] = await Promise.all([gmWeek(params), coachDynasty()]);
   if (!w) {
@@ -2984,6 +3209,7 @@ async function renderCoach(body, params) {
         ${benchedOpp.length ? `<p class="cm-rule">Assumed out of their lineup: ${benchedOpp.map(r => `${esc(r.name)}${r.injury ? ` (${esc(r.injury)})` : ''}`).join(', ')}.</p>` : ''}
       </section>` : ''}
     </div>
+    ${ctCard()}
     <section class="card">
       <div class="card-head"><h2>How the coach decides</h2></div>
       <p class="cm-rule">Each starter counts one game a week: the one you lock, or else his last game. <b>Play to win</b> (Beta, recalibrated Oct 2026: see the test below) plays out the rest of the week a few thousand times, every team’s remaining games, both ways (lock his score now, or keep playing), and picks whichever gives the better chance of beating your opponent plus the chance of beating the league median. It knows which of their players are already locked or done, and assumes every other team plays smart too: its best healthy players from here on (not just today’s lineup), planned the same way as yours. Ahead, it locks more to protect the lead; behind, it waits for a bigger night.</p>
@@ -2994,6 +3220,7 @@ async function renderCoach(body, params) {
     </section></div>`;
 
   bindTeamPick(body);
+  fillTrack(body, w).catch(() => {});
   body.querySelectorAll('[data-risk]').forEach(a => a.addEventListener('click', e => {
     e.preventDefault();
     gmSave('gm-mode', a.dataset.risk);

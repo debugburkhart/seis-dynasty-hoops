@@ -2604,3 +2604,45 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .sp-bar .sp-keep { background: #ece8de; color: #4f4a3e; }
 .sp-bar .sp-lock { background: var(--navy-800); color: #fff; padding: 0 3px; border-radius: 0; }
 .sp-mark { position: absolute; top: -1px; bottom: -1px; width: 3px; margin-left: -1px; background: var(--gold); box-shadow: 0 0 0 1px var(--navy-900); }
+
+/* Coach track record (Lock-in coach, "How the coach is doing"; ctCard/fillTrack in app.js). */
+.ct-pick { margin-bottom: 10px; }
+.ct-ms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 4px 0 14px; }
+.ct-m { min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fbfaf6; }
+.ct-m.ct-mine { border-color: var(--brass); box-shadow: 0 0 0 1px var(--brass); }
+.ct-mh { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 6px; align-items: baseline; font-size: 12.5px; font-weight: 700; }
+.ct-mh span:last-child { text-align: right; }
+.ct-mh i { font-style: normal; font-size: 11px; font-weight: 400; color: var(--muted); }
+.ct-won::after { content: ' \2713'; color: #2f8a5b; }
+.ct-days { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.ct-d { display: inline-flex; flex-direction: column; align-items: center; min-width: 36px; padding: 3px 4px; border: 1px solid var(--navy-600); border-radius: 7px; background: var(--paper); }
+.ct-d small { font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.ct-d b { font: 900 13px/1.15 var(--display); color: var(--navy-800); }
+.ct-d.ct-a { background: var(--navy-800); border-color: var(--navy-800); }
+.ct-d.ct-a b { color: #fff; }
+.ct-d.ct-a small { color: var(--sky); }
+.ct-line { margin: 6px 0 0; font-size: 11.5px; color: var(--muted); }
+.ct-line b { color: var(--ink); }
+.ct-h { margin: 14px 0 6px; font: 800 11px/1.2 var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--navy-800); }
+.ct-table th:nth-child(2), .ct-table td:nth-child(2) { text-align: right; }
+.ct-table tr.ct-calls td { padding-top: 0; border-top: 0; text-align: left; white-space: normal; font-size: 11.5px; color: #3c4556; }
+.ct-table tr.ct-now td { font-weight: 700; color: var(--navy-800); background: #f3f6fb; }
+.ct-table tr.ct-final td { font-weight: 800; background: #f6f3ea; }
+.ct-ok { color: #23704a; }
+.ct-no { color: #a03a2d; }
+.ct-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ct-chip { padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); color: var(--muted); font-size: 12px; cursor: pointer; }
+.ct-chip.on { background: var(--navy-800); border-color: var(--navy-800); color: var(--gold); }
+.ct-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 4px; }
+.ct-table td.ct-bar-cell { width: 38%; }
+.ct-bar { position: relative; display: block; height: 10px; border-radius: 5px; background: #efece3; }
+.ct-bar i { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 5px; background: var(--navy-700); }
+.ct-bar em { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--brass); }
+.ct-wk { cursor: pointer; }
+.ct-wk:hover td, .ct-wk:focus td { background: #fbfaf6; }
+.ct-how { margin-top: 12px; }
+.ct-how summary { margin-bottom: 6px; font-size: 12px; font-weight: 700; color: var(--navy-800); cursor: pointer; }
+@media (max-width: 560px) {
+  .ct-ms { grid-template-columns: 1fr; }
+  .ct-stats { grid-template-columns: 1fr 1fr; }
+}
