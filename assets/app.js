@@ -2618,7 +2618,7 @@ const GM_MODES = [['win', 'Play to win <span class="gm-beta">Beta</span>'], ['sa
 const gmPct = x => `${Math.round(x * 100)}%`;
 
 // Win chances line: head-to-head, plus the median when it counts.
-const gmOdds = (w, odds) => `<div class="gm-odds">${odds.h2h != null ? `<span>Win chance <b>${gmPct(odds.h2h)}</b></span>` : ''}${w.medianOn ? `<span>Beat the median <b>${gmPct(odds.median)}</b></span>` : ''}</div>`;
+const gmOdds = (w, odds) => `<div class="gm-odds">${odds.h2h != null ? `<span>Win chance <b>${gmPct(odds.h2h)}</b></span>` : ''}${w.medianOn ? `<span>Beat the median <b>${gmPct(odds.median)}</b></span>${odds.medianScore != null ? `<span>Projected median <b class="gm-med">${num(Math.round(odds.medianScore * 10) / 10)}</b></span>` : ''}` : ''}</div>`;
 
 // Bench players worth starting (and starters who should change slots to make room), from the
 // coach's plan for the whole roster, plus the odds with the lineup as set vs following the coach.
@@ -2933,7 +2933,17 @@ async function renderCoach(body, params) {
     const left = n ? `${Math.abs(n)} ${n < 0 ? 'less' : 'more'}` : 'even';
     // Points per extra starter it takes to even it up: the gap divided by the difference in starters left.
     const per = n && d ? Math.round((Math.abs(d) / Math.abs(n)) * 10) / 10 : null;
-    return `<b class="mb-gap ${d > 0 ? 'up' : d < 0 ? 'down' : ''}" title="Locked points ahead or behind (starters left to lock vs theirs)">${d > 0 ? '+' : d < 0 ? '-' : ''}${num(Math.abs(d))} <span>(${left})</span></b>${per != null ? `<small class="mb-per" title="The gap divided by the difference in starters left to lock">${num(per)} per slot</small>` : ''}`;
+    return `<b class="mb-gap ${d > 0 ? 'up' : d < 0 ? 'down' : ''}" title="Locked points ahead or behind (starters left to lock vs theirs)">${d > 0 ? '+' : d < 0 ? '-' : ''}${num(Math.abs(d))} <span>(${left})</span></b>${per != null ? `<small class="mb-per" title="The gap divided by the difference in starters left to lock">${num(per)} per slot</small>` : ''}${medianPer()}`;
+  };
+  // What each of your starters left to lock needs on average to reach the projected league median
+  // (owner, Oct 2026): (projected median - your locked points) / your starters left to lock.
+  const medianPer = () => {
+    const m = coach.now?.medianScore;
+    if (!w.medianOn || m == null) return '';
+    const need = m - tMe.locked;
+    if (need <= 0) return `<small class="mb-per mb-med-ok" title="Your locked points already pass the projected median (${num(Math.round(m * 10) / 10)})">Median: already past it</small>`;
+    if (!tMe.left) return '';
+    return `<small class="mb-per" title="Projected median ${num(Math.round(m * 10) / 10)} minus your locked points, split over your ${tMe.left} starters left to lock">Median: ${num(Math.round((need / tMe.left) * 10) / 10)} per slot</small>`;
   };
   const board = `
     <div class="mb-head">${side(w.me, tMe)}<span class="mb-mid">${gap()}<span class="mb-vs">vs</span></span>${side(opp, tOpp)}</div>

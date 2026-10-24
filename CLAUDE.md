@@ -291,7 +291,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   header "locked points (starters left to lock)" with the gap above "vs" (owner, Oct 22 2026: "+12 (2 more)" = your
   locked lead, green up / red down, then starters left to lock vs theirs: N less / N more / even; what-if locks
   count, tally() treats them as locked; .mb-gap; below it "Z per slot" = |gap| / |difference in starters left|, hidden when
-  either is 0, .mb-per), score boxes next to the slot (locked = navy, live =
+  either is 0, .mb-per; then "Median: N per slot" = (projected median coach.now.medianScore - your locked) / your starters
+  left to lock, "Median: already past it" when locked >= median (owner, Oct 24 2026; medianPer)), score boxes next to the slot (locked = navy, live =
   orange, unlocked score = outlined, none = dash), then Bench and IR sections (both teams, no
   scores); phones show "D. Fox" names. Every player (both teams, starters/bench/IR) taps open his
   card below the row (.mb-detail, open keys kept in MB_OPEN across refreshes): starters = the lock
@@ -366,6 +367,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   opponents play smart), Play to win compares planWith(lockSlot) vs planWith(playOn); asSet = your
   starters only. lineupMoves(): swaps (bench +3 hysteresis, "before {first game}", "X plays Mon
   first: lock only at T+") + slot moves; swapList shows odds as set vs following the coach.
+  Projected median (owner, Oct 24 2026): oddsOf() also returns medianScore = average over the runs of that run's  median ((4th + 5th of 8) / 2); gmOdds shows "Projected median N" next to Beat the median (coach + Briefing).
   ~0.6 s desktop mid-week. Owner (Oct 20, 2026): Balanced is the DEFAULT (localStorage key moved
   gm-risk -> gm-mode so old saved choices reset) and Play to win carries a "Beta" tag (.gm-beta).
   SLEEPER'S OLD WEEKS ARE BROKEN (found Oct 21 2026): /v1/league/{id}/matchups/{week} for 2024 and 2025

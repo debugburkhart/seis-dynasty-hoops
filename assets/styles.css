@@ -1972,6 +1972,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .gm-duel i { font: 800 11px var(--display); color: var(--muted); font-style: normal; }
 .gm-odds { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; margin: 12px 0 10px; font-size: 13px; color: #3c4556; }
 .gm-odds b { font: 900 16px/1 var(--display); color: #2f8a5b; margin-left: 4px; }
+.gm-odds b.gm-med { color: var(--navy-800); }
 @media (max-width: 560px) {
   .cm-groups { flex-direction: column; align-items: stretch; }
   .gm-tools .gm-risk { width: 100%; }
@@ -2012,6 +2013,8 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .mb-gap.down { color: #a03a2d; }
 .mb-gap span { font-size: 11px; font-weight: 800; color: var(--muted); }
 .mb-per { font: 800 10px/1 var(--display); letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
+.mb-per.mb-med-ok { color: #23704a; }
+@media (max-width: 380px) { .mb-per { white-space: normal; text-align: center; max-width: 96px; line-height: 1.25; } .mb-gap { font-size: 13px; } .mb-gap span { font-size: 10px; } }
 .mb-key { margin: 6px 0 8px; font-size: 11px; color: var(--muted); text-align: center; }
 .mb-key span { color: var(--gold-ink); }
 .mb-rows { display: grid; border-top: 1px solid var(--line); }

@@ -552,7 +552,7 @@ export function simTeam(plan, runs = 3000, seed = 7, { noBench = false, skill = 
 export function oddsOf(totals, me, opp, medianOn) {
   const owners = Object.keys(totals);
   const runs = totals[me].length;
-  let h2h = 0, med = 0;
+  let h2h = 0, med = 0, medSum = 0;
   const avg = Object.fromEntries(owners.map(o => [o, totals[o].reduce((a, b) => a + b, 0) / runs]));
   const row = new Float64Array(owners.length);
   for (let i = 0; i < runs; i++) {
@@ -562,10 +562,12 @@ export function oddsOf(totals, me, opp, medianOn) {
       row.sort();
       const mid = row.length / 2;
       const median = row.length % 2 ? row[Math.floor(mid)] : (row[mid - 1] + row[mid]) / 2;
+      medSum += median;
       if (totals[me][i] > median) med++;
     }
   }
-  return { h2h: opp ? h2h / runs : null, median: medianOn ? med / runs : null, avg };
+  // medianScore = the projected league median: average over the runs of (4th + 5th of 8) / 2.
+  return { h2h: opp ? h2h / runs : null, median: medianOn ? med / runs : null, medianScore: medianOn ? medSum / runs : null, avg };
 }
 const winsOf = w => (w.h2h ?? 0) + (w.median ?? 0);
 
