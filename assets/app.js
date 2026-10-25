@@ -17,6 +17,7 @@ import { buildTimeline } from './timeline.js';
 import { MIN_GAMES, TIERS, draftClasses, draftGrades, draftOfYear, draftedPlayers, projectedOrder, reportCards, seasonPoints } from './draft.js';
 import { gradeOf } from './scout.js';
 import { CONTRACTS_SOURCE, contractText, readContract } from './contracts.js';
+import { paintSync, syncInit, syncSave } from './sync.js';
 
 // ---------- Navigation ----------
 
@@ -227,8 +228,10 @@ function renderSidebar(page) {
     </nav>
     <a class="commish-btn${page === 'commish' ? ' active' : ''}" href="#/commish">${icon('lock')}<span>Commish</span></a>
     <div class="sidebar-foot">
+      <div class="sync-box" data-sync="side"></div>
       ${DATA.live ? 'Live from Sleeper' : `Updated ${esc(updated)} CT`}
     </div>`;
+  paintSync($('#sidebar'));
 }
 
 function renderSoon(main, page) {
@@ -2356,6 +2359,7 @@ function renderCommish(main, params) {
         <div class="cm-run">
           <a class="btn" href="https://github.com/debugburkhart/seis-dynasty-hoops/actions/workflows/update.yml" target="_blank" rel="noopener">${icon('history')}<span>Run nightly update</span></a>
           <small>Opens GitHub: tap <b>Run workflow</b>, then the green <b>Run workflow</b>. Done in about 3–5 minutes; then reload the site.${(() => { const cur = DATA.seasons.at(-1); return cur && !cur.weeksPlayed && cur.status !== 'complete' ? ' Until Week 1, this also redoes the <b>preseason Power Rankings</b> from today’s rosters (after a trade, for example).' : ''; })()}</small>
+          <div class="sync-box sync-office" data-sync="office"></div>
         </div>
       </div>
       <div class="cm-groups">
@@ -2370,10 +2374,28 @@ function renderCommish(main, params) {
       <div id="cm-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
     </div>`;
   const body = $('#cm-body', main);
+  paintSync(main);
   const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, health: renderHealth }[tab];
+  CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
   });
+}
+
+// Another device saved a synced setting (sync.js): redraw the open office tab with it. Waits
+// while you're typing in a field there, so a form isn't wiped mid-entry.
+let CM_REDRAW = null;
+let SYNC_WAIT = null;
+function syncRedraw(keys) {
+  if (keys.some(k => k.startsWith('gm-locks-'))) for (const k of Object.keys(LIVE)) delete LIVE[k];
+  clearTimeout(SYNC_WAIT);
+  const body = $('#cm-body');
+  if (route().page !== 'commish' || !COMMISH_OPEN || !body || !CM_REDRAW) return;
+  if (body.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) {
+    SYNC_WAIT = setTimeout(() => syncRedraw(keys), 3000);
+    return;
+  }
+  CM_REDRAW();
 }
 
 // The week to scout: the one under way, or week 1 before the season starts.
@@ -2554,9 +2576,17 @@ async function renderScouting(body, params) {
 // ---- My GM: Lock-in coach and Daily briefing (logic in assets/gm.js) ----
 
 let GM_TIMER;
-// Small per-browser settings (risk setting, marked locks, injuries already seen).
+// Small saved settings (risk setting, marked locks, injuries already seen). Kept in this browser;
+// signed in with Google, the keys listed in sync.js SYNCED also follow the account to other devices.
 const gmLoad = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
-const gmSave = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private window: not saved */ } };
+const gmSave = (key, value) => {
+  try {
+    const text = JSON.stringify(value);
+    if (localStorage.getItem(key) === text) return;
+    localStorage.setItem(key, text);
+    syncSave(key, text);
+  } catch { /* private window: not saved */ }
+};
 
 function gmTeamPick(me, season, tab) {
   const cur = DATA.seasons.at(-1);
@@ -2645,6 +2675,7 @@ const longDay = date => new Date(`${date}T12:00:00`).toLocaleDateString('en-US',
 
 // Refresh a GM tab every 2 minutes while games are being played today.
 function gmAutoRefresh(body, params, render, w) {
+  clearInterval(GM_TIMER); // a redraw (lock mark, synced change) replaces the old timer
   const today = Object.values(w.slate).some(list => list.some(g => g.date === w.ctx.today && g.status !== 'complete'));
   if (!today) return;
   GM_TIMER = setInterval(() => {
@@ -7059,6 +7090,7 @@ try {
   DATA = await loadData();
   window.addEventListener('hashchange', render);
   render();
+  syncInit({ onChange: syncRedraw });
 } catch (err) {
   $('#main').innerHTML = `<div class="page"><section class="card"><h2>Couldn't load the league</h2><p class="empty">${esc(err.message)}</p></section></div>`;
 }

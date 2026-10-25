@@ -15,8 +15,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `.github/workflows/update.yml` can't be uploaded (hidden folder): the owner edits it on
   GitHub with the pencil and pastes. Put the new content on their clipboard with
   PowerShell `Get-Content -Raw ... | Set-Clipboard`.
-- Always end a change with the exact list of files to upload.
-- The repo is public: check runs/files with `curl` against api.github.com,
+- Always end a change with the exact list of files to upload.- The repo is public: check runs/files with `curl` against api.github.com,
   raw.githubusercontent.com and the live site (github.io is blocked in the Browser pane).
 
 ## Architecture (all plain ES modules, no build step)
@@ -242,6 +241,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `assets/players.js`: Player Index (#/players, under Hall of Fame): every player's locked
   points with season/manager filters, sort (points, weeks, per start: 5+ starts first),
   search (accent-insensitive), and a breakdown by fantasy team and by season.
+- `assets/sync.js`: Google sign-in + Firestore sync of saved settings (see "Cross-device sync").
 - `assets/commish.js`: Commissioner's office (#/commish, lock button under the menu, not in
   NAV). Header button "Run nightly update" opens GitHub's workflow page (owner taps Run
   workflow; no token is stored, the repo is public). Passcode asked every time the office is opened (flag also in sessionStorage cm-open so a reload or pull to refresh inside the office stays unlocked, owner Oct 2026; cleared when leaving the route or closing the app); only its
@@ -752,6 +752,43 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   WITHOUT frozen seasons, so old numbers can be wrong. For testing, download the real file
   from raw.githubusercontent.com into `data/` and delete it afterward.
 - Verify numbers against the data before reporting; the owner checks things in the app.
+
+## Cross-device sync (Firebase, owner Oct 24 2026)
+- Why: settings lived only in each browser's localStorage (lock marks entered twice, phone + PC).
+- Firebase project **dynasty-hof** ("Dynasty HOF", free Spark plan, owner's Google account).
+  Google sign-in enabled; authorized domains: localhost (default), dynasty-hof.firebaseapp.com,
+  debugburkhart.github.io. Firestore (Standard, nam5/US). Web app "Hoops site". The config in
+  assets/sync.js is public by design; **the real protection of synced data is the Firestore rules**
+  (`firestore.rules` in the repo = reference copy; live rules are pasted in console -> Firestore ->
+  Rules -> Publish). The commish passcode only hides the office, it protects nothing in Firestore.
+- `assets/sync.js` (Firebase JS SDK 10.14.1 from gstatic, dynamic import only after "Sign in" is
+  tapped once on that browser: localStorage sync-uid; other visitors load nothing). Sign-in box
+  (`[data-sync]`, paintSync): sidebar foot ("side") + commish header ("office"); Google popup,
+  redirect fallback; name/photo, Sign out, status dot Connecting / Synced / Saving / Offline / Sync problem.
+- How it works: localStorage stays the working copy (signed out / offline = exactly as before).
+  gmSave in app.js (the ONLY writer of saved settings) skips unchanged values, then syncSave(key)
+  -> users/{uid}/prefs/{key} = { v: JSON text, t: ms, dev }. onSnapshot listener copies newer docs
+  (t > local sync-meta[key]) into localStorage and calls syncRedraw (app.js): clears LIVE on lock-mark
+  changes and redraws the open commish tab (CM_REDRAW; waits while a field there has focus). Newest t
+  wins per key. Every connect reconciles (local newer -> push, remote newer -> apply). FIRST connect of a
+  browser to an account (sync-merged != uid) combines: gm-locks-/gm-whatif- objects merged (newer side
+  wins per player), gm-block- lists unioned, gm-tracker-seen- max, others newer wins; any replaced local
+  value is kept in localStorage sync-backup. gm.js lockedPoints still reads gm-locks from localStorage.
+- Synced keys = SYNCED in sync.js: gm-locks-*, gm-whatif-*, gm-mode, gm-block-*, gm-eval, gm-dyn-*,
+  gm-tracker-seen-*, gm-inj-*, wager-saved. NOT synced: gm-tips-{date} (cache), sessionStorage cm-open,
+  sync-* bookkeeping. **To sync a new setting:** save it with gmSave/gmLoad (never raw localStorage)
+  and add its key or prefix (ending in '-') to SYNCED; add a MERGE rule if two devices' values should be
+  combined instead of newest-wins; the rules need no change.
+- Firestore layout: users/{uid} = { name, photo, seen } (written at sign-in); users/{uid}/prefs/{key}.
+  Rules: only request.auth.uid == uid reads/writes its own tree; prefs docs only { v (string < 500 KB
+  or null), t (int), dev }; everything else denied. Any Google account can sign in and gets its own
+  private tree (harmless; the other managers have nothing to sync yet).
+- Trade Court later: same sign-in; map uid -> Sleeper owner id (owner bigdaddyburk =
+  1035475215997906944; his uid not recorded yet). Users must NOT set their own mapping: keep it in a
+  commish-only place (e.g. config.js ACCOUNTS or a members/{uid} doc only the owner's uid can write in
+  the rules) and add shared collections with their own rules.
+- Tested locally (Oct 24 2026): SDK loads, signed-out Firestore read = permission-denied, merge/apply
+  logic with a fake Firestore, layouts 320/402/desktop. Real Google sign-in only by the owner.
 
 ## Not built yet (sidebar shows "Soon")
 Weekly Props, Trade Court (planned with Firebase sign-in for the 8 managers; owner to decide
