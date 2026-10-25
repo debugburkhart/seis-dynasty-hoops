@@ -824,13 +824,42 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   props/{sw}/picks/{uid} { owner (must = his members doc), picks, t (= request.time, serverTimestamp) },
   readable by its owner only until lockAt, then by anyone; writes only before lockAt; props/{sw}/status/{uid}
   { owner, n, t } public. sync.js exports firebase() (loads SDK + waits for the first auth state, also
-  signed out), onAuth(cb), currentUser(). Trade Court later reuses members/{uid} (owner bigdaddyburk =
+  signed out), onAuth(cb), currentUser(). Trade Court reuses members/{uid} (see "Trade Court"; owner bigdaddyburk =
   1035475215997906944; his uid shows in Commish -> Props once signed in).
 - Tested locally (Oct 24 2026): SDK loads, signed-out Firestore read = permission-denied, merge/apply
   logic with a fake Firestore, layouts 320/402/desktop. Real Google sign-in only by the owner.
 
+## Trade Court (#/trade-court, In Season; owner, Oct 25 2026)
+- `assets/court.js` (no DOM) + renderCourt / courtCard / courtFoot / homeCourt / rivalryCourt in app.js,
+  .tc-* in styles.css. Modeled on the owner's fantasyhoff screenshot, navy instead of green, NO "Trade
+  Autopsies" tab. Every DATA.transactions trade (all seasons, 2- and 3-team) = a case, numbered 001..N
+  across ALL seasons, oldest first (tradeCases()); page lists one season newest first, season chips +
+  "Season 2026-27" badge, default = current season; ?season=, ?case=N (or the case key) opens + gold ring.
+  Card: "Case 075" / "Week N transaction" (3-team: "Week N 3-team trade") / date; one column per side
+  ("Side 1 · gets": what that team RECEIVED; side 2 mirrored on desktop, all stacked under 700px), red
+  swap icon on the divider; rows = position badge + player + NBA team (today's), picks R1/R2 + "Originally
+  X" (pickOwner) + "became Player" (frontoffice key) + "from X" in 3-team deals; "Show the numbers" fold =
+  Front Office got/gave/net per side (same as Rivalry) + Full breakdown link.
+- Owner's rules: voters = the 8 managers (Google sign-in + approved claim, SAME members/{uid} as Weekly
+  Props; shared memberBox()/bindMemberBox() in app.js; Commish -> Props approves claims for both);
+  managers IN the trade may vote but are tagged "(in trade)" and NOT counted; votes public by name
+  (names under each ruling); vote any time, change any time, tap your ruling again = withdraw (no
+  deadline, old trades too). Verdict needs MIN_JURORS 3 counted votes: 2-team = average on the 1-5 scale
+  (1 side 1 handily, 2 slightly, 3 even, 4 side 2 slightly, 5 handily), .5 rounds toward Even; 3-team =
+  7 buttons (each team handily/slightly + Even), most votes wins, tie = "Split jury".
+- Firestore: court/{season}/votes/{caseKey}_{uid} = { k, owner, w (winner owner id | 'even'), m ('h'|'s'|''),
+  t (server time) }; case key = `${season}-${ts}` (ts = Sleeper status_updated, stable incl. frozen
+  seasons). Rules (firestore.rules): public read; create/update only your own doc id for your linked team;
+  delete your own. Reads use Firestore's REST API (loadVotes, no SDK, works signed out); writes use the SDK.
+  THE OWNER MUST RE-PUBLISH THE RULES once (Commish -> League office -> Props -> Copy rules -> Open
+  Firebase rules -> paste -> Publish); until then the page says the vote rules aren't published (403).
+- Home: "Trade Court · Case N" card under the Props card (newest case + verdict / vote count, REST read).
+  Rivalry trade history: each trade has a "Trade Court · Case N" link; a signed-in linked manager also sees
+  "Your vote: ..." / "You haven't voted" (only loads Firebase when localStorage sync-uid is set).
+- Tested Oct 25 2026 with faked votes (fetch stub): tallies, verdicts, party exclusion, 3-team plurality,
+  layouts 320/402/1300. NOT tested: real sign-in + saving a vote (needs the published rules).
+
 ## Not built yet (sidebar shows "Soon")
-Trade Court (planned with Firebase sign-in for the 8 managers, reusing Weekly Props' members/{uid}
-links; owner to decide the open questions first). (Cheat Sheet was dropped by the owner.) The owner
+Nothing at the moment. (Cheat Sheet was dropped by the owner.) The owner
 shares screenshots of a football reference site (fantasyhoff.com) for each feature and
 wants it adapted for basketball.

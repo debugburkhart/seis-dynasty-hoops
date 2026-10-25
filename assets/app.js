@@ -19,6 +19,7 @@ import { gradeOf } from './scout.js';
 import { CONTRACTS_SOURCE, contractText, readContract } from './contracts.js';
 import { paintSync, syncInit, syncSave } from './sync.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
+import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 
 // ---------- Navigation ----------
 
@@ -28,7 +29,7 @@ const NAV = [
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['players', 'Player Index', 'users'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['future-drafts', 'Future Drafts', 'calendar'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['home', 'props', 'rules', 'timeline', 'rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players', 'draft-history', 'future-drafts', 'draft-grades']);
+const READY = new Set(['home', 'props', 'trade-court', 'rules', 'timeline', 'rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players', 'draft-history', 'future-drafts', 'draft-grades']);
 const DEFAULT_PAGE = 'home';
 
 const ICONS = {
@@ -408,10 +409,18 @@ function tradeHistory(A, B) {
             <span class="tr-when">${t.s} · Wk ${t.w}${t.owners.length > 2 ? ` · 3-team trade with ${esc(t.owners.filter(o => o !== A && o !== B).map(name).join(' & '))}` : ''}</span>
             <span class="tr-verdict">${verdict(t)}</span>
           </div>
+          ${courtLink(t)}
           <div class="tr-sides">${column(t, A)}${column(t, B)}</div>
         </div>`).join('') : `<p class="empty">${esc(name(A))} and ${esc(name(B))} haven't made a trade with each other.</p>`}
       ${trades.length ? `<p class="rec-note">Values are locked points each player produced for the team that received him, until he left it. A draft pick counts as the player it became, even if it was flipped before the draft; that value then moves on in the trade where it was flipped, so it's never counted twice. * still on that manager's roster (or a pick they still hold), so the value is still growing. Est. means some value in the deal is still changing.</p>` : ''}
     </section>`;
+}
+
+// The trade's Trade Court case; rivalryCourt() fills in the signed-in manager's vote.
+function courtLink(t) {
+  const c = courtCases().find(x => x.tx === t.tx);
+  if (!c) return '';
+  return `<div class="tr-court"><a href="#/trade-court?case=${c.no}">${icon('scale')}<span>Trade Court · Case ${caseNo(c.no)}</span></a><span class="tr-court-me" data-key="${esc(c.key)}"></span></div>`;
 }
 
 // In a 3-team trade, who an asset came from.
@@ -568,6 +577,7 @@ function renderRivalry(main, params) {
     trade.classList.add('tr-flash');
     setTimeout(() => trade.scrollIntoView({ block: 'start' })); // after render() scrolls to the top
   }
+  rivalryCourt(main);
 }
 
 // ---------- Record Book ----------
@@ -6367,6 +6377,7 @@ function renderHome(main, preview = null) {
       </div>
       <div id="hm-hype"><div class="hm-main hm-loading"><span class="hm-kicker">${icon('bolt')} Main event</span><p>Checking this week’s slate…</p></div></div>
       <div id="hm-props"></div>
+      <div id="hm-court"></div>
       ${homeTicker()}
       <div class="hm-grid">
         ${homePower()}
@@ -6382,6 +6393,7 @@ function renderHome(main, preview = null) {
     </div>`;
   homeWagerLive(main);
   homeProps(main);
+  homeCourt(main);
 
   main.querySelectorAll('.hm-tabs button').forEach(b => b.addEventListener('click', () => {
     homeBy = b.dataset.by;
@@ -7102,6 +7114,36 @@ function propResultText(p, out, season) {
   return `${out.win.map(k => k.split('-').map(o => esc(name(o))).join(' vs ')).join(' & ')}: ${num(out.value)}`;
 }
 
+// Sign-in + "which team is yours" box shared by Weekly Props and Trade Court. A manager claims a
+// team once; the commish approves it (Commish -> League office -> Props), then members/{uid} links
+// the Google account to his Sleeper owner id. mineText(owner) = the line once linked.
+function memberBox(acct, season, invite, mineText) {
+  const sync = '<div class="sync-box sync-office pr-sync" data-sync="office"></div>';
+  if (!acct.user) return `<div class="pr-me"><p><b>${invite}</b> Sign in with Google, then claim your team. The commish approves it once.</p>${sync}</div>`;
+  if (acct.owner) return `<div class="pr-me"><p>${mineText(acct.owner)}</p>${sync}</div>`;
+  if (acct.claim) return `<div class="pr-me"><p>Waiting for the commish to approve you as <b>${esc(teamName(acct.claim.owner, season))}</b>. <a href="#" class="pr-unclaim">Cancel</a></p>${sync}</div>`;
+  return `<div class="pr-me"><form class="pr-claim"><label>Which team is yours?
+      <select class="pr-team">${[...currentOwners()].sort((a, b) => name(a).localeCompare(name(b))).map(o => `<option value="${esc(o)}">${esc(teamName(o, season))} (${esc(name(o))})</option>`).join('')}</select></label>
+      <button class="btn" type="submit">Claim my team</button></form>
+    <small class="pr-fine">The commish approves each claim once, so nobody can pick or vote for another team.</small>
+    ${sync}</div>`;
+}
+function bindMemberBox(body, acct) {
+  $('.pr-claim', body)?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const fb = acct.fb, u = fb.auth.currentUser;
+    try {
+      await fb.setDoc(fb.doc(fb.db, 'claims', u.uid), { owner: $('.pr-team', body).value, name: u.displayName ?? '', photo: u.photoURL ?? '', t: fb.serverTimestamp() });
+      render();
+    } catch (err) { alert(`Couldn’t send the claim: ${err.code ?? err.message}`); }
+  });
+  $('.pr-unclaim', body)?.addEventListener('click', async e => {
+    e.preventDefault();
+    await acct.fb.deleteDoc(acct.fb.doc(acct.fb.db, 'claims', acct.user.uid)).catch(() => {});
+    render();
+  });
+}
+
 let PR_SAVE = null;
 async function renderProps(main, params) {
   main.innerHTML = `
@@ -7142,17 +7184,8 @@ async function renderProps(main, params) {
   const canPick = Boolean(acct.owner) && !locked;
   const managers = currentOwners();
 
-  const accountCard = () => {
-    if (fbErr) return `<p class="gm-alert">Couldn’t reach the picks server: ${esc(fbErr)}</p>`;
-    if (!acct.user) return `<div class="pr-me"><p><b>Want to play?</b> Sign in with Google, then claim your team. The commish approves it once.</p><div class="sync-box sync-office pr-sync" data-sync="office"></div></div>`;
-    if (acct.owner) return `<div class="pr-me"><p>Picking for <b>${esc(teamName(acct.owner, season))}</b> (${esc(name(acct.owner))}).</p><div class="sync-box sync-office pr-sync" data-sync="office"></div></div>`;
-    if (acct.claim) return `<div class="pr-me"><p>Waiting for the commish to approve you as <b>${esc(teamName(acct.claim.owner, season))}</b>. <a href="#" id="pr-unclaim">Cancel</a></p><div class="sync-box sync-office pr-sync" data-sync="office"></div></div>`;
-    return `<div class="pr-me"><form class="pr-claim" id="pr-claim"><label>Which team is yours?
-        <select id="pr-team">${[...managers].sort((a, b) => name(a).localeCompare(name(b))).map(o => `<option value="${esc(o)}">${esc(teamName(o, season))} (${esc(name(o))})</option>`).join('')}</select></label>
-        <button class="btn" type="submit">Claim my team</button></form>
-      <small class="pr-fine">The commish approves each claim once, so nobody can pick for another team.</small>
-      <div class="sync-box sync-office pr-sync" data-sync="office"></div></div>`;
-  };
+  const accountCard = () => (fbErr ? `<p class="gm-alert">Couldn’t reach the picks server: ${esc(fbErr)}</p>`
+    : memberBox(acct, season, 'Want to play?', o => `Picking for <b>${esc(teamName(o, season))}</b> (${esc(name(o))}).`));
   const lockLine = () => (final ? `<b>Final.</b> Graded on the saved locked scores.`
     : locked ? `<b>Locked</b> ${esc(prWhen(W.lockAt))} CT. Results once the week is final.`
     : `<b>Locks ${esc(prWhen(W.lockAt))} CT</b> <span id="pr-cd">(${prCountdown(W.lockAt)})</span>. Lines are set for the week and don’t change.`);
@@ -7254,19 +7287,7 @@ async function renderProps(main, params) {
       }
     }, 700);
   }));
-  $('#pr-claim', body)?.addEventListener('submit', async e => {
-    e.preventDefault();
-    const fb = acct.fb, u = fb.auth.currentUser;
-    try {
-      await fb.setDoc(fb.doc(fb.db, 'claims', u.uid), { owner: $('#pr-team', body).value, name: u.displayName ?? '', photo: u.photoURL ?? '', t: fb.serverTimestamp() });
-      render();
-    } catch (err) { alert(`Couldn’t send the claim: ${err.code ?? err.message}`); }
-  });
-  $('#pr-unclaim', body)?.addEventListener('click', async e => {
-    e.preventDefault();
-    await acct.fb.deleteDoc(acct.fb.doc(acct.fb.db, 'claims', acct.user.uid)).catch(() => {});
-    render();
-  });
+  bindMemberBox(body, acct);
   // Sign in / out redraws the page.
   import('./sync.js').then(({ onAuth }) => {
     const off = onAuth(() => { off(); if (route().page === 'props') render(); });
@@ -7362,7 +7383,7 @@ async function renderPropsAdmin(body) {
   body.innerHTML = `
     ${err ? `<p class="gm-alert">${esc(err)}</p>` : ''}
     <section class="card">
-      <div class="card-head"><h2>Claims waiting</h2><span class="card-sub">from the Weekly Props page</span></div>
+      <div class="card-head"><h2>Claims waiting</h2><span class="card-sub">from Weekly Props or Trade Court</span></div>
       ${claims.length ? claims.map(c => `
         <div class="pa-row" data-uid="${esc(c.uid)}">
           ${c.photo ? `<img src="${esc(c.photo)}" alt="" referrerpolicy="no-referrer">` : ''}
@@ -7373,7 +7394,7 @@ async function renderPropsAdmin(body) {
     <section class="card">
       <div class="card-head"><h2>Linked managers</h2><span class="card-sub">${members.length} of ${currentOwners().size}</span></div>
       ${members.map(m => `<div class="pa-row" data-uid="${esc(m.uid)}"><span class="pa-who"><b>${esc(teamName(m.owner, season))}</b><small>${esc(name(m.owner))}${m.uid === user.uid ? ' · you' : ''}</small></span><button class="btn pa-no" type="button" data-act="unlink">Unlink</button></div>`).join('') || '<p class="empty">Nobody yet.</p>'}
-      ${missing.length ? `<p class="cm-rule">Not linked yet: ${missing.map(o => esc(name(o))).join(', ')}. They sign in on the Weekly Props page and tap <b>Claim my team</b>.</p>` : ''}
+      ${missing.length ? `<p class="cm-rule">Not linked yet: ${missing.map(o => esc(name(o))).join(', ')}. They sign in on the Weekly Props or Trade Court page and tap <b>Claim my team</b>.</p>` : ''}
     </section>
     ${setup}`;
   body.querySelectorAll('.pa-row button').forEach(b => b.addEventListener('click', async () => {
@@ -7393,6 +7414,209 @@ async function renderPropsAdmin(body) {
     const text = (await fetch(`firestore.rules?t=${Date.now()}`).then(r => r.text())).replace(/COMMISH_UID/g, user.uid);
     try { await navigator.clipboard.writeText(text); $('#pa-copied', body).hidden = false; } catch { prompt('Copy these rules:', text); }
   });
+}
+
+// ---------- Trade Court ----------
+// Every trade is a case (assets/court.js); the managers rule on who won it. Votes live in
+// Firestore (court/{season}/votes), read without sign-in through the REST API; voting needs the
+// same approved team claim as Weekly Props. Votes can be changed or withdrawn any time.
+
+let COURT;
+const courtCases = () => (COURT ??= tradeCases(DATA));
+const caseNo = n => String(n).padStart(3, '0');
+const COURT_VOTES = {}; // season -> vote docs (this visit)
+const courtVotes = async (season, fresh = false) => (!fresh && COURT_VOTES[season]) || (COURT_VOTES[season] = await loadVotes(season));
+const rulingText = r => (r.w === 'even' ? 'Even trade' : `${name(r.w)} ${r.m === 'h' ? 'handily' : 'slightly'}`);
+
+function verdictText(t) {
+  if (!t.verdict) return 'No verdict yet';
+  if (t.verdict.split) return 'Split jury';
+  return `Verdict: ${rulingText(t.verdict)}`;
+}
+
+function courtAsset(c, a) {
+  const three = c.owners.length > 2;
+  if (a.pid) {
+    const p = DATA.players?.[a.pid];
+    const sub = [p?.t || 'No NBA team', three && a.from ? `from ${name(a.from)}` : ''].filter(Boolean).join(' · ');
+    return `<li class="tc-asset"><span class="tc-badge">${esc(p?.pos || '–')}</span><span class="tc-a"><b>${esc(p?.n ?? `Player ${a.pid}`)}</b><small>${esc(sub)}</small></span></li>`;
+  }
+  // A draft pick: who it originally belonged to, and the player it became once drafted.
+  const orig = pickOwner(a.season, a.orig, c.s);
+  const fo = ledger().trades.find(t => t.tx === c.tx)?.sides.flatMap(sd => sd.got).find(g => g.key === `${a.season}|${a.round}|${a.orig}`);
+  const became = fo?.pid ? DATA.players?.[fo.pid]?.n : null;
+  const sub = [orig ? `Originally ${name(orig)}` : '', three && a.from !== orig ? `from ${name(a.from)}` : '', became ? `became ${became}` : ''].filter(Boolean).join(' · ');
+  return `<li class="tc-asset"><span class="tc-badge tc-pick">R${a.round}</span><span class="tc-a"><b>${esc(a.season)} round ${a.round} pick</b><small>${esc(sub)}</small></span></li>`;
+}
+
+// Front Office value of the deal (same numbers as the Rivalry page), folded away.
+function courtNumbers(c) {
+  const t = ledger().trades.find(x => x.tx === c.tx);
+  if (!t) return '';
+  const est = t.sides.some(sd => sd.est);
+  return `
+    <details class="tc-nums">
+      <summary>Show the numbers</summary>
+      <div class="tc-nums-grid">${t.sides.map(sd => `
+        <div class="tc-num${sd.net > 0 ? ' up' : sd.net < 0 ? ' down' : ''}">
+          <b>${esc(name(sd.o))}</b>
+          <span>Got ${num(sd.gotValue)} · gave ${num(sd.gaveValue)}</span>
+          <strong>${signedNum(sd.net)}</strong>
+        </div>`).join('')}</div>
+      <p class="rec-note">Locked points each player produced for the team that got him, until he left it; a pick counts as the player it became.${est ? ' Est.: some of it is still changing.' : ''} <a href="#/rivalry?a=${encodeURIComponent(c.owners[0])}&b=${encodeURIComponent(c.owners[1])}&trade=${c.tx}">Full breakdown</a></p>
+    </details>`;
+}
+
+function courtFoot(c, t, my, canVote) {
+  const opts = t.opts.map(o => {
+    const on = my && sameRuling(o, my);
+    return `<button type="button" class="tc-opt${on ? ' on' : ''}${t.verdict && !t.verdict.split && t.verdict.n === o.n ? ' won' : ''}" data-w="${esc(o.w)}" data-m="${o.m}"${canVote ? '' : ' disabled'} aria-pressed="${Boolean(on)}">
+        <i>${o.n}</i><span class="tc-ol">${esc(rulingText(o))}${o.voters.length ? `<small>${o.voters.map(v => `<em${v.party ? ' class="party" title="In this trade: not counted"' : ''}>${esc(name(v.owner))}</em>`).join('')}</small>` : ''}</span><b>${o.count}</b>
+      </button>`;
+  }).join('');
+  const jury = !t.votes ? 'Be the first juror.'
+    : [`${t.jurors} juror${t.jurors === 1 ? '' : 's'}`,
+      t.parties ? `${t.parties} vote${t.parties === 1 ? '' : 's'} from the teams in the trade (not counted)` : '',
+      t.jurors < MIN_JURORS ? `a verdict needs ${MIN_JURORS}` : t.verdict.avg != null ? `average ${t.verdict.avg.toFixed(1)} of 5` : t.verdict.split ? 'tied at the top' : ''].filter(Boolean).join(' · ');
+  return `
+    <div class="tc-foot-head"><span>${canVote ? 'Your ruling' : 'The ruling'}</span><span class="tc-verdict${t.verdict && !t.verdict.split ? ' on' : ''}">${esc(verdictText(t))}</span></div>
+    <div class="tc-opts tc-n${t.opts.length}">${opts}</div>
+    <p class="tc-jury">${icon('users')}<span>${esc(jury)}</span></p>`;
+}
+
+function courtCard(c) {
+  const three = c.owners.length > 2;
+  return `
+    <article class="tc-case${three ? ' tc-three' : ''}" id="case-${c.no}" data-key="${esc(c.key)}">
+      <header class="tc-head">
+        <div><span class="tc-kicker">Case ${caseNo(c.no)}</span><h2>Week ${c.w} ${three ? '3-team trade' : 'transaction'}</h2></div>
+        <span class="tc-date">${esc(shortDate(c.ts))}${c.s !== DATA.seasons.at(-1).season ? `, ${new Date(c.ts).getFullYear()}` : ''}</span>
+      </header>
+      <div class="tc-sides">${c.sides.map((sd, i) => `
+        ${i ? `<span class="tc-swap" aria-hidden="true">${icon('swap')}</span>` : ''}
+        <div class="tc-side">
+          <span class="tc-label">Side ${i + 1} · gets</span>
+          <h3>${esc(name(sd.o))}</h3>
+          <span class="tc-team">${esc(teamName(sd.o, c.s))}</span>
+          <ul>${[...sd.players, ...sd.picks].map(a => courtAsset(c, a)).join('') || '<li class="tc-asset tc-none">Nothing</li>'}</ul>
+        </div>`).join('')}
+      </div>
+      ${courtNumbers(c)}
+      <footer class="tc-foot">${courtFoot(c, tally(c, []), null, false)}</footer>
+    </article>`;
+}
+
+async function renderCourt(main, params) {
+  const cases = courtCases();
+  const cur = DATA.seasons.at(-1).season;
+  const want = params.get('case');
+  const target = want && cases.find(c => String(c.no) === want || c.key === want);
+  const seasons = [...new Set([...cases.map(c => c.s), cur])].sort().reverse();
+  const season = target?.s ?? (seasons.includes(params.get('season')) ? params.get('season') : cur);
+  const list = cases.filter(c => c.s === season).reverse();
+  main.innerHTML = `
+    <div class="page page-wide tc">
+      <div class="page-head tc-top">
+        <div class="page-icon">${icon('scale')}</div>
+        <div><div class="eyebrow tc-eyebrow">The league will hear the case.</div><h1>Trade Court</h1></div>
+        <div class="tc-season"><small>Season</small><b>${seasonSpan(season)}</b></div>
+      </div>
+      <nav class="st-tabs tc-seasons" aria-label="Seasons">
+        ${seasons.map(s => `<a href="#/trade-court?season=${s}" class="${s === season ? 'on' : ''}">${seasonSpan(s)}</a>`).join('')}
+      </nav>
+      <section class="card pr-top tc-me"><div class="loading">Checking sign-in…</div></section>
+      <div class="tc-list">${list.length ? list.map(courtCard).join('') : `<section class="card soon-card"><p>No trades yet in ${seasonSpan(season)}. Every trade lands here the night after it goes through.</p></section>`}</div>
+      <p class="pw-foot"><b>How it works:</b> every trade in league history is a case. Each manager signs in, claims his team once (the commish approves it) and rules on any case: tap a ruling to vote, tap another to change it, tap yours again to take it back. There’s no deadline, old trades included. Votes are public. Managers in the trade can vote, but their votes don’t count toward the verdict. A verdict needs ${MIN_JURORS} votes from managers outside the trade: for a 2-team deal it’s the average of the votes on the 1–5 scale (a tie between two rulings goes to the one closer to Even); for a 3-team deal it’s the ruling with the most votes.</p>
+    </div>`;
+  if (target) {
+    const el = $(`#case-${target.no}`, main);
+    el?.classList.add('tc-hit');
+    setTimeout(() => el?.scrollIntoView({ block: 'start' })); // after render() scrolls to the top
+  }
+
+  let acct = { user: null };
+  let votes = [];
+  let err = '';
+  const [a, v] = await Promise.allSettled([propsAccount(), courtVotes(season, true)]);
+  if (a.status === 'fulfilled') acct = a.value; else err = a.reason?.message ?? 'sign-in failed';
+  if (v.status === 'fulfilled') votes = v.value; else err = `Couldn’t load the votes: ${v.reason?.message}`;
+  if (route().page !== 'trade-court' || !$('.tc-list', main)) return;
+  const me = $('.tc-me', main);
+  me.innerHTML = `${err ? `<p class="gm-alert">${esc(err)}</p>` : ''}
+    ${acct.fb ? memberBox(acct, season, 'Want to vote?', o => `Voting for <b>${esc(teamName(o, season))}</b> (${esc(name(o))}). Tap a ruling to vote; tap it again to take it back.`) : ''}`;
+  paintSync(me);
+  bindMemberBox(me, acct);
+  import('./sync.js').then(({ onAuth }) => {
+    const off = onAuth(() => { off(); if (route().page === 'trade-court') render(); });
+  });
+
+  const canVote = Boolean(acct.owner);
+  const draw = c => {
+    const foot = $(`#case-${c.no} .tc-foot`, main);
+    if (!foot) return;
+    const t = tally(c, votes);
+    const my = votes.filter(x => x.k === c.key && x.owner === acct.owner).sort((x, y) => y.t - x.t)[0] ?? null;
+    foot.innerHTML = courtFoot(c, t, my, canVote);
+    foot.querySelectorAll('.tc-opt').forEach(b => b.addEventListener('click', () => vote(c, b.dataset.w, b.dataset.m, my)));
+  };
+  // Vote, change, or (tapping your own ruling again) withdraw. Shown at once; Firestore confirms.
+  const vote = async (c, w, m, my) => {
+    const { fb, user } = acct;
+    const id = voteId(c.key, user.uid);
+    const before = votes;
+    const clear = my && sameRuling({ w, m }, my);
+    votes = votes.filter(x => !(x.k === c.key && x.owner === acct.owner));
+    if (!clear) votes = [...votes, { id, k: c.key, owner: acct.owner, w, m: w === 'even' ? '' : m, t: Date.now() }];
+    COURT_VOTES[season] = votes;
+    draw(c);
+    try {
+      const ref = fb.doc(fb.db, 'court', season, 'votes', id);
+      if (clear) await fb.deleteDoc(ref);
+      else await fb.setDoc(ref, { k: c.key, owner: acct.owner, w, m: w === 'even' ? '' : m, t: fb.serverTimestamp() });
+    } catch (e) {
+      votes = COURT_VOTES[season] = before;
+      draw(c);
+      alert(`Your vote wasn’t saved: ${e.code === 'permission-denied' ? 'Firestore said no (the commish may need to publish the new rules).' : e.code ?? e.message}`);
+    }
+  };
+  list.forEach(draw);
+}
+
+// Home: the newest case and where its vote stands (votes read without the Firebase SDK).
+async function homeCourt(main) {
+  const box = $('#hm-court', main);
+  const c = courtCases().at(-1);
+  if (!box || !c) return;
+  const paint = t => {
+    const status = !t ? 'Make your ruling'
+      : t.verdict ? verdictText(t) : t.votes ? `${t.votes} vote${t.votes === 1 ? '' : 's'} so far` : 'Be the first juror';
+    box.innerHTML = `<a class="card hm-card hm-props hm-court" href="#/trade-court?case=${c.no}">${icon('scale')}<span><b>Trade Court · Case ${caseNo(c.no)}</b> ${c.owners.map(o => esc(name(o))).join(' ⇄ ')} · ${esc(shortDate(c.ts))}. <span class="hm-court-v">${esc(status)}.</span></span><span class="hm-all">Rule on it ${icon('arrow')}</span></a>`;
+  };
+  paint(null);
+  try {
+    const votes = await courtVotes(c.s);
+    if (box.isConnected) paint(tally(c, votes));
+  } catch { /* keep the plain card */ }
+}
+
+// Rivalry page: each trade links to its case; signed-in managers see their own vote there.
+async function rivalryCourt(main) {
+  const spots = [...main.querySelectorAll('.tr-court-me')];
+  let signedIn = false;
+  try { signedIn = Boolean(localStorage.getItem('sync-uid')); } catch { /* blocked */ }
+  if (!spots.length || !signedIn) return;
+  try {
+    const acct = await propsAccount();
+    if (!acct.owner || !main.isConnected) return;
+    const byKey = new Map(courtCases().map(c => [c.key, c]));
+    const seasons = [...new Set(spots.map(el => byKey.get(el.dataset.key)?.s).filter(Boolean))];
+    const votes = (await Promise.all(seasons.map(s => courtVotes(s)))).flat();
+    for (const el of spots) {
+      const my = votes.filter(v => v.k === el.dataset.key && v.owner === acct.owner).sort((x, y) => y.t - x.t)[0];
+      el.textContent = my ? `Your vote: ${rulingText(my)}` : 'You haven’t voted';
+      el.classList.toggle('none', !my);
+    }
+  } catch { /* links still work */ }
 }
 
 // ---------- Boot ----------
@@ -7423,6 +7647,7 @@ function render() {
   else if (page === 'rules') renderRules(main);
   else if (page === 'timeline') renderTimeline(main);
   else if (page === 'props') renderProps(main, params);
+  else if (page === 'trade-court') renderCourt(main, params);
   else if (DRAFT_TABS.some(([id]) => id === page)) renderDraftKit(main, page, params);
   else renderSoon(main, page);
   document.body.classList.remove('nav-open');

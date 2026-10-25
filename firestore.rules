@@ -12,6 +12,7 @@ rules_version = '2';
 // props/{season-week}      { lockAt }: the week's first tip-off (created by the first manager to open it)
 //   picks/{uid}            { owner, picks: { propId: { o, l } }, t }: hidden from others until lockAt
 //   status/{uid}           { owner, n, t }: how many picks, for "who has picked" before the lock
+// court/{season}/votes/{caseKey}_{uid}  { k, owner, w, m, t }: Trade Court votes (anyone may read)
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -80,6 +81,20 @@ service cloud.firestore {
           && request.resource.data.n is int;
         allow delete: if false;
       }
+    }
+
+    // Trade Court: one vote per manager per trade, changeable forever. Public read.
+    match /court/{season}/votes/{id} {
+      allow read: if true;
+      allow create, update: if isMember()
+        && request.resource.data.keys().hasOnly(['k', 'owner', 'w', 'm', 't'])
+        && request.resource.data.k is string && request.resource.data.k.size() < 40
+        && id == request.resource.data.k + '_' + request.auth.uid
+        && request.resource.data.owner == myTeam()
+        && request.resource.data.w is string && request.resource.data.w.size() < 40
+        && request.resource.data.m in ['h', 's', '']
+        && request.resource.data.t == request.time;
+      allow delete: if isMember() && id == resource.data.k + '_' + request.auth.uid;
     }
 
     match /{document=**} {
