@@ -981,6 +981,40 @@ export function gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode = 'win', ma
   return { ...mine, opp, oppCoach: opp ? all[opp] : null, oppBest: opp ? lineupOf(all[opp], plans[opp]) : null, now, asSet, swaps, moves, medianOn, plan: plans[me] };
 }
 
+// Every team's week played out the same way (Weekly Props lines, assets/props.js): each roster
+// planned like an opponent (best healthy lineup, Balanced bars, bench moves) and scored at
+// OPP_CAL, which matched real finals. { totals: { owner: Float64Array }, plans: { owner } }.
+export function weekTotals(DATA, ctx, boxes, slate, runs = 4000) {
+  const totals = {}, plans = {};
+  (ctx.rosters ?? []).map(r => r.owner_id).filter(Boolean).forEach((o, i) => {
+    const c = lockCoach(DATA, ctx, boxes, slate, o, 'balanced');
+    if (!c) return;
+    plans[o] = teamPlan(c, slate, ctx.today, boxes, SITS, 'balanced');
+    applyPlan(c, plans[o], ctx.today);
+    totals[o] = simTeam(plans[o], runs, 11 + i, { scale: TUNE.opp / TUNE.score });
+  });
+  return { totals, plans };
+}
+
+// One planned player's locked score over many weeks: his games drawn like simTeam's (OPP_CAL),
+// locked at the plan's slot-aware bars, else his last game counts. Sorted, for a median line.
+export function lockedDraws(plan, pi, runs = 4000, seed = 5) {
+  const p = plan.pieces[pi];
+  const mu = p.pg * TUNE.opp, sd = Math.max(1, mu * LOCK_SPREAD);
+  const rand = seeded(seed);
+  const out = new Float64Array(runs);
+  for (let run = 0; run < runs; run++) {
+    let x = 0;
+    for (let j = 0; j < p.games.length; j++) {
+      const z = Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand());
+      x = Math.max(0, mu + sd * z);
+      if (j < p.games.length - 1 && x >= (plan.T[pi][p.games[j]] ?? Infinity)) break;
+    }
+    out[run] = x;
+  }
+  return out.sort();
+}
+
 // ---------- Daily briefing ----------
 
 // Injury news on a roster since the last visit. `seen` is the saved { pid: status }

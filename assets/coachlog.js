@@ -56,7 +56,7 @@ export function rewind(ctx, boxes, slate, date) {
 }
 
 // Pairs for a week: the saved schedule/results, else Sleeper's matchup ids.
-function pairsFor(DATA, season, week, matchups) {
+export function pairsFor(DATA, season, week, matchups) {
   const pairs = weekPairs(DATA, season, week);
   if (pairs.length) return pairs;
   const owner = Object.fromEntries((DATA.seasons.find(s => s.season === season)?.teams ?? []).map(t => [t.rosterId, t.owner]));

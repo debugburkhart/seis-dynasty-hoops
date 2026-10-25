@@ -18,6 +18,7 @@ import { MIN_GAMES, TIERS, draftClasses, draftGrades, draftOfYear, draftedPlayer
 import { gradeOf } from './scout.js';
 import { CONTRACTS_SOURCE, contractText, readContract } from './contracts.js';
 import { paintSync, syncInit, syncSave } from './sync.js';
+import { gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 
 // ---------- Navigation ----------
 
@@ -27,7 +28,7 @@ const NAV = [
   { title: 'Hall of Fame', items: [['awards', 'Awards', 'trophy'], ['records', 'Record Book', 'book'], ['players', 'Player Index', 'users'], ['timeline', 'Timeline', 'clock'], ['rivalry', 'Rivalry', 'swords']] },
   { title: 'Draft Kit', items: [['draft-history', 'Draft History', 'history'], ['future-drafts', 'Future Drafts', 'calendar'], ['draft-grades', 'Draft Grades', 'cap']] },
 ];
-const READY = new Set(['home', 'rules', 'timeline', 'rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players', 'draft-history', 'future-drafts', 'draft-grades']);
+const READY = new Set(['home', 'props', 'rules', 'timeline', 'rivalry', 'records', 'power', 'hype', 'standings', 'transactions', 'awards', 'players', 'draft-history', 'future-drafts', 'draft-grades']);
 const DEFAULT_PAGE = 'home';
 
 const ICONS = {
@@ -2346,7 +2347,7 @@ function renderCommish(main, params) {
   // Two groups: the Assistant GM tools, then the league office reports.
   const GROUPS = [
     ['My GM', [['brief', 'Briefing'], ['coach', 'Lock-in coach'], ['dynasty', 'Dynasty'], ['prospects', 'Prospects'], ['draftscout', 'Draft Scout'], ['tracker', 'Team tracker'], ['trades', 'Trade finder'], ['managers', 'Managers']]],
-    ['League office', [['scout', 'Scouting report'], ['waivers', 'Waiver wire'], ['playoffs', 'Playoff picture'], ['recap', 'Weekly recap'], ['picks', 'Draft picks'], ['races', 'Award races'], ['hype', 'Early hype'], ['wager', 'Wager Weeks'], ['health', 'Health report']]],
+    ['League office', [['scout', 'Scouting report'], ['waivers', 'Waiver wire'], ['playoffs', 'Playoff picture'], ['recap', 'Weekly recap'], ['picks', 'Draft picks'], ['races', 'Award races'], ['hype', 'Early hype'], ['wager', 'Wager Weeks'], ['props', 'Props'], ['health', 'Health report']]],
   ];
   const TABS = GROUPS.flatMap(([, tabs]) => tabs);
   const tab = TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : 'brief';
@@ -2375,7 +2376,7 @@ function renderCommish(main, params) {
     </div>`;
   const body = $('#cm-body', main);
   paintSync(main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, health: renderHealth }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth }[tab];
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
@@ -6365,6 +6366,7 @@ function renderHome(main, preview = null) {
         <div><div class="eyebrow">${esc(DATA.name)}</div><h1>Home</h1></div>
       </div>
       <div id="hm-hype"><div class="hm-main hm-loading"><span class="hm-kicker">${icon('bolt')} Main event</span><p>Checking this week’s slate…</p></div></div>
+      <div id="hm-props"></div>
       ${homeTicker()}
       <div class="hm-grid">
         ${homePower()}
@@ -6379,6 +6381,7 @@ function renderHome(main, preview = null) {
       ${homeWire()}
     </div>`;
   homeWagerLive(main);
+  homeProps(main);
 
   main.querySelectorAll('.hm-tabs button').forEach(b => b.addEventListener('click', () => {
     homeBy = b.dataset.by;
@@ -6977,6 +6980,401 @@ function reportCardsView() {
     <p class="pw-foot">“—” means no picks in that draft (traded away); INC means none of the class has a ${MIN_GAMES}-game season yet. Value vs spots adds up every graded pick’s fantasy points per game above or below what its spot is expected to produce.</p>`;
 }
 
+// ---------- Weekly Props ----------
+// 10 props a week (assets/props.js builds them nightly into data/props.json). Managers sign in
+// with Google, claim their team (the commish approves in the office), and pick until the week's
+// first tip-off. Picks live in Firestore: props/{season-week}/picks/{uid} (hidden from others until
+// the lock, then public) and .../status/{uid} (how many picks, for "who's in"). Graded from the
+// saved final scores (props.js settle/gradePick); the site's own picks play as "The site".
+
+let PROPS_FILE;
+async function loadPropsFile() {
+  if (PROPS_FILE !== undefined) return PROPS_FILE;
+  try {
+    const res = await fetch(`data/props.json?t=${Date.now()}`, { cache: 'no-store' });
+    PROPS_FILE = res.ok ? await res.json() : null;
+  } catch { PROPS_FILE = null; }
+  return PROPS_FILE;
+}
+const propsWeeks = (file, season) => file?.seasons?.[season]?.weeks ?? {};
+const prWeekId = (season, week) => `${season}-${week}`;
+const prLocked = W => Date.now() >= Date.parse(W.lockAt);
+const prWhen = iso => new Date(iso).toLocaleString('en-US', { timeZone: 'America/Chicago', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+function prCountdown(iso) {
+  const ms = Date.parse(iso) - Date.now();
+  if (ms <= 0) return 'locked';
+  const m = Math.floor(ms / 60_000), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  return d ? `in ${d}d ${h % 24}h` : h ? `in ${h}h ${m % 60}m` : `in ${m}m`;
+}
+const prOdds = x => (x < 0.005 ? '<1%' : `${Math.round(x * 100)}%`);
+const signed = x => (x > 0 ? `−${num(x)}` : x < 0 ? `+${num(-x)}` : 'PK');
+// The week a visitor lands on: the open one, else the newest.
+function propsDefaultWeek(W) {
+  const list = Object.values(W).sort((a, b) => a.week - b.week);
+  return (list.find(w => !prLocked(w)) ?? list.at(-1))?.week ?? null;
+}
+
+// Account state for the page: { fb, user, owner (linked team), claim }.
+async function propsAccount() {
+  const { firebase } = await import('./sync.js');
+  const fb = await firebase();
+  const user = fb.auth.currentUser;
+  if (!user) return { fb, user: null };
+  const [m, c] = await Promise.all([
+    fb.getDoc(fb.doc(fb.db, 'members', user.uid)).catch(() => null),
+    fb.getDoc(fb.doc(fb.db, 'claims', user.uid)).catch(() => null),
+  ]);
+  return { fb, user, owner: m?.exists() ? m.data().owner : null, claim: c?.exists() ? c.data() : null };
+}
+
+// Picks for one week: everyone's once it's locked (public), else just yours + who's in.
+const PR_PICKS = {};
+async function propsPicks(fb, season, W, uid) {
+  const id = prWeekId(season, W.week);
+  const lockMs = Date.parse(W.lockAt);
+  const locked = Date.now() >= lockMs;
+  if (locked && PR_PICKS[id]) return PR_PICKS[id];
+  const col = name2 => fb.collection(fb.db, 'props', id, name2);
+  const keep = d => { const x = d.data(); return !x.t || x.t.toMillis() <= lockMs; };
+  const out = { all: {}, mine: null, status: {} };
+  if (locked) {
+    const snap = await fb.getDocs(col('picks')).catch(() => null);
+    for (const d of snap?.docs ?? []) if (keep(d)) out.all[d.data().owner] = d.data();
+    if (uid) out.mine = (await fb.getDoc(fb.doc(fb.db, 'props', id, 'picks', uid)).catch(() => null))?.data() ?? null;
+    return (PR_PICKS[id] = out);
+  }
+  const [st, mine] = await Promise.all([
+    fb.getDocs(col('status')).catch(() => null),
+    uid ? fb.getDoc(fb.doc(fb.db, 'props', id, 'picks', uid)).catch(() => null) : null,
+  ]);
+  for (const d of st?.docs ?? []) out.status[d.data().owner] = d.data().n;
+  out.mine = mine?.exists() ? mine.data() : null;
+  return out;
+}
+
+// Saves your picks (debounced by the caller). Opens the week in Firestore first (its lock time).
+async function propsSave(fb, season, W, owner, picks) {
+  const id = prWeekId(season, W.week);
+  const ref = fb.doc(fb.db, 'props', id);
+  const wk = await fb.getDoc(ref).catch(() => null);
+  if (!wk?.exists()) await fb.setDoc(ref, { lockAt: fb.Timestamp.fromDate(new Date(W.lockAt)) }).catch(() => {});
+  const uid = fb.auth.currentUser.uid;
+  const batch = fb.writeBatch(fb.db);
+  batch.set(fb.doc(fb.db, 'props', id, 'picks', uid), { owner, picks, t: fb.serverTimestamp() });
+  batch.set(fb.doc(fb.db, 'props', id, 'status', uid), { owner, n: Object.keys(picks).length, t: fb.serverTimestamp() });
+  await batch.commit();
+}
+
+// One prop's title, note and options ({ o, label, sub, line }) for the page.
+function propView(p, season) {
+  const tn = o => teamName(o, season);
+  const vs = `${esc(name(p.a))} vs ${esc(name(p.b))}`;
+  if (p.kind === 'spread') {
+    const dog = p.fav === p.a ? p.b : p.a;
+    return { tag: 'Spread', title: vs, note: 'Final locked scores. The favorite has to win by more than the line.',
+      opts: [{ o: p.fav, label: tn(p.fav), sub: `${name(p.fav)} ${signed(p.line)}`, line: true }, { o: dog, label: tn(dog), sub: `${name(dog)} ${signed(-p.line)}`, line: true }] };
+  }
+  if (p.kind === 'total') {
+    return { tag: 'Total', title: `${vs}: combined score`, note: 'Both teams’ final locked scores added up.',
+      opts: [{ o: 'over', label: `Over ${num(p.line)}`, line: true }, { o: 'under', label: `Under ${num(p.line)}`, line: true }] };
+  }
+  if (p.kind === 'player') {
+    return { tag: 'Player', title: `${esc(p.name)}${p.nba ? ` (${esc(p.nba)})` : ''}: locked points`,
+      note: `Starts for ${esc(tn(p.owner))} · ${p.games} game${p.games === 1 ? '' : 's'} this week. Only his locked game counts; no bet if he isn’t in the starting lineup.`,
+      opts: [{ o: 'over', label: `Over ${num(p.line)}`, line: true }, { o: 'under', label: `Under ${num(p.line)}`, line: true }] };
+  }
+  if (p.kind === 'top') {
+    return { tag: 'Week', title: 'Top-scoring team', note: 'Highest final score in the league. A tie: everyone who picked a tied team is right.',
+      opts: Object.entries(p.odds).sort((a, b) => b[1] - a[1]).map(([o, x]) => ({ o, label: tn(o), sub: `${name(o)} · ${prOdds(x)}` })) };
+  }
+  return { tag: 'Week', title: 'Highest-scoring game', note: 'Most combined points of the four games.',
+    opts: p.odds.map(g => ({ o: gameKey(g.a, g.b), label: `${name(g.a)} vs ${name(g.b)}`, sub: `${prOdds(g.p)}` })) };
+}
+// The result line once the week is final.
+function propResultText(p, out, season) {
+  if (!out) return '';
+  if (out.void) return `${esc(p.name)} didn’t start: no bet.`;
+  if (p.line != null && !out.judge(p.line).length) return `${propResultText({ ...p, line: null }, out, season)} · right on the line: push`;
+  if (p.kind === 'spread') { const dog = p.fav === p.a ? p.b : p.a; return out.margin >= 0 ? `${esc(name(p.fav))} won by ${num(out.margin)}` : `${esc(name(dog))} won by ${num(-out.margin)}`; }
+  if (p.kind === 'total') return `Combined: ${num(out.value)}`;
+  if (p.kind === 'player') return `Locked: ${num(out.value)}`;
+  if (p.kind === 'top') return `${out.win.map(o => esc(teamName(o, season))).join(' & ')} scored ${num(out.value)}`;
+  return `${out.win.map(k => k.split('-').map(o => esc(name(o))).join(' vs ')).join(' & ')}: ${num(out.value)}`;
+}
+
+let PR_SAVE = null;
+async function renderProps(main, params) {
+  const season = DATA.seasons.at(-1).season;
+  main.innerHTML = `
+    <div class="page page-wide pr">
+      <div class="page-head">
+        <div class="page-icon">${icon('ticket')}</div>
+        <div><div class="eyebrow">In Season</div><h1>Weekly Props</h1></div>
+      </div>
+      <p class="page-desc">Ten props a week with lines set by the site. One point per correct pick, bragging rights only. Picks lock at the week’s first tip-off and stay hidden until then.</p>
+      <div id="pr-body"><div class="loading">Loading this week’s props…</div></div>
+    </div>`;
+  const body = $('#pr-body', main);
+  const file = await loadPropsFile();
+  const weeks = propsWeeks(file, season);
+  if (!Object.keys(weeks).length) {
+    body.innerHTML = '<section class="card soon-card"><p>No props yet. The next week’s props go up with the nightly update once its schedule is set.</p></section>';
+    return;
+  }
+  const wk = Number(params.get('week')) || propsDefaultWeek(weeks);
+  const W = weeks[wk] ?? weeks[propsDefaultWeek(weeks)];
+  let acct = { user: null };
+  let picks = { all: {}, mine: null, status: {} };
+  let fbErr = '';
+  try {
+    acct = await propsAccount();
+    picks = await propsPicks(acct.fb, season, W, acct.user?.uid);
+  } catch (e) { fbErr = e.message; }
+  if (route().page !== 'props') return;
+  const locked = prLocked(W);
+  const res = weekResults(DATA, season, W.week);
+  const final = Boolean(res);
+  const outcomes = Object.fromEntries(W.props.map(p => [p.id, settle(p, res)]));
+  const mine = { ...(picks.mine?.picks ?? {}) };
+  const canPick = Boolean(acct.owner) && !locked;
+  const managers = currentOwners();
+
+  const accountCard = () => {
+    if (fbErr) return `<p class="gm-alert">Couldn’t reach the picks server: ${esc(fbErr)}</p>`;
+    if (!acct.user) return `<div class="pr-me"><p><b>Want to play?</b> Sign in with Google, then claim your team. The commish approves it once.</p><div class="sync-box sync-office pr-sync" data-sync="office"></div></div>`;
+    if (acct.owner) return `<div class="pr-me"><p>Picking for <b>${esc(teamName(acct.owner, season))}</b> (${esc(name(acct.owner))}).</p><div class="sync-box sync-office pr-sync" data-sync="office"></div></div>`;
+    if (acct.claim) return `<div class="pr-me"><p>Waiting for the commish to approve you as <b>${esc(teamName(acct.claim.owner, season))}</b>. <a href="#" id="pr-unclaim">Cancel</a></p><div class="sync-box sync-office pr-sync" data-sync="office"></div></div>`;
+    return `<div class="pr-me"><form class="pr-claim" id="pr-claim"><label>Which team is yours?
+        <select id="pr-team">${[...managers].sort((a, b) => name(a).localeCompare(name(b))).map(o => `<option value="${esc(o)}">${esc(teamName(o, season))} (${esc(name(o))})</option>`).join('')}</select></label>
+        <button class="btn" type="submit">Claim my team</button></form>
+      <small class="pr-fine">The commish approves each claim once, so nobody can pick for another team.</small>
+      <div class="sync-box sync-office pr-sync" data-sync="office"></div></div>`;
+  };
+  const lockLine = () => (final ? `<b>Final.</b> Graded on the saved locked scores.`
+    : locked ? `<b>Locked</b> ${esc(prWhen(W.lockAt))} CT. Results once the week is final.`
+    : `<b>Locks ${esc(prWhen(W.lockAt))} CT</b> <span id="pr-cd">(${prCountdown(W.lockAt)})</span>. Lines update nightly until then; your pick keeps the line you took.`);
+
+  const pickersOf = (p, o) => Object.values(picks.all).filter(e => e.picks?.[p.id]?.o === o).map(e => e.owner);
+  const propCard = p => {
+    const v = propView(p, season);
+    const out = outcomes[p.id];
+    const myPick = mine[p.id];
+    const optHtml = v.opts.map(x => {
+      const mineHere = myPick?.o === x.o;
+      const won = out && !out.void && out.judge(myPick && mineHere ? myPick.l ?? p.line : p.line).includes(x.o);
+      const who = locked ? pickersOf(p, x.o) : [];
+      const site = locked && p.m === x.o;
+      const oldLine = mineHere && x.line && myPick.l != null && myPick.l !== p.line ? `<small class="pr-myline">Your line: ${p.kind === 'spread' ? signed(x.o === p.fav ? myPick.l : -myPick.l) : num(myPick.l)}</small>` : '';
+      return `<button type="button" class="pr-opt${mineHere ? ' on' : ''}${won ? ' won' : ''}" data-prop="${esc(p.id)}" data-o="${esc(x.o)}"${canPick ? '' : ' disabled'} aria-pressed="${mineHere}">
+          <b>${esc(x.label)}${won ? ' ✓' : ''}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}${oldLine}
+          ${who.length || site ? `<span class="pr-who">${site ? '<i class="pr-site">Site</i>' : ''}${who.map(o => `<i>${esc(name(o))}</i>`).join('')}</span>` : ''}
+        </button>`;
+    }).join('');
+    const myGrade = gradePick(p, out, myPick);
+    return `
+      <article class="pr-prop pr-${p.kind}" id="pr-${esc(p.id.replace(/:/g, '-'))}">
+        <div class="pr-ph"><span class="pr-tag">${v.tag}</span><h3>${v.title}</h3>${myGrade ? `<span class="pr-grade g-${myGrade}">${{ win: 'Hit', loss: 'Miss', push: 'Push', void: 'No bet' }[myGrade]}</span>` : ''}</div>
+        <p class="pr-note">${v.note}</p>
+        <div class="pr-opts">${optHtml}</div>
+        ${final ? `<p class="pr-res">${propResultText(p, out, season)}</p>` : ''}
+      </article>`;
+  };
+
+  // Who's in (before the lock) or everyone's score for the week (after).
+  const weekScores = () => {
+    if (!locked) {
+      return `<ul class="pr-in">${[...managers].sort((a, b) => name(a).localeCompare(name(b))).map(o => {
+        const n = picks.status[o] ?? 0;
+        return `<li class="${n >= W.props.length ? 'done' : n ? 'part' : ''}"><span>${esc(name(o))}</span><b>${n ? `${n}/${W.props.length}` : '–'}</b></li>`;
+      }).join('')}</ul>`;
+    }
+    const rows = [...Object.values(picks.all), { owner: 'model', picks: Object.fromEntries(W.props.map(p => [p.id, { o: p.m, l: p.line }])) }].map(e => {
+      const g = W.props.map(p => gradePick(p, outcomes[p.id], e.picks?.[p.id]));
+      return { o: e.owner, w: g.filter(x => x === 'win').length, l: g.filter(x => x === 'loss').length, n: Object.keys(e.picks ?? {}).length };
+    }).sort((a, b) => b.w - a.w || a.l - b.l);
+    return `<ul class="pr-in">${rows.map(r => `<li class="${r.o === 'model' ? 'site' : ''}"><span>${r.o === 'model' ? 'The site' : esc(name(r.o))}</span><b>${final ? `${r.w}–${r.l}` : `${r.n} picks`}</b></li>`).join('')}</ul>`;
+  };
+
+  body.innerHTML = `
+    <nav class="dk-seasons pr-weeks" aria-label="Weeks">
+      ${Object.values(weeks).sort((a, b) => b.week - a.week).map(x => `<a href="#/props?week=${x.week}" class="${x.week === W.week ? 'on' : ''}">Week ${x.week}${prLocked(x) ? '' : ' · open'}</a>`).join('')}
+    </nav>
+    <section class="card pr-top">
+      ${accountCard()}
+      <p class="pr-lock">${lockLine()}</p>
+      ${canPick ? `<p class="pr-count"><span id="pr-n">${Object.keys(mine).length}</span> of ${W.props.length} picked · <span id="pr-saved">${picks.mine ? 'Saved' : 'Tap a side to pick'}</span></p>` : ''}
+      ${W.replaced?.length ? `<p class="pr-fine">Replaced: ${W.replaced.map(r => esc(r.why)).join('; ')}.</p>` : ''}
+    </section>
+    <div class="pr-layout">
+      <div class="pr-list">${W.props.map(propCard).join('')}</div>
+      <aside class="pr-side">
+        <section class="card">
+          <div class="card-head"><h2>${locked ? `Week ${W.week}` : 'Who’s in'}</h2><span class="card-sub">${locked ? (final ? 'correct–wrong' : 'graded when final') : 'picks made so far'}</span></div>
+          ${weekScores()}
+        </section>
+        <section class="card">
+          <div class="card-head"><h2>Season</h2><span class="card-sub">${seasonSpan(season)}</span></div>
+          <div id="pr-board"><p class="empty">Adding up the season…</p></div>
+        </section>
+      </aside>
+    </div>
+    <p class="pw-foot"><b>How lines are set:</b> the site plays the week out ${'4,000'} times with the same projections and lock logic as the Lock-in coach, every team set up its best healthy lineup. Spreads and totals sit at the middle result, so each side is close to a coin flip; percentages on the week props are the site’s chances. <b>The site</b> picks the side its numbers lean to, at the last line before the lock, and plays on the leaderboard (it can’t win a week). A pick that lands exactly on the line is a push and scores nothing.</p>`;
+  paintSync(body);
+
+  // Picking: tap a side; tap it again to clear. Saved 0.7 s after the last tap.
+  body.querySelectorAll('.pr-opt').forEach(b => b.addEventListener('click', () => {
+    if (!canPick) return;
+    const prop = W.props.find(p => p.id === b.dataset.prop);
+    if (mine[prop.id]?.o === b.dataset.o) delete mine[prop.id];
+    else mine[prop.id] = prop.line != null ? { o: b.dataset.o, l: prop.line } : { o: b.dataset.o };
+    b.closest('.pr-opts').querySelectorAll('.pr-opt').forEach(x => {
+      const on = mine[prop.id]?.o === x.dataset.o;
+      x.classList.toggle('on', on);
+      x.setAttribute('aria-pressed', on);
+      if (!on) x.querySelector('.pr-myline')?.remove();
+    });
+    $('#pr-n', body).textContent = Object.keys(mine).length;
+    $('#pr-saved', body).textContent = 'Saving…';
+    clearTimeout(PR_SAVE);
+    PR_SAVE = setTimeout(async () => {
+      try {
+        await propsSave(acct.fb, season, W, acct.owner, mine);
+        const s = $('#pr-saved');
+        if (s) s.textContent = 'Saved';
+      } catch (e) {
+        const s = $('#pr-saved');
+        if (s) s.textContent = Date.now() >= Date.parse(W.lockAt) ? 'Locked: not saved' : `Not saved (${e.code ?? e.message})`;
+      }
+    }, 700);
+  }));
+  $('#pr-claim', body)?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const fb = acct.fb, u = fb.auth.currentUser;
+    try {
+      await fb.setDoc(fb.doc(fb.db, 'claims', u.uid), { owner: $('#pr-team', body).value, name: u.displayName ?? '', photo: u.photoURL ?? '', t: fb.serverTimestamp() });
+      render();
+    } catch (err) { alert(`Couldn’t send the claim: ${err.code ?? err.message}`); }
+  });
+  $('#pr-unclaim', body)?.addEventListener('click', async e => {
+    e.preventDefault();
+    await acct.fb.deleteDoc(acct.fb.doc(acct.fb.db, 'claims', acct.user.uid)).catch(() => {});
+    render();
+  });
+  // Sign in / out redraws the page.
+  import('./sync.js').then(({ onAuth }) => {
+    const off = onAuth(() => { off(); if (route().page === 'props') render(); });
+  });
+  // Countdown; the page redraws itself at the lock.
+  if (!locked) {
+    HYPE_TIMER = setInterval(() => {
+      const cd = $('#pr-cd');
+      if (!cd) return clearInterval(HYPE_TIMER);
+      if (prLocked(W)) { clearInterval(HYPE_TIMER); render(); return; }
+      cd.textContent = `(${prCountdown(W.lockAt)})`;
+    }, 30_000);
+  }
+  // Season leaderboard: every locked week's picks (public), graded where final.
+  try {
+    const entries = {};
+    for (const x of Object.values(weeks).filter(prLocked)) {
+      const got = acct.fb ? await propsPicks(acct.fb, season, x, acct.user?.uid) : { all: {} };
+      entries[x.week] = got.all;
+    }
+    const rows = leaderboard(DATA, season, file, entries);
+    const box = $('#pr-board', body);
+    if (!box) return;
+    box.innerHTML = rows.length ? `
+      <table class="pr-board"><thead><tr><th></th><th>Manager</th><th>W–L</th><th>%</th><th title="Weeks won">Wks</th></tr></thead><tbody>
+        ${rows.map((r, i) => `<tr class="${r.who === 'model' ? 'site' : r.who === acct.owner ? 'me' : ''}"><td>${i + 1}</td><td>${r.who === 'model' ? 'The site' : esc(name(r.who))}</td><td>${r.w}–${r.l}${r.p ? `–${r.p}` : ''}</td><td>${r.w + r.l ? Math.round((100 * r.w) / (r.w + r.l)) : '–'}</td><td>${r.who === 'model' ? '' : r.weeks}</td></tr>`).join('')}
+      </tbody></table>` : '<p class="empty">No week graded yet. The table starts once the first props week is final.</p>';
+  } catch { /* leave the placeholder */ }
+}
+
+// Home: one line about the props week (no Firestore here, so Home stays light).
+async function homeProps(main) {
+  const box = $('#hm-props', main);
+  if (!box) return;
+  const season = DATA.seasons.at(-1).season;
+  const weeks = propsWeeks(await loadPropsFile(), season);
+  const wk = propsDefaultWeek(weeks);
+  if (!wk || !box.isConnected) return;
+  const W = weeks[wk];
+  const final = Boolean(weekResults(DATA, season, wk));
+  const text = !prLocked(W) ? `<b>Week ${wk} props are up.</b> Picks lock ${esc(prWhen(W.lockAt))} CT (${prCountdown(W.lockAt)}).`
+    : final ? `<b>Week ${wk} props are final.</b> See who hit and the season table.`
+    : `<b>Week ${wk} props are locked.</b> Everyone’s picks are out; graded when the week is final.`;
+  box.innerHTML = `<a class="card hm-card hm-props" href="#/props?week=${wk}">${icon('ticket')}<span>${text}</span><span class="hm-all">${prLocked(W) ? 'See picks' : 'Make picks'} ${icon('arrow')}</span></a>`;
+}
+
+// Commissioner's office → Props: who may pick. Managers claim a team on the Props page; the
+// commish approves here. Also the one-time Firestore rules setup (needs the commish's sign-in id).
+async function renderPropsAdmin(body) {
+  const season = DATA.seasons.at(-1).season;
+  body.innerHTML = '<div class="loading">Connecting…</div>';
+  let acct;
+  try { acct = await propsAccount(); } catch (e) { body.innerHTML = `<section class="card"><p class="empty">Couldn’t load Firebase: ${esc(e.message)}</p></section>`; return; }
+  if (route().page !== 'commish') return;
+  const { fb, user } = acct;
+  const setup = user ? `
+    <section class="card">
+      <div class="card-head"><h2>One-time setup</h2></div>
+      <p class="cm-rule">Firebase needs to know your Google account is the commish. Do this once (and again only if the rules change):</p>
+      <ol class="wa-steps">
+        <li><button class="btn" type="button" id="pa-copy">Copy rules</button> <span class="cm-copy" id="pa-copied" hidden>Copied ✓</span></li>
+        <li><a class="btn" href="https://console.firebase.google.com/project/dynasty-hof/firestore/rules" target="_blank" rel="noopener">Open Firebase rules</a></li>
+        <li>Select all the text there, paste, and tap <b>Publish</b>.</li>
+      </ol>
+      <p class="cm-rule">Your sign-in id: <code>${esc(user.uid)}</code> (it goes into the rules).</p>
+    </section>` : '';
+  if (!user) {
+    body.innerHTML = '<section class="card"><p class="cm-rule">Sign in with Google (top right) to manage who can make picks.</p></section>';
+    return;
+  }
+  let claims = [], members = [], err = '';
+  try {
+    const [c, m] = await Promise.all([fb.getDocs(fb.collection(fb.db, 'claims')), fb.getDocs(fb.collection(fb.db, 'members'))]);
+    claims = c.docs.map(d => ({ uid: d.id, ...d.data() }));
+    members = m.docs.map(d => ({ uid: d.id, ...d.data() }));
+  } catch (e) { err = e.code === 'permission-denied' ? 'Firestore said no: do the one-time setup below first (it makes you the commish there).' : e.message; }
+  const taken = o => members.filter(m => m.owner === o);
+  const linked = new Set(members.map(m => m.owner));
+  const missing = [...currentOwners()].filter(o => !linked.has(o));
+  body.innerHTML = `
+    ${err ? `<p class="gm-alert">${esc(err)}</p>` : ''}
+    <section class="card">
+      <div class="card-head"><h2>Claims waiting</h2><span class="card-sub">from the Weekly Props page</span></div>
+      ${claims.length ? claims.map(c => `
+        <div class="pa-row" data-uid="${esc(c.uid)}">
+          ${c.photo ? `<img src="${esc(c.photo)}" alt="" referrerpolicy="no-referrer">` : ''}
+          <span class="pa-who"><b>${esc(c.name || 'Google account')}</b><small>says they’re ${esc(teamName(c.owner, season))} (${esc(name(c.owner))})${taken(c.owner).length ? ' · that team is already linked to another account' : ''}</small></span>
+          <button class="btn" type="button" data-act="ok">Approve</button><button class="btn pa-no" type="button" data-act="no">Deny</button>
+        </div>`).join('') : '<p class="empty">No claims waiting.</p>'}
+    </section>
+    <section class="card">
+      <div class="card-head"><h2>Linked managers</h2><span class="card-sub">${members.length} of ${currentOwners().size}</span></div>
+      ${members.map(m => `<div class="pa-row" data-uid="${esc(m.uid)}"><span class="pa-who"><b>${esc(teamName(m.owner, season))}</b><small>${esc(name(m.owner))}${m.uid === user.uid ? ' · you' : ''}</small></span><button class="btn pa-no" type="button" data-act="unlink">Unlink</button></div>`).join('') || '<p class="empty">Nobody yet.</p>'}
+      ${missing.length ? `<p class="cm-rule">Not linked yet: ${missing.map(o => esc(name(o))).join(', ')}. They sign in on the Weekly Props page and tap <b>Claim my team</b>.</p>` : ''}
+    </section>
+    ${setup}`;
+  body.querySelectorAll('.pa-row button').forEach(b => b.addEventListener('click', async () => {
+    const uid = b.closest('.pa-row').dataset.uid;
+    b.disabled = true;
+    try {
+      if (b.dataset.act === 'ok') {
+        const c = claims.find(x => x.uid === uid);
+        await fb.setDoc(fb.doc(fb.db, 'members', uid), { owner: c.owner, t: fb.serverTimestamp() });
+        await fb.deleteDoc(fb.doc(fb.db, 'claims', uid));
+      } else if (b.dataset.act === 'no') await fb.deleteDoc(fb.doc(fb.db, 'claims', uid));
+      else if (confirm('Unlink this account? It can claim again later.')) await fb.deleteDoc(fb.doc(fb.db, 'members', uid));
+      renderPropsAdmin(body);
+    } catch (e) { b.disabled = false; alert(`Didn’t work: ${e.code ?? e.message}`); }
+  }));
+  $('#pa-copy', body)?.addEventListener('click', async () => {
+    const text = (await fetch(`firestore.rules?t=${Date.now()}`).then(r => r.text())).replace(/COMMISH_UID/g, user.uid);
+    try { await navigator.clipboard.writeText(text); $('#pa-copied', body).hidden = false; } catch { prompt('Copy these rules:', text); }
+  });
+}
+
 // ---------- Boot ----------
 
 function route() {
@@ -7004,6 +7402,7 @@ function render() {
   else if (page === 'standings') renderStandings(main, params);
   else if (page === 'rules') renderRules(main);
   else if (page === 'timeline') renderTimeline(main);
+  else if (page === 'props') renderProps(main, params);
   else if (DRAFT_TABS.some(([id]) => id === page)) renderDraftKit(main, page, params);
   else renderSoon(main, page);
   document.body.classList.remove('nav-open');

@@ -365,6 +365,17 @@ try {
   console.log(`Coach log skipped: ${e.message}`);
 }
 
+// Weekly Props (owner, Oct 2026): the 10 props for the next week that hasn't tipped off, lines from
+// the same week simulation as the coach, redone every night until the first game; a locked week is
+// never changed -> data/props.json (assets/props.js). Picks live in Firestore. Never stops the update.
+try {
+  const { updateProps } = await import('../assets/props.js');
+  const props = await updateProps(data, await readJson('data/props.json'), { today, log: m => console.log(m) });
+  await writeFile('data/props.json', JSON.stringify(props));
+} catch (e) {
+  console.log(`Props skipped: ${e.message}`);
+}
+
 console.log(`Saved ${data.seasons.length} seasons, ${data.games.length} games, snapshot ${today}.`);
 
 // ---------- Scoring check ----------

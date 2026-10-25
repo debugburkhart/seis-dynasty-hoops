@@ -69,6 +69,23 @@ const setMeta = (key, t) => { const m = meta(); m[key] = t; put(META_KEY, JSON.s
 function setStatus(s, err = '') { status = s; error = err; paintSync(); }
 export const syncState = () => ({ status, error, user: user && { uid: user.uid, name: user.displayName, photo: user.photoURL } });
 
+// Shared Firestore for other features (Weekly Props): the SDK + the signed-in user, loading it on
+// first use (even signed out: locked picks are public). onAuth(cb) runs on every sign-in/out.
+const authWatchers = new Set();
+let authKnown;
+const authFirst = new Promise(r => { authKnown = r; });
+// Resolves once Firebase knows whether someone is signed in on this browser.
+export async function firebase() {
+  await start();
+  await authFirst;
+  return fb;
+}
+export function onAuth(cb) {
+  authWatchers.add(cb);
+  return () => authWatchers.delete(cb);
+}
+export const currentUser = () => user;
+
 async function loadSdk() {
   if (fb) return fb;
   const [app, auth, fs] = await Promise.all([
@@ -99,6 +116,8 @@ async function startOnce() {
     unsub?.();
     unsub = null;
     user = u;
+    authKnown();
+    for (const cb of authWatchers) { try { cb(u); } catch { /* a page's problem */ } }
     if (!u) { ls.del(UID_KEY); setStatus('off'); return; }
     put(UID_KEY, u.uid);
     f.setDoc(f.doc(f.db, 'users', u.uid), { name: u.displayName ?? '', photo: u.photoURL ?? '', seen: Date.now() }, { merge: true }).catch(() => {});
@@ -135,10 +154,11 @@ export async function signOut() {
   ls.del(UID_KEY);
 }
 
+const fsError = e => setStatus('error', e.code === 'permission-denied' ? 'Firestore said no: check the rules were published, then reload.' : e.message);
 const docRef = (uid, key) => fb.doc(fb.db, 'users', uid, 'prefs', key);
 const push = (key, v, t) => {
   if (!user) return;
-  fb.setDoc(docRef(user.uid, key), { v, t, dev: DEV }).catch(e => setStatus('error', e.message));
+  fb.setDoc(docRef(user.uid, key), { v, t, dev: DEV }).catch(fsError);
 };
 
 // gmSave in app.js calls this after writing localStorage (only when the value changed).
@@ -166,7 +186,7 @@ function listen(uid) {
     }
     setStatus(first ? 'connecting' : snap.metadata.hasPendingWrites ? 'saving' : snap.metadata.fromCache ? 'offline' : 'synced');
     if (changed.length) onChange(changed);
-  }, e => setStatus('error', e.code === 'permission-denied' ? 'Firestore said no: check the rules were published.' : e.message));
+  }, fsError);
 }
 
 // A newer value from the account: copy it into localStorage.

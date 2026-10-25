@@ -2,23 +2,83 @@ rules_version = '2';
 
 // Seis Dynasty Hoops - Firestore security rules (copy kept in the repo for reference;
 // the live rules are pasted in Firebase console -> Firestore -> Rules -> Publish).
+// COMMISH_UID below is filled in by Commish -> League office -> Props -> "Copy rules"
+// (the commish's own sign-in id); never publish these rules with the placeholder.
 //
-// users/{uid}              profile (name, photo, Sleeper owner id once linked)
+// users/{uid}              profile (name, photo)
 // users/{uid}/prefs/{key}  one saved site setting per document (see CLAUDE.md "Cross-device sync")
-//
-// Only the signed-in person can read or write their own documents. Everything else is denied.
+// claims/{uid}             "I'm this team" requests (Weekly Props), waiting for the commish
+// members/{uid}            { owner, t }: account -> Sleeper team, written by the commish only
+// props/{season-week}      { lockAt }: the week's first tip-off (created by the first manager to open it)
+//   picks/{uid}            { owner, picks: { propId: { o, l } }, t }: hidden from others until lockAt
+//   status/{uid}           { owner, n, t }: how many picks, for "who has picked" before the lock
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isCommish() { return signedIn() && request.auth.uid == 'COMMISH_UID'; }
+    function memberDoc() { return /databases/$(database)/documents/members/$(request.auth.uid); }
+    function isMember() { return signedIn() && exists(memberDoc()); }
+    function myTeam() { return get(memberDoc()).data.owner; }
+
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if signedIn() && request.auth.uid == uid;
 
       match /prefs/{key} {
-        allow read, delete: if request.auth != null && request.auth.uid == uid;
-        allow create, update: if request.auth != null && request.auth.uid == uid
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['v', 't', 'dev'])
           && request.resource.data.t is int
           && (request.resource.data.v == null
               || (request.resource.data.v is string && request.resource.data.v.size() < 500000));
+      }
+    }
+
+    match /claims/{uid} {
+      allow read: if isCommish() || (signedIn() && request.auth.uid == uid);
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['owner', 'name', 'photo', 't'])
+        && request.resource.data.owner is string && request.resource.data.owner.size() < 40
+        && request.resource.data.name is string && request.resource.data.name.size() < 200
+        && request.resource.data.photo is string && request.resource.data.photo.size() < 1000
+        && request.resource.data.t == request.time;
+      allow delete: if isCommish() || (signedIn() && request.auth.uid == uid);
+    }
+
+    match /members/{uid} {
+      allow read: if true;
+      allow write: if isCommish();
+    }
+
+    match /props/{wk} {
+      function lockAt() { return get(/databases/$(database)/documents/props/$(wk)).data.lockAt; }
+      function isOpen() { return request.time < lockAt(); }
+      function mine(uid) {
+        return isMember() && request.auth.uid == uid
+          && request.resource.data.owner == myTeam()
+          && request.resource.data.t == request.time;
+      }
+
+      allow read: if true;
+      allow create: if isMember()
+        && request.resource.data.keys().hasOnly(['lockAt'])
+        && request.resource.data.lockAt is timestamp
+        && request.resource.data.lockAt > request.time
+        && request.resource.data.lockAt < request.time + duration.value(14, 'd');
+      allow update, delete: if isCommish();
+
+      match /picks/{uid} {
+        allow read: if (signedIn() && request.auth.uid == uid) || !isOpen();
+        allow create, update: if mine(uid) && isOpen()
+          && request.resource.data.keys().hasOnly(['owner', 'picks', 't'])
+          && request.resource.data.picks is map && request.resource.data.picks.size() <= 20;
+        allow delete: if false;
+      }
+      match /status/{uid} {
+        allow read: if true;
+        allow create, update: if mine(uid) && isOpen()
+          && request.resource.data.keys().hasOnly(['owner', 'n', 't'])
+          && request.resource.data.n is int;
+        allow delete: if false;
       }
     }
 

@@ -725,9 +725,39 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   wrong; Sleeper's LeBron James photo (id 1362) is Bronny). All player photos go through
   playerPhoto() in records.js. Checked Oct 2026: no duplicate photos among league players;
   families/twins (Thompson, Murray, Champagnie, Lopez, Ball, Holiday...) are correct.
+- `assets/props.js` + renderProps in app.js: WEEKLY PROPS (#/props, In Season; owner, Oct 24 2026).
+  Owner's choices: all 8 managers pick (Google sign-in), lines set by the site from projections, EXACTLY
+  10 props a week (owner: "an even 10"; median picks dropped): spread on all 4 games, combined-score
+  over/under on the top 2 hype games (hypeSlate order), 1 player prop in each of those 2 games (the planned
+  starter with the highest median locked score), top-scoring team, highest-scoring game. 1 point per correct
+  pick, push = nothing, bragging rights only (no Wager tie), picks hidden until the lock, lock = the week's
+  first tip-off (ESPN scoreboard; fallback 16:00Z that day), managers claim a team and the commish approves.
+  Regular-season weeks only (needs 4 games + 8 teams). Lines: update.mjs -> updateProps() each night builds
+  the open week (openWeek: first regular week whose first game date >= today) with coachlog rewind() to
+  that week's first morning + gm.js weekTotals() (every team planned like an opponent: SITS, Balanced, bench
+  moves, OPP_CAL scale, 4,000 runs) -> spread/total = median, rounded to x.5 (half()); player line = median of
+  gm.js lockedDraws() (his games at OPP_CAL, locked at the plan's slot-aware bars T); top/game odds = share of
+  runs. Redone nightly until lockAt (same subjects kept by id; a player prop is replaced, with a note, only
+  when he has no planned games); never changed after lockAt. Each pick stores the line it was taken at
+  ({ o, l }); graded at its own line. data/props.json { version, at, seasons: { s: { weeks: { w: { week,
+  firstDate, lockAt, built, at, builds, props: [...], replaced } } } } } (prop shapes at the top of props.js;
+  m = the site's pick at the last build). Grading in the browser from league.json: weekResults() (R games,
+  playerWeeks locked points), settle() + gradePick() (player prop = no bet when he has no playerWeeks row,
+  i.e. not a starter), leaderboard() (+ "The site" = model picks; it can't win a week; weekly winner = most
+  correct, ties share). Page: week chips, account card (sign in / claim form / waiting / "Picking for"), lock
+  countdown (redraws at the lock), 10 prop cards (tap a side, tap again to clear, saved 0.7 s later), after the
+  lock every manager's name under his option + gold "Site" tag, after final ✓ and Hit/Miss/Push/No bet,
+  side cards "Who's in" (status docs, n/10) / week scores and the Season table. Home: one-line card
+  (#hm-props, homeProps; reads props.json only, no Firebase on Home). Commish -> League office -> Props
+  (renderPropsAdmin): claims waiting (Approve/Deny), linked managers (Unlink), one-time setup = "Copy rules"
+  (fetches firestore.rules from the site, fills COMMISH_UID with the signed-in uid) + Open Firebase rules.
+  Firestore layout under "Cross-device sync". Tested Oct 24 2026 in the browser: week 2 built from live
+  Sleeper (1.7 s; totals ~710 vs coach log week-1 expected finals 297-369 per team), made-up finals graded
+  right (a push on the exact line, a no-bet player), layouts 320/402/desktop. NOT tested: real sign-in,
+  claims, saving picks (live rules block them until the owner publishes the new rules).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, taxi-log.json, coach-log.json,
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, taxi-log.json, coach-log.json, props.json,
   dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 
@@ -783,15 +813,21 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Rules: only request.auth.uid == uid reads/writes its own tree; prefs docs only { v (string < 500 KB
   or null), t (int), dev }; everything else denied. Any Google account can sign in and gets its own
   private tree (harmless; the other managers have nothing to sync yet).
-- Trade Court later: same sign-in; map uid -> Sleeper owner id (owner bigdaddyburk =
-  1035475215997906944; his uid not recorded yet). Users must NOT set their own mapping: keep it in a
-  commish-only place (e.g. config.js ACCOUNTS or a members/{uid} doc only the owner's uid can write in
-  the rules) and add shared collections with their own rules.
+- Shared collections (Weekly Props, Oct 24 2026): claims/{uid} { owner, name, photo, t } (a manager's
+  "I'm this team", own doc only, commish reads all); members/{uid} { owner, t } = account -> Sleeper owner
+  id, written ONLY by the commish (isCommish() = uid == COMMISH_UID in firestore.rules; the repo copy keeps
+  the placeholder, Commish -> Props -> "Copy rules" fills it in), public read; props/{season-week} { lockAt }
+  (created by the first member who saves, lockAt must be within 14 days, only the commish can change it);
+  props/{sw}/picks/{uid} { owner (must = his members doc), picks, t (= request.time, serverTimestamp) },
+  readable by its owner only until lockAt, then by anyone; writes only before lockAt; props/{sw}/status/{uid}
+  { owner, n, t } public. sync.js exports firebase() (loads SDK + waits for the first auth state, also
+  signed out), onAuth(cb), currentUser(). Trade Court later reuses members/{uid} (owner bigdaddyburk =
+  1035475215997906944; his uid shows in Commish -> Props once signed in).
 - Tested locally (Oct 24 2026): SDK loads, signed-out Firestore read = permission-denied, merge/apply
   logic with a fake Firestore, layouts 320/402/desktop. Real Google sign-in only by the owner.
 
 ## Not built yet (sidebar shows "Soon")
-Weekly Props, Trade Court (planned with Firebase sign-in for the 8 managers; owner to decide
-the open questions first). (Cheat Sheet was dropped by the owner.) The owner
+Trade Court (planned with Firebase sign-in for the 8 managers, reusing Weekly Props' members/{uid}
+links; owner to decide the open questions first). (Cheat Sheet was dropped by the owner.) The owner
 shares screenshots of a football reference site (fantasyhoff.com) for each feature and
 wants it adapted for basketball.
