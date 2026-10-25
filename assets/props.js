@@ -247,5 +247,17 @@ export function leaderboard(DATA, season, file, entries) {
     const best = Math.max(0, ...Object.entries(scores).filter(([o]) => o !== 'model').map(([, v]) => v));
     if (best > 0) for (const [o, v] of Object.entries(scores)) if (o !== 'model' && v === best) row(o).weeks++;
   }
-  return Object.values(rows).sort((x, y) => y.w - x.w || x.l - y.l || y.weeks - x.weeks);
+  return Object.values(rows).sort((x, y) => y.w - x.w); // points = correct picks; ties share a rank
+}
+
+// All-time table: every season's leaderboard rows added up (owner, Oct 2026).
+export function allTimeBoard(bySeason) {
+  const rows = {};
+  for (const list of Object.values(bySeason)) {
+    for (const r of list) {
+      const t = (rows[r.who] ??= { who: r.who, w: 0, l: 0, p: 0, weeks: 0, seasons: 0 });
+      t.w += r.w; t.l += r.l; t.p += r.p; t.weeks += r.weeks; t.seasons++;
+    }
+  }
+  return Object.values(rows).sort((x, y) => y.w - x.w); // points = correct picks; ties share a rank
 }

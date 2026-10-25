@@ -2762,3 +2762,8 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 }
 #hm-props:empty { display: none; }
 .pr-sync .sync-why { display: none; }
+.pr-seasons { margin-bottom: -4px; }
+.pr-bt { display: inline-flex; gap: 3px; padding: 3px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 9px; background: #efece3; }
+.pr-bt button { padding: 5px 12px; border: 0; border-radius: 6px; background: none; font-size: 12px; font-weight: 700; color: var(--ink); cursor: pointer; }
+.pr-bt button.on { background: var(--navy-800); color: #fff; }
+.pr-board .pr-pts { text-align: right; font-weight: 800; }

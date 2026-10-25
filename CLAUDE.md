@@ -746,10 +746,11 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   m = the site's pick at the last build). Grading in the browser from league.json: weekResults() (R games,
   playerWeeks locked points), settle() + gradePick() (player prop = no bet when he has no playerWeeks row,
   i.e. not a starter), leaderboard() (+ "The site" = model picks; it can't win a week; weekly winner = most
-  correct, ties share). Page: week chips, account card (sign in / claim form / waiting / "Picking for"), lock
+  correct, ties share). Page: season tabs (only when 2+ seasons have props; ?season=, default this
+  season) + week chips (?season=&week=, every past week keeps its picks + results), account card (sign in / claim form / waiting / "Picking for"), lock
   countdown (redraws at the lock), 10 prop cards (tap a side, tap again to clear, saved 0.7 s later), after the
   lock every manager's name under his option + gold "Site" tag, after final ✓ and Hit/Miss/Push/No bet,
-  side cards "Who's in" (status docs, n/10) / week scores and the Season table. Home: one-line card
+  side cards "Who's in" (status docs, n/10) / week scores and the Standings card (Season / All-time switch, PR_BOARD; all-time = allTimeBoard() in props.js, every season's leaderboard added up). POINTS ONLY (owner, Oct 25 2026: "don't count it like a record"): rank, manager, points (= correct picks); ties share a rank; week card shows "N pts". Home: one-line card
   (#hm-props, homeProps; reads props.json only, no Firebase on Home). Commish -> League office -> Props
   (renderPropsAdmin): claims waiting (Approve/Deny), linked managers (Unlink), one-time setup = "Copy rules"
   (fetches firestore.rules from the site, fills COMMISH_UID with the signed-in uid) + Open Firebase rules.

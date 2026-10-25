@@ -18,7 +18,7 @@ import { MIN_GAMES, TIERS, draftClasses, draftGrades, draftOfYear, draftedPlayer
 import { gradeOf } from './scout.js';
 import { CONTRACTS_SOURCE, contractText, readContract } from './contracts.js';
 import { paintSync, syncInit, syncSave } from './sync.js';
-import { gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
+import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 
 // ---------- Navigation ----------
 
@@ -7104,7 +7104,6 @@ function propResultText(p, out, season) {
 
 let PR_SAVE = null;
 async function renderProps(main, params) {
-  const season = DATA.seasons.at(-1).season;
   main.innerHTML = `
     <div class="page page-wide pr">
       <div class="page-head">
@@ -7116,6 +7115,10 @@ async function renderProps(main, params) {
     </div>`;
   const body = $('#pr-body', main);
   const file = await loadPropsFile();
+  // Seasons with props, newest first; ?season= opens an older one (default: this season).
+  const cur = DATA.seasons.at(-1).season;
+  const seasons = Object.keys(file?.seasons ?? {}).filter(s => Object.keys(propsWeeks(file, s)).length).sort().reverse();
+  const season = seasons.includes(params.get('season')) ? params.get('season') : seasons.includes(cur) ? cur : seasons[0] ?? cur;
   const weeks = propsWeeks(file, season);
   if (!Object.keys(weeks).length) {
     body.innerHTML = '<section class="card soon-card"><p>No props yet. The next week’s props go up with the nightly update once its schedule is set.</p></section>';
@@ -7192,12 +7195,15 @@ async function renderProps(main, params) {
       const g = W.props.map(p => gradePick(p, outcomes[p.id], e.picks?.[p.id]));
       return { o: e.owner, w: g.filter(x => x === 'win').length, l: g.filter(x => x === 'loss').length, n: Object.keys(e.picks ?? {}).length };
     }).sort((a, b) => b.w - a.w || a.l - b.l);
-    return `<ul class="pr-in">${rows.map(r => `<li class="${r.o === 'model' ? 'site' : ''}"><span>${r.o === 'model' ? 'The site' : esc(name(r.o))}</span><b>${final ? `${r.w}–${r.l}` : `${r.n} picks`}</b></li>`).join('')}</ul>`;
+    return `<ul class="pr-in">${rows.map(r => `<li class="${r.o === 'model' ? 'site' : ''}"><span>${r.o === 'model' ? 'The site' : esc(name(r.o))}</span><b>${final ? `${r.w} pts` : `${r.n} picks`}</b></li>`).join('')}</ul>`;
   };
 
   body.innerHTML = `
+    ${seasons.length > 1 ? `<nav class="st-tabs pr-seasons" aria-label="Seasons">
+      ${seasons.map(s => `<a href="#/props?season=${s}" class="${s === season ? 'on' : ''}">${seasonSpan(s)}</a>`).join('')}
+    </nav>` : ''}
     <nav class="dk-seasons pr-weeks" aria-label="Weeks">
-      ${Object.values(weeks).sort((a, b) => b.week - a.week).map(x => `<a href="#/props?week=${x.week}" class="${x.week === W.week ? 'on' : ''}">Week ${x.week}${prLocked(x) ? '' : ' · open'}</a>`).join('')}
+      ${Object.values(weeks).sort((a, b) => b.week - a.week).map(x => `<a href="#/props?season=${season}&week=${x.week}" class="${x.week === W.week ? 'on' : ''}">Week ${x.week}${prLocked(x) ? '' : ' · open'}</a>`).join('')}
     </nav>
     <section class="card pr-top">
       ${accountCard()}
@@ -7209,12 +7215,13 @@ async function renderProps(main, params) {
       <div class="pr-list">${W.props.map(propCard).join('')}</div>
       <aside class="pr-side">
         <section class="card">
-          <div class="card-head"><h2>${locked ? `Week ${W.week}` : 'Who’s in'}</h2><span class="card-sub">${locked ? (final ? 'correct–wrong' : 'graded when final') : 'picks made so far'}</span></div>
+          <div class="card-head"><h2>${locked ? `Week ${W.week}` : 'Who’s in'}</h2><span class="card-sub">${locked ? (final ? '1 point per correct pick' : 'graded when final') : 'picks made so far'}</span></div>
           ${weekScores()}
         </section>
         <section class="card">
-          <div class="card-head"><h2>Season</h2><span class="card-sub">${seasonSpan(season)}</span></div>
-          <div id="pr-board"><p class="empty">Adding up the season…</p></div>
+          <div class="card-head"><h2>Standings</h2><span class="card-sub" id="pr-board-sub">${seasonSpan(season)}</span></div>
+          <div class="pr-bt" role="group" aria-label="Standings"><button type="button" data-v="season">Season</button><button type="button" data-v="all">All-time</button></div>
+          <div id="pr-board"><p class="empty">Adding up the standings…</p></div>
         </section>
       </aside>
     </div>
@@ -7273,22 +7280,35 @@ async function renderProps(main, params) {
       cd.textContent = `(${prCountdown(W.lockAt)})`;
     }, 30_000);
   }
-  // Season leaderboard: every locked week's picks (public), graded where final.
+  // Standings: this season's table, or all-time (every season added up). Every locked week's
+  // picks are public; a week counts once it's final.
   try {
-    const entries = {};
-    for (const x of Object.values(weeks).filter(prLocked)) {
-      const got = acct.fb ? await propsPicks(acct.fb, season, x, acct.user?.uid) : { all: {} };
-      entries[x.week] = got.all;
+    const bySeason = {};
+    for (const s of seasons) {
+      const entries = {};
+      for (const x of Object.values(propsWeeks(file, s)).filter(prLocked)) {
+        const got = acct.fb ? await propsPicks(acct.fb, s, x, acct.user?.uid) : { all: {} };
+        entries[x.week] = got.all;
+      }
+      bySeason[s] = leaderboard(DATA, s, file, entries);
     }
-    const rows = leaderboard(DATA, season, file, entries);
+    const table = (rows, all) => (rows.length ? `
+      <table class="pr-board"><thead><tr><th></th><th>Manager</th><th class="pr-pts">Points</th></tr></thead><tbody>
+        ${rows.map(r => `<tr class="${r.who === 'model' ? 'site' : r.who === acct.owner ? 'me' : ''}"><td>${1 + rows.filter(x => x.w > r.w).length}</td><td>${r.who === 'model' ? 'The site' : esc(name(r.who))}</td><td class="pr-pts">${r.w}</td></tr>`).join('')}
+      </tbody></table>${all ? `<p class="pr-fine">${seasons.length} season${seasons.length === 1 ? '' : 's'} of props: ${[...seasons].reverse().map(seasonSpan).join(', ')}.</p>` : ''}`
+      : '<p class="empty">No week graded yet. The table starts once the first props week is final.</p>');
     const box = $('#pr-board', body);
     if (!box) return;
-    box.innerHTML = rows.length ? `
-      <table class="pr-board"><thead><tr><th></th><th>Manager</th><th>W–L</th><th>%</th><th title="Weeks won">Wks</th></tr></thead><tbody>
-        ${rows.map((r, i) => `<tr class="${r.who === 'model' ? 'site' : r.who === acct.owner ? 'me' : ''}"><td>${i + 1}</td><td>${r.who === 'model' ? 'The site' : esc(name(r.who))}</td><td>${r.w}–${r.l}${r.p ? `–${r.p}` : ''}</td><td>${r.w + r.l ? Math.round((100 * r.w) / (r.w + r.l)) : '–'}</td><td>${r.who === 'model' ? '' : r.weeks}</td></tr>`).join('')}
-      </tbody></table>` : '<p class="empty">No week graded yet. The table starts once the first props week is final.</p>';
+    const draw = () => {
+      body.querySelectorAll('.pr-bt button').forEach(b => b.classList.toggle('on', b.dataset.v === PR_BOARD));
+      $('#pr-board-sub', body).textContent = PR_BOARD === 'all' ? 'every season' : seasonSpan(season);
+      box.innerHTML = PR_BOARD === 'all' ? table(allTimeBoard(bySeason), true) : table(bySeason[season] ?? [], false);
+    };
+    body.querySelectorAll('.pr-bt button').forEach(b => b.addEventListener('click', () => { PR_BOARD = b.dataset.v; draw(); }));
+    draw();
   } catch { /* leave the placeholder */ }
 }
+let PR_BOARD = 'season'; // standings card: 'season' | 'all' (kept while browsing weeks)
 
 // Home: one line about the props week (no Firestore here, so Home stays light).
 async function homeProps(main) {
