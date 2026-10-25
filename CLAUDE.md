@@ -728,18 +728,20 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `assets/props.js` + renderProps in app.js: WEEKLY PROPS (#/props, In Season; owner, Oct 24 2026).
   Owner's choices: all 8 managers pick (Google sign-in), lines set by the site from projections, EXACTLY
   10 props a week (owner: "an even 10"; median picks dropped): spread on all 4 games, combined-score
-  over/under on the top 2 hype games (hypeSlate order), 1 player prop in each of those 2 games (the planned
+  over/under on the top 2 hype games (hypeSlate order; options show line / 2 in parentheses, owner Oct 25), 1 player prop in each of those 2 games (the planned
   starter with the highest median locked score), top-scoring team, highest-scoring game. 1 point per correct
   pick, push = nothing, bragging rights only (no Wager tie), picks hidden until the lock, lock = the week's
   first tip-off (ESPN scoreboard; fallback 16:00Z that day), managers claim a team and the commish approves.
   Regular-season weeks only (needs 4 games + 8 teams). Lines: update.mjs -> updateProps() each night builds
-  the open week (openWeek: first regular week whose first game date >= today) with coachlog rewind() to
+  the open week once (openWeek: first regular week whose first game date >= today) with coachlog rewind() to
   that week's first morning + gm.js weekTotals() (every team planned like an opponent: SITS, Balanced, bench
   moves, OPP_CAL scale, 4,000 runs) -> spread/total = median, rounded to x.5 (half()); player line = median of
   gm.js lockedDraws() (his games at OPP_CAL, locked at the plan's slot-aware bars T); top/game odds = share of
-  runs. Redone nightly until lockAt (same subjects kept by id; a player prop is replaced, with a note, only
-  when he has no planned games); never changed after lockAt. Each pick stores the line it was taken at
-  ({ o, l }); graded at its own line. data/props.json { version, at, seasons: { s: { weeks: { w: { week,
+  runs. BUILT ONCE, NEVER CHANGED (owner, Oct 25 2026: "we can't have lines moving"): the first nightly run
+  on or after firstDate - OPEN_DAYS (3: a Monday start -> Friday's run) builds the week; any later run sees
+  it saved and keeps it. A player who ends up not starting = no bet (no replacement). Picks still store the
+  line ({ o, l }; always = the week's line now). Week 2 2026 was built Oct 25 under the old nightly-redo
+  code (fields at/builds/replaced) and is kept as is. data/props.json { version, at, seasons: { s: { weeks: { w: { week,
   firstDate, lockAt, built, at, builds, props: [...], replaced } } } } } (prop shapes at the top of props.js;
   m = the site's pick at the last build). Grading in the browser from league.json: weekResults() (R games,
   playerWeeks locked points), settle() + gradePick() (player prop = no bet when he has no playerWeeks row,

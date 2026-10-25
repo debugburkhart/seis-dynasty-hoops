@@ -7075,8 +7075,8 @@ function propView(p, season) {
       opts: [{ o: p.fav, label: tn(p.fav), sub: `${name(p.fav)} ${signed(p.line)}`, line: true }, { o: dog, label: tn(dog), sub: `${name(dog)} ${signed(-p.line)}`, line: true }] };
   }
   if (p.kind === 'total') {
-    return { tag: 'Total', title: `${vs}: combined score`, note: 'Both teams’ final locked scores added up.',
-      opts: [{ o: 'over', label: `Over ${num(p.line)}`, line: true }, { o: 'under', label: `Under ${num(p.line)}`, line: true }] };
+    return { tag: 'Total', title: `${vs}: combined score`, note: 'Both teams’ final locked scores added up. In parentheses: the line split evenly between the two teams.',
+      opts: [{ o: 'over', label: `Over ${num(p.line)} (${num(p.line / 2)})`, line: true }, { o: 'under', label: `Under ${num(p.line)} (${num(p.line / 2)})`, line: true }] };
   }
   if (p.kind === 'player') {
     return { tag: 'Player', title: `${esc(p.name)}${p.nba ? ` (${esc(p.nba)})` : ''}: locked points`,
@@ -7152,7 +7152,7 @@ async function renderProps(main, params) {
   };
   const lockLine = () => (final ? `<b>Final.</b> Graded on the saved locked scores.`
     : locked ? `<b>Locked</b> ${esc(prWhen(W.lockAt))} CT. Results once the week is final.`
-    : `<b>Locks ${esc(prWhen(W.lockAt))} CT</b> <span id="pr-cd">(${prCountdown(W.lockAt)})</span>. Lines update nightly until then; your pick keeps the line you took.`);
+    : `<b>Locks ${esc(prWhen(W.lockAt))} CT</b> <span id="pr-cd">(${prCountdown(W.lockAt)})</span>. Lines are set for the week and don’t change.`);
 
   const pickersOf = (p, o) => Object.values(picks.all).filter(e => e.picks?.[p.id]?.o === o).map(e => e.owner);
   const propCard = p => {
@@ -7218,7 +7218,7 @@ async function renderProps(main, params) {
         </section>
       </aside>
     </div>
-    <p class="pw-foot"><b>How lines are set:</b> the site plays the week out ${'4,000'} times with the same projections and lock logic as the Lock-in coach, every team set up its best healthy lineup. Spreads and totals sit at the middle result, so each side is close to a coin flip; percentages on the week props are the site’s chances. <b>The site</b> picks the side its numbers lean to, at the last line before the lock, and plays on the leaderboard (it can’t win a week). A pick that lands exactly on the line is a push and scores nothing.</p>`;
+    <p class="pw-foot"><b>How lines are set:</b> once per week, about 3 days before the first game (they never move after that), the site plays the week out ${'4,000'} times with the same projections and lock logic as the Lock-in coach, every team set up its best healthy lineup. Spreads and totals sit at the middle result, so each side is close to a coin flip; percentages on the week props are the site’s chances. <b>The site</b> picks the side its numbers lean to and plays on the leaderboard (it can’t win a week). A pick that lands exactly on the line is a push and scores nothing.</p>`;
   paintSync(body);
 
   // Picking: tap a side; tap it again to clear. Saved 0.7 s after the last tap.

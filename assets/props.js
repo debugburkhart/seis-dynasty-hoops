@@ -2,15 +2,16 @@
 // simulation as the Lock-in coach (gm.js weekTotals: every team planned like an opponent), picked
 // by the 8 managers (Google sign-in, Firestore: see app.js renderProps + firestore.rules). One point
 // per correct pick, a push counts nothing, bragging rights only. Picks lock at the week's first
-// tip-off; until then lines are redone every night and each pick keeps the line it was made at.
+// tip-off. Lines are built ONCE per week (owner, Oct 25 2026: "we can't have lines moving"), on the
+// first nightly run within OPEN_DAYS of the week's first game, and never change after that.
 // No DOM or Node APIs: runs in the nightly job (update.mjs) and in the browser (grading).
 //
 // The 10: a spread on every game (4), the combined score of the top 2 hype games (2), one star's
 // locked points in each of those games (2), top-scoring team, highest-scoring game.
 //
 // data/props.json { version, at, seasons: { season: { weeks: { week: {
-//   week, firstDate, lockAt (ISO), built (first build), at (last build), builds,
-//   props: [{ id, kind, ... , m (the site's pick at the last build) }], replaced: [{ id, why }]
+//   week, firstDate, lockAt (ISO), built, props: [{ id, kind, ... , m (the site's pick) }]
+//   (week 2 2026 was built before the change and also has at, builds, replaced)
 // } } } } }
 // Kinds: spread { a, b, fav, line, p (chance fav covers) } · total { a, b, line, p (over) } ·
 // player { pid, name, owner, nba, games, line, p (over) } · top { odds: { owner: p } } ·
@@ -25,6 +26,8 @@ import { hypeSlate } from './hype.js';
 export const PROPS_VERSION = 1;
 export const PROPS_PER_WEEK = 10;
 const RUNS = 4000;
+// Days before a week's first game that its props go up (Monday start -> the Friday-morning run).
+export const OPEN_DAYS = 3;
 const r1 = n => Math.round(n * 10) / 10;
 const r3 = n => Math.round(n * 1000) / 1000;
 const half = x => Math.floor(x) + 0.5; // lines end in .5
@@ -54,8 +57,8 @@ export function openWeek(schedule, today, lastRegular) {
   return weeks.length ? { week: weeks[0], firstDate: first[weeks[0]] } : null;
 }
 
-// One week's props from the simulation. keep = last night's props (same subjects, new numbers).
-export function buildWeekProps(DATA, season, week, sim, pairs, keep = null) {
+// One week's props from the simulation.
+export function buildWeekProps(DATA, season, week, sim, pairs) {
   const { totals, plans } = sim;
   const owners = Object.keys(totals);
   if (pairs.length < 4 || owners.length < 8) return null;
@@ -88,12 +91,12 @@ export function buildWeekProps(DATA, season, week, sim, pairs, keep = null) {
     return { id: `t:${a}:${b}`, kind: 'total', a, b, line, p: r3(p), m: p >= 0.5 ? 'over' : 'under' };
   };
   // The star of a game: the planned starter with the highest median locked score.
-  const playerFor = (pair, pid = null) => {
+  const playerFor = pair => {
     let best = null;
     for (const o of [pair.a, pair.b]) {
       const plan = plans[o];
       plan.pieces.forEach((q, pi) => {
-        if (pid ? q.pid !== pid : plan.now.slotOf[pi] < 0 || q.fixed != null || !q.games.length) return;
+        if (plan.now.slotOf[pi] < 0 || q.fixed != null || !q.games.length) return;
         const draws = lockedDraws(plan, pi, RUNS, 5 + pi);
         const med = median(draws);
         if (!best || med > best.med) best = { o, q, draws, med };
@@ -126,26 +129,12 @@ export function buildWeekProps(DATA, season, week, sim, pairs, keep = null) {
     return { id: 'game', kind: 'game', odds, m: gameKey(m.a, m.b) };
   };
 
-  // Same subjects as last night (picks are saved by id); a player prop is replaced only when
-  // he has no games he's expected to play any more (ruled out, or benched for the week).
-  const replaced = [...(keep?.replaced ?? [])];
-  const keepIds = keep?.props?.map(p => p.id) ?? [];
-  let totalPairs = keepIds.filter(id => id.startsWith('t:')).map(id => pairs.find(p => `t:${p.a}:${p.b}` === id)).filter(Boolean);
-  if (totalPairs.length < 2) totalPairs = order.slice(0, 2);
-  const players = [];
-  for (const pair of totalPairs) {
-    const old = keep?.props?.find(p => p.kind === 'player' && (p.owner === pair.a || p.owner === pair.b));
-    let p = old ? playerFor(pair, old.pid) : null;
-    if (old && !p) replaced.push({ id: old.id, why: `${old.name} isn’t expected to play this week` });
-    p ??= playerFor(pair);
-    if (p && !players.some(x => x.pid === p.pid)) players.push(p);
-  }
-  const props = [...pairs.map(spread), ...totalPairs.map(total), ...players, top(), game()];
-  return { week, props, replaced };
+  const totalPairs = order.slice(0, 2);
+  const players = totalPairs.map(pair => playerFor(pair)).filter(Boolean);
+  return { week, props: [...pairs.map(spread), ...totalPairs.map(total), ...players, top(), game()] };
 }
 
-// The nightly run: builds (or rebuilds) the open week's props. A week is never changed once
-// its first game has tipped (lockAt).
+// The nightly run: builds the open week's props once, OPEN_DAYS before its first game.
 export async function updateProps(DATA, prev, { today = ctToday(), log = () => {} } = {}) {
   const out = prev?.version === PROPS_VERSION ? prev : { version: PROPS_VERSION, seasons: {} };
   const cur = DATA.seasons.at(-1);
@@ -155,25 +144,24 @@ export async function updateProps(DATA, prev, { today = ctToday(), log = () => {
   const open = openWeek(schedule, today, lastRegular);
   if (!open) { log('Props: no regular-season week left to open.'); return out; }
   const S = (out.seasons[cur.season] ??= { weeks: {} });
-  const old = S.weeks[open.week];
-  if (old && Date.now() >= Date.parse(old.lockAt)) { log(`Props: week ${open.week} is locked; kept.`); return out; }
+  // Built once, then never touched: the lines a manager picks against are the lines that stay.
+  if (S.weeks[open.week]) { log(`Props: week ${open.week} lines are set (built ${S.weeks[open.week].built}); kept.`); return out; }
+  const opens = new Date(Date.parse(`${open.firstDate}T12:00:00Z`) - OPEN_DAYS * 864e5).toISOString().slice(0, 10);
+  if (today < opens) { log(`Props: week ${open.week} props go up on ${opens}.`); return out; }
   const ctx = await loadWeek(DATA, cur.season, open.week);
   const slate = await loadSlate(cur.season, open.week);
   if (!ctx.rosters?.length || !Object.keys(slate).length) { log(`Props: week ${open.week} has no rosters or games yet.`); return out; }
   // The week as it stands before its first game (same rewind as the coach log).
   const at = rewind(ctx, {}, slate, open.firstDate);
   const pairs = pairsFor(DATA, cur.season, open.week, ctx.matchups).filter(p => !p.t || p.t === 'R');
-  const built = buildWeekProps(DATA, cur.season, open.week, weekTotals(DATA, at.ctx, at.boxes, at.slate, RUNS), pairs, old);
+  const built = buildWeekProps(DATA, cur.season, open.week, weekTotals(DATA, at.ctx, at.boxes, at.slate, RUNS), pairs);
   if (!built) { log(`Props: week ${open.week} needs 4 games and 8 teams.`); return out; }
   const lockAt = await firstTip(open.firstDate);
   if (Date.now() >= Date.parse(lockAt)) { log(`Props: week ${open.week} already tipped off; not opened.`); return out; }
   const now = new Date().toISOString();
-  S.weeks[open.week] = {
-    week: open.week, firstDate: open.firstDate, lockAt,
-    built: old?.built ?? now, at: now, builds: (old?.builds ?? 0) + 1, props: built.props, replaced: built.replaced,
-  };
+  S.weeks[open.week] = { week: open.week, firstDate: open.firstDate, lockAt, built: now, props: built.props };
   out.at = now;
-  log(`Props: week ${open.week}, ${built.props.length} props (build ${S.weeks[open.week].builds}), lock ${S.weeks[open.week].lockAt}.`);
+  log(`Props: week ${open.week}, ${built.props.length} props built (final), lock ${lockAt}.`);
   return out;
 }
 
