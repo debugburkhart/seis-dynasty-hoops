@@ -760,7 +760,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   claims, saving picks (live rules block them until the owner publishes the new rules).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, taxi-log.json, coach-log.json, props.json,
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, taxi-log.json, coach-log.json, props.json, season-stats.json,
   dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 
@@ -808,7 +808,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   wins per player), gm-block- lists unioned, gm-tracker-seen- max, others newer wins; any replaced local
   value is kept in localStorage sync-backup. gm.js lockedPoints still reads gm-locks from localStorage.
 - Synced keys = SYNCED in sync.js: gm-locks-*, gm-whatif-*, gm-mode, gm-block-*, gm-eval, gm-dyn-*,
-  gm-tracker-seen-*, gm-inj-*, wager-saved. NOT synced: gm-tips-{date} (cache), sessionStorage cm-open,
+  gm-tracker-seen-*, gm-inj-*, wager-saved, gm-tags. NOT synced: gm-tips-{date} (cache), sessionStorage cm-open,
   sync-* bookkeeping. **To sync a new setting:** save it with gmSave/gmLoad (never raw localStorage)
   and add its key or prefix (ending in '-') to SYNCED; add a MERGE rule if two devices' values should be
   combined instead of newest-wins; the rules need no change.
@@ -857,8 +857,67 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Rivalry trade history: each trade has a "Trade Court · Case N" link; a signed-in linked manager also sees
   "Your vote: ..." / "You haven't voted" (only loads Firebase when localStorage sync-uid is set).
 - Tested Oct 25 2026 with faked votes (fetch stub): tallies, verdicts, party exclusion, 3-team plurality,
-  layouts 320/402/1300. NOT tested: real sign-in + saving a vote (needs the published rules).
+  layouts 320/402/1300. Owner uploaded it, published the rules and confirmed it works live (Oct 25 2026).
 
+## Test features (commish office, owner Oct 25 2026)
+- Third tab group in the commish office ("My GM", "League office", "Test features"): where brand-new
+  features are born and tested, early access for the owner only (the office is passcode-gated).
+- RULE: every Test features tab AND every card inside it carries the "Beta" tag (.gm-beta) until the
+  owner says the feature goes live. `assets/test-features.js`: TEST_FEATURES [{ id, label, since }]
+  (tab id = #/commish?tab=id; testTabs() adds the tag to the tab label), BETA (the tag), betaCard(title,
+  body, { sub, cls, id }) = a card with the tag in its title: draw EVERY card of a test feature with it.
+  To add one: an entry in TEST_FEATURES + its renderer in renderCommish's `show` map (app.js).
+- GRADUATING (only when the owner says so): move the feature out of Test features to its real place
+  (a public page in NAV/READY, or a My GM / League office tab), remove its TEST_FEATURES entry, swap
+  betaCard for plain cards (no Beta tags), and note the date + new place here.
+- Current test features:
+  2K BREAKDOWN (tab=breakdown; owner's NBA 2K roster screenshot, Oct 25 2026; logic `assets/breakdown.js`, no
+  DOM; renderBreakdown + BK state/BK_VIEWS in app.js, .bk-* in styles.css). Team picker (default COMMISH) +
+  season chips (?season=, every league season; ?p=pid = picked player, kept with history.replaceState). Dark
+  navy card like the 2K screen, GOLD where 2K uses lime: NBA team logo (ESPN CDN, teamLogo) + name, headshot
+  (playerPhoto), ring = FP/G (the 2K "OVR" spot; fills toward that season's best NBA FP/G, players with a
+  quarter of the most games), #number + positions (fantasy_positions), first/LAST name, HT / WT / AGE, shield
+  badge = total FP, title = fantasy slot (Starter · X slot / Bench / Injured reserve / Taxi squad), college ·
+  Nth NBA season (years_exp + 1) · birth date, per-game line, contractLine(), injury (status · body part
+  (notes)). Below: View tabs Averages / Totals / Shooting (FGM-A, FG%, 3P, FT, eFG%, TS%), sortable columns
+  (tap = sort, again = flip; gold column), tap a row = that player's card (phones scroll up to it). Cards under
+  it: Season by season (per game, league seasons only) and Game log (10 newest + Show all; DNPs listed; best
+  game). OWNER: basic NBA stats + fantasy points, plus (owner, Oct 25 2026) a DYNASTY SCORE badge: gold shield
+  (.bk-dyn) before the Total FP shield + tierTag after the slot title; gmDynasty(params) = same scores and
+  injury setting (gm-dyn-full) as the Dynasty tab, a failure just hides the badge; a player listed Out (outCut)
+  also shows "Dynasty N at full health" (Banchero Oct 25: 32 discounted, 64 full). No grades / other models.
+  LISTS (owner, Oct 25 2026): chips Team / Waiver wire / League above the card (?list=fa|league; team picker
+  only on Team). Waiver wire = active players with an NBA team and a G/F/C position on no roster TODAY (~247);
+  League = every rostered player (~280) + a "Fantasy team" column (BK_OWN, only: 'league') and the card names
+  his team + manager. Both get a name search (accent-insensitive) and 50 rows at a time (Show 50 more). Every
+  list: NBA team column + "Dyn" column (BK_DYN, dynasty score today, sortable, gold text). Team list only: a
+  "Show" row Full team / Rostered (everyone but taxi: starters, bench, IR) / Taxi with counts (BK_GROUPS,
+  BK.group, kept while switching teams; owner, Oct 25 2026).
+  CUSTOM TAGS (owner, Oct 25 2026: his own words, not a fixed list): localStorage gm-tags = { pid: [tag] } via
+  gmSave (SYNCED in sync.js, MERGE 'object' = per player on first connect). Card: chips with × + "+ Tag" ->
+  input (24 chars; a tag typed in another case reuses the existing spelling) + his other tags to tap
+  (tagRow / addTag / setTags). Table: "Tags" column (BK_TAGCOL, first column, only once any tag exists;
+  cell = chips, opts.html; sort = tagged first, grouped by their first tag A-Z). "Tags" filter row (#bk-tagbar,
+  tagBar(): All + each tag with its count in the current list; BK.tag), works in all 3 lists. Same tag = same
+  color (tagHue -> .th-0..5). A tag disappears when no player has it. Column defs:
+  [key, label, sort value, cell, { only / not: list, cls }], filtered by bkCols().
+  DATA: table stats = SEASON STAT TABLES (breakdown.js): every player's season added up from Sleeper's per-game
+  box scores /stats/nba/{season}/{week} (STAT_KEYS incl. plus_minus + bonus fields, summed per game so bonuses
+  are right). Nightly update.mjs -> updateSeasonStats -> data/season-stats.json { version (STATS_VERSION),
+  at, seasons: { s: { keys, weeks, through, complete, players: { pid: [values] } } } } (~50 KB a season;
+  finished seasons built once and kept, ~8 s each; the season in progress sums its FINISHED weeks = Sleeper
+  state week - 1). The page (seasonTable) adds the weeks after the saved ones live (the current week, 1
+  request), cached 2 min; with no saved file it builds every week itself (~6 s a season). Verified Oct 25
+  2026: table = game logs exactly (Sengun / Banchero 2025-26 GP, pts, FP, +/-; Wembanyama 2026 3 GP 60 pts
+  122 FP +33). The player card's Season by season + Game log use the per-player game log
+  /stats/nba/player/{pid}?season_type=regular&season=Y&grouping=week ({ week: [games] }, ~70-90 KB a
+  season, opponent + is_away_team, DNP rows = empty stats; totalOf). Sleeper's SEASON-TOTAL feeds
+  (/v1/stats/nba/regular/Y, /stats/nba/Y, /stats/nba/player/{pid} without grouping) are NOT used: a day
+  behind (Oct 25 2026: Sengun 2 GP vs 3 played), plus_minus always 0, bogus bonus_* flags (Banchero 2025-26
+  2,568 FP vs 2,560 from his games, never scored 40). Minutes = min or sp / 60. FP = each season's own league
+  scoring (2023 = 0.5/pt). Bio from /v1/players/nba (height in inches, weight, college, number, years_exp,
+  birth_date, injury_*). No GS column (box rows have no gs). Verified Oct 25 2026: Sengun 2026 3 GP 23.0 pts
+  37.0 FP/G (34+42+35), Banchero 49 + 25 FP, TS% 77.0; layouts 320 / 402 / 1300.
 ## Not built yet (sidebar shows "Soon")
 Nothing at the moment. (Cheat Sheet was dropped by the owner.) The owner
 shares screenshots of a football reference site (fantasyhoff.com) for each feature and

@@ -365,6 +365,18 @@ try {
   console.log(`Coach log skipped: ${e.message}`);
 }
 
+// Season stat tables (2K breakdown, commish Test features, Oct 2026): every NBA player's season
+// totals added up from per-game box scores, for every league season -> data/season-stats.json
+// (assets/breakdown.js). Finished seasons are built once; the season in progress adds its newly
+// finished weeks (the page adds the current week live). Never stops the update.
+try {
+  const { updateSeasonStats } = await import('../assets/breakdown.js');
+  const stats = await updateSeasonStats(data, await readJson('data/season-stats.json'), { log: m => console.log(m) });
+  await writeFile('data/season-stats.json', JSON.stringify(stats));
+} catch (e) {
+  console.log(`Season stats skipped: ${e.message}`);
+}
+
 // Weekly Props (owner, Oct 2026): the 10 props for the next week that hasn't tipped off, lines from
 // the same week simulation as the coach, redone every night until the first game; a locked week is
 // never changed -> data/props.json (assets/props.js). Picks live in Firestore. Never stops the update.

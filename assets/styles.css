@@ -2887,3 +2887,158 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .tr-court-me { font-weight: 700; color: var(--gold-ink); }
 .tr-court-me.none { font-weight: 500; color: var(--muted); }
 .hm-court-v { font-weight: 700; color: var(--navy-700); }
+
+/* ---------- Test features: 2K-style team breakdown (commish office; breakdown.js) ---------- */
+.bk.card { padding: 0; overflow: hidden; color: #fff; border-color: var(--navy-800); background: var(--navy-950); }
+.bk .card-head { padding: 14px 18px 0; margin: 0; }
+.bk .card-head h2 { color: #fff; }
+.bk .card-sub { color: #9fb0cc; }
+.bk-hero {
+  display: grid; grid-template-columns: auto 1fr; gap: 12px 22px; align-items: center; padding: 12px 18px 18px;
+  background: radial-gradient(ellipse at 15% 35%, rgba(142,197,255,.16), transparent 60%), linear-gradient(160deg, var(--navy-800), var(--navy-950));
+}
+.bk-team { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font: 800 12px/1 var(--display); letter-spacing: .06em; text-transform: uppercase; color: #cfd8ea; }
+.bk-team img { width: 28px; height: 28px; object-fit: contain; }
+.bk-id { display: flex; align-items: flex-end; gap: 14px; }
+.bk-photo { width: 150px; aspect-ratio: 260 / 190; overflow: hidden; border-bottom: 3px solid var(--gold); background: rgba(255,255,255,.04); }
+.bk-photo img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.bk-ring { flex: none; width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 4px;
+  background: conic-gradient(var(--gold) calc(var(--p) * 360deg), rgba(255,255,255,.14) 0); }
+.bk-ring > div { width: 78px; height: 78px; border-radius: 50%; background: var(--navy-950); display: grid; place-content: center; text-align: center; }
+.bk-ring small { font: 800 10px/1 var(--display); letter-spacing: .1em; color: #cfd8ea; }
+.bk-ring b { font: 900 30px/1 var(--display); font-stretch: 92%; }
+.bk-info { min-width: 0; }
+.bk-name { display: flex; align-items: center; gap: 12px; }
+.bk-tags { display: flex; flex-direction: column; gap: 3px; }
+.bk-tags span { min-width: 32px; padding: 2px 5px; border: 1px solid rgba(255,255,255,.35); font: 800 11px/1.2 var(--display); text-align: center; color: #e8edf6; }
+.bk-name small { display: block; font-size: 14px; color: #cfd8ea; }
+.bk-name h3 { margin: 0; font: 900 36px/1 var(--display); font-stretch: 92%; overflow-wrap: anywhere; }
+.bk-meas { margin: 6px 0 12px; font: 700 12px/1.3 var(--display); letter-spacing: .04em; color: #cfd8ea; }
+.bk-arch { display: flex; align-items: center; gap: 12px; }
+.bk-total { flex: none; width: 64px; height: 68px; display: grid; place-content: center; text-align: center; color: var(--navy-950);
+  background: linear-gradient(#eef1f7, #9eaac0); clip-path: polygon(50% 0, 100% 18%, 100% 82%, 50% 100%, 0 82%, 0 18%); }
+.bk-total small { font: 800 8px/1 var(--display); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; color: var(--navy-800); }
+.bk-total b { font: 900 18px/1.1 var(--display); }
+.bk-dyn { background: linear-gradient(#ffe39a, var(--brass)); }
+.bk-dyn small { color: #5e4206; }
+.bk-title { display: block; font: 900 22px/1.1 var(--display); font-stretch: 92%; }
+.bk-arch .tier { display: inline-block; margin-top: 4px; }
+.bk-arch small.bk-dynnote { color: var(--gold); }
+.bk-arch > div:not(.bk-total) small { display: block; margin-top: 3px; font-size: 12px; color: #b9c4da; }
+.bk-statline { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 14px; }
+.bk-statline span { display: flex; flex-direction: column; }
+.bk-statline b { font: 900 17px/1.1 var(--display); }
+.bk-statline small { font: 800 9px/1.2 var(--display); letter-spacing: .08em; color: #9fb0cc; }
+.bk .dy-contract { display: block; margin-top: 12px; font-size: 12px; color: #d6deec; }
+.bk .ct-label { color: #9fb0cc; }
+.bk-inj { display: inline-block; margin-top: 8px; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; background: rgba(244,194,79,.16); color: var(--gold); }
+.bk-inj.bad { background: rgba(255,110,110,.16); color: #ffaaaa; }
+.bk-bar { display: flex; align-items: center; gap: 10px; padding: 8px 18px; background: #050f22; border-top: 1px solid rgba(255,255,255,.08); border-bottom: 1px solid rgba(255,255,255,.08); }
+.bk-bar-label { font: 800 11px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #9fb0cc; }
+.bk-views { display: flex; gap: 4px; overflow-x: auto; }
+.bk-views button { border: 0; background: none; color: #d6deec; font: 700 12.5px/1 var(--display); padding: 6px 12px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.bk-views button.on { background: #fff; color: var(--navy-950); }
+.bk-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* Tables: light by default (Season by season, Game log); the dark card overrides below. */
+.bk-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.bk-table th { padding: 7px 8px; font: 800 10.5px/1.2 var(--display); letter-spacing: .05em; text-transform: uppercase; text-align: center; white-space: nowrap; color: var(--muted); border-bottom: 1px solid var(--line); }
+.bk-table td { padding: 7px 8px; text-align: center; white-space: nowrap; border-bottom: 1px solid #f0ece2; }
+.bk-table .bk-nm { position: sticky; left: 0; z-index: 1; text-align: left; font-weight: 700; background: var(--paper); }
+.bk-table .srt { background: #fbf0d3; color: var(--gold-ink); font-weight: 800; }
+.bk-table tr.on td { background: #fbf6e6; }
+.bk-table tr.on td.srt { background: #f6e3ae; }
+.bk-dnp td { color: var(--muted); font-style: italic; }
+.bk-dnp td[colspan] { text-align: left; }
+.bk .bk-table th { color: #9fb0cc; border-bottom-color: rgba(255,255,255,.12); cursor: pointer; user-select: none; }
+.bk .bk-table th.bk-nm { cursor: default; }
+.bk .bk-table td { color: #e8edf6; border-bottom-color: rgba(255,255,255,.06); }
+.bk .bk-table .bk-nm { background: var(--navy-950); }
+.bk .bk-table th.srt { background: var(--gold); color: var(--navy-950); }
+.bk .bk-table td.srt { background: rgba(244,194,79,.16); color: var(--gold); }
+.bk .bk-table tbody tr { cursor: pointer; }
+.bk .bk-table tbody tr:hover td { background: #0f2246; }
+.bk .bk-table tbody tr:hover td.srt { background: rgba(244,194,79,.24); }
+.bk .bk-table tr.on td, .bk .bk-table tr.on:hover td { background: var(--gold); color: var(--navy-950); }
+.bk .bk-table tr.on td.srt { background: #ffd978; }
+.bk .bk-table tr.bk-res td { color: #9fb0cc; }
+.bk .bk-table tr.bk-res.on td { color: var(--navy-950); }
+.bk .bk-table tbody tr:focus-visible { outline: 2px solid var(--sky); outline-offset: -2px; }
+.bk-dot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--gold); vertical-align: 1px; }
+.bk-dot.bad { background: #ff7b7b; }
+.bk-foot { margin: 0; padding: 10px 18px 14px; font-size: 11px; color: #9fb0cc; }
+.bk-page .card:not(.bk) .bk-foot { padding: 8px 0 0; color: var(--muted); }
+.bk-logsum { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+.bk-logsum b { color: var(--ink); }
+.bk-more { margin-top: 10px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); font: 700 12px/1.2 var(--font); cursor: pointer; }
+@media (max-width: 700px) {
+  .bk-hero { grid-template-columns: 1fr; padding: 10px 14px 16px; }
+  .bk .card-head { padding: 12px 14px 0; }
+  .bk-bar { padding: 8px 14px; }
+  .bk-foot { padding: 10px 14px 12px; }
+  .bk-photo { width: 132px; }
+  .bk-ring { width: 84px; height: 84px; }
+  .bk-ring > div { width: 68px; height: 68px; }
+  .bk-ring b { font-size: 26px; }
+  .bk-name h3 { font-size: 30px; }
+  .bk-title { font-size: 19px; }
+  .bk-table td, .bk-table th { padding: 7px 6px; }
+}
+@media (max-width: 360px) {
+  .bk-arch { gap: 8px; }
+  .bk-total { width: 54px; height: 60px; }
+  .bk-total b { font-size: 16px; }
+  .bk-total small { font-size: 7px; }
+  .bk-photo { width: 112px; }
+  .bk-ring { width: 74px; height: 74px; }
+  .bk-ring > div { width: 60px; height: 60px; }
+  .bk-ring b { font-size: 22px; }
+  .bk-name h3 { font-size: 26px; }
+  .bk-views button { padding: 6px 9px; font-size: 12px; }
+}
+/* 2K breakdown lists (Team / Waiver wire / League), search, paging, dynasty + fantasy team columns. */
+.bk-page > .bk-lists { align-self: flex-start; }
+.bk-search { margin-left: auto; min-width: 0; width: 180px; padding: 6px 10px; border: 1px solid rgba(255,255,255,.18); border-radius: 8px; background: rgba(255,255,255,.06); color: #fff; font: 600 12.5px/1.2 var(--font); }
+.bk-search::placeholder { color: #9fb0cc; }
+.bk .bk-table .bk-own { max-width: 150px; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.bk .bk-table td.bk-dyncol:not(.srt) { color: #ffe39a; font-weight: 700; }
+.bk .bk-table tr.on td.bk-dyncol { color: var(--navy-950); }
+.bk-pager { padding: 10px 18px 0; }
+.bk-pager:empty { display: none; }
+.bk-page-more { padding: 6px 12px; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; background: rgba(255,255,255,.06); color: #fff; font: 700 12px/1.2 var(--font); cursor: pointer; }
+.bk-page-more small { color: #9fb0cc; font-weight: 600; }
+.bk-arch > div:not(.bk-total) small.bk-owner { color: #fff; font-weight: 700; }
+@media (max-width: 700px) {
+  .bk-bar { flex-wrap: wrap; }
+  .bk-search { width: 100%; margin-left: 0; }
+  .bk-pager { padding: 10px 14px 0; }
+  .bk .bk-table .bk-own { max-width: 110px; }
+}
+/* 2K breakdown Team list filter: Full team / Rostered / Taxi. */
+.bk-bar2 { border-top: 0; }
+.bk-groups button small { margin-left: 2px; font: 700 10.5px/1 var(--font); opacity: .7; }
+/* 2K breakdown custom tags (gm-tags): chips on the card, Tags column, Tags filter row. 6 colors (th-0..5). */
+.bk-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; border: 1px solid; font: 700 11px/1.3 var(--font); white-space: nowrap; }
+.bk-tag button { border: 0; background: none; color: inherit; font: 800 13px/1 var(--font); padding: 0 0 0 2px; cursor: pointer; opacity: .75; }
+.bk-tag button:hover { opacity: 1; }
+.th-0 { background: rgba(244,194,79,.16); border-color: rgba(244,194,79,.5); color: #ffd978; }
+.th-1 { background: rgba(142,197,255,.16); border-color: rgba(142,197,255,.5); color: #b9dcff; }
+.th-2 { background: rgba(110,220,160,.16); border-color: rgba(110,220,160,.5); color: #9ff0c4; }
+.th-3 { background: rgba(255,130,130,.16); border-color: rgba(255,130,130,.5); color: #ffb3b3; }
+.th-4 { background: rgba(200,160,255,.16); border-color: rgba(200,160,255,.5); color: #dcc4ff; }
+.th-5 { background: rgba(255,170,100,.16); border-color: rgba(255,170,100,.5); color: #ffc898; }
+.bk-tagrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.bk-tagadd { padding: 3px 10px; border: 1px dashed rgba(255,255,255,.4); border-radius: 99px; background: none; color: #d6deec; font: 700 11px/1.3 var(--font); cursor: pointer; }
+.bk-tagform { display: flex; gap: 6px; margin-top: 8px; max-width: 340px; }
+.bk-tagform input { flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid rgba(255,255,255,.25); border-radius: 8px; background: rgba(255,255,255,.08); color: #fff; font: 600 13px/1.2 var(--font); }
+.bk-tagform input::placeholder { color: #9fb0cc; }
+.bk-tagform button { padding: 6px 12px; border: 0; border-radius: 8px; background: var(--gold); color: var(--navy-950); font: 800 12px/1.2 var(--font); cursor: pointer; }
+.bk-tagsugg { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.bk-tagsugg .bk-tag { cursor: pointer; }
+.bk .bk-table td.bk-tagcol { text-align: left; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.bk .bk-table td.bk-tagcol .bk-tag { padding: 0 6px; font-size: 10.5px; margin-right: 3px; }
+.bk .bk-table tr.on td.bk-tagcol .bk-tag { background: rgba(7,20,43,.12); border-color: rgba(7,20,43,.4); color: var(--navy-950); }
+.bk-tagfilter small { margin-left: 2px; font: 700 10.5px/1 var(--font); opacity: .7; }
+.bk-swatch { display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 50%; border: 1px solid; vertical-align: 0; }
+@media (max-width: 700px) {
+  .bk .bk-table td.bk-tagcol { max-width: 130px; }
+}

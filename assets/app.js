@@ -20,6 +20,8 @@ import { CONTRACTS_SOURCE, contractText, readContract } from './contracts.js';
 import { paintSync, syncInit, syncSave } from './sync.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
+import { betaCard, testTabs } from './test-features.js';
+import { averages, gameLog, loadBreakdown, nbaTeamName, seasonLines, teamLogo } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -2354,10 +2356,12 @@ function renderCommish(main, params) {
     $('#cm-code', main).focus();
     return;
   }
-  // Two groups: the Assistant GM tools, then the league office reports.
+  // Three groups: the Assistant GM tools, the league office reports, then Test features
+  // (new tools tried here first; every tab and card tagged Beta, see test-features.js).
   const GROUPS = [
     ['My GM', [['brief', 'Briefing'], ['coach', 'Lock-in coach'], ['dynasty', 'Dynasty'], ['prospects', 'Prospects'], ['draftscout', 'Draft Scout'], ['tracker', 'Team tracker'], ['trades', 'Trade finder'], ['managers', 'Managers']]],
     ['League office', [['scout', 'Scouting report'], ['waivers', 'Waiver wire'], ['playoffs', 'Playoff picture'], ['recap', 'Weekly recap'], ['picks', 'Draft picks'], ['races', 'Award races'], ['hype', 'Early hype'], ['wager', 'Wager Weeks'], ['props', 'Props'], ['health', 'Health report']]],
+    ['Test features', testTabs()],
   ];
   const TABS = GROUPS.flatMap(([, tabs]) => tabs);
   const tab = TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : 'brief';
@@ -2386,11 +2390,338 @@ function renderCommish(main, params) {
     </div>`;
   const body = $('#cm-body', main);
   paintSync(main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown }[tab];
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
   });
+}
+
+// ---------- Test features (commish office, Beta) ----------
+
+// 2K-style team breakdown (owner's NBA 2K roster screenshot, Oct 2026; logic in breakdown.js):
+// player card on top (photo, FP/G ring, bio, dynasty + total FP badges, contract), player table
+// below with view tabs and sortable columns, then the picked player's season-by-season line and
+// game log. Three lists (owner, Oct 25 2026): one team's roster, the waiver wire (free agents) and
+// the whole league (every rostered player, with his fantasy team). Basic NBA stats and fantasy
+// points, plus the dynasty score (badge + column, owner asked). No grades or other site models.
+const BK = { pid: null, view: 'avg', sort: null, dir: -1, logAll: false, list: 'team', q: '', limit: 50, group: 'all', tag: null, tagOpen: false, dyn: () => null };
+// Team list filter (owner, Oct 25 2026): the whole roster, everyone but taxi (starters, bench, IR), or taxi only.
+const BK_GROUPS = [['all', 'Full team', () => true], ['active', 'Rostered', p => p.slot !== 'TX'], ['taxi', 'Taxi', p => p.slot === 'TX']];
+// Custom player tags (owner, Oct 25 2026): his own words, any player (team, waiver wire, league).
+// localStorage gm-tags = { pid: [tag] }, saved with gmSave so it syncs between his devices (sync.js).
+const bkTags = () => gmLoad('gm-tags', {});
+const tagsOf = pid => bkTags()[pid] ?? [];
+const allTags = () => [...new Set(Object.values(bkTags()).flat())].sort((a, b) => a.localeCompare(b));
+function setTags(pid, list) {
+  const t = { ...bkTags() };
+  if (list.length) t[pid] = list; else delete t[pid];
+  gmSave('gm-tags', t);
+}
+// Same tag = same color everywhere (6 colors, picked from the tag's letters).
+const tagHue = tag => [...bkFold(tag)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 6;
+const tagChip = (tag, x) => `<span class="bk-tag th-${tagHue(tag)}">${esc(tag)}${x ? `<button type="button" data-untag="${esc(tag)}" aria-label="Remove tag ${esc(tag)}">×</button>` : ''}</span>`;
+// Tags column (only once a tag exists): sorting puts tagged players first, grouped by their first tag A-Z.
+const BK_TAGCOL = ['tags', 'Tags', p => { const t = tagsOf(p.pid); if (!t.length) return -1; const all = allTags(); return 1000 - Math.min(...t.map(x => all.indexOf(x))); }, p => tagsOf(p.pid).map(t => tagChip(t)).join('') || '—', { cls: 'bk-tagcol', tags: true, html: true }];
+const BK_PAGE = 50;
+const BK_LISTS = [['team', 'Team'], ['fa', 'Waiver wire'], ['league', 'League']];
+const bkPct = x => (x == null ? '—' : `${(x * 100).toFixed(1)}`);
+const bkF1 = x => (x == null ? '—' : (Math.round(x * 10) / 10).toFixed(1));
+const bkMa = (m, a) => `${num(m)}-${num(a)}`;
+const SLOT_ORDER = ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'UTIL', 'BN', 'IR', 'TX', 'FA'];
+const slotRank = p => SLOT_ORDER.indexOf(p.slot) * 100 + Math.max(0, p.order);
+const bkAvg = k => [p => (p.tot.gp ? p.avg[k] : -1), p => (p.tot.gp ? bkF1(p.avg[k]) : '—')];
+// Table columns per view: [key, label, value for sorting, cell text, { only / not: list id, cls }].
+const BK_OWN = ['own', 'Fantasy team', p => (p.owner ? teamName(p.owner, DATA.seasons.at(-1).season) : ''), p => (p.owner ? teamName(p.owner, DATA.seasons.at(-1).season) : ''), { only: 'league', cls: 'bk-own' }];
+const BK_SLOT = ['slot', 'Slot', p => -slotRank(p), p => p.slot, { not: 'fa' }];
+const BK_DYN = ['dyn', 'Dyn', p => BK.dyn(p.pid) ?? -1, p => BK.dyn(p.pid) ?? '—', { cls: 'bk-dyncol' }];
+const BK_VIEWS = {
+  avg: { label: 'Averages', sort: 'fpg', cols: [
+    BK_TAGCOL, BK_OWN, BK_SLOT,
+    ['pos', 'Pos', p => p.pos.join('/'), p => p.pos.join('/')],
+    ['nba', 'NBA', p => p.team || 'zz', p => p.team || 'FA'],
+    ['age', 'Age', p => p.age ?? 0, p => p.age ?? '—'],
+    BK_DYN,
+    ['fpg', 'FP/G', ...bkAvg('fp')],
+    ['gp', 'GP', p => p.tot.gp, p => p.tot.gp],
+    ['min', 'Min', ...bkAvg('min')],
+    ['pts', 'Pts', ...bkAvg('pts')],
+    ['reb', 'Reb', ...bkAvg('reb')],
+    ['ast', 'Ast', ...bkAvg('ast')],
+    ['stl', 'Stl', ...bkAvg('stl')],
+    ['blk', 'Blk', ...bkAvg('blk')],
+    ['to', 'TO', ...bkAvg('to')],
+    ['tpm', '3PM', ...bkAvg('tpm')],
+    ['fgp', 'FG%', p => p.tot.fgp ?? -1, p => bkPct(p.tot.fgp)],
+    ['ftp', 'FT%', p => p.tot.ftp ?? -1, p => bkPct(p.tot.ftp)],
+    ['pm', '+/-', p => (p.tot.gp ? p.avg.pm : -99), p => (p.tot.gp ? `${p.avg.pm > 0 ? '+' : ''}${bkF1(p.avg.pm)}` : '—')],
+  ] },
+  tot: { label: 'Totals', sort: 'fp', cols: [
+    BK_TAGCOL, BK_OWN, BK_SLOT, BK_DYN,
+    ['gp', 'GP', p => p.tot.gp, p => p.tot.gp],
+    ['fp', 'FP', p => p.tot.fp, p => num(p.tot.fp)],
+    ['min', 'Min', p => p.tot.min, p => Math.round(p.tot.min)],
+    ['pts', 'Pts', p => p.tot.pts, p => p.tot.pts],
+    ['reb', 'Reb', p => p.tot.reb, p => p.tot.reb],
+    ['oreb', 'OReb', p => p.tot.oreb, p => p.tot.oreb],
+    ['dreb', 'DReb', p => p.tot.dreb, p => p.tot.dreb],
+    ['ast', 'Ast', p => p.tot.ast, p => p.tot.ast],
+    ['stl', 'Stl', p => p.tot.stl, p => p.tot.stl],
+    ['blk', 'Blk', p => p.tot.blk, p => p.tot.blk],
+    ['to', 'TO', p => p.tot.to, p => p.tot.to],
+    ['pf', 'PF', p => p.tot.pf, p => p.tot.pf],
+    ['dd', 'DD', p => p.tot.dd, p => p.tot.dd],
+    ['td', 'TD', p => p.tot.td, p => p.tot.td],
+  ] },
+  shoot: { label: 'Shooting', sort: 'ts', cols: [
+    BK_TAGCOL,
+    ['fg', 'FGM-A', p => p.tot.fgm, p => bkMa(p.tot.fgm, p.tot.fga)],
+    ['fgp', 'FG%', p => p.tot.fgp ?? -1, p => bkPct(p.tot.fgp)],
+    ['tp', '3PM-A', p => p.tot.tpm, p => bkMa(p.tot.tpm, p.tot.tpa)],
+    ['tpp', '3P%', p => p.tot.tpp ?? -1, p => bkPct(p.tot.tpp)],
+    ['ft', 'FTM-A', p => p.tot.ftm, p => bkMa(p.tot.ftm, p.tot.fta)],
+    ['ftp', 'FT%', p => p.tot.ftp ?? -1, p => bkPct(p.tot.ftp)],
+    ['efg', 'eFG%', p => p.tot.efg ?? -1, p => bkPct(p.tot.efg)],
+    ['ts', 'TS%', p => p.tot.ts ?? -1, p => bkPct(p.tot.ts)],
+  ] },
+};
+const bkCols = (view, list) => view.cols.filter(c => (!c[4]?.only || c[4].only === list) && c[4]?.not !== list && (!c[4]?.tags || allTags().length));
+const bkSeason = s => `${s}-${String(Number(s) + 1).slice(2)}`;
+const SLOT_WORD = { BN: 'Bench', IR: 'Injured reserve', TX: 'Taxi squad', FA: 'Free agent' };
+const bkFold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+async function renderBreakdown(body, params) {
+  const cur = DATA.seasons.at(-1);
+  const list = BK_LISTS.some(([id]) => id === params.get('list')) ? params.get('list') : 'team';
+  const me = cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH;
+  const season = DATA.seasons.some(s => s.season === params.get('season')) ? params.get('season') : cur.season;
+  const link = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...(list === 'team' ? { team: me } : {}), ...(list !== 'team' ? { list } : {}), ...(season !== cur.season ? { season } : {}), ...q })}`;
+  if (BK.list !== list) { BK.list = list; BK.q = ''; BK.limit = BK_PAGE; }
+  body.innerHTML = `<div class="loading">Pulling ${list === 'team' ? 'the roster' : list === 'fa' ? 'the waiver wire' : 'every roster'} and stats from Sleeper…</div>`;
+  // Dynasty scores (gmDynasty, same values and injury setting as the Dynasty tab); a failure just hides them.
+  const [bk, dyn] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season }), gmDynasty(params).catch(() => null), loadContracts()]);
+  const dynOf = pid => dyn?.v?.players?.[pid]?.score ?? null;
+  BK.dyn = dynOf;
+  // Injured players listed Out count this season at half (Dynasty tab setting): show the full-health score too.
+  const dynFull = dyn && !gmLoad('gm-dyn-full', false) ? dynastyValues(DATA, dyn.f, { fullInjured: true }) : null;
+  const dynNote = pid => (dyn?.v?.players?.[pid]?.outCut && dynFull?.players?.[pid] ? `<small class="bk-dynnote">Dynasty ${dynFull.players[pid].score} at full health (listed Out: this season counts half)</small>` : '');
+  const listTabs = `<div class="st-tabs bk-lists" role="tablist">${BK_LISTS.map(([id, label]) => `<a role="tab" class="${id === list ? 'on' : ''}" href="#/commish?${new URLSearchParams({ tab: 'breakdown', ...(id !== 'team' ? { list: id } : {}), ...(season !== cur.season ? { season } : {}) })}">${label}</a>`).join('')}</div>`;
+  if (!bk) {
+    body.innerHTML = `<div class="gm-page">${listTabs}${gmTeamPick(me, cur.season, 'breakdown')}${betaCard('Team breakdown', '<p class="empty">No roster found for this team.</p>')}</div>`;
+    bindTeamPick(body);
+    return;
+  }
+  const byPid = Object.fromEntries(bk.players.map(p => [p.pid, p]));
+  if (params.get('p') && byPid[params.get('p')]) BK.pid = params.get('p');
+  if (!byPid[BK.pid]) BK.pid = [...bk.players].sort((a, b) => b.avg.fp - a.avg.fp || slotRank(a) - slotRank(b))[0]?.pid;
+  const view = () => BK_VIEWS[BK.view] ?? BK_VIEWS.avg;
+  const cols = () => bkCols(view(), list);
+  if (!cols().some(c => c[0] === BK.sort)) { BK.sort = view().sort; BK.dir = -1; }
+  const title = list === 'team' ? esc(teamName(me, cur.season)) : list === 'fa' ? 'Waiver wire' : 'League';
+  const what = list === 'fa' ? 'free agents with an NBA team (today’s rosters)' : list === 'league' ? 'players on a fantasy roster today' : 'players';
+
+  body.innerHTML = `<div class="gm-page bk-page">
+    ${listTabs}
+    <div class="cm-pickers">
+      ${list === 'team' ? gmTeamPick(me, cur.season, 'breakdown') : ''}
+      <div class="st-tabs bk-seasons" role="tablist">${[...DATA.seasons].reverse().map(s => `<a role="tab" class="${s.season === season ? 'on' : ''}" href="${link({ season: s.season })}">${bkSeason(s.season)}</a>`).join('')}</div>
+    </div>
+    ${betaCard(title, `
+      <div class="bk-hero" id="bk-hero"></div>
+      <div class="bk-bar">
+        <span class="bk-bar-label">View</span>
+        <div class="bk-views" role="tablist">${Object.entries(BK_VIEWS).map(([id, v]) => `<button type="button" role="tab" data-view="${id}">${v.label}</button>`).join('')}</div>
+        ${list !== 'team' ? `<input type="search" class="bk-search" placeholder="Find a player" aria-label="Find a player" value="${esc(BK.q)}">` : ''}
+      </div>
+      ${list === 'team' ? `<div class="bk-bar bk-bar2">
+        <span class="bk-bar-label">Show</span>
+        <div class="bk-views bk-groups" role="tablist">${BK_GROUPS.map(([id, label, keep]) => `<button type="button" role="tab" data-group="${id}">${label} <small>${bk.players.filter(keep).length}</small></button>`).join('')}</div>
+      </div>` : ''}
+      <div id="bk-tagbar"></div>
+      <div class="bk-scroll"><table class="bk-table" id="bk-table"></table></div>
+      <div class="bk-pager" id="bk-pager"></div>
+      <p class="bk-foot">Tap a player for his card · tap a column to sort · ${bkSeason(season)} regular season${bk.through ? `, games through ${esc(shortMd(bk.through))}` : ''}; fantasy points under that season’s league scoring; Dyn = dynasty score today.</p>`, { cls: 'bk', sub: `${bkSeason(season)} stats · ${bk.players.length} ${what}` })}
+    ${betaCard('Season by season', '<div id="bk-years"><p class="empty">Loading…</p></div>', { id: 'bk-years-card', sub: 'Per game, regular season' })}
+    ${betaCard('Game log', '<div id="bk-log"><p class="empty">Loading…</p></div>', { id: 'bk-log-card', sub: bkSeason(season) })}
+  </div>`;
+  bindTeamPick(body);
+
+  // Tags on the player card: his chips (× removes), "+ Tag" opens a box for a new tag plus his other tags to tap.
+  const tagRow = p => {
+    const mine = tagsOf(p.pid);
+    const sugg = allTags().filter(t => !mine.includes(t));
+    return `<div class="bk-tagrow">${mine.map(t => tagChip(t, true)).join('')}<button type="button" class="bk-tagadd" aria-expanded="${BK.tagOpen}">${BK.tagOpen ? 'Done' : '+ Tag'}</button></div>
+      ${BK.tagOpen ? `<form class="bk-tagform" autocomplete="off"><input type="text" maxlength="24" placeholder="New tag, e.g. Trade bait" aria-label="New tag"><button type="submit">Add</button></form>
+        ${sugg.length ? `<div class="bk-tagsugg">${sugg.map(t => `<button type="button" class="bk-tag th-${tagHue(t)}" data-addtag="${esc(t)}">+ ${esc(t)}</button>`).join('')}</div>` : ''}` : ''}`;
+  };
+  // Tag filter row (once any tag exists): All + every tag with how many players in this list have it.
+  const tagBar = () => {
+    const tags = allTags();
+    if (BK.tag && !tags.includes(BK.tag)) BK.tag = null;
+    if (!tags.length) return '';
+    const count = t => bk.players.filter(p => tagsOf(p.pid).includes(t)).length;
+    return `<div class="bk-bar bk-bar2"><span class="bk-bar-label">Tags</span>
+      <div class="bk-views bk-tagfilter" role="tablist"><button type="button" data-tagf="" class="${BK.tag ? '' : 'on'}">All</button>${tags.map(t => `<button type="button" data-tagf="${esc(t)}" class="${BK.tag === t ? 'on' : ''}"><i class="bk-swatch th-${tagHue(t)}"></i>${esc(t)} <small>${count(t)}</small></button>`).join('')}</div></div>`;
+  };
+  const addTag = (p, raw) => {
+    const text = raw.trim().replace(/\s+/g, ' ').slice(0, 24);
+    if (!text) return;
+    const tag = allTags().find(t => t.toLowerCase() === text.toLowerCase()) ?? text; // reuse an existing spelling
+    if (!tagsOf(p.pid).includes(tag)) setTags(p.pid, [...tagsOf(p.pid), tag]);
+  };
+
+  const hero = p => {
+    const ring = Math.max(0, Math.min(1, bk.top ? p.avg.fp / bk.top : 0));
+    const logo = teamLogo(p.team);
+    const slot = SLOT_WORD[p.slot] ?? `Starter · ${p.slot} slot`;
+    const bio = [p.college || p.country, p.exp != null ? (p.exp === 0 ? 'Rookie' : `${p.exp + 1}${['st', 'nd', 'rd'][p.exp] ?? 'th'} NBA season`) : '', p.birth ? `born ${new Date(`${p.birth}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''].filter(Boolean);
+    const inj = p.injury ? `<span class="bk-inj${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}">${esc(p.injury)}${p.injuryPart ? ` · ${esc(p.injuryPart)}` : ''}${p.injuryNote ? ` (${esc(p.injuryNote)})` : ''}</span>` : '';
+    return `
+      <div class="bk-team">${logo ? `<img src="${logo}" alt="" onerror="this.remove()">` : ''}<span>${esc(nbaTeamName(p.team) || 'No NBA team')}</span></div>
+      <div class="bk-id">
+        <div class="bk-photo"><img src="${playerPhoto(DATA, p.pid)}" alt="${esc(p.name)}" onerror="this.remove()"></div>
+        <div class="bk-ring" style="--p:${ring.toFixed(3)}" title="Fantasy points per game, ${bkSeason(season)}; the ring fills toward the NBA's best FP/G this season"><div><small>FP/G</small><b>${p.tot.gp ? bkF1(p.avg.fp) : '—'}</b></div></div>
+      </div>
+      <div class="bk-info">
+        <div class="bk-name">
+          <div class="bk-tags">${p.number != null ? `<span>#${esc(p.number)}</span>` : ''}${p.pos.map(x => `<span>${esc(x)}</span>`).join('')}</div>
+          <div><small>${esc(p.first)}</small><h3>${esc(p.last || p.name)}</h3></div>
+        </div>
+        <p class="bk-meas">${[p.height && `HT: ${p.height}`, p.weight && `WT: ${p.weight}`, p.age != null && `AGE: ${p.age}`].filter(Boolean).map(esc).join(' / ')}</p>
+        <div class="bk-arch">
+          ${dyn ? `<div class="bk-total bk-dyn" title="Dynasty score today (0-100, same as the Dynasty tab)"><small>Dynasty</small><b>${dynOf(p.pid) ?? '—'}</b><small>Score</small></div>` : ''}
+          <div class="bk-total" title="Total fantasy points, ${bkSeason(season)}"><small>Total</small><b>${num(p.tot.fp)}</b><small>FP</small></div>
+          <div><b class="bk-title">${esc(slot)}</b>${dynOf(p.pid) != null ? tierTag(dynOf(p.pid)) : ''}${list !== 'team' && p.owner ? `<small class="bk-owner">${esc(teamName(p.owner, cur.season))} (${esc(name(p.owner))})</small>` : ''}<small>${bio.map(esc).join(' · ')}</small>${dynNote(p.pid)}</div>
+        </div>
+        <div class="bk-statline">${[['PTS', p.avg.pts], ['REB', p.avg.reb], ['AST', p.avg.ast], ['STL', p.avg.stl], ['BLK', p.avg.blk], ['MIN', p.avg.min]].map(([k, x]) => `<span><b>${p.tot.gp ? bkF1(x) : '—'}</b><small>${k}</small></span>`).join('')}<span><b>${p.tot.gp}</b><small>GP</small></span></div>
+        ${tagRow(p)}
+        ${contractLine({ pid: p.pid, team: p.team, nbaSeasons: p.exp })}
+        ${inj}
+      </div>`;
+  };
+
+  const rowsNow = () => {
+    const col = cols().find(c => c[0] === BK.sort) ?? cols()[0];
+    const q = bkFold(BK.q.trim());
+    const keep = list === 'team' ? (BK_GROUPS.find(g => g[0] === BK.group) ?? BK_GROUPS[0])[2] : () => true;
+    return bk.players.filter(p => keep(p) && (!BK.tag || tagsOf(p.pid).includes(BK.tag)) && (!q || bkFold(p.name).includes(q))).sort((a, b) => {
+      const x = col[2](a), y = col[2](b);
+      return (typeof x === 'string' ? x.localeCompare(y) : x - y) * BK.dir || b.avg.fp - a.avg.fp || slotRank(a) - slotRank(b);
+    });
+  };
+  const table = rows => `<thead><tr><th class="bk-nm">Name</th>${cols().map(([k, label, , , o]) => `<th data-k="${k}" class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}" aria-sort="${k === BK.sort ? (BK.dir < 0 ? 'descending' : 'ascending') : 'none'}">${k === BK.sort ? (BK.dir < 0 ? '▼' : '▲') : ''}${label}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(p => `<tr data-pid="${p.pid}" class="${p.pid === BK.pid ? 'on' : ''}${p.slot === 'IR' || p.slot === 'TX' ? ' bk-res' : ''}" tabindex="0"><td class="bk-nm"><span>${esc(p.first ? `${p.first[0]}. ${p.last}` : p.name)}</span>${p.injury ? `<i class="bk-dot${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}" title="${esc(p.injury)}"></i>` : ''}</td>${cols().map(([k, , , cell, o]) => `<td class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}">${o?.html ? cell(p) : esc(cell(p))}</td>`).join('')}</tr>`).join('') || `<tr><td class="bk-nm" colspan="${cols().length + 1}">No player by that name.</td></tr>`}</tbody>`;
+
+  const years = async p => {
+    const box = $('#bk-years', body);
+    const lines = await seasonLines(DATA, p.pid, DATA.seasons.map(s => s.season).reverse());
+    if (BK.pid !== p.pid || !box.isConnected) return;
+    box.innerHTML = lines.length ? `<div class="bk-scroll"><table class="bk-table bk-plain"><thead><tr><th class="bk-nm">Season</th><th>Team</th><th>GP</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>Stl</th><th>Blk</th><th>TO</th><th>FG%</th><th>3P%</th><th>FT%</th><th class="srt">FP/G</th></tr></thead>
+      <tbody>${lines.map(({ season: s, team, tot }) => { const a = averages(tot); return `<tr class="${s === season ? 'on' : ''}"><td class="bk-nm">${bkSeason(s)}</td><td>${esc(team)}</td><td>${tot.gp}</td><td>${bkF1(a.min)}</td><td>${bkF1(a.pts)}</td><td>${bkF1(a.reb)}</td><td>${bkF1(a.ast)}</td><td>${bkF1(a.stl)}</td><td>${bkF1(a.blk)}</td><td>${bkF1(a.to)}</td><td>${bkPct(tot.fgp)}</td><td>${bkPct(tot.tpp)}</td><td>${bkPct(tot.ftp)}</td><td class="srt">${bkF1(a.fp)}</td></tr>`; }).join('')}</tbody></table></div>
+      <p class="bk-foot">Seasons since the league started (${DATA.seasons[0].season}); each season’s fantasy points use that season’s league scoring.</p>` : '<p class="empty">No NBA games in these seasons.</p>';
+  };
+
+  const log = async p => {
+    const box = $('#bk-log', body);
+    const games = await gameLog(DATA, p.pid, season);
+    if (BK.pid !== p.pid || !box.isConnected) return;
+    if (!games.length) { box.innerHTML = `<p class="empty">No games for ${esc(p.name)} in ${bkSeason(season)}.</p>`; return; }
+    const shown = BK.logAll ? games : games.slice(0, 10);
+    const row = g => (g.dnp
+      ? `<tr class="bk-dnp"><td class="bk-nm">${esc(shortMd(g.date))}</td><td>${g.away ? '@' : 'vs'} ${esc(g.opp)}</td><td colspan="12">Did not play</td></tr>`
+      : `<tr><td class="bk-nm">${esc(shortMd(g.date))}</td><td>${g.away ? '@' : 'vs'} ${esc(g.opp)}</td><td>${Math.round(g.line.min)}</td><td>${g.line.pts}</td><td>${g.line.reb}</td><td>${g.line.ast}</td><td>${g.line.stl}</td><td>${g.line.blk}</td><td>${g.line.to}</td><td>${bkMa(g.line.fgm, g.line.fga)}</td><td>${bkMa(g.line.tpm, g.line.tpa)}</td><td>${bkMa(g.line.ftm, g.line.fta)}</td><td>${g.line.pm > 0 ? '+' : ''}${g.line.pm}</td><td class="srt">${num(g.line.fp)}</td></tr>`);
+    const playedGames = games.filter(g => !g.dnp);
+    const best = playedGames.reduce((b, g) => (!b || g.line.fp > b.line.fp ? g : b), null);
+    box.innerHTML = `<p class="bk-logsum">${playedGames.length} game${playedGames.length === 1 ? '' : 's'} played${games.length > playedGames.length ? `, ${games.length - playedGames.length} missed` : ''}${best ? ` · best: <b>${num(best.line.fp)} FP</b> ${best.away ? '@' : 'vs'} ${esc(best.opp)} on ${esc(shortMd(best.date))}` : ''}</p>
+      <div class="bk-scroll"><table class="bk-table bk-plain"><thead><tr><th class="bk-nm">Date</th><th>Opp</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>Stl</th><th>Blk</th><th>TO</th><th>FG</th><th>3P</th><th>FT</th><th>+/-</th><th class="srt">FP</th></tr></thead><tbody>${shown.map(row).join('')}</tbody></table></div>
+      ${games.length > 10 ? `<button type="button" class="bk-more">${BK.logAll ? 'Show the last 10' : `Show all ${games.length} games`}</button>` : ''}`;
+    $('.bk-more', box)?.addEventListener('click', () => { BK.logAll = !BK.logAll; log(p); });
+  };
+
+  const drawTable = () => {
+    const rows = rowsNow();
+    $('#bk-table', body).innerHTML = table(rows.slice(0, BK.limit));
+    const left = rows.length - BK.limit;
+    $('#bk-pager', body).innerHTML = left > 0 ? `<button type="button" class="bk-page-more">Show ${Math.min(BK_PAGE, left)} more <small>(${left} left)</small></button>` : '';
+  };
+  const draw = () => {
+    const p = byPid[BK.pid];
+    $('#bk-hero', body).innerHTML = p ? hero(p) : '';
+    $('#bk-tagbar', body).innerHTML = tagBar();
+    drawTable();
+    for (const b of body.querySelectorAll('.bk-views button[data-view]')) b.classList.toggle('on', b.dataset.view === BK.view);
+    for (const b of body.querySelectorAll('.bk-groups button')) b.classList.toggle('on', b.dataset.group === BK.group);
+  };
+  const pick = pid => {
+    if (!byPid[pid] || pid === BK.pid) return;
+    BK.pid = pid;
+    BK.logAll = false;
+    history.replaceState(null, '', link({ p: pid }));
+    draw();
+    $('#bk-years', body).innerHTML = '<p class="empty">Loading…</p>';
+    $('#bk-log', body).innerHTML = '<p class="empty">Loading…</p>';
+    years(byPid[pid]).catch(() => {});
+    log(byPid[pid]).catch(() => {});
+    if (matchMedia('(max-width: 700px)').matches) $('#bk-hero', body).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  body.querySelector('.bk-views').addEventListener('click', e => {
+    const b = e.target.closest('button[data-view]');
+    if (!b) return;
+    BK.view = b.dataset.view;
+    if (!cols().some(c => c[0] === BK.sort)) { BK.sort = view().sort; BK.dir = -1; }
+    draw();
+  });
+  $('.bk-search', body)?.addEventListener('input', e => { BK.q = e.target.value; BK.limit = BK_PAGE; drawTable(); });
+  const heroEl = $('#bk-hero', body);
+  heroEl.addEventListener('click', e => {
+    const p = byPid[BK.pid];
+    const un = e.target.closest('[data-untag]');
+    const add = e.target.closest('[data-addtag]');
+    if (un) setTags(p.pid, tagsOf(p.pid).filter(t => t !== un.dataset.untag));
+    else if (add) addTag(p, add.dataset.addtag);
+    else if (e.target.closest('.bk-tagadd')) BK.tagOpen = !BK.tagOpen;
+    else return;
+    draw();
+    if (e.target.closest('.bk-tagadd')) $('.bk-tagform input', heroEl)?.focus({ preventScroll: true });
+  });
+  heroEl.addEventListener('submit', e => {
+    e.preventDefault();
+    addTag(byPid[BK.pid], $('input', e.target).value);
+    draw();
+    $('.bk-tagform input', heroEl)?.focus({ preventScroll: true });
+  });
+  $('#bk-tagbar', body).addEventListener('click', e => {
+    const b = e.target.closest('[data-tagf]');
+    if (!b) return;
+    BK.tag = b.dataset.tagf || null;
+    BK.limit = BK_PAGE;
+    draw();
+  });
+  $('.bk-groups', body)?.addEventListener('click', e => {
+    const b = e.target.closest('button[data-group]');
+    if (!b) return;
+    BK.group = b.dataset.group;
+    draw();
+  });
+  $('#bk-pager', body).addEventListener('click', e => { if (e.target.closest('.bk-page-more')) { BK.limit += BK_PAGE; drawTable(); } });
+  const tableEl = $('#bk-table', body);
+  tableEl.addEventListener('click', e => {
+    const th = e.target.closest('th[data-k]');
+    if (th) {
+      if (BK.sort === th.dataset.k) BK.dir = -BK.dir; else { BK.sort = th.dataset.k; BK.dir = -1; }
+      drawTable();
+      return;
+    }
+    const tr = e.target.closest('tr[data-pid]');
+    if (tr) pick(tr.dataset.pid);
+  });
+  tableEl.addEventListener('keydown', e => {
+    const tr = e.target.closest('tr[data-pid]');
+    if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pick(tr.dataset.pid); }
+  });
+  draw();
+  const p = byPid[BK.pid];
+  if (p) { years(p).catch(() => {}); log(p).catch(() => {}); }
 }
 
 // Another device saved a synced setting (sync.js): redraw the open office tab with it. Waits
