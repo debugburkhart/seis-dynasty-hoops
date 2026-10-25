@@ -808,7 +808,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   wins per player), gm-block- lists unioned, gm-tracker-seen- max, others newer wins; any replaced local
   value is kept in localStorage sync-backup. gm.js lockedPoints still reads gm-locks from localStorage.
 - Synced keys = SYNCED in sync.js: gm-locks-*, gm-whatif-*, gm-mode, gm-block-*, gm-eval, gm-dyn-*,
-  gm-tracker-seen-*, gm-inj-*, wager-saved, gm-tags. NOT synced: gm-tips-{date} (cache), sessionStorage cm-open,
+  gm-tracker-seen-*, gm-inj-*, wager-saved, gm-tags, gm-bk-*. NOT synced: gm-tips-{date} (cache), sessionStorage cm-open,
   sync-* bookkeeping. **To sync a new setting:** save it with gmSave/gmLoad (never raw localStorage)
   and add its key or prefix (ending in '-') to SYNCED; add a MERGE rule if two devices' values should be
   combined instead of newest-wins; the rules need no change.
@@ -892,14 +892,46 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   his team + manager. Both get a name search (accent-insensitive) and 50 rows at a time (Show 50 more). Every
   list: NBA team column + "Dyn" column (BK_DYN, dynasty score today, sortable, gold text). Team list only: a
   "Show" row Full team / Rostered (everyone but taxi: starters, bench, IR) / Taxi with counts (BK_GROUPS,
-  BK.group, kept while switching teams; owner, Oct 25 2026).
+  BK.group, kept while switching teams; owner, Oct 25 2026). POSITION row (owner, Oct 25 2026), all 3 lists:
+  All / Guards / Forwards / Centers with counts (#bk-posbar, posBar(); main group from Sleeper `position`
+  = p.mainPos via the shared posGroups/POS_GROUP) + "Include secondary positions" checkbox (players whose
+  fantasy_positions reach that group; marked "2nd" by the name, secMark). Saved with gmSave: gm-bk-pos
+  ('all'|'G'|'F'|'C'), gm-bk-sec (default on); 'gm-bk-' is in SYNCED. Check: Centers on Parma 11 with, 10
+  without (John Collins PF/C).
   CUSTOM TAGS (owner, Oct 25 2026: his own words, not a fixed list): localStorage gm-tags = { pid: [tag] } via
   gmSave (SYNCED in sync.js, MERGE 'object' = per player on first connect). Card: chips with × + "+ Tag" ->
   input (24 chars; a tag typed in another case reuses the existing spelling) + his other tags to tap
   (tagRow / addTag / setTags). Table: "Tags" column (BK_TAGCOL, first column, only once any tag exists;
   cell = chips, opts.html; sort = tagged first, grouped by their first tag A-Z). "Tags" filter row (#bk-tagbar,
   tagBar(): All + each tag with its count in the current list; BK.tag), works in all 3 lists. Same tag = same
-  color (tagHue -> .th-0..5). A tag disappears when no player has it. Column defs:
+  color (tagHue -> .th-0..5). A tag disappears when no player has it.
+  DRAFT LINES on the card (owner, Oct 25 2026; draftLines in renderBreakdown, .bk-draft): "NBA draft" = 2022 ·
+  Round 1, No. 1 by the Orlando Magic / Undrafted (nothing when the player isn't in the file) from STATIC
+  assets/nba-draft.json { source, built, undrafted: [pid], players: { pid: [year, round, overall, BRef team] } }
+  (loadNbaDraft / nbaDraftText in breakdown.js; BRef codes incl. old names, CHA = Bobcats through 2014).
+  Built Oct 25 2026 from Basketball-Reference /draft/NBA_{2003..2026}.html (no </tbody>; round 2 after the
+  in-table thead row; forfeits handled: 2003/2004 29 first-rounders, 2022/2023 58 picks) matched to Sleeper ids
+  for players on an NBA team or a league roster (normName rules; draft year within 2026 - years_exp + 1 .. - 9;
+  closest year wins; alias ronald holland -> ron holland): 420 drafted, 107 undrafted (all checked by eye:
+  VanVleet, Caruso, Reaves, Naz Reid, Dort...). REBUILD AFTER EACH JUNE DRAFT from a home PC:
+  scripts/build-nba-draft.ps1 -LastYear {year} (one page per 4 s; prints the undrafted list, add an alias for
+  any drafted player in it), then upload assets/nba-draft.json. The script reproduced the Oct 25 file exactly.
+  "League draft" = DATA.drafts (leagueDraftOf: 2023 startup / rookie draft · round.pick-in-round (No. N
+  overall) by that season's team name (manager)), else "Not drafted in the league (joined a roster later)".
+  Verified: Jokic startup 1.01 bigdaddyburk (Better Call Gasol), Flagg 2025 1.01, Holland 2024 2.03 (No. 11).
+  CAREER period + LOCKED POINTS (owner, Oct 25 2026): season chip "Career" (?season=career) on Team and League
+  (not Waiver wire; falls back to this season there). League career = every league season's table added up
+  (sumLines, each season's own scoring). Team career = ONLY games from weeks he was on that team: frontOffice
+  (DATA).stints -> ownerAtWeek (latest stint started <= week and not ended before it, same rule as Front Office's
+  locked points; week key season*100 + week, box-score week = fantasy week), per-player game logs of the seasons
+  he spent time there (~1-3 requests a player). Game log card shows this season in Career. Locked points =
+  lockedTotals(DATA, { season, owner }) from DATA.playerWeeks (every game type, = Player Index; finished weeks
+  only): Team = that team's only, League / Waiver wire = any team; badge (.bk-lock navy shield after Total FP:
+  points, "N st" starts, tooltip per start) + "Locked" column (Averages, Totals) + "Starts" (Totals); BK.locked.
+  Badge numbers >= 1,000 drop the decimal (bkBadgeNum). Verified: Parma career locked = Player Index for every
+  player (Adebayo 1,031, Banchero 1,523.5, Sengun 2,149, Harden 2,189); Banchero 141 of 201 games since 2023
+  with Parma (stints tzola -> logan 2023 wk 8 -> Parma wk 20, checked from raw logs); Jokic league career 218
+  GP = logs, 3,078.5 locked / 54 starts = Player Index. Column defs:
   [key, label, sort value, cell, { only / not: list, cls }], filtered by bkCols().
   DATA: table stats = SEASON STAT TABLES (breakdown.js): every player's season added up from Sleeper's per-game
   box scores /stats/nba/{season}/{week} (STAT_KEYS incl. plus_minus + bonus fields, summed per game so bonuses

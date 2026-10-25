@@ -26,6 +26,43 @@ export const nbaTeamName = t => NBA_TEAMS[t] ?? t ?? '';
 const ESPN_CODE = { GSW: 'gs', NOP: 'no', NYK: 'ny', SAS: 'sa', UTA: 'utah', WAS: 'wsh' };
 export const teamLogo = t => (t && NBA_TEAMS[t] ? `https://a.espncdn.com/i/teamlogos/nba/500/${ESPN_CODE[t] ?? t.toLowerCase()}.png` : null);
 
+// ---------- Draft info for the player card (owner, Oct 25 2026) ----------
+
+// Real NBA draft: assets/nba-draft.json, a static file built once from Basketball-Reference's draft
+// pages 2003-2026 matched to Sleeper ids (players: { pid: [year, round, overall pick, BRef team] },
+// undrafted: pids checked and not drafted). Rebuild after each June draft (see CLAUDE.md).
+let NBA_DRAFT;
+export async function loadNbaDraft() {
+  if (NBA_DRAFT !== undefined) return NBA_DRAFT;
+  try {
+    const res = await fetch(`assets/nba-draft.json?t=${Date.now()}`, { cache: 'no-store' });
+    NBA_DRAFT = res.ok ? await res.json() : null;
+  } catch { NBA_DRAFT = null; }
+  return NBA_DRAFT;
+}
+// Basketball-Reference team codes, incl. old names (CHA = Bobcats until 2014, Hornets after).
+const BREF_TEAMS = {
+  BRK: 'Brooklyn Nets', NJN: 'New Jersey Nets', CHO: 'Charlotte Hornets', CHH: 'Charlotte Hornets', PHO: 'Phoenix Suns',
+  SEA: 'Seattle SuperSonics', NOH: 'New Orleans Hornets', NOK: 'New Orleans/Oklahoma City Hornets', VAN: 'Vancouver Grizzlies',
+};
+const draftTeam = (t, y) => (t === 'CHA' && y <= 2014 ? 'Charlotte Bobcats' : BREF_TEAMS[t] ?? NBA_TEAMS[t] ?? t);
+// "2022 · Round 1, No. 1 by the Orlando Magic" | "Undrafted" | null (not checked: signed after the file was built).
+export function nbaDraftText(pid) {
+  const d = NBA_DRAFT?.players?.[pid];
+  if (d) { const [y, r, p, t] = d; return `${y} · Round ${r}, No. ${p}${t ? ` by the ${draftTeam(t, y)}` : ''}`; }
+  return NBA_DRAFT?.undrafted?.includes(pid) ? 'Undrafted' : null;
+}
+// The league's own drafts (DATA.drafts: 2023 startup, rookie drafts after): { s, kind, round, inRound, no, owner } or null.
+export function leagueDraftOf(DATA, pid) {
+  for (const d of DATA.drafts ?? []) {
+    const p = d.picks.find(x => x.pid === pid);
+    if (!p) continue;
+    const perRound = DATA.seasons.find(s => s.season === d.s)?.teams?.length || d.picks.filter(x => x.round === 1).length || 8;
+    return { s: d.s, kind: d.kind, round: p.round, inRound: p.no - (p.round - 1) * perRound, no: p.no, owner: p.o };
+  }
+  return null;
+}
+
 // Box-score line from one game's stats: totals + derived numbers.
 export function statLine(s, scoring) {
   const line = {
@@ -181,18 +218,49 @@ async function scoringFor(DATA, season) {
   return s ? (await get(`/v1/league/${s.leagueId}`, {}))?.scoring_settings ?? {} : {};
 }
 
-// The page's player list for statSeason. list: 'team' (owner's roster), 'fa' (waiver wire: active
-// players with an NBA team on no roster) or 'league' (every rostered player). Rosters are today's.
-// { list, owner, statSeason, scoring, players: [{ pid, owner, slot, bio..., tot, avg }], top }.
-export async function loadBreakdown(DATA, { list = 'team', owner, season: statSeason }) {
+// Adds up season lines (each already scored with its own season's league scoring).
+function sumLines(lines) {
+  const line = Object.fromEntries(SUMS.map(k => [k, 0]));
+  for (const l of lines) for (const k of SUMS) line[k] += l[k] ?? 0;
+  return withPercents(line);
+}
+const wkKey = (s, w) => Number(s) * 100 + Number(w);
+// Which fantasy team had a player in week k: the latest stint (frontoffice.js) that started on or
+// before k and hadn't ended before it, the same rule Front Office uses for locked points.
+export const ownerAtWeek = (stints, k) => stints.filter(s => s.start <= k && (s.end == null || s.end >= k)).sort((a, b) => a.start - b.start).at(-1)?.o ?? null;
+
+// Locked points (starters' points that counted, every game type, same as the Player Index) by player:
+// { pid: { pts, starts } }. season 'career' = every season; owner = only that team's (null = any team).
+export function lockedTotals(DATA, { season = 'career', owner = null } = {}) {
+  const out = {};
+  for (const x of DATA.playerWeeks ?? []) {
+    if (season !== 'career' && x.s !== season) continue;
+    if (owner && x.o !== owner) continue;
+    const r = (out[x.pid] ??= { pts: 0, starts: 0 });
+    r.pts = Math.round((r.pts + x.p) * 10) / 10;
+    r.starts++;
+  }
+  return out;
+}
+
+// The page's player list. list: 'team' (owner's roster), 'fa' (waiver wire: active players with an NBA
+// team on no roster) or 'league' (every rostered player); rosters are today's. season = a season, or
+// 'career' (team and league lists, owner Oct 25 2026): League = every league season added up; Team =
+// only games from weeks he was on that team (needs stints = frontOffice(DATA).stints; his game logs).
+// { list, owner, statSeason, players: [{ pid, owner, slot, bio..., tot, avg }], top, through }.
+export async function loadBreakdown(DATA, { list = 'team', owner, season: statSeason, stints = [] }) {
   const cur = DATA.seasons.at(-1);
-  const [league, rosters, all, table, scoring] = await Promise.all([
+  const career = statSeason === 'career';
+  const seasons = career ? DATA.seasons.map(s => s.season) : [statSeason];
+  const [league, rosters, all, tables, scorings] = await Promise.all([
     get(`/v1/league/${cur.leagueId}`, {}),
     get(`/v1/league/${cur.leagueId}/rosters`, []),
     get('/v1/players/nba', {}),
-    seasonTable(statSeason),
-    scoringFor(DATA, statSeason),
+    // Team career works from game logs, so it needs only this season's table (for the ring).
+    Promise.all((career && list === 'team' ? [cur.season] : seasons).map(seasonTable)),
+    Promise.all(seasons.map(s => scoringFor(DATA, s))),
   ]);
+  const scoringOf = Object.fromEntries(seasons.map((s, i) => [s, scorings[i]]));
   const slots = (league.roster_positions ?? []).filter(p => p !== 'BN');
   // Where every rostered player is: { pid: { owner, slot, order } }.
   const where = {};
@@ -211,16 +279,35 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
   } else {
     ids = Object.keys(all ?? {}).filter(pid => /^\d+$/.test(pid) && !where[pid] && all[pid]?.team && all[pid].active !== false && NBA_POS.has(all[pid].position));
   }
+
+  // Season lines per player.
+  const totals = {};
+  if (career && list === 'team') {
+    // Only his games in weeks this team had him, from each season's game log he spent time here.
+    const byPid = {};
+    for (const st of stints) if (ids.includes(st.pid)) (byPid[st.pid] ??= []).push(st);
+    await Promise.all(ids.map(async pid => {
+      const mine = (byPid[pid] ?? []).filter(st => st.o === owner);
+      const touched = seasons.filter(s => mine.some(st => st.start <= wkKey(s, 99) && (st.end == null || st.end >= wkKey(s, 0))));
+      const kept = (await Promise.all(touched.map(s => gameLog(DATA, pid, s).then(games => games.filter(g => ownerAtWeek(byPid[pid], wkKey(s, g.week)) === owner)))))
+        .flat();
+      totals[pid] = totalOf(kept);
+    }));
+  } else {
+    for (const pid of ids) totals[pid] = sumLines(seasons.map((s, i) => lineFromTable(tables[career ? i : 0].players[pid], tables[career ? i : 0].keys, scoringOf[s])));
+  }
+
   const players = ids.map(pid => {
     const p = all?.[pid] ?? {};
     const at = where[pid];
-    const tot = lineFromTable(table.players[pid], table.keys, scoring);
+    const tot = totals[pid];
     return {
       pid, owner: at?.owner ?? null, slot: at?.slot ?? 'FA', order: at?.order ?? -1,
       first: p.first_name ?? '', last: p.last_name ?? '',
       name: p.full_name ?? (`${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || DATA.players?.[pid]?.n || `Player ${pid}`),
       team: p.team ?? DATA.players?.[pid]?.t ?? '',
       pos: p.fantasy_positions?.length ? p.fantasy_positions : [p.position ?? DATA.players?.[pid]?.pos].filter(Boolean),
+      mainPos: p.position ?? DATA.players?.[pid]?.pos ?? '',
       number: p.number ?? null,
       height: heightText(p.height), weight: p.weight ? `${p.weight} lbs` : '',
       birth: p.birth_date ?? DATA.birth?.[pid] ?? null,
@@ -231,12 +318,14 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
       tot, avg: averages(tot),
     };
   });
-  // The NBA's best FP/G that season (players with a quarter of the most games played): the
-  // top of the card's ring.
-  const rows = Object.values(table.players).map(r => lineFromTable(r, table.keys, scoring));
+  // The NBA's best FP/G (players with a quarter of the most games played) in the latest season
+  // shown: the top of the card's ring.
+  const table = tables.at(-1);
+  const sc = scoringOf[career ? cur.season : statSeason] ?? scorings.at(-1);
+  const rows = Object.values(table.players).map(r => lineFromTable(r, table.keys, sc));
   const most = Math.max(0, ...rows.map(l => l.gp));
   const top = Math.max(0, ...rows.filter(l => l.gp >= most / 4 && l.gp).map(l => l.fp / l.gp));
-  return { list, owner, statSeason, scoring, players, top, through: table.through };
+  return { list, owner, statSeason, players, top, through: table.through };
 }
 
 // One player's games in a season, newest first: [{ date, week, opp, away, dnp, line }].

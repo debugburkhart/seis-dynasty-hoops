@@ -3042,3 +3042,29 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 @media (max-width: 700px) {
   .bk .bk-table td.bk-tagcol { max-width: 130px; }
 }
+/* 2K breakdown: NBA draft + league draft lines on the player card. */
+.bk-draft { display: grid; gap: 3px; margin-top: 12px; font-size: 12px; color: #d6deec; }
+.bk-draft small { font-size: 12px; }
+.bk .bk-draft .ct-label { color: #9fb0cc; }
+/* 2K breakdown position filter: Guards / Forwards / Centers + secondary positions box. */
+.bk-posbar { flex-wrap: wrap; }
+.bk-posf button small { margin-left: 2px; font: 700 10.5px/1 var(--font); opacity: .7; }
+.bk-check { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font: 600 12px/1.2 var(--font); color: #d6deec; cursor: pointer; white-space: nowrap; }
+.bk-check input { width: 15px; height: 15px; accent-color: var(--gold); margin: 0; }
+.bk-2nd { display: inline-block; margin-left: 5px; padding: 0 4px; border: 1px solid rgba(255,255,255,.3); border-radius: 4px; font: 800 9px/1.4 var(--display); font-style: normal; letter-spacing: .04em; text-transform: uppercase; color: #9fb0cc; vertical-align: 1px; }
+.bk .bk-table tr.on .bk-2nd { border-color: rgba(7,20,43,.4); color: var(--navy-950); }
+@media (max-width: 700px) {
+  .bk-check { margin-left: 0; }
+}
+@media (max-width: 700px) {
+  .bk-posf, .bk-tagfilter { flex-wrap: wrap; overflow: visible; }
+}
+/* 2K breakdown: Locked points badge (navy, like locked scores on the coach) + column. */
+.bk-lock { background: linear-gradient(#5d82c9, var(--navy-700)); color: #fff; }
+.bk-lock small { color: #d9e6ff; }
+.bk .bk-table td.bk-lockcol:not(.srt) { color: #b9dcff; font-weight: 700; }
+.bk .bk-table tr.on td.bk-lockcol { color: var(--navy-950); }
+@media (max-width: 480px) {
+  .bk-arch { flex-wrap: wrap; }
+  .bk-arch > div:not(.bk-total) { flex-basis: 100%; }
+}

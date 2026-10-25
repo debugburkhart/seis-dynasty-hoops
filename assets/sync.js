@@ -38,6 +38,7 @@ export const SYNCED = [
   'gm-inj-', // injury news already seen
   'wager-saved', // Wager Weeks results waiting for GitHub
   'gm-tags', // custom player tags (2K breakdown): { pid: [tag] }
+  'gm-bk-', // 2K breakdown filters (pos / sec)
 ];
 export const isSynced = key => SYNCED.some(k => (k.endsWith('-') ? key.startsWith(k) : key === k));
 
