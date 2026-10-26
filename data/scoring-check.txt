@@ -8,9 +8,9 @@ Sleeper's weekly scores don't match its official standings:
    Check tzola13's score in these games:
      Week 1: bigdaddyburk 358 - 396 tzola13
 
-2026 loganzarvell: official 2 wins / 383 pts, but weekly scores give 2 wins / 343 pts (off by +40).
+2026 loganzarvell: official 2 wins / 383 pts, but weekly scores give 2 wins / 352 pts (off by +31).
    Check loganzarvell's score in these games:
-     Week 1: loganzarvell 343 - 310 simeoncampbell7
+     Week 1: loganzarvell 352 - 310 simeoncampbell7
 
 2026 bigtrey5456: official 0 wins / 343 pts, but weekly scores give 0 wins / 310 pts (off by +33).
    Check bigtrey5456's score in these games:
@@ -18,7 +18,7 @@ Sleeper's weekly scores don't match its official standings:
 
 2026 simeoncampbell7: official 0 wins / 305 pts, but weekly scores give 0 wins / 310 pts (off by -5).
    Check simeoncampbell7's score in these games:
-     Week 1: loganzarvell 343 - 310 simeoncampbell7
+     Week 1: loganzarvell 352 - 310 simeoncampbell7
 
 2026 TRT3: official 2 wins / 394 pts, but weekly scores give 2 wins / 414 pts (off by -20).
    Check TRT3's score in these games:
