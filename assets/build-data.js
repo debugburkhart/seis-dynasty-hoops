@@ -6,6 +6,7 @@ import { CORRECTIONS, DRAFT_CORRECTIONS } from './corrections.js';
 import { ALL_STARS_FROM, AWARD_SCORING } from './config.js';
 import { draftedPlayers, seasonPoints } from './draft.js';
 import { bestLineup, calibrate } from './power.js';
+import { finishedGames, recordLive, recordOfficial, settleWeeks } from './weekfix.js';
 
 const API = 'https://api.sleeper.com/v1';
 
@@ -112,7 +113,10 @@ export async function allStarPool(season, scoring, fetchImpl = globalThis.fetch.
 // frozen: { season: saved season } for completed seasons to load instead of downloading.
 // allStars, rookies: last night's results ({ season: ... }) to keep. Without them
 // (the browser's live fallback), both are skipped: they're too heavy to fetch there.
-export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {}, allStars: knownAllStars = null, rookies: knownRookies = null, rookiesScoring: knownRookiesScoring = {}, rookiePool: knownRookiePool = {}, preseason: knownPreseason = {} } = {}) {
+// weekFix: { official, live, notes: [] } (data/official-weeks.json + data/live-weeks.json, see
+// assets/weekfix.js), updated in place; the nightly job saves them. Without it (the browser),
+// finished weeks come straight from the matchup feed.
+export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {}, allStars: knownAllStars = null, rookies: knownRookies = null, rookiesScoring: knownRookiesScoring = {}, rookiePool: knownRookiePool = {}, preseason: knownPreseason = {}, weekFix = null } = {}) {
   // Sleeper's cache can serve stale matchup scores for weeks after the fact
   // (2025 week 17 came back 290-315 instead of the real 355-352), so every
   // request carries a unique value to force a fresh copy.
@@ -245,6 +249,32 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
       Array.from({ length: lastWeek }, (_, i) => get(`/league/${lg.league_id}/matchups/${i + 1}`, [])),
     );
 
+    // Finished regular-season weeks (assets/weekfix.js): Sleeper's matchup feed goes wrong the moment
+    // a week ends, so team scores come from the official standings (saved every run, per week) and
+    // each starter's locked points from his box-score games that add up to it.
+    let settled = {};
+    if (weekFix && lg.status !== 'complete') {
+      const at = new Date().toISOString();
+      const median = Boolean(st.league_average_match);
+      recordOfficial(weekFix.official, { season, leg: st.last_scored_leg, rosters, ownerOf, perWeek: median ? 2 : 1, playoffStart, at });
+      // A live week (not processed yet): snapshot every lineup's counted points, locks included.
+      if (season === state.league_season && state.season_type === 'regular' && currentWeek > lastWeek && (st.last_scored_leg ?? 0) < currentWeek) {
+        const [matchups, done] = await Promise.all([get(`/league/${lg.league_id}/matchups/${currentWeek}`, []), finishedGames(season, currentWeek, fetchImpl)]);
+        recordLive(weekFix.live, { season, week: currentWeek, at, matchups, ownerOf, done });
+      }
+      const nameOf = o => owners[o]?.name;
+      const fixFor = w => CORRECTIONS.find(c => c.season === season && c.week === w);
+      const out = await settleWeeks({
+        official: weekFix.official, live: weekFix.live, season, weekly, ownerOf, lastWeek, playoffStart, median,
+        scoring: lg.scoring_settings ?? {}, fetchImpl,
+        fixScore: (w, o) => fixFor(w)?.scores?.[nameOf(o)],
+        fixPlayers: (w, o) => fixFor(w)?.players?.[nameOf(o)] ?? {},
+        name: fullName, label: nameOf,
+      });
+      settled = out.settled;
+      weekFix.notes.push(...out.notes);
+    }
+
     const pts = {}; // pts[week][rosterId]
     const locked = {}; // locked[week][rosterId] = [[playerId, points], ...]
     // Save a team's locked player points for a game (t: 'R', 'P' or 'X'). Playoff
@@ -265,13 +295,16 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
       const fix = CORRECTIONS.find(c => c.season === season && c.week === w)?.scores ?? {};
       for (const m of rows) {
         const fixed = fix[owners[ownerOf[m.roster_id]]?.name];
-        pts[w][m.roster_id] = round1(fixed ?? m.custom_points ?? m.points);
+        const fromOfficial = settled[w]?.[m.roster_id];
+        pts[w][m.roster_id] = round1(fixed ?? fromOfficial?.score ?? m.custom_points ?? m.points);
         if (m.matchup_id != null) (pairs[m.matchup_id] ??= []).push(m);
         // Locked points: what each starter scored while in the lineup. These add
         // up to the team's score; bench points never counted and are left out.
-        locked[w][m.roster_id] = (m.starters ?? [])
-          .map((pid, j) => [pid, round1(m.starters_points?.[j] ?? 0)])
-          .filter(([pid, p]) => pid && pid !== '0' && p);
+        locked[w][m.roster_id] = fromOfficial?.players
+          ? fromOfficial.players.map(([pid, p]) => [pid, round1(p)])
+          : (m.starters ?? [])
+            .map((pid, j) => [pid, round1(m.starters_points?.[j] ?? 0)])
+            .filter(([pid, p]) => pid && pid !== '0' && p);
         // Player-level corrections from assets/corrections.js.
         const manager = owners[ownerOf[m.roster_id]]?.name;
         const playerFix = CORRECTIONS.find(c => c.season === season && c.week === w)?.players?.[manager] ?? {};

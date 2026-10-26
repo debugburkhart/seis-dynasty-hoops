@@ -400,9 +400,44 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   starter's box-score games that sums to the official score, closest to Sunday night's saved values;
   simeoncampbell7 + BenDoverPlz123 had several fits: the owner read them in the Sleeper app Oct 26; all 8 teams
   now sum to the official scores).
-  NEEDS AN AUTOMATIC FIX before more weeks end: official weekly scores from fpts deltas per
-  last_scored_leg, mid-week snapshots of players_points (correct while the week is live) as the per-player
-  source, a solver for the rest, and a check that flags anything ambiguous.
+  AUTOMATIC FIX BUILT Oct 26 2026 (`assets/weekfix.js`, no DOM/Node APIs; called from build-data only when
+  update.mjs passes `weekFix`; the browser fallback still uses the feed): every run recordOfficial() saves
+  the official cumulative totals per owner [pf, w, l, t] under last_scored_leg in data/official-weeks.json
+  { seasons: { s: { legs: { N: { at, t } }, weeks: { w: { owner: answer } } } } } (only when every team's
+  w+l+t = leg x 2 (median era), so playoff legs / half-updated tables are never saved; fpts is regular season
+  only: verifySeason passes on every frozen season). During a live week (state week > last_scored_leg)
+  recordLive() snapshots each team's starters + counted points -> data/live-weeks.json { seasons: { s: { w:
+  { runs: [{ at, seen?, t: { owner: { s, p } } }] } } } } (unchanged run = `seen` time only; newest 4 weeks;
+  runs = 2 AM + every upload). For finished REGULAR weeks settleWeeks(): team score = corrections.js score ??
+  legs[w] - legs[w-1] (missing leg w-1: legs[w] minus the site's own weeks so far), trusted only if it gives
+  the same H2H + median wins as the official table; per starter settleTeam(): candidates = his box-score games
+  that week (weekGames: /stats/nba/{s}/{w}, gp or sp, league scoring; no games = 0); corrections.js players
+  are PINNED (single value, matched by name); newest snapshot taken on or before the week's last game date
+  (lastSnap) = hard fact when it shows a lock (counted = an earlier game while a later one was already
+  played) or he had no games left after it; else every game, last game preferred. Lineups tried: newest
+  snapshot's starters, then the feed's. Exactly one combination that adds up = 'unique'; several = 'tie'
+  (the one closest to the preferred values is used AND the players that differ are listed in the Scoring
+  check with their games, until corrections.js pins them); snapshot didn't fit = relaxed + listed; nothing
+  fits = 'nofit' + listed. Answers saved in weeks[w][owner] { v, key ([score, corrections]), how, fits,
+  unsure, players, games, snap } and redone only when the score or corrections change. Corrections still
+  win over everything; the week guard keeps working (official weeks match the standings).
+  TESTED Oct 26 2026 on real week 1 (browser, live Sleeper): without corrections 4 teams unique and right,
+  4 ties (the "most likely" pick was WRONG for jimmycooks2: Brown 38 vs 35, Wembanyama 40 vs 43, which is
+  why every tie is listed, never trusted); with a simulated Sunday 2 AM snapshot 6 unique, all 72 picks
+  right (open = players with a Sunday game who weren't seen locked); full buildLeagueData with corrections:
+  8/8 unique, scores 394-305, 383-305, 343-390, 381-402, median 382, playerWeeks identical to the live file.
+  BenDoverPlz123 week 1 Trae Young 36 / RJ Barrett 38 / Wendell Carter Jr. 21 pinned from the site's values
+  (owner's app check only changed the other 3). Playoff weeks still come from the bracket + feed (fpts has
+  no playoff points); live snapshots are saved for them too but not used yet.
+  SUNDAY-EVENING RUNS (owner, Oct 26 2026): update.yml also runs Sundays 8 PM + 11 PM Central (crons
+  '0 1/2/4/5 * * 1', same offset gate as 2 AM) just to snapshot the live week; Draft Scout + contracts now
+  run once per Sunday (built/at !== today). Snapshots save g = games each starter had FINISHED (finishedGames:
+  his box rows whose game_id the schedule /schedule/nba/regular/{s} calls complete; box rows have NO gp this
+  season, only sp), so candidates() knows exactly which games were done. Lag guard: an earlier-game value is
+  a hard lock only when a later game was finished on an earlier day than the snapshot (same-day = soft,
+  most likely only); counted = his latest finished game with nothing left = hard. Simulated Sunday 11 PM
+  snapshot of week 1 (true values): 8/8 unique and right with NO corrections. A run GitHub delays past
+  midnight is dated Monday and ignored by lastSnap.
   SLEEPER'S OLD WEEKS ARE BROKEN (found Oct 21 2026): /v1/league/{id}/matchups/{week} for 2024 and 2025
   now drops many locks (players_points / starters_points = latest game or 0; e.g. 2025 wk 21 Parma
   327 live vs 422 real; season totals 53,147 vs 59,653). Backtests MUST take real scores from
@@ -733,7 +768,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   contractsCard() in the Dynasty side column: share of roster dynasty score in a contract year (+ options
   after this season), league average/rank, groups, every-team table; contractsHealthCard() on Health.
   Next: step 4 Playoff odds (after 3-4 weeks of games).
-- `assets/corrections.js`: manual fixes (team scores, player locked points, draft picks,
+- `assets/corrections.js`: manual fixes, win over weekfix.js (team scores, player locked points = pinned in its solver, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has
   wrong; Sleeper's LeBron James photo (id 1362) is Bronny). All player photos go through
   playerPhoto() in records.js. Checked Oct 2026: no duplicate photos among league players;
@@ -773,7 +808,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   claims, saving picks (live rules block them until the owner publishes the new rules).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, taxi-log.json, coach-log.json, props.json, season-stats.json,
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json,
   dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 

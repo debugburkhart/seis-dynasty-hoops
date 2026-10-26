@@ -52,7 +52,10 @@ export const CORRECTIONS = [
       // changing his players' points after the week ended (Dëmin 5 -> 31, Jones 17 -> 20).
       simeoncampbell7: { 'Jamal Murray': 57, 'Egor Demin': 31, 'Josh Giddey': 29, 'Ace Bailey': 34, 'Caleb Wilson': 54,
         'Derrick Jones Jr.': 17, 'Nikola Jokic': 67, 'Collin Murray-Boyles': 12, 'Ivica Zubac': 4 },
-      BenDoverPlz123: { 'Keyonte George': 40, 'LeBron James': 36, 'Paul Reed': 21 },
+      // Trae Young, RJ Barrett and Wendell Carter Jr. are the values the site already had when the owner
+      // checked this team in the app (only the 3 before them needed fixing); pinned Oct 26 2026 so the
+      // automatic week check (assets/weekfix.js) has one answer. Change them if the app says otherwise.
+      BenDoverPlz123: { 'Keyonte George': 40, 'LeBron James': 36, 'Paul Reed': 21, 'Trae Young': 36, 'RJ Barrett': 38, 'Wendell Carter Jr.': 21 },
     } },
 ];
 

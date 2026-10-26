@@ -37,14 +37,32 @@ if (FREEZE_SEED && process.env.GITHUB_REPOSITORY) {
 }
 const previous = await readJson('data/league.json'); // last night's data, for the two-night rule
 
+// Finished weeks' scores (assets/weekfix.js): Sleeper's official standings saved after every week
+// (data/official-weeks.json) and live lineup snapshots (data/live-weeks.json), both updated by the build.
+const weekFix = {
+  official: (await readJson('data/official-weeks.json')) ?? { seasons: {} },
+  live: (await readJson('data/live-weeks.json')) ?? { seasons: {} },
+  notes: [],
+};
+
 // All-Stars (they need every box score up to the break) and each season's rookies
 // are worked out once, then carried forward from last night's data.
 const pulled = await buildLeagueData(LEAGUE_ID, undefined, {
+  weekFix,
   frozen, allStars: previous?.allStars ?? {}, rookies: previous?.rookies ?? {}, rookiesScoring: previous?.rookiesScoring ?? {},
   // scripts/preseason-fix.json: hand-restored editions (Oct 21 2026: the 2026 one was rebuilt from Sleeper's
   // broken in-season feed; this is the copy saved Oct 20, 5:56 PM CT, before tip-off). It wins over last night's.
   rookiePool: previous?.rookiePool ?? {}, preseason: { ...(previous?.preseason ?? {}), ...((await readJson('scripts/preseason-fix.json')) ?? {}) },
 });
+weekFix.official.at = weekFix.live.at = new Date().toISOString();
+await writeFile('data/official-weeks.json', JSON.stringify(weekFix.official));
+await writeFile('data/live-weeks.json', JSON.stringify(weekFix.live));
+for (const [s, S] of Object.entries(weekFix.official.seasons)) {
+  for (const [w, teams] of Object.entries(S.weeks ?? {})) {
+    const hows = Object.values(teams).map(r => r.how).filter(Boolean);
+    if (hows.length) console.log(`${s} week ${w} from the official standings: ${hows.filter(h => h === 'unique').length} lineups with one answer, ${hows.filter(h => h === 'tie').length} unsure, ${hows.filter(h => h === 'nofit').length} not adding up.`);
+  }
+}
 
 // Week guard: finished weeks of the season in progress that come back from
 // Sleeper stale or half-loaded keep last night's version (see assets/freeze.js).
@@ -124,7 +142,8 @@ try {
   // One retry on Monday when Sunday's build couldn't read a source (other than Torvik, which has a
   // stand-in), so a one-night outage doesn't cost a week.
   const retry = weekday === 'Mon' && scout?.built !== today && (scout?.sources ?? []).some(s => !s.ok && !s.optional);
-  if (weekday === 'Sun' || retry || scout?.version !== SCOUT_VERSION) {
+  // Once per Sunday: the Sunday-evening runs (live lineup snapshots) don't rebuild it again.
+  if ((weekday === 'Sun' && scout?.built !== today) || retry || scout?.version !== SCOUT_VERSION) {
     const league = await getJson(`https://api.sleeper.app/v1/league/${current.leagueId}`);
     const sleeperPlayers = await getSleeperPlayers();
     const { scout: built, pool } = await runScout({
@@ -151,7 +170,7 @@ try {
   const { CONTRACTS_VERSION, runContracts } = await import('../assets/contracts.js');
   const prev = await readJson('data/contracts.json');
   const retry = weekday === 'Mon' && prev?.at !== today && prev?.source && !prev.source.ok;
-  if (weekday === 'Sun' || retry || prev?.version !== CONTRACTS_VERSION) {
+  if ((weekday === 'Sun' && prev?.at !== today) || retry || prev?.version !== CONTRACTS_VERSION) {
     const sleeperPlayers = await getSleeperPlayers();
     if (!sleeperPlayers) throw new Error('Sleeper player list unavailable');
     const rosters = await getJson(`https://api.sleeper.app/v1/league/${current.leagueId}/rosters`).catch(() => []);
@@ -454,6 +473,9 @@ for (const g of data.games) {
 const sections = [];
 if (guard.alerts.length) {
   sections.push(`Weeks Sleeper changed that the site held back, then accepted:\n\n${guard.alerts.join('\n\n')}`);
+}
+if (weekFix.notes.length) {
+  sections.push(`Finished weeks the site couldn't settle for sure from Sleeper's official standings:\n\n${weekFix.notes.join('\n\n')}\n\nIn the Sleeper app, open that week's matchup and read the players' points. Add them under "players" in assets/corrections.js (the team score is already right).`);
 }
 if (problems.length) {
   sections.push(`Sleeper's weekly scores don't match its official standings:\n\n${problems.join('\n\n')}\n\nLook these up in the Sleeper app and add the right team scores to assets/corrections.js.`);
