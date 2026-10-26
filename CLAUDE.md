@@ -1016,7 +1016,22 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   "3 x League MVP (2023-24, 2024-25, 2025-26)", seasons oldest first, tooltip one line per win; groups by
   kind, then newest win. Season chips (.bk-seasons) wrap at 320px. Verified: Jokic = Record Book (MVP 23/24/25,
   POY 24, All-Fantasy 23/24, All-Star 25); rings 2023 TRT3 20 (no taxi), 2024 bigdaddyburk 37 - 9 taxi = 28,
-  2025 tzola13 45 - 19 = 26; Banchero 2024-25 Champion + Championship MVP. Column defs:
+  2025 tzola13 45 - 19 = 26; Banchero 2024-25 Champion + Championship MVP.
+  COMPARE (owner, Oct 26 2026: "drop/add decisions", up to 4, across lists, keep all the info): gm-bk-cmp = [pid]
+  (gmSave; synced via 'gm-bk-'; BK_CMP_MAX 4, toggleCmp / cmpList / cmpBtn). Add with the small + (.bk-cmpbtn)
+  at the left of every table name cell (the table click handler ignores [data-cmp], so it doesn't open the card)
+  or "+ Compare" (.bk-herocmp) on the card's team line. Tray (#bk-tray, .bk-tray, sticky at the bottom, chips with
+  ×, Compare/Hide + Clear; a 5th pick shows "remove one first"). Compare card (#bk-cmp, top of the page, betaCard,
+  BK.cmpOpen): loadBreakdown { list: 'pick', pids } (same builder as the lists; Career = League-style) -> one
+  column per player (photo, name, NBA team · pos, Card (only when he's in the current list) / Remove) and rows
+  cmpRows(): Bio (NBA team, fantasy team + manager or Free agent, slot, positions, age, NBA season, ht/wt,
+  injury, contract, NBA draft, league draft, awards incl. rings "3 x League MVP", tags, note), Value (dynasty,
+  league rank, position rank, Sleeper rostered/started %), Production for the page's season (GP, MIN, FP/G,
+  total FP, locked + starts any team), Per game (pts, reb, ast, stl, blk, TO, 3PM, +/-), Shooting (FG%, 3P%, FT%,
+  eFG%, TS%). Gold cell (.best) = best of the group per row ('lo' rows: age, ranks, TO; ties all gold). Labels
+  column sticky; phones ~2.5 players visible + swipe. Click listener on .bk-page (new each render). Tested Oct 26
+  2026: Banchero (Team) + Brook Lopez (Waiver wire, card button) + Jokic + Murray (League search), 5th refused,
+  every row filled, golds right; layouts 402 + desktop. Column defs:
   [key, label, sort value, cell, { only / not: list, cls }], filtered by bkCols().
   DATA: table stats = SEASON STAT TABLES (breakdown.js): every player's season added up from Sleeper's per-game
   box scores /stats/nba/{season}/{week} (STAT_KEYS incl. plus_minus + bonus fields, summed per game so bonuses

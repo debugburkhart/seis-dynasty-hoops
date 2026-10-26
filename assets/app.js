@@ -2405,7 +2405,7 @@ function renderCommish(main, params) {
 // game log. Three lists (owner, Oct 25 2026): one team's roster, the waiver wire (free agents) and
 // the whole league (every rostered player, with his fantasy team). Basic NBA stats and fantasy
 // points, plus the dynasty score (badge + column, owner asked). No grades or other site models.
-const BK = { pid: null, view: 'avg', sort: null, dir: -1, logAll: false, list: 'team', q: '', limit: 50, group: 'all', tag: null, tagOpen: false, dyn: () => null, locked: () => null };
+const BK = { pid: null, view: 'avg', sort: null, dir: -1, logAll: false, list: 'team', q: '', limit: 50, group: 'all', tag: null, tagOpen: false, dyn: () => null, locked: () => null, cmpOpen: false };
 // Position filter (owner, Oct 25 2026), all 3 lists: main Sleeper position's group (PG/SG/G = guard, SF/PF/F =
 // forward, C), plus players who can also play there (fantasy_positions) when "Include secondary positions" is
 // on; those rows get a small "2nd" mark. Saved like the Dynasty tab's filters (gm-bk-pos, gm-bk-sec; synced).
@@ -2424,6 +2424,23 @@ function setTags(pid, list) {
   if (list.length) t[pid] = list; else delete t[pid];
   gmSave('gm-tags', t);
 }
+// Compare tray (owner, Oct 26 2026: drop/add decisions): up to 4 players picked from ANY list, kept in
+// gm-bk-cmp = [pid] (synced with the other 'gm-bk-' settings). BK_NAMES remembers names for the tray.
+const BK_CMP_MAX = 4;
+const BK_NAMES = {};
+const cmpList = () => gmLoad('gm-bk-cmp', []).filter(Boolean).slice(0, BK_CMP_MAX);
+// Adds or removes a player; false when the tray is already full.
+function toggleCmp(pid) {
+  const l = cmpList();
+  if (l.includes(pid)) { gmSave('gm-bk-cmp', l.filter(x => x !== pid)); return true; }
+  if (l.length >= BK_CMP_MAX) return false;
+  gmSave('gm-bk-cmp', [...l, pid]);
+  return true;
+}
+const cmpBtn = (pid, big) => {
+  const on = cmpList().includes(pid);
+  return `<button type="button" class="${big ? 'bk-herocmp' : 'bk-cmpbtn'}${on ? ' on' : ''}" data-cmp="${pid}" aria-pressed="${on}" title="${on ? 'Remove from compare' : 'Add to compare (up to 4)'}">${on ? '✓' : '+'}${big ? (on ? ' In compare' : ' Compare') : ''}</button>`;
+};
 // Player notes (owner, Oct 25 2026): a short free-text note per player, localStorage gm-notes = { pid: text }
 // via gmSave (synced; MERGE 'object' in sync.js). Empty text removes the note.
 const noteOf = pid => gmLoad('gm-notes', {})[pid] ?? '';
@@ -2579,6 +2596,7 @@ async function renderBreakdown(body, params) {
       ${list === 'team' ? gmTeamPick(me, cur.season, 'breakdown') : list === 'nba' ? nbaPick : ''}
       <div class="st-tabs bk-seasons" role="tablist">${list !== 'fa' ? `<a role="tab" class="${season === 'career' ? 'on' : ''}" href="${link({ season: 'career' })}">Career</a>` : ''}${[...DATA.seasons].reverse().map(s => `<a role="tab" class="${s.season === season ? 'on' : ''}" href="${link({ season: s.season })}">${bkSeason(s.season)}</a>`).join('')}</div>
     </div>
+    <div id="bk-cmp"></div>
     ${betaCard(title, `
       <div class="bk-hero" id="bk-hero"></div>
       <div class="bk-bar">
@@ -2597,7 +2615,9 @@ async function renderBreakdown(body, params) {
       <p class="bk-foot">Tap a player for his card · tap a column to sort · ${esc(period)}${season === 'career' && list === 'team' ? ' (only games from weeks he was on this team)' : ' regular season'}${bk.through ? `, games through ${esc(shortMd(bk.through))}` : ''}; fantasy points under each season’s league scoring; Locked = his starters’ points that counted${list === 'team' ? ' for this team' : ''}${season === 'career' ? '' : ' that season'} (finished weeks); Dyn = dynasty score today.</p>`, { cls: 'bk', sub: `${esc(period)} · ${bk.players.length} ${what}` })}
     ${betaCard('Season by season', '<div id="bk-years"><p class="empty">Loading…</p></div>', { id: 'bk-years-card', sub: 'Per game, regular season' })}
     ${betaCard('Game log', '<div id="bk-log"><p class="empty">Loading…</p></div>', { id: 'bk-log-card', sub: bkSeason(logSeason) })}
+    <div class="bk-tray" id="bk-tray" hidden></div>
   </div>`;
+  for (const pl of bk.players) BK_NAMES[pl.pid] = pl.name;
   bindTeamPick(body);
   $('.bk-nba', body)?.addEventListener('change', e => { location.hash = link({ nba: e.target.value }); });
 
@@ -2681,7 +2701,7 @@ async function renderBreakdown(body, params) {
     const bio = [p.college || p.country, p.exp != null ? (p.exp === 0 ? 'Rookie' : `${p.exp + 1}${['st', 'nd', 'rd'][p.exp] ?? 'th'} NBA season`) : '', p.birth ? `born ${new Date(`${p.birth}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''].filter(Boolean);
     const inj = p.injury ? `<span class="bk-inj${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}">${esc(p.injury)}${p.injuryPart ? ` · ${esc(p.injuryPart)}` : ''}${p.injuryNote ? ` (${esc(p.injuryNote)})` : ''}</span>` : '';
     return `
-      <div class="bk-team">${logo ? `<img src="${logo}" alt="" onerror="this.remove()">` : ''}<span>${esc(nbaTeamName(p.team) || 'No NBA team')}</span></div>
+      <div class="bk-team">${logo ? `<img src="${logo}" alt="" onerror="this.remove()">` : ''}<span>${esc(nbaTeamName(p.team) || 'No NBA team')}</span>${cmpBtn(p.pid, true)}</div>
       <div class="bk-id">
         <div class="bk-photo"><img src="${playerPhoto(DATA, p.pid)}" alt="${esc(p.name)}" onerror="this.remove()"></div>
         <div class="bk-ring" style="--p:${ring.toFixed(3)}" title="Fantasy points per game, ${esc(period)}; the ring fills toward the NBA's best FP/G this season"><div><small>FP/G</small><b>${p.tot.gp ? bkF1(p.avg.fp) : '—'}</b></div></div>
@@ -2725,7 +2745,7 @@ async function renderBreakdown(body, params) {
     });
   };
   const table = rows => `<thead><tr><th class="bk-nm">Name</th>${cols().map(([k, label, , , o]) => `<th data-k="${k}" class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}" aria-sort="${k === BK.sort ? (BK.dir < 0 ? 'descending' : 'ascending') : 'none'}">${k === BK.sort ? (BK.dir < 0 ? '▼' : '▲') : ''}${label}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(p => `<tr data-pid="${p.pid}" class="${p.pid === BK.pid ? 'on' : ''}${p.slot === 'IR' || p.slot === 'TX' ? ' bk-res' : ''}" tabindex="0"><td class="bk-nm"><span>${esc(p.first ? `${p.first[0]}. ${p.last}` : p.name)}</span>${secMark(p)}${noteOf(p.pid) ? `<i class="bk-hasnote" title="${esc(noteOf(p.pid))}">✎</i>` : ''}${p.injury ? `<i class="bk-dot${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}" title="${esc(p.injury)}"></i>` : ''}</td>${cols().map(([k, , , cell, o]) => `<td class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}">${o?.html ? cell(p) : esc(cell(p))}</td>`).join('')}</tr>`).join('') || `<tr><td class="bk-nm" colspan="${cols().length + 1}">No player by that name.</td></tr>`}</tbody>`;
+    <tbody>${rows.map(p => `<tr data-pid="${p.pid}" class="${p.pid === BK.pid ? 'on' : ''}${p.slot === 'IR' || p.slot === 'TX' ? ' bk-res' : ''}" tabindex="0"><td class="bk-nm">${cmpBtn(p.pid)}<span>${esc(p.first ? `${p.first[0]}. ${p.last}` : p.name)}</span>${secMark(p)}${noteOf(p.pid) ? `<i class="bk-hasnote" title="${esc(noteOf(p.pid))}">✎</i>` : ''}${p.injury ? `<i class="bk-dot${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}" title="${esc(p.injury)}"></i>` : ''}</td>${cols().map(([k, , , cell, o]) => `<td class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}">${o?.html ? cell(p) : esc(cell(p))}</td>`).join('')}</tr>`).join('') || `<tr><td class="bk-nm" colspan="${cols().length + 1}">No player by that name.</td></tr>`}</tbody>`;
 
   const years = async p => {
     const box = $('#bk-years', body);
@@ -2764,6 +2784,114 @@ async function renderBreakdown(body, params) {
       ${games.length > 10 ? `<button type="button" class="bk-more">${BK.logAll ? 'Show the last 10' : `Show all ${games.length} games`}</button>` : ''}`;
     $('.bk-more', box)?.addEventListener('click', () => { BK.logAll = !BK.logAll; log(p); });
   };
+
+  // ---- Compare (owner, Oct 26 2026): the tray at the bottom + a side-by-side card at the top. ----
+  const drawTray = (msg = '') => {
+    const tray = $('#bk-tray', body);
+    const l = cmpList();
+    tray.hidden = !l.length;
+    tray.innerHTML = l.length ? `<span class="bk-tray-label">Compare <small>${l.length}/${BK_CMP_MAX}</small></span>
+      <div class="bk-tray-chips">${l.map(pid => `<span class="bk-tray-chip">${esc(BK_NAMES[pid] ?? DATA.players?.[pid]?.n ?? 'Player')}<button type="button" data-cmp="${pid}" aria-label="Remove from compare">×</button></span>`).join('')}</div>
+      <div class="bk-tray-acts"><button type="button" class="bk-tray-go"${l.length < 2 ? ' disabled title="Pick at least 2 players"' : ''}>${BK.cmpOpen && l.length >= 2 ? 'Hide' : 'Compare'}</button><button type="button" class="bk-tray-clear">Clear</button></div>
+      ${msg ? `<small class="bk-tray-msg">${esc(msg)}</small>` : ''}` : '';
+  };
+  // Rows: [label, p => { v (number to compare), t (text) }, 'hi' | 'lo' (which is better) | null]; null label = section.
+  const cmpRows = (lk, awardsOf) => {
+    const stat = (label, f, better = 'hi', fmt = bkF1) => [label, p => (p.tot.gp ? { v: f(p), t: f(p) == null ? '—' : fmt(f(p)) } : { v: null, t: '—' }), better];
+    const pct = (label, k) => [label, p => ({ v: p.tot[k], t: bkPct(p.tot[k]) }), 'hi'];
+    return [
+      [null, 'Bio'],
+      ['NBA team', p => ({ t: nbaTeamName(p.team) || 'No NBA team' })],
+      ['Fantasy team', p => ({ t: p.owner ? `${teamName(p.owner, cur.season)} (${name(p.owner)})` : 'Free agent' })],
+      ['Slot', p => ({ t: p.owner ? (SLOT_WORD[p.slot] ?? `Starter · ${p.slot}`) : '—' })],
+      ['Positions', p => ({ t: p.pos.join(' / ') })],
+      ['Age', p => ({ v: p.age, t: p.age ?? '—' }), 'lo'],
+      ['NBA season', p => ({ t: p.exp == null ? '—' : p.exp === 0 ? 'Rookie' : `${p.exp + 1}${['st', 'nd', 'rd'][p.exp] ?? 'th'}` })],
+      ['Height / weight', p => ({ t: [p.height, p.weight].filter(Boolean).join(' · ') || '—' })],
+      ['Injury', p => ({ t: p.injury ? `${p.injury}${p.injuryPart ? ` · ${p.injuryPart}` : ''}` : 'Healthy' })],
+      ['Contract', p => ({ t: CONTRACTS?.players?.[p.pid] ? contractText(CONTRACTS.players[p.pid], cur.season, p.exp) : p.team ? 'No standard contract' : '—' })],
+      ['NBA draft', p => ({ t: nbaDraftText(p.pid) ?? '—' })],
+      ['League draft', p => { const lg = leagueDraftOf(DATA, p.pid); return { t: lg ? `${lg.s} ${lg.kind === 'startup' ? 'startup' : 'rookie'} ${lg.round}.${String(lg.inRound).padStart(2, '0')} by ${name(lg.owner)}` : 'Not drafted here' }; }],
+      ['Awards', p => ({ t: awardsOf(p.pid) || '—' })],
+      ['Tags', p => ({ t: tagsOf(p.pid).join(', ') || '—' })],
+      ['Note', p => ({ t: noteOf(p.pid) || '—' })],
+      [null, 'Value'],
+      ['Dynasty score', p => ({ v: dynOf(p.pid), t: dynOf(p.pid) ?? '—' }), 'hi'],
+      ['League rank', p => ({ v: p.rankOvr, t: p.rankOvr ? `${p.rankOvr} OVR` : '—' }), 'lo'],
+      ['Position rank', p => ({ v: p.rankPos, t: p.rankPos ? `${p.rankPos} ${p.mainPos}` : '—' }), 'lo'],
+      ['Rostered (Sleeper)', p => ({ v: p.owned, t: bkShare(p.owned) }), 'hi'],
+      ['Started (Sleeper)', p => ({ v: p.started, t: bkShare(p.started) }), 'hi'],
+      [null, `Production · ${period}`],
+      ['Games', p => ({ v: p.tot.gp, t: p.tot.gp }), 'hi'],
+      stat('Minutes', p => p.avg.min),
+      stat('FP/G', p => p.avg.fp),
+      ['Total FP', p => ({ v: p.tot.fp, t: num(p.tot.fp) }), 'hi'],
+      ['Locked', p => ({ v: lk[p.pid]?.pts ?? 0, t: lk[p.pid] ? num(lk[p.pid].pts) : '—' }), 'hi'],
+      ['Starts', p => ({ v: lk[p.pid]?.starts ?? 0, t: lk[p.pid]?.starts ?? 0 }), 'hi'],
+      [null, 'Per game'],
+      stat('Points', p => p.avg.pts), stat('Rebounds', p => p.avg.reb), stat('Assists', p => p.avg.ast),
+      stat('Steals', p => p.avg.stl), stat('Blocks', p => p.avg.blk), stat('Turnovers', p => p.avg.to, 'lo'),
+      stat('3-pointers', p => p.avg.tpm), stat('+/-', p => p.avg.pm, 'hi', x => `${x > 0 ? '+' : ''}${bkF1(x)}`),
+      [null, 'Shooting'],
+      pct('FG%', 'fgp'), pct('3P%', 'tpp'), pct('FT%', 'ftp'), pct('eFG%', 'efg'), pct('TS%', 'ts'),
+    ];
+  };
+  let cmpRun = 0;
+  const renderCompare = async () => {
+    const box = $('#bk-cmp', body);
+    const l = cmpList();
+    if (!BK.cmpOpen || l.length < 2) { box.innerHTML = ''; return; }
+    const run = ++cmpRun;
+    if (!box.innerHTML) box.innerHTML = betaCard('Compare', '<p class="empty">Loading…</p>', { cls: 'bk-cmpcard' });
+    // Same season / Career as the page (Career = every league season, any team); locked = any team.
+    const got = await loadBreakdown(DATA, { list: 'pick', pids: l, season, owner: me }).catch(() => null);
+    if (run !== cmpRun || !box.isConnected) return;
+    const ps = l.map(pid => got?.players.find(p => p.pid === pid)).filter(Boolean);
+    for (const p of ps) BK_NAMES[p.pid] = p.name;
+    const lk = lockedTotals(DATA, { season });
+    const awardsOf = pid => {
+      const g = {};
+      for (const r of rings[pid] ?? []) g.Champion = (g.Champion ?? 0) + 1;
+      for (const a of BK_AWARDS[pid] ?? []) g[a.label] = (g[a.label] ?? 0) + 1;
+      return Object.entries(g).map(([label, n]) => `${n > 1 ? `${n} x ` : ''}${label}`).join(', ');
+    };
+    const rows = cmpRows(lk, awardsOf).map(([label, f, better]) => {
+      if (label == null) return `<tr class="bk-cmphd"><th colspan="${ps.length + 1}">${esc(f)}</th></tr>`;
+      const cells = ps.map(f);
+      const nums = cells.map(c => c.v).filter(v => v != null && !Number.isNaN(v));
+      const best = better && nums.length >= 2 && new Set(nums).size > 1 ? (better === 'hi' ? Math.max(...nums) : Math.min(...nums)) : null;
+      return `<tr><th class="bk-cmpl">${esc(label)}</th>${cells.map(c => `<td class="${best != null && c.v === best ? 'best' : ''}">${esc(c.t)}</td>`).join('')}</tr>`;
+    }).join('');
+    box.innerHTML = betaCard('Compare', `
+      <div class="bk-scroll"><table class="bk-cmpt"><thead><tr><th class="bk-cmpl"></th>${ps.map(p => `<th>
+        <div class="bk-cmph"><img src="${playerPhoto(DATA, p.pid)}" alt="" onerror="this.remove()"><b>${esc(p.name)}</b>
+          <small>${esc([p.team || 'FA', p.pos.join('/')].join(' · '))}</small>
+          <span class="bk-cmph-acts">${byPid[p.pid] ? `<button type="button" data-cmpopen="${p.pid}">Card</button>` : ''}<button type="button" data-cmp="${p.pid}">Remove</button></span></div></th>`).join('')}</tr></thead>
+        <tbody>${rows}</tbody></table></div>
+      <p class="bk-foot">Gold = best of the group in that row (lower is better for age, ranks and turnovers). Stats: ${esc(period)}${season === 'career' ? ' (every league season, any team)' : ''}; Locked = starters’ points that counted for any team. “Card” opens his player card when he’s in the list below.</p>`,
+      { cls: 'bk-cmpcard', sub: `${ps.length} players · ${esc(period)}` });
+  };
+  const afterCmp = msg => { draw(); drawTray(msg); renderCompare(); };
+  // On the page wrapper (new every render), so a redraw never stacks a second listener.
+  $('.bk-page', body).addEventListener('click', e => {
+    const add = e.target.closest('[data-cmp]');
+    const open = e.target.closest('[data-cmpopen]');
+    if (add) {
+      afterCmp(toggleCmp(add.dataset.cmp) ? '' : `Compare holds ${BK_CMP_MAX} players: remove one first.`);
+    } else if (open) {
+      pick(open.dataset.cmpopen);
+      $('#bk-hero', body).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (e.target.closest('.bk-tray-go')) {
+      BK.cmpOpen = !BK.cmpOpen;
+      drawTray();
+      renderCompare();
+      if (BK.cmpOpen) $('#bk-cmp', body).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (e.target.closest('.bk-tray-clear')) {
+      gmSave('gm-bk-cmp', []);
+      BK.cmpOpen = false;
+      afterCmp();
+    }
+  });
 
   const drawTable = () => {
     const rows = rowsNow();
@@ -2868,6 +2996,7 @@ async function renderBreakdown(body, params) {
       drawTable();
       return;
     }
+    if (e.target.closest('[data-cmp]')) return; // the + button: handled by the compare click handler
     const tr = e.target.closest('tr[data-pid]');
     if (tr) pick(tr.dataset.pid);
   });
@@ -2876,6 +3005,8 @@ async function renderBreakdown(body, params) {
     if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); pick(tr.dataset.pid); }
   });
   draw();
+  drawTray();
+  renderCompare();
   const p = byPid[BK.pid];
   if (p) { years(p).catch(() => {}); log(p).catch(() => {}); }
 }

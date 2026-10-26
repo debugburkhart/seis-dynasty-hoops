@@ -330,7 +330,8 @@ export function lockedTotals(DATA, { season = 'career', owner = null } = {}) {
 // only games from weeks he was on that team (needs stints = frontOffice(DATA).stints; his game logs).
 // { list, owner, statSeason, players: [{ pid, owner, slot, bio..., tot, avg }], top, through }.
 // list 'nba' (owner, Oct 26 2026) = every active player Sleeper lists on NBA team nbaTeam, rostered here or not.
-export async function loadBreakdown(DATA, { list = 'team', owner, season: statSeason, stints = [], nbaTeam = null }) {
+// list 'pick' (compare, Oct 26 2026) = exactly the players in pids, from any list (League-style Career).
+export async function loadBreakdown(DATA, { list = 'team', owner, season: statSeason, stints = [], nbaTeam = null, pids = [] }) {
   const cur = DATA.seasons.at(-1);
   const career = statSeason === 'career';
   const seasons = career ? DATA.seasons.map(s => s.season) : [statSeason];
@@ -371,6 +372,8 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
     ids = Object.keys(where).filter(pid => where[pid].owner === owner);
   } else if (list === 'league') {
     ids = Object.keys(where);
+  } else if (list === 'pick') {
+    ids = pids.filter(pid => all?.[pid] || DATA.players?.[pid]);
   } else if (list === 'nba') {
     ids = Object.keys(all ?? {}).filter(pid => /^\d+$/.test(pid) && all[pid]?.team === nbaTeam && all[pid].active !== false && NBA_POS.has(all[pid].position));
   } else {
