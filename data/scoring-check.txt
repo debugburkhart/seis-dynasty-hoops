@@ -1,0 +1,35 @@
+Sleeper's weekly scores don't match its official standings:
+
+2026 bigdaddyburk: official 0 wins / 381 pts, but weekly scores give 1 wins / 358 pts (off by +23).
+   Check bigdaddyburk's score in these games:
+     Week 1: bigdaddyburk 358 - 396 tzola13
+
+2026 tzola13: official 2 wins / 402 pts, but weekly scores give 2 wins / 396 pts (off by +6).
+   Check tzola13's score in these games:
+     Week 1: bigdaddyburk 358 - 396 tzola13
+
+2026 loganzarvell: official 2 wins / 383 pts, but weekly scores give 2 wins / 343 pts (off by +40).
+   Check loganzarvell's score in these games:
+     Week 1: loganzarvell 343 - 310 simeoncampbell7
+
+2026 bigtrey5456: official 0 wins / 343 pts, but weekly scores give 0 wins / 310 pts (off by +33).
+   Check bigtrey5456's score in these games:
+     Week 1: bigtrey5456 310 - 317 jimmycooks2
+
+2026 simeoncampbell7: official 0 wins / 305 pts, but weekly scores give 0 wins / 310 pts (off by -5).
+   Check simeoncampbell7's score in these games:
+     Week 1: loganzarvell 343 - 310 simeoncampbell7
+
+2026 TRT3: official 2 wins / 394 pts, but weekly scores give 2 wins / 414 pts (off by -20).
+   Check TRT3's score in these games:
+     Week 1: TRT3 414 - 289 BenDoverPlz123
+
+2026 jimmycooks2: official 2 wins / 390 pts, but weekly scores give 1 wins / 317 pts (off by +73).
+   Check jimmycooks2's score in these games:
+     Week 1: bigtrey5456 310 - 317 jimmycooks2
+
+2026 BenDoverPlz123: official 0 wins / 305 pts, but weekly scores give 0 wins / 289 pts (off by +16).
+   Check BenDoverPlz123's score in these games:
+     Week 1: TRT3 414 - 289 BenDoverPlz123
+
+Look these up in the Sleeper app and add the right team scores to assets/corrections.js.
