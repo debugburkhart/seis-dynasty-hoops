@@ -933,8 +933,18 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   with Parma (stints tzola -> logan 2023 wk 8 -> Parma wk 20, checked from raw logs); Jokic league career 218
   GP = logs, 3,078.5 locked / 54 starts = Player Index.
   MORE CARD INFO (owner, Oct 25 2026): ROSTER % = Sleeper's research feed /players/nba/research/regular/
-  {season}/{week} ({ pid: { owned, started } } = % of all Sleeper leagues; week = state week in season, else 1;
-  rosterShares() in breakdown.js) -> "Sleeper Rostered 99.7% · Started 95.3% of leagues" line under HT/WT
+  {season}/{week}?league_type={league settings.type = 2} ({ pid: { owned, started } } = % of Sleeper DYNASTY
+  leagues, what the Sleeper app shows in our league; WITHOUT league_type the feed is REDRAFT leagues (owner caught
+  it Oct 26 2026: Wendell Carter Jr. 48.4% / 25.1% vs app 86% / 47% = dynasty 85.6 / 46.9); week = state week in
+  season, else 1; rosterShares() in breakdown.js) -> "Sleeper Rostered 85.6% · Started 46.9% of dynasty leagues" line under HT/WT.
+  LEAGUE RANK (owner, Oct 26 2026): first built from Sleeper's rank_std / pos_rank_std (Sleeper standard
+  scoring; Ayo Dosunmu 13 SG / 54 OVR = his app), then the owner asked for OUR scoring: leagueRanks(DATA, season)
+  in breakdown.js = every NBA player with FP > 0 in that season's stat table, ranked by TOTAL fantasy points
+  under that season's league scoring (same basis as Sleeper's: totals, main `position`), ties share; cached 2
+  min. Checked by hand from raw box scores: Dosunmu 2026 69 FP = 91 OVR / 17 SG (2025-26: 96 / 19). Shown as
+  "League rank 17 SG · 91 OVR (2026-27)" above the roster % line, "OVR" + "Pos Rk" columns (BK_RANK /
+  BK_PRANK, Averages + Totals, best first) and OVR / Pos Rk per season in Season by season (pos label = today's
+  main position; Career = this season's rank). The roster % line
   (.bk-share; one decimal, bkShare) + "Ros%" column (BK_ROS, Averages + Totals). NICKNAMES = each Sleeper
   roster's metadata p_nick_{pid} (the nickname that manager gave him; teams keep them after he leaves; 293 on
   Oct 25): current team's under the last name (.bk-nick, gold italic, e.g. "Banch"), others counted "+N" with

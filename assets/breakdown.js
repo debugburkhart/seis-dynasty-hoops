@@ -263,12 +263,39 @@ export async function championshipRings(DATA) {
   return out;
 }
 
-// Roster % across all Sleeper leagues (owner, Oct 25 2026): Sleeper's research feed for this season's
-// current week, { pid: { owned, started } } (percent of leagues; a few hundred players).
-export async function rosterShares(season) {
+// Roster % across Sleeper leagues (owner, Oct 25 2026): Sleeper's research feed for this season's current
+// week, { pid: { owned, started } } (percent of leagues). leagueType = our league's settings.type: the feed
+// defaults to REDRAFT leagues; league_type=2 = dynasty leagues, what the Sleeper app shows in a dynasty
+// league (owner, Oct 26 2026: Wendell Carter Jr. 85.6% / 46.9% dynasty vs 48.4% / 25.1% redraft).
+export async function rosterShares(season, leagueType = 2) {
   const state = await get('/v1/state/nba', {});
   const week = state?.season === season && state.season_type === 'regular' ? Math.max(1, Number(state.week) || 1) : 1;
-  return get(`/players/nba/research/regular/${season}/${week}`, {});
+  return get(`/players/nba/research/regular/${season}/${week}?league_type=${leagueType}`, {});
+}
+
+// Player ranks under OUR league's scoring (owner, Oct 26 2026: "accurate to our league"): every NBA player
+// with games that season, by total fantasy points (that season's league scoring, from the season stat
+// table), overall and among players with the same main Sleeper position; ties share a rank. Same idea as
+// Sleeper's rank_std / pos_rank_std (total points, main position) but with our scoring and no one-day lag.
+// { pid: { ovr, pos } }, cached per season for 2 minutes (the live week changes it).
+const RANKS = {};
+export async function leagueRanks(DATA, season) {
+  const hit = RANKS[season];
+  if (hit && Date.now() - hit.at < 120_000) return hit.ranks;
+  const [table, scoring, all] = await Promise.all([seasonTable(season), scoringFor(DATA, season), get('/v1/players/nba', {})]);
+  const rows = Object.entries(table.players)
+    .map(([pid, row]) => ({ pid, fp: Math.round(lineFromTable(row, table.keys, scoring).fp * 10) / 10, pos: all?.[pid]?.position ?? DATA.players?.[pid]?.pos ?? '' }))
+    .filter(r => r.fp > 0)
+    .sort((a, b) => b.fp - a.fp);
+  const ranks = {};
+  const rankIn = list => list.forEach((r, i) => { const prev = list[i - 1]; r.rk = prev && prev.fp === r.fp ? prev.rk : i + 1; });
+  rankIn(rows);
+  for (const r of rows) ranks[r.pid] = { ovr: r.rk, pos: null, fp: r.fp };
+  const byPos = {};
+  for (const r of rows) if (r.pos) (byPos[r.pos] ??= []).push({ ...r });
+  for (const list of Object.values(byPos)) { rankIn(list); for (const r of list) ranks[r.pid].pos = r.rk; }
+  RANKS[season] = { at: Date.now(), ranks };
+  return ranks;
 }
 
 // Adds up season lines (each already scored with its own season's league scoring).
@@ -313,7 +340,10 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
     Promise.all((career && list === 'team' ? [cur.season] : seasons).map(seasonTable)),
     Promise.all(seasons.map(s => scoringFor(DATA, s))),
   ]);
-  const research = await rosterShares(cur.season);
+  const [research, ranks] = await Promise.all([
+    rosterShares(cur.season, league.settings?.type ?? 2),
+    leagueRanks(DATA, career ? cur.season : statSeason), // Career shows this season's rank
+  ]);
   // Nicknames managers gave players in Sleeper (roster metadata p_nick_{pid}); a team keeps them after
   // the player leaves. { pid: { owner: nickname } }.
   const nicks = {};
@@ -380,6 +410,7 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
       injury: p.injury_status ?? null, injuryPart: p.injury_body_part ?? '', injuryNote: p.injury_notes ?? '',
       // Roster % / start % across all Sleeper leagues this week (null = not in Sleeper's list).
       owned: research?.[pid]?.owned ?? null, started: research?.[pid]?.started ?? null,
+      rankOvr: ranks[pid]?.ovr ?? null, rankPos: ranks[pid]?.pos ?? null,
       // His current team's nickname for him, then other teams' (older owners).
       nick: (at && nicks[pid]?.[at.owner]) || null,
       nickOthers: Object.entries(nicks[pid] ?? {}).filter(([o]) => o !== at?.owner).map(([o, n]) => ({ owner: o, n })),

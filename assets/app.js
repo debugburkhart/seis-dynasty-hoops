@@ -21,7 +21,7 @@ import { paintSync, syncInit, syncSave } from './sync.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 import { betaCard, testTabs } from './test-features.js';
-import { averages, championshipRings, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, nbaDraftText, nbaTeamName, seasonLines, teamLogo } from './breakdown.js';
+import { averages, championshipRings, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, seasonLines, teamLogo } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -2442,6 +2442,9 @@ const nickLine = p => {
   return `<small class="bk-nick" title="Sleeper nickname${others.length ? `; also called ${others.map(x => `“${x.n}” by ${name(x.owner)}`).join(', ')}` : ''}">“${esc(main)}”${others.length ? ` <span>+${others.length}</span>` : ''}</small>`;
 };
 const BK_ROS = ['ros', 'Ros%', p => p.owned ?? -1, p => bkShare(p.owned), { cls: 'bk-roscol' }];
+// League ranks (leagueRanks: total FP under our scoring, overall + at his main position; best first when sorted).
+const BK_RANK = ['rk', 'OVR', p => (p.rankOvr ? -p.rankOvr : -1e6), p => p.rankOvr ?? '—'];
+const BK_PRANK = ['prk', 'Pos Rk', p => (p.rankPos ? -p.rankPos : -1e6), p => (p.rankPos ? `${p.rankPos} ${p.mainPos}` : '—')];
 // Same tag = same color everywhere (6 colors, picked from the tag's letters).
 const tagHue = tag => [...bkFold(tag)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 6;
 const tagChip = (tag, x) => `<span class="bk-tag th-${tagHue(tag)}">${esc(tag)}${x ? `<button type="button" data-untag="${esc(tag)}" aria-label="Remove tag ${esc(tag)}">×</button>` : ''}</span>`;
@@ -2474,6 +2477,8 @@ const BK_VIEWS = {
     BK_DYN,
     ['fpg', 'FP/G', ...bkAvg('fp')],
     BK_LOCK,
+    BK_RANK,
+    BK_PRANK,
     BK_ROS,
     ['gp', 'GP', p => p.tot.gp, p => p.tot.gp],
     ['min', 'Min', ...bkAvg('min')],
@@ -2489,7 +2494,7 @@ const BK_VIEWS = {
     ['pm', '+/-', p => (p.tot.gp ? p.avg.pm : -99), p => (p.tot.gp ? `${p.avg.pm > 0 ? '+' : ''}${bkF1(p.avg.pm)}` : '—')],
   ] },
   tot: { label: 'Totals', sort: 'fp', cols: [
-    BK_TAGCOL, BK_OWN, BK_SLOT, BK_DYN, BK_LOCK, BK_STARTS, BK_ROS,
+    BK_TAGCOL, BK_OWN, BK_SLOT, BK_DYN, BK_LOCK, BK_STARTS, BK_RANK, BK_PRANK, BK_ROS,
     ['gp', 'GP', p => p.tot.gp, p => p.tot.gp],
     ['fp', 'FP', p => p.tot.fp, p => num(p.tot.fp)],
     ['min', 'Min', p => p.tot.min, p => Math.round(p.tot.min)],
@@ -2679,7 +2684,8 @@ async function renderBreakdown(body, params) {
           <div><small>${esc(p.first)}</small><h3>${esc(p.last || p.name)}</h3>${nickLine(p)}</div>
         </div>
         <p class="bk-meas">${[p.height && `HT: ${p.height}`, p.weight && `WT: ${p.weight}`, p.age != null && `AGE: ${p.age}`].filter(Boolean).map(esc).join(' / ')}</p>
-        ${p.owned != null ? `<p class="bk-share" title="Share of all Sleeper NBA leagues where he is on a roster / in a starting lineup this week"><span class="ct-label">Sleeper</span> Rostered <b>${bkShare(p.owned)}</b> · Started <b>${bkShare(p.started)}</b> of leagues</p>` : ''}
+        ${p.rankOvr ? `<p class="bk-share" title="Rank by total fantasy points under our league scoring, ${esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season))}: among all NBA players and among ${esc(p.mainPos)}s"><span class="ct-label">League rank</span> <b>${p.rankPos ?? '—'} ${esc(p.mainPos)}</b> · <b>${p.rankOvr} OVR</b> <small>(${esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season))})</small></p>` : ''}
+        ${p.owned != null ? `<p class="bk-share" title="Share of Sleeper NBA dynasty leagues where he is on a roster / in a starting lineup this week (the numbers the Sleeper app shows in this league)"><span class="ct-label">Sleeper</span> Rostered <b>${bkShare(p.owned)}</b> · Started <b>${bkShare(p.started)}</b> of dynasty leagues</p>` : ''}
         <div class="bk-arch">
           ${dyn ? `<div class="bk-total bk-dyn" title="Dynasty score today (0-100, same as the Dynasty tab)"><small>Dynasty</small><b>${dynOf(p.pid) ?? '—'}</b><small>Score</small></div>` : ''}
           <div class="bk-total" title="Total fantasy points, ${esc(period)}"><small>Total</small><b>${bkBadgeNum(p.tot.fp)}</b><small>FP</small></div>
@@ -2715,7 +2721,9 @@ async function renderBreakdown(body, params) {
 
   const years = async p => {
     const box = $('#bk-years', body);
-    const lines = await seasonLines(DATA, p.pid, DATA.seasons.map(s => s.season).reverse());
+    const order = DATA.seasons.map(s => s.season).reverse();
+    const [lines, rankList] = await Promise.all([seasonLines(DATA, p.pid, order), Promise.all(order.map(s => leagueRanks(DATA, s)))]);
+    const rankOf = Object.fromEntries(order.map((s, i) => [s, rankList[i][p.pid] ?? null])); // league-scoring rank that season
     if (BK.pid !== p.pid || !box.isConnected) return;
     // Locked points per season, the Player Index's numbers (any team, every game type), + this team's on Team.
     const lk = {};
@@ -2727,8 +2735,8 @@ async function renderBreakdown(body, params) {
       if (x.o === me) r.mine += x.p;
     }
     const mineCol = list === 'team';
-    box.innerHTML = lines.length ? `<div class="bk-scroll"><table class="bk-table bk-plain"><thead><tr><th class="bk-nm">Season</th><th>Team</th><th>GP</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>Stl</th><th>Blk</th><th>TO</th><th>FG%</th><th>3P%</th><th>FT%</th><th class="srt">FP/G</th><th>Locked</th><th>Starts</th>${mineCol ? `<th title="Locked points for ${esc(teamName(me, cur.season))}">For team</th>` : ''}</tr></thead>
-      <tbody>${lines.map(({ season: s, team, tot }) => { const a = averages(tot); const l = lk[s]; return `<tr class="${s === season ? 'on' : ''}"><td class="bk-nm">${bkSeason(s)}</td><td>${esc(team)}</td><td>${tot.gp}</td><td>${bkF1(a.min)}</td><td>${bkF1(a.pts)}</td><td>${bkF1(a.reb)}</td><td>${bkF1(a.ast)}</td><td>${bkF1(a.stl)}</td><td>${bkF1(a.blk)}</td><td>${bkF1(a.to)}</td><td>${bkPct(tot.fgp)}</td><td>${bkPct(tot.tpp)}</td><td>${bkPct(tot.ftp)}</td><td class="srt">${bkF1(a.fp)}</td><td><b>${l ? num(l.pts) : '—'}</b></td><td>${l?.starts ?? 0}</td>${mineCol ? `<td>${l?.mine ? num(l.mine) : '—'}</td>` : ''}</tr>`; }).join('')}</tbody></table></div>
+    box.innerHTML = lines.length ? `<div class="bk-scroll"><table class="bk-table bk-plain"><thead><tr><th class="bk-nm">Season</th><th>Team</th><th>GP</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>Stl</th><th>Blk</th><th>TO</th><th>FG%</th><th>3P%</th><th>FT%</th><th class="srt">FP/G</th><th title="Rank among all NBA players by total fantasy points that season, our league scoring">OVR</th><th>Pos Rk</th><th>Locked</th><th>Starts</th>${mineCol ? `<th title="Locked points for ${esc(teamName(me, cur.season))}">For team</th>` : ''}</tr></thead>
+      <tbody>${lines.map(({ season: s, team, tot }) => { const a = averages(tot); const l = lk[s]; return `<tr class="${s === season ? 'on' : ''}"><td class="bk-nm">${bkSeason(s)}</td><td>${esc(team)}</td><td>${tot.gp}</td><td>${bkF1(a.min)}</td><td>${bkF1(a.pts)}</td><td>${bkF1(a.reb)}</td><td>${bkF1(a.ast)}</td><td>${bkF1(a.stl)}</td><td>${bkF1(a.blk)}</td><td>${bkF1(a.to)}</td><td>${bkPct(tot.fgp)}</td><td>${bkPct(tot.tpp)}</td><td>${bkPct(tot.ftp)}</td><td class="srt">${bkF1(a.fp)}</td><td>${rankOf[s]?.ovr ?? '—'}</td><td>${rankOf[s]?.pos ? `${rankOf[s].pos} ${esc(p.mainPos)}` : '—'}</td><td><b>${l ? num(l.pts) : '—'}</b></td><td>${l?.starts ?? 0}</td>${mineCol ? `<td>${l?.mine ? num(l.mine) : '—'}</td>` : ''}</tr>`; }).join('')}</tbody></table></div>
       <p class="bk-foot">Seasons since the league started (${DATA.seasons[0].season}); each season’s fantasy points use that season’s league scoring. Locked = his starters’ points that counted for any team (same as the Player Index; finished weeks)${mineCol ? `; For team = the ones for ${esc(teamName(me, cur.season))}` : ''}.</p>` : '<p class="empty">No NBA games in these seasons.</p>';
   };
 
