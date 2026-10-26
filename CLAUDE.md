@@ -889,7 +889,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   LISTS (owner, Oct 25 2026): chips Team / Waiver wire / League above the card (?list=fa|league; team picker
   only on Team). Waiver wire = active players with an NBA team and a G/F/C position on no roster TODAY (~247);
   League = every rostered player (~280) + a "Fantasy team" column (BK_OWN, only: 'league') and the card names
-  his team + manager. Both get a name search (accent-insensitive) and 50 rows at a time (Show 50 more). Every
+  his team + manager. NBA TEAM list (owner, Oct 26 2026, "evaluate how teams are operating"; ?list=nba&nba=ORL,
+  last pick saved in gm-bk-nba, default ATL): every active player Sleeper lists on that NBA team (G/F/C), rostered
+  here or not; NBA team picker (.bk-nba, 30 teams A-Z by name, NBA_TEAM_CODES in breakdown.js) in place of the
+  fantasy team picker; card title = team name, sub "N players on the roster (Sleeper) · M on fantasy rosters
+  here"; Fantasy team column shows "Free agent" for unrostered (BK_OWN only: ['league', 'nba']); Career = every
+  league season (like League); locked = any team. List buttons (.bk-lists) wrap at 320px. Lists after Team get a name search (accent-insensitive) and 50 rows at a time (Show 50 more). Every
   list: NBA team column + "Dyn" column (BK_DYN, dynasty score today, sortable, gold text). Team list only: a
   "Show" row Full team / Rostered (everyone but taxi: starters, bench, IR) / Taxi with counts (BK_GROUPS,
   BK.group, kept while switching teams; owner, Oct 25 2026). POSITION row (owner, Oct 25 2026), all 3 lists:

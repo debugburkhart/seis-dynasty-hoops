@@ -26,6 +26,7 @@ const NBA_TEAMS = {
   SAC: 'Sacramento Kings', SAS: 'San Antonio Spurs', TOR: 'Toronto Raptors', UTA: 'Utah Jazz', WAS: 'Washington Wizards',
 };
 export const nbaTeamName = t => NBA_TEAMS[t] ?? t ?? '';
+export const NBA_TEAM_CODES = Object.keys(NBA_TEAMS);
 // ESPN's team logo files use their own short codes for a few teams.
 const ESPN_CODE = { GSW: 'gs', NOP: 'no', NYK: 'ny', SAS: 'sa', UTA: 'utah', WAS: 'wsh' };
 export const teamLogo = t => (t && NBA_TEAMS[t] ? `https://a.espncdn.com/i/teamlogos/nba/500/${ESPN_CODE[t] ?? t.toLowerCase()}.png` : null);
@@ -328,7 +329,8 @@ export function lockedTotals(DATA, { season = 'career', owner = null } = {}) {
 // 'career' (team and league lists, owner Oct 25 2026): League = every league season added up; Team =
 // only games from weeks he was on that team (needs stints = frontOffice(DATA).stints; his game logs).
 // { list, owner, statSeason, players: [{ pid, owner, slot, bio..., tot, avg }], top, through }.
-export async function loadBreakdown(DATA, { list = 'team', owner, season: statSeason, stints = [] }) {
+// list 'nba' (owner, Oct 26 2026) = every active player Sleeper lists on NBA team nbaTeam, rostered here or not.
+export async function loadBreakdown(DATA, { list = 'team', owner, season: statSeason, stints = [], nbaTeam = null }) {
   const cur = DATA.seasons.at(-1);
   const career = statSeason === 'career';
   const seasons = career ? DATA.seasons.map(s => s.season) : [statSeason];
@@ -369,6 +371,8 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
     ids = Object.keys(where).filter(pid => where[pid].owner === owner);
   } else if (list === 'league') {
     ids = Object.keys(where);
+  } else if (list === 'nba') {
+    ids = Object.keys(all ?? {}).filter(pid => /^\d+$/.test(pid) && all[pid]?.team === nbaTeam && all[pid].active !== false && NBA_POS.has(all[pid].position));
   } else {
     ids = Object.keys(all ?? {}).filter(pid => /^\d+$/.test(pid) && !where[pid] && all[pid]?.team && all[pid].active !== false && NBA_POS.has(all[pid].position));
   }

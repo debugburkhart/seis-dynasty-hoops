@@ -21,7 +21,7 @@ import { paintSync, syncInit, syncSave } from './sync.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 import { betaCard, testTabs } from './test-features.js';
-import { averages, championshipRings, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, seasonLines, teamLogo } from './breakdown.js';
+import { NBA_TEAM_CODES, averages, championshipRings, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, seasonLines, teamLogo } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -2452,7 +2452,7 @@ const tagChip = (tag, x) => `<span class="bk-tag th-${tagHue(tag)}">${esc(tag)}$
 const BK_TAGCOL = ['tags', 'Tags', p => { const t = tagsOf(p.pid); if (!t.length) return -1; const all = allTags(); return 1000 - Math.min(...t.map(x => all.indexOf(x))); }, p => tagsOf(p.pid).map(t => tagChip(t)).join('') || '—', { cls: 'bk-tagcol', tags: true, html: true }];
 const BK_PAGE = 50;
 let BK_AWARDS = null; // playerAwards(DATA, fo), once per visit
-const BK_LISTS = [['team', 'Team'], ['fa', 'Waiver wire'], ['league', 'League']];
+const BK_LISTS = [['team', 'Team'], ['fa', 'Waiver wire'], ['league', 'League'], ['nba', 'NBA team']];
 const bkPct = x => (x == null ? '—' : `${(x * 100).toFixed(1)}`);
 const bkF1 = x => (x == null ? '—' : (Math.round(x * 10) / 10).toFixed(1));
 const bkMa = (m, a) => `${num(m)}-${num(a)}`;
@@ -2462,7 +2462,7 @@ const SLOT_ORDER = ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'UTIL', 'BN', 'IR', '
 const slotRank = p => SLOT_ORDER.indexOf(p.slot) * 100 + Math.max(0, p.order);
 const bkAvg = k => [p => (p.tot.gp ? p.avg[k] : -1), p => (p.tot.gp ? bkF1(p.avg[k]) : '—')];
 // Table columns per view: [key, label, value for sorting, cell text, { only / not: list id, cls }].
-const BK_OWN = ['own', 'Fantasy team', p => (p.owner ? teamName(p.owner, DATA.seasons.at(-1).season) : ''), p => (p.owner ? teamName(p.owner, DATA.seasons.at(-1).season) : ''), { only: 'league', cls: 'bk-own' }];
+const BK_OWN = ['own', 'Fantasy team', p => (p.owner ? teamName(p.owner, DATA.seasons.at(-1).season) : '~'), p => (p.owner ? teamName(p.owner, DATA.seasons.at(-1).season) : 'Free agent'), { only: ['league', 'nba'], cls: 'bk-own' }];
 const BK_SLOT = ['slot', 'Slot', p => -slotRank(p), p => p.slot, { not: 'fa' }];
 const BK_DYN = ['dyn', 'Dyn', p => BK.dyn(p.pid) ?? -1, p => BK.dyn(p.pid) ?? '—', { cls: 'bk-dyncol' }];
 // Locked points + starts (BK.locked, set per render: this team's on Team, any team elsewhere).
@@ -2522,7 +2522,7 @@ const BK_VIEWS = {
     ['ts', 'TS%', p => p.tot.ts ?? -1, p => bkPct(p.tot.ts)],
   ] },
 };
-const bkCols = (view, list) => view.cols.filter(c => (!c[4]?.only || c[4].only === list) && c[4]?.not !== list && (!c[4]?.tags || allTags().length));
+const bkCols = (view, list) => view.cols.filter(c => (!c[4]?.only || [].concat(c[4].only).includes(list)) && c[4]?.not !== list && (!c[4]?.tags || allTags().length));
 const bkSeason = s => `${s}-${String(Number(s) + 1).slice(2)}`;
 const SLOT_WORD = { BN: 'Bench', IR: 'Injured reserve', TX: 'Taxi squad', FA: 'Free agent' };
 const bkFold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -2535,11 +2535,14 @@ async function renderBreakdown(body, params) {
   const season = params.get('season') === 'career' && list !== 'fa' ? 'career' : DATA.seasons.some(s => s.season === params.get('season')) ? params.get('season') : cur.season;
   const logSeason = season === 'career' ? cur.season : season; // game log: this season in Career
   const period = season === 'career' ? (list === 'team' ? `Career with ${teamName(me, cur.season)}` : 'Career, every league season') : bkSeason(season);
-  const link = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...(list === 'team' ? { team: me } : {}), ...(list !== 'team' ? { list } : {}), ...(season !== cur.season ? { season } : {}), ...q })}`;
+  // NBA team list (owner, Oct 26 2026): ?nba=ORL, last choice kept in gm-bk-nba.
+  const nbaTeam = NBA_TEAM_CODES.includes(params.get('nba')) ? params.get('nba') : gmLoad('gm-bk-nba', 'ATL');
+  if (list === 'nba') gmSave('gm-bk-nba', nbaTeam);
+  const link = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...(list === 'team' ? { team: me } : {}), ...(list !== 'team' ? { list } : {}), ...(list === 'nba' ? { nba: nbaTeam } : {}), ...(season !== cur.season ? { season } : {}), ...q })}`;
   if (BK.list !== list) { BK.list = list; BK.q = ''; BK.limit = BK_PAGE; }
   body.innerHTML = `<div class="loading">Pulling ${list === 'team' ? 'the roster' : list === 'fa' ? 'the waiver wire' : 'every roster'} and stats from Sleeper…</div>`;
   // Dynasty scores (gmDynasty, same values and injury setting as the Dynasty tab); a failure just hides them.
-  const [bk, dyn, rings] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft()]);
+  const [bk, dyn, rings] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, nbaTeam, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft()]);
   // Season-banner awards per player (same rules as the Awards page), worked out once per visit.
   BK_AWARDS ??= playerAwards(DATA, frontOffice(DATA));
   const dynOf = pid => dyn?.v?.players?.[pid]?.score ?? null;
@@ -2563,13 +2566,17 @@ async function renderBreakdown(body, params) {
   const view = () => BK_VIEWS[BK.view] ?? BK_VIEWS.avg;
   const cols = () => bkCols(view(), list);
   if (!cols().some(c => c[0] === BK.sort)) { BK.sort = view().sort; BK.dir = -1; }
-  const title = list === 'team' ? esc(teamName(me, cur.season)) : list === 'fa' ? 'Waiver wire' : 'League';
-  const what = list === 'fa' ? 'free agents with an NBA team (today’s rosters)' : list === 'league' ? 'players on a fantasy roster today' : 'players';
+  const title = list === 'team' ? esc(teamName(me, cur.season)) : list === 'fa' ? 'Waiver wire' : list === 'nba' ? esc(nbaTeamName(nbaTeam)) : 'League';
+  const what = list === 'fa' ? 'free agents with an NBA team (today’s rosters)' : list === 'league' ? 'players on a fantasy roster today'
+    : list === 'nba' ? `players on the roster (Sleeper) · ${bk.players.filter(p => p.owner).length} on fantasy rosters here` : 'players';
+  const nbaPick = `<label class="hy-pick cm-pick"><span class="hy-pick-label">NBA team</span><span class="ed-select"><span class="hy-pick-val">${esc(nbaTeamName(nbaTeam))}</span>
+      <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>
+      <select class="bk-nba" aria-label="NBA team">${[...NBA_TEAM_CODES].sort((a, b) => nbaTeamName(a).localeCompare(nbaTeamName(b))).map(t => `<option value="${t}"${t === nbaTeam ? ' selected' : ''}>${esc(nbaTeamName(t))}</option>`).join('')}</select></span></label>`;
 
   body.innerHTML = `<div class="gm-page bk-page">
     ${listTabs}
     <div class="cm-pickers">
-      ${list === 'team' ? gmTeamPick(me, cur.season, 'breakdown') : ''}
+      ${list === 'team' ? gmTeamPick(me, cur.season, 'breakdown') : list === 'nba' ? nbaPick : ''}
       <div class="st-tabs bk-seasons" role="tablist">${list !== 'fa' ? `<a role="tab" class="${season === 'career' ? 'on' : ''}" href="${link({ season: 'career' })}">Career</a>` : ''}${[...DATA.seasons].reverse().map(s => `<a role="tab" class="${s.season === season ? 'on' : ''}" href="${link({ season: s.season })}">${bkSeason(s.season)}</a>`).join('')}</div>
     </div>
     ${betaCard(title, `
@@ -2592,6 +2599,7 @@ async function renderBreakdown(body, params) {
     ${betaCard('Game log', '<div id="bk-log"><p class="empty">Loading…</p></div>', { id: 'bk-log-card', sub: bkSeason(logSeason) })}
   </div>`;
   bindTeamPick(body);
+  $('.bk-nba', body)?.addEventListener('change', e => { location.hash = link({ nba: e.target.value }); });
 
   // Locked points badge (navy shield): total + starts and per start in the tooltip.
   const lockBadge = p => {

@@ -3092,3 +3092,5 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-aw.team { border: 1px solid rgba(142,197,255,.5); color: #b9dcff; }
 /* 2K breakdown season chips (Career + 4 seasons) wrap on narrow phones instead of widening the page. */
 .bk-seasons { flex-wrap: wrap; max-width: 100%; }
+/* 2K breakdown list buttons (Team / Waiver wire / League / NBA team) wrap on narrow phones. */
+.bk-lists { flex-wrap: wrap; max-width: 100%; }
