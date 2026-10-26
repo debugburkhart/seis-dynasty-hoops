@@ -390,6 +390,19 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   = said), by weekday, by week (tap opens it). Tested on live week 1 + made-up results (local only).
   ~0.6 s desktop mid-week. Owner (Oct 20, 2026): Balanced is the DEFAULT (localStorage key moved
   gm-risk -> gm-mode so old saved choices reset) and Play to win carries a "Beta" tag (.gm-beta).
+  IT HAPPENS THE MOMENT A WEEK ENDS (found Oct 26 2026, 2026 week 1): right after the week, the matchups
+  feed already had wrong team scores (e.g. bigdaddyburk 358 vs official 381, jimmycooks2 317 vs 390: Kawhi
+  Leonard's locked 41 shown as 0), starters_points for some players = a different game than the one locked,
+  and it kept changing the next morning (simeon 310 -> 313 -> 339). The site saved those, so standings
+  showed 1-1 records that never happened, Power Rankings and rivalry finals were off; the Scoring check
+  caught it (failed run). TRUTH = rosters settings fpts / wins / losses (official standings, cumulative).
+  Week 1 fixed by hand in corrections.js (scores from fpts; players = the only combination of each
+  starter's box-score games that sums to the official score, closest to Sunday night's saved values;
+  simeoncampbell7 + BenDoverPlz123 had several fits: the owner read them in the Sleeper app Oct 26; all 8 teams
+  now sum to the official scores).
+  NEEDS AN AUTOMATIC FIX before more weeks end: official weekly scores from fpts deltas per
+  last_scored_leg, mid-week snapshots of players_points (correct while the week is live) as the per-player
+  source, a solver for the rest, and a check that flags anything ambiguous.
   SLEEPER'S OLD WEEKS ARE BROKEN (found Oct 21 2026): /v1/league/{id}/matchups/{week} for 2024 and 2025
   now drops many locks (players_points / starters_points = latest game or 0; e.g. 2025 wk 21 Parma
   327 live vs 422 real; season totals 53,147 vs 59,653). Backtests MUST take real scores from

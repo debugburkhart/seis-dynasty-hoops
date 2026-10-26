@@ -33,6 +33,27 @@ export const CORRECTIONS = [
   { season: '2025', week: 14,
     scores: { BenDoverPlz123: 274, TRT3: 374 },
     players: { BenDoverPlz123: { 'Ace Bailey': 31 } } },
+  // 2026 week 1 (Oct 26 2026): once the week ended, Sleeper's matchup feed dropped many locks (and
+  // left Kawhi Leonard at 0), so every team score was off. Scores = Sleeper's official standings
+  // (roster fpts after week 1). Players = the one combination of each starter's real games (box
+  // scores, league scoring) that adds up to the official score, closest to the values saved Sunday
+  // night. simeoncampbell7 and BenDoverPlz123 had several combinations that fit: the owner read their
+  // players in the Sleeper app.
+  { season: '2026', week: 1,
+    scores: { bigdaddyburk: 381, tzola13: 402, loganzarvell: 383, simeoncampbell7: 305, jimmycooks2: 390, bigtrey5456: 343, TRT3: 394, BenDoverPlz123: 305 },
+    players: {
+      bigdaddyburk: { 'Michael Porter Jr.': 45, 'Alperen Sengun': 42, 'Tyrese Haliburton': 41 },
+      tzola13: { 'Amen Thompson': 41 },
+      loganzarvell: { 'Cooper Flagg': 43, 'Jalen Smith': 34 },
+      bigtrey5456: { 'Ty Jerome': 61, 'Zach LaVine': 45, 'Josh Hart': 24 },
+      jimmycooks2: { 'Jaylen Brown': 35, 'Karl-Anthony Towns': 41, 'Joel Embiid': 50, 'Kawhi Leonard': 41 },
+      TRT3: { 'Domantas Sabonis': 34 },
+      // Read in the Sleeper app by the owner (Oct 26 2026). simeon's whole lineup is pinned: the feed kept
+      // changing his players' points after the week ended (Dëmin 5 -> 31, Jones 17 -> 20).
+      simeoncampbell7: { 'Jamal Murray': 57, 'Egor Demin': 31, 'Josh Giddey': 29, 'Ace Bailey': 34, 'Caleb Wilson': 54,
+        'Derrick Jones Jr.': 17, 'Nikola Jokic': 67, 'Collin Murray-Boyles': 12, 'Ivica Zubac': 4 },
+      BenDoverPlz123: { 'Keyonte George': 40, 'LeBron James': 36, 'Paul Reed': 21 },
+    } },
 ];
 
 // Draft picks Sleeper recorded as the wrong player, usually a duplicate player
