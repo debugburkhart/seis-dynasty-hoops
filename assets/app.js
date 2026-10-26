@@ -21,7 +21,7 @@ import { paintSync, syncInit, syncSave } from './sync.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 import { betaCard, testTabs } from './test-features.js';
-import { averages, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, nbaDraftText, nbaTeamName, seasonLines, teamLogo } from './breakdown.js';
+import { averages, championshipRings, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, nbaDraftText, nbaTeamName, seasonLines, teamLogo } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -2424,12 +2424,31 @@ function setTags(pid, list) {
   if (list.length) t[pid] = list; else delete t[pid];
   gmSave('gm-tags', t);
 }
+// Player notes (owner, Oct 25 2026): a short free-text note per player, localStorage gm-notes = { pid: text }
+// via gmSave (synced; MERGE 'object' in sync.js). Empty text removes the note.
+const noteOf = pid => gmLoad('gm-notes', {})[pid] ?? '';
+function setNote(pid, text) {
+  const n = { ...gmLoad('gm-notes', {}) };
+  if (text.trim()) n[pid] = text.slice(0, 1000); else delete n[pid];
+  gmSave('gm-notes', n);
+}
+// Sleeper-wide roster / start share as Sleeper gives it: "46.1%", "99.7%", "0%".
+const bkShare = x => (x == null ? '—' : `${Math.round(x * 10) / 10}%`);
+// Sleeper nickname (his current team's), plus other managers' older nicknames for him.
+const nickLine = p => {
+  const others = p.nickOthers.filter(x => x.n !== p.nick);
+  if (!p.nick && !others.length) return '';
+  const main = p.nick ?? others.shift()?.n;
+  return `<small class="bk-nick" title="Sleeper nickname${others.length ? `; also called ${others.map(x => `“${x.n}” by ${name(x.owner)}`).join(', ')}` : ''}">“${esc(main)}”${others.length ? ` <span>+${others.length}</span>` : ''}</small>`;
+};
+const BK_ROS = ['ros', 'Ros%', p => p.owned ?? -1, p => bkShare(p.owned), { cls: 'bk-roscol' }];
 // Same tag = same color everywhere (6 colors, picked from the tag's letters).
 const tagHue = tag => [...bkFold(tag)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 6;
 const tagChip = (tag, x) => `<span class="bk-tag th-${tagHue(tag)}">${esc(tag)}${x ? `<button type="button" data-untag="${esc(tag)}" aria-label="Remove tag ${esc(tag)}">×</button>` : ''}</span>`;
 // Tags column (only once a tag exists): sorting puts tagged players first, grouped by their first tag A-Z.
 const BK_TAGCOL = ['tags', 'Tags', p => { const t = tagsOf(p.pid); if (!t.length) return -1; const all = allTags(); return 1000 - Math.min(...t.map(x => all.indexOf(x))); }, p => tagsOf(p.pid).map(t => tagChip(t)).join('') || '—', { cls: 'bk-tagcol', tags: true, html: true }];
 const BK_PAGE = 50;
+let BK_AWARDS = null; // playerAwards(DATA, fo), once per visit
 const BK_LISTS = [['team', 'Team'], ['fa', 'Waiver wire'], ['league', 'League']];
 const bkPct = x => (x == null ? '—' : `${(x * 100).toFixed(1)}`);
 const bkF1 = x => (x == null ? '—' : (Math.round(x * 10) / 10).toFixed(1));
@@ -2455,6 +2474,7 @@ const BK_VIEWS = {
     BK_DYN,
     ['fpg', 'FP/G', ...bkAvg('fp')],
     BK_LOCK,
+    BK_ROS,
     ['gp', 'GP', p => p.tot.gp, p => p.tot.gp],
     ['min', 'Min', ...bkAvg('min')],
     ['pts', 'Pts', ...bkAvg('pts')],
@@ -2469,7 +2489,7 @@ const BK_VIEWS = {
     ['pm', '+/-', p => (p.tot.gp ? p.avg.pm : -99), p => (p.tot.gp ? `${p.avg.pm > 0 ? '+' : ''}${bkF1(p.avg.pm)}` : '—')],
   ] },
   tot: { label: 'Totals', sort: 'fp', cols: [
-    BK_TAGCOL, BK_OWN, BK_SLOT, BK_DYN, BK_LOCK, BK_STARTS,
+    BK_TAGCOL, BK_OWN, BK_SLOT, BK_DYN, BK_LOCK, BK_STARTS, BK_ROS,
     ['gp', 'GP', p => p.tot.gp, p => p.tot.gp],
     ['fp', 'FP', p => p.tot.fp, p => num(p.tot.fp)],
     ['min', 'Min', p => p.tot.min, p => Math.round(p.tot.min)],
@@ -2514,7 +2534,9 @@ async function renderBreakdown(body, params) {
   if (BK.list !== list) { BK.list = list; BK.q = ''; BK.limit = BK_PAGE; }
   body.innerHTML = `<div class="loading">Pulling ${list === 'team' ? 'the roster' : list === 'fa' ? 'the waiver wire' : 'every roster'} and stats from Sleeper…</div>`;
   // Dynasty scores (gmDynasty, same values and injury setting as the Dynasty tab); a failure just hides them.
-  const [bk, dyn] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), loadContracts(), loadNbaDraft()]);
+  const [bk, dyn, rings] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft()]);
+  // Season-banner awards per player (same rules as the Awards page), worked out once per visit.
+  BK_AWARDS ??= playerAwards(DATA, frontOffice(DATA));
   const dynOf = pid => dyn?.v?.players?.[pid]?.score ?? null;
   BK.dyn = dynOf;
   // Locked points (owner, Oct 25 2026): this team's only on Team, any team on League / Waiver wire; the
@@ -2571,6 +2593,22 @@ async function renderBreakdown(body, params) {
     const l = BK.locked(p.pid);
     const why = `Locked points: his starters' points that counted${list === 'team' ? ` for ${teamName(me, cur.season)}` : ' (any team)'}, ${period}${l ? ` · ${l.starts} starts, ${num(l.pts / l.starts)} per start` : ' · none yet'}`;
     return `<div class="bk-total bk-lock" title="${esc(why)}"><small>Locked</small><b>${l ? bkBadgeNum(l.pts) : '—'}</b><small>${l ? `${l.starts} st` : 'Pts'}</small></div>`;
+  };
+  // Awards (owner, Oct 25 2026): championship rings (on the champion's roster in championship week, not
+  // on taxi), then individual awards, then teams (All-Star, All-Fantasy, All-Rookie), newest first.
+  const awardLine = p => {
+    const ring = (rings[p.pid] ?? []).map(r => ({ s: r.s, label: 'Champion', kind: 'ring', o: r.o }));
+    // The same award more than once = one chip, "2 x League MVP (2024-25, 2025-26)" (owner, Oct 25 2026).
+    const groups = {};
+    for (const a of [...ring, ...(BK_AWARDS[p.pid] ?? [])]) (groups[`${a.kind}|${a.label}`] ??= { kind: a.kind, label: a.label, wins: [] }).wins.push(a);
+    const KIND = ['ring', 'indiv', 'team'];
+    const list = Object.values(groups).map(g => ({ ...g, wins: g.wins.sort((a, b) => a.s.localeCompare(b.s)) }))
+      .sort((a, b) => KIND.indexOf(a.kind) - KIND.indexOf(b.kind) || b.wins.at(-1).s.localeCompare(a.wins.at(-1).s));
+    const why = a => (a.kind === 'ring' ? `${bkSeason(a.s)} ring: on ${teamName(a.o, a.s)}'s roster (${name(a.o)}) in championship week, not on taxi` : `${bkSeason(a.s)} ${a.label}${a.o ? ` · with ${teamName(a.o, a.s)} (${name(a.o)})` : ''}`);
+    const text = g => (g.wins.length > 1 ? `${g.wins.length} x ${g.label} (${g.wins.map(a => bkSeason(a.s)).join(', ')})` : `${bkSeason(g.wins[0].s)} ${g.label}`);
+    return `<div class="bk-awards"><span class="ct-label">Awards</span>${list.length
+      ? list.map(g => `<span class="bk-aw ${g.kind}" title="${esc(g.wins.map(why).join('\n'))}">${g.kind === 'ring' ? icon('trophy') : ''}${esc(text(g))}</span>`).join('')
+      : '<small>None yet</small>'}</div>`;
   };
   // Draft lines on the player card (owner, Oct 25 2026): the real NBA draft and this league's own draft.
   const draftLines = p => {
@@ -2638,17 +2676,23 @@ async function renderBreakdown(body, params) {
       <div class="bk-info">
         <div class="bk-name">
           <div class="bk-tags">${p.number != null ? `<span>#${esc(p.number)}</span>` : ''}${p.pos.map(x => `<span>${esc(x)}</span>`).join('')}</div>
-          <div><small>${esc(p.first)}</small><h3>${esc(p.last || p.name)}</h3></div>
+          <div><small>${esc(p.first)}</small><h3>${esc(p.last || p.name)}</h3>${nickLine(p)}</div>
         </div>
         <p class="bk-meas">${[p.height && `HT: ${p.height}`, p.weight && `WT: ${p.weight}`, p.age != null && `AGE: ${p.age}`].filter(Boolean).map(esc).join(' / ')}</p>
+        ${p.owned != null ? `<p class="bk-share" title="Share of all Sleeper NBA leagues where he is on a roster / in a starting lineup this week"><span class="ct-label">Sleeper</span> Rostered <b>${bkShare(p.owned)}</b> · Started <b>${bkShare(p.started)}</b> of leagues</p>` : ''}
         <div class="bk-arch">
           ${dyn ? `<div class="bk-total bk-dyn" title="Dynasty score today (0-100, same as the Dynasty tab)"><small>Dynasty</small><b>${dynOf(p.pid) ?? '—'}</b><small>Score</small></div>` : ''}
           <div class="bk-total" title="Total fantasy points, ${esc(period)}"><small>Total</small><b>${bkBadgeNum(p.tot.fp)}</b><small>FP</small></div>
           ${lockBadge(p)}
           <div><b class="bk-title">${esc(slot)}</b>${dynOf(p.pid) != null ? tierTag(dynOf(p.pid)) : ''}${list !== 'team' && p.owner ? `<small class="bk-owner">${esc(teamName(p.owner, cur.season))} (${esc(name(p.owner))})</small>` : ''}<small>${bio.map(esc).join(' · ')}</small>${dynNote(p.pid)}</div>
         </div>
+        <div class="bk-note">
+          <textarea class="bk-notein" rows="2" maxlength="1000" placeholder="Your notes on ${esc(p.first || p.name)}… (only you see these)" aria-label="Notes on ${esc(p.name)}">${esc(noteOf(p.pid))}</textarea>
+          <small class="bk-notesaved" aria-live="polite"></small>
+        </div>
         <div class="bk-statline">${[['PTS', p.avg.pts], ['REB', p.avg.reb], ['AST', p.avg.ast], ['STL', p.avg.stl], ['BLK', p.avg.blk], ['MIN', p.avg.min]].map(([k, x]) => `<span><b>${p.tot.gp ? bkF1(x) : '—'}</b><small>${k}</small></span>`).join('')}<span><b>${p.tot.gp}</b><small>GP</small></span></div>
         ${draftLines(p)}
+        ${awardLine(p)}
         ${tagRow(p)}
         ${contractLine({ pid: p.pid, team: p.team, nbaSeasons: p.exp })}
         ${inj}
@@ -2667,15 +2711,25 @@ async function renderBreakdown(body, params) {
     });
   };
   const table = rows => `<thead><tr><th class="bk-nm">Name</th>${cols().map(([k, label, , , o]) => `<th data-k="${k}" class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}" aria-sort="${k === BK.sort ? (BK.dir < 0 ? 'descending' : 'ascending') : 'none'}">${k === BK.sort ? (BK.dir < 0 ? '▼' : '▲') : ''}${label}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(p => `<tr data-pid="${p.pid}" class="${p.pid === BK.pid ? 'on' : ''}${p.slot === 'IR' || p.slot === 'TX' ? ' bk-res' : ''}" tabindex="0"><td class="bk-nm"><span>${esc(p.first ? `${p.first[0]}. ${p.last}` : p.name)}</span>${secMark(p)}${p.injury ? `<i class="bk-dot${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}" title="${esc(p.injury)}"></i>` : ''}</td>${cols().map(([k, , , cell, o]) => `<td class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}">${o?.html ? cell(p) : esc(cell(p))}</td>`).join('')}</tr>`).join('') || `<tr><td class="bk-nm" colspan="${cols().length + 1}">No player by that name.</td></tr>`}</tbody>`;
+    <tbody>${rows.map(p => `<tr data-pid="${p.pid}" class="${p.pid === BK.pid ? 'on' : ''}${p.slot === 'IR' || p.slot === 'TX' ? ' bk-res' : ''}" tabindex="0"><td class="bk-nm"><span>${esc(p.first ? `${p.first[0]}. ${p.last}` : p.name)}</span>${secMark(p)}${noteOf(p.pid) ? `<i class="bk-hasnote" title="${esc(noteOf(p.pid))}">✎</i>` : ''}${p.injury ? `<i class="bk-dot${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}" title="${esc(p.injury)}"></i>` : ''}</td>${cols().map(([k, , , cell, o]) => `<td class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}">${o?.html ? cell(p) : esc(cell(p))}</td>`).join('')}</tr>`).join('') || `<tr><td class="bk-nm" colspan="${cols().length + 1}">No player by that name.</td></tr>`}</tbody>`;
 
   const years = async p => {
     const box = $('#bk-years', body);
     const lines = await seasonLines(DATA, p.pid, DATA.seasons.map(s => s.season).reverse());
     if (BK.pid !== p.pid || !box.isConnected) return;
-    box.innerHTML = lines.length ? `<div class="bk-scroll"><table class="bk-table bk-plain"><thead><tr><th class="bk-nm">Season</th><th>Team</th><th>GP</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>Stl</th><th>Blk</th><th>TO</th><th>FG%</th><th>3P%</th><th>FT%</th><th class="srt">FP/G</th></tr></thead>
-      <tbody>${lines.map(({ season: s, team, tot }) => { const a = averages(tot); return `<tr class="${s === season ? 'on' : ''}"><td class="bk-nm">${bkSeason(s)}</td><td>${esc(team)}</td><td>${tot.gp}</td><td>${bkF1(a.min)}</td><td>${bkF1(a.pts)}</td><td>${bkF1(a.reb)}</td><td>${bkF1(a.ast)}</td><td>${bkF1(a.stl)}</td><td>${bkF1(a.blk)}</td><td>${bkF1(a.to)}</td><td>${bkPct(tot.fgp)}</td><td>${bkPct(tot.tpp)}</td><td>${bkPct(tot.ftp)}</td><td class="srt">${bkF1(a.fp)}</td></tr>`; }).join('')}</tbody></table></div>
-      <p class="bk-foot">Seasons since the league started (${DATA.seasons[0].season}); each season’s fantasy points use that season’s league scoring.</p>` : '<p class="empty">No NBA games in these seasons.</p>';
+    // Locked points per season, the Player Index's numbers (any team, every game type), + this team's on Team.
+    const lk = {};
+    for (const x of DATA.playerWeeks ?? []) {
+      if (x.pid !== p.pid) continue;
+      const r = (lk[x.s] ??= { pts: 0, starts: 0, mine: 0 });
+      r.pts += x.p;
+      r.starts++;
+      if (x.o === me) r.mine += x.p;
+    }
+    const mineCol = list === 'team';
+    box.innerHTML = lines.length ? `<div class="bk-scroll"><table class="bk-table bk-plain"><thead><tr><th class="bk-nm">Season</th><th>Team</th><th>GP</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>Stl</th><th>Blk</th><th>TO</th><th>FG%</th><th>3P%</th><th>FT%</th><th class="srt">FP/G</th><th>Locked</th><th>Starts</th>${mineCol ? `<th title="Locked points for ${esc(teamName(me, cur.season))}">For team</th>` : ''}</tr></thead>
+      <tbody>${lines.map(({ season: s, team, tot }) => { const a = averages(tot); const l = lk[s]; return `<tr class="${s === season ? 'on' : ''}"><td class="bk-nm">${bkSeason(s)}</td><td>${esc(team)}</td><td>${tot.gp}</td><td>${bkF1(a.min)}</td><td>${bkF1(a.pts)}</td><td>${bkF1(a.reb)}</td><td>${bkF1(a.ast)}</td><td>${bkF1(a.stl)}</td><td>${bkF1(a.blk)}</td><td>${bkF1(a.to)}</td><td>${bkPct(tot.fgp)}</td><td>${bkPct(tot.tpp)}</td><td>${bkPct(tot.ftp)}</td><td class="srt">${bkF1(a.fp)}</td><td><b>${l ? num(l.pts) : '—'}</b></td><td>${l?.starts ?? 0}</td>${mineCol ? `<td>${l?.mine ? num(l.mine) : '—'}</td>` : ''}</tr>`; }).join('')}</tbody></table></div>
+      <p class="bk-foot">Seasons since the league started (${DATA.seasons[0].season}); each season’s fantasy points use that season’s league scoring. Locked = his starters’ points that counted for any team (same as the Player Index; finished weeks)${mineCol ? `; For team = the ones for ${esc(teamName(me, cur.season))}` : ''}.</p>` : '<p class="empty">No NBA games in these seasons.</p>';
   };
 
   const log = async p => {
@@ -2741,6 +2795,21 @@ async function renderBreakdown(body, params) {
     else return;
     draw();
     if (e.target.closest('.bk-tagadd')) $('.bk-tagform input', heroEl)?.focus({ preventScroll: true });
+  });
+  // Notes save themselves 0.6 s after typing stops (gm-notes, synced); the table's ✎ mark follows.
+  let noteTimer = null;
+  heroEl.addEventListener('input', e => {
+    if (!e.target.matches('.bk-notein')) return;
+    const pid = BK.pid;
+    const text = e.target.value;
+    const flag = $('.bk-notesaved', heroEl);
+    flag.textContent = 'Saving…';
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => {
+      setNote(pid, text);
+      if (BK.pid === pid) flag.textContent = 'Saved';
+      drawTable();
+    }, 600);
   });
   heroEl.addEventListener('submit', e => {
     e.preventDefault();

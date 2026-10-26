@@ -39,11 +39,12 @@ export const SYNCED = [
   'wager-saved', // Wager Weeks results waiting for GitHub
   'gm-tags', // custom player tags (2K breakdown): { pid: [tag] }
   'gm-bk-', // 2K breakdown filters (pos / sec)
+  'gm-notes', // player notes (2K breakdown): { pid: text }
 ];
 export const isSynced = key => SYNCED.some(k => (k.endsWith('-') ? key.startsWith(k) : key === k));
 
 // How the first sign-in on a device combines its value with the account's (later saves: newest wins).
-const MERGE = [['gm-locks-', 'object'], ['gm-whatif-', 'object'], ['gm-block-', 'list'], ['gm-tracker-seen-', 'max'], ['gm-tags', 'object']];
+const MERGE = [['gm-locks-', 'object'], ['gm-whatif-', 'object'], ['gm-block-', 'list'], ['gm-tracker-seen-', 'max'], ['gm-tags', 'object'], ['gm-notes', 'object']];
 const mergeKind = key => MERGE.find(([p]) => key.startsWith(p))?.[1] ?? 'newest';
 
 const ls = {

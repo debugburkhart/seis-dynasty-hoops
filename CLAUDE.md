@@ -808,7 +808,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   wins per player), gm-block- lists unioned, gm-tracker-seen- max, others newer wins; any replaced local
   value is kept in localStorage sync-backup. gm.js lockedPoints still reads gm-locks from localStorage.
 - Synced keys = SYNCED in sync.js: gm-locks-*, gm-whatif-*, gm-mode, gm-block-*, gm-eval, gm-dyn-*,
-  gm-tracker-seen-*, gm-inj-*, wager-saved, gm-tags, gm-bk-*. NOT synced: gm-tips-{date} (cache), sessionStorage cm-open,
+  gm-tracker-seen-*, gm-inj-*, wager-saved, gm-tags, gm-bk-*, gm-notes. NOT synced: gm-tips-{date} (cache), sessionStorage cm-open,
   sync-* bookkeeping. **To sync a new setting:** save it with gmSave/gmLoad (never raw localStorage)
   and add its key or prefix (ending in '-') to SYNCED; add a MERGE rule if two devices' values should be
   combined instead of newest-wins; the rules need no change.
@@ -931,7 +931,29 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Badge numbers >= 1,000 drop the decimal (bkBadgeNum). Verified: Parma career locked = Player Index for every
   player (Adebayo 1,031, Banchero 1,523.5, Sengun 2,149, Harden 2,189); Banchero 141 of 201 games since 2023
   with Parma (stints tzola -> logan 2023 wk 8 -> Parma wk 20, checked from raw logs); Jokic league career 218
-  GP = logs, 3,078.5 locked / 54 starts = Player Index. Column defs:
+  GP = logs, 3,078.5 locked / 54 starts = Player Index.
+  MORE CARD INFO (owner, Oct 25 2026): ROSTER % = Sleeper's research feed /players/nba/research/regular/
+  {season}/{week} ({ pid: { owned, started } } = % of all Sleeper leagues; week = state week in season, else 1;
+  rosterShares() in breakdown.js) -> "Sleeper Rostered 99.7% · Started 95.3% of leagues" line under HT/WT
+  (.bk-share; one decimal, bkShare) + "Ros%" column (BK_ROS, Averages + Totals). NICKNAMES = each Sleeper
+  roster's metadata p_nick_{pid} (the nickname that manager gave him; teams keep them after he leaves; 293 on
+  Oct 25): current team's under the last name (.bk-nick, gold italic, e.g. "Banch"), others counted "+N" with
+  "also called ... by manager" in the tooltip. NOTES: textarea under the bio (.bk-note), saved 0.6 s after
+  typing to gm-notes { pid: text } (gmSave; SYNCED + MERGE 'object'), ✎ by the name in the table (tooltip =
+  note). SEASON BY SEASON adds Locked + Starts (any team, = Player Index; Banchero 2025-26 720, 2024-25 711) and
+  on Team "For team" (that team's; Banchero 2023-24 92.5 of 371).
+  AWARDS ROW (owner, Oct 25 2026; awardLine, .bk-aw chips, tooltips name the season + fantasy team):
+  playerAwards(DATA, frontOffice(DATA)) in breakdown.js = the Record Book's Awards rules (completed seasons
+  with a champion): Player of the Year, League MVP, Rookie of the Year, Championship MVP, Steal of the Draft
+  (indiv, gold outline), All-Star / All-Fantasy / All-Rookie (team, blue outline); cached per visit in
+  BK_AWARDS. RINGS (owner's rule: on the winning team's roster in championship week, NOT on taxi; IR counts):
+  championshipRings(DATA) = each finished season's Sleeper league rosters (closed after the final; the final
+  week's matchup `players` = exactly that roster, taxi included) -> champion's players minus taxi; gold
+  "{season} Champion" chip with the trophy icon, listed first. Repeats share one chip (owner, Oct 25 2026):
+  "3 x League MVP (2023-24, 2024-25, 2025-26)", seasons oldest first, tooltip one line per win; groups by
+  kind, then newest win. Season chips (.bk-seasons) wrap at 320px. Verified: Jokic = Record Book (MVP 23/24/25,
+  POY 24, All-Fantasy 23/24, All-Star 25); rings 2023 TRT3 20 (no taxi), 2024 bigdaddyburk 37 - 9 taxi = 28,
+  2025 tzola13 45 - 19 = 26; Banchero 2024-25 Champion + Championship MVP. Column defs:
   [key, label, sort value, cell, { only / not: list, cls }], filtered by bkCols().
   DATA: table stats = SEASON STAT TABLES (breakdown.js): every player's season added up from Sleeper's per-game
   box scores /stats/nba/{season}/{week} (STAT_KEYS incl. plus_minus + bonus fields, summed per game so bonuses

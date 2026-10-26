@@ -5,6 +5,10 @@
 // season stat tables (updateSeasonStats -> data/season-stats.json).
 
 import { get } from './commish.js';
+import { ALL_STARS_FROM } from './config.js';
+import { ALL_STAR_POSITIONS } from './corrections.js';
+import { allFantasy, allStars, championshipMvp, mvpRace, playerOfTheYear, rookieClass } from './awards.js';
+import { draftOfYear } from './draft.js';
 
 export const fantasy = (stats, scoring) => Object.entries(scoring).reduce((sum, [k, v]) => sum + (Number(stats?.[k]) || 0) * v, 0);
 // Minutes: `min`, or seconds played / 60 (older rows have only `sp`).
@@ -218,6 +222,55 @@ async function scoringFor(DATA, season) {
   return s ? (await get(`/v1/league/${s.leagueId}`, {}))?.scoring_settings ?? {} : {};
 }
 
+// ---------- Awards + rings on the player card (owner, Oct 25 2026) ----------
+
+// Every award a player got on the season banners, with the same functions and rules as the Awards page and
+// the Record Book's Awards category (completed seasons with a champion). fo = frontOffice(DATA, 'all').
+// { pid: [{ s, label, kind: 'indiv' | 'team', o (fantasy team the banner names) }] }.
+export function playerAwards(DATA, fo) {
+  const out = {};
+  const add = (pid, s, label, kind, o) => { if (pid) (out[pid] ??= []).push({ s, label, kind, o: o ?? null }); };
+  for (const season of DATA.seasons.filter(x => x.status === 'complete' && x.champion)) {
+    const s = season.season;
+    const poy = playerOfTheYear(DATA, s)[0];
+    if (poy) add(poy.pid, s, 'Player of the Year', 'indiv', poy.team);
+    const mvp = mvpRace(DATA, fo, s, 1)[0];
+    if (mvp) add(mvp.pid, s, 'League MVP', 'indiv', mvp.o);
+    const rookies = rookieClass(DATA, fo, s);
+    if (rookies.roy) add(rookies.roy.pid, s, 'Rookie of the Year', 'indiv', rookies.roy.o);
+    const cmvp = championshipMvp(DATA, s);
+    if (cmvp) add(cmvp.pid, s, 'Championship MVP', 'indiv', season.champion);
+    const stars = allStars(DATA, fo, s, ALL_STAR_POSITIONS, ALL_STARS_FROM);
+    for (const x of stars?.awarded ? Object.values(stars.teams).flat() : []) add(x.pid, s, 'All-Star', 'team', x.o);
+    for (const x of allFantasy(DATA, fo, s)) add(x.pid, s, 'All-Fantasy', 'team', x.o);
+    for (const x of rookies.team ?? []) add(x.pid, s, 'All-Rookie', 'team', x.o);
+    const steal = draftOfYear(DATA, s)?.steal;
+    if (steal) add(steal.pid, s, 'Steal of the Draft', 'indiv', steal.o);
+  }
+  return out;
+}
+
+// Championship rings: everyone on the champion's roster in championship week, taxi squad excluded (IR
+// counts). Sleeper keeps each finished season's final rosters (its league is closed after the final, and
+// the final week's lineup lists exactly that roster), so roster players minus taxi. { pid: [{ s, o }] }.
+export async function championshipRings(DATA) {
+  const out = {};
+  await Promise.all(DATA.seasons.filter(x => x.status === 'complete' && x.champion).map(async season => {
+    const r = ((await get(`/v1/league/${season.leagueId}/rosters`, [])) ?? []).find(x => x.owner_id === season.champion);
+    const taxi = new Set(r?.taxi ?? []);
+    for (const pid of r?.players ?? []) if (!taxi.has(pid)) (out[pid] ??= []).push({ s: season.season, o: season.champion });
+  }));
+  return out;
+}
+
+// Roster % across all Sleeper leagues (owner, Oct 25 2026): Sleeper's research feed for this season's
+// current week, { pid: { owned, started } } (percent of leagues; a few hundred players).
+export async function rosterShares(season) {
+  const state = await get('/v1/state/nba', {});
+  const week = state?.season === season && state.season_type === 'regular' ? Math.max(1, Number(state.week) || 1) : 1;
+  return get(`/players/nba/research/regular/${season}/${week}`, {});
+}
+
 // Adds up season lines (each already scored with its own season's league scoring).
 function sumLines(lines) {
   const line = Object.fromEntries(SUMS.map(k => [k, 0]));
@@ -260,6 +313,16 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
     Promise.all((career && list === 'team' ? [cur.season] : seasons).map(seasonTable)),
     Promise.all(seasons.map(s => scoringFor(DATA, s))),
   ]);
+  const research = await rosterShares(cur.season);
+  // Nicknames managers gave players in Sleeper (roster metadata p_nick_{pid}); a team keeps them after
+  // the player leaves. { pid: { owner: nickname } }.
+  const nicks = {};
+  for (const r of rosters ?? []) {
+    for (const [k, v] of Object.entries(r.metadata ?? {})) {
+      const m = /^p_nick_(\d+)$/.exec(k);
+      if (m && String(v ?? '').trim()) (nicks[m[1]] ??= {})[r.owner_id] = String(v).trim();
+    }
+  }
   const scoringOf = Object.fromEntries(seasons.map((s, i) => [s, scorings[i]]));
   const slots = (league.roster_positions ?? []).filter(p => p !== 'BN');
   // Where every rostered player is: { pid: { owner, slot, order } }.
@@ -315,6 +378,11 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
       exp: p.years_exp ?? null,
       college: p.college ?? '', country: p.birth_country ?? '',
       injury: p.injury_status ?? null, injuryPart: p.injury_body_part ?? '', injuryNote: p.injury_notes ?? '',
+      // Roster % / start % across all Sleeper leagues this week (null = not in Sleeper's list).
+      owned: research?.[pid]?.owned ?? null, started: research?.[pid]?.started ?? null,
+      // His current team's nickname for him, then other teams' (older owners).
+      nick: (at && nicks[pid]?.[at.owner]) || null,
+      nickOthers: Object.entries(nicks[pid] ?? {}).filter(([o]) => o !== at?.owner).map(([o, n]) => ({ owner: o, n })),
       tot, avg: averages(tot),
     };
   });
