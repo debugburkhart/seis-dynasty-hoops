@@ -1,7 +1,0 @@
-Sleeper's weekly scores don't match its official standings:
-
-2026 bigtrey5456: official 0 wins / 319 pts, but weekly scores give 0 wins / 343 pts (off by -24).
-   Check bigtrey5456's score in these games:
-     Week 1: bigtrey5456 343 - 390 jimmycooks2
-
-Look these up in the Sleeper app and add the right team scores to assets/corrections.js.
