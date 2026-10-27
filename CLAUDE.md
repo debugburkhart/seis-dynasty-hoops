@@ -15,6 +15,11 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - `.github/workflows/update.yml` can't be uploaded (hidden folder): the owner edits it on
   GitHub with the pencil and pastes. Put the new content on their clipboard with
   PowerShell `Get-Content -Raw ... | Set-Clipboard`.
+- Workflow actions (Oct 27 2026, Node 20 retirement notice): checkout@v5, setup-node@v5 (node-version 22 for
+  the script), configure-pages@v6, upload-pages-artifact@v5, deploy-pages@v5 = the first majors on Node 24
+  (newer checkout v6/v7 change how git credentials are kept; the "Save data" step pushes with them). The
+  Sunday 8 PM / 11 PM crons were missing on GitHub until this paste: always compare the live file
+  (raw.githubusercontent.com/.../.github/workflows/update.yml) with the local one before giving a new paste.
 - Always end a change with the exact list of files to upload.- The repo is public: check runs/files with `curl` against api.github.com,
   raw.githubusercontent.com and the live site (github.io is blocked in the Browser pane).
 
@@ -1017,6 +1022,16 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   fantasy_positions reach that group; marked "2nd" by the name, secMark). Saved with gmSave: gm-bk-pos
   ('all'|'G'|'F'|'C'), gm-bk-sec (default on); 'gm-bk-' is in SYNCED. Check: Centers on Parma 11 with, 10
   without (John Collins PF/C).
+  USAGE RATE (owner, Oct 27 2026; Sleeper has none): computed = Basketball-Reference's formula 100 x (FGA + .44 FTA
+  + TOV) x (team min / 5) / (min x (team FGA + .44 team FTA + team TOV)) over his games. The season tables now also
+  store his TEAM's totals in the games he played (STAT_KEYS tm_fga / tm_fta / tm_to / tm_min, summed per game in
+  addRows; STATS_VERSION 3 = nightly rebuild) -> line.usg in withPercents (lineFromTable / sumLines; game-log
+  lines have no team totals = null, so Team career shows "—"). Checked 2024-25 vs BRef: SGA 35.0 / 34.8, Giannis
+  35.3 / 35.2, Jokic 29.7 / 29.6, Banchero 34.0 / 33.6, Gobert 13.1 / 13.0, Brunson 29.7 / 29.5 (BRef also counts team
+  turnovers and leaves out the Cup final). UI: "USG%" column (BK_USG, Averages after Min + Shooting after TS%),
+  Compare "Usage" row, card line "Role <b>Co-Star / Lead Scorer</b> (28.1% usage[, N games when < 5])" (.bk-role)
+  from the owner's table USG_ROLES / usgRole in app.js: < 20 Role Player / Connector, < 24 Average Starter, < 30
+  Co-Star / Lead Scorer, < 35 Primary Creator / Superstar, else Ultra-High Usage (rounded to 0.1 first).
   CARD TOP (owner, Oct 26 2026): .bk-top = .bk-id (headshot, FP/G ring right under it) beside .bk-head (#number +
   positions, first/LAST name, HT/WT/AGE, league rank, Sleeper %); the rest (.bk-info) below. One column up to
   1199px; from 1200px the top sits left (max 440px) and .bk-info right. Long last names shrink (h3.bk-l1 10-12

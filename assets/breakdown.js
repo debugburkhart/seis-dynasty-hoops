@@ -88,15 +88,20 @@ function withPercents(line) {
   // True shooting %: points per shooting chance (a free-throw trip ~ 0.44 of one).
   line.ts = line.fga || line.fta ? line.pts / (2 * (line.fga + 0.44 * line.fta)) : null;
   line.efg = line.fga ? (line.fgm + 0.5 * line.tpm) / line.fga : null;
+  // Usage rate (Basketball-Reference's formula): share of his team's plays he ended (shot, free-throw trip or
+  // turnover) while on the floor. Needs the team totals of his games (season tables); game logs alone give null.
+  const tmPlays = (line.tmFga ?? 0) + 0.44 * (line.tmFta ?? 0) + (line.tmTo ?? 0);
+  line.usg = tmPlays > 0 && line.min > 0 && line.tmMin > 0 ? (100 * (line.fga + 0.44 * line.fta + line.to) * (line.tmMin / 5)) / (line.min * tmPlays) : null;
   return line;
 }
 // Season totals added up from a game log. Sleeper's season-total feeds are not used for stats:
 // they run a day behind, have no plus/minus, and carry bonus flags (40/50 points, 15 assists,
 // 20 rebounds) a player never earned (Banchero 2025-26: 2,568 FP vs 2,560 from his games).
-const SUMS = ['gp', 'min', 'pts', 'reb', 'oreb', 'dreb', 'ast', 'stl', 'blk', 'to', 'pf', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta', 'pm', 'dd', 'td', 'tf', 'fp'];
+const SUMS = ['gp', 'min', 'pts', 'reb', 'oreb', 'dreb', 'ast', 'stl', 'blk', 'to', 'pf', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta', 'pm', 'dd', 'td', 'tf', 'fp',
+  'tmFga', 'tmFta', 'tmTo', 'tmMin']; // team totals in his games (season tables only; usage rate)
 export function totalOf(games) {
   const line = Object.fromEntries(SUMS.map(k => [k, 0]));
-  for (const g of games) if (!g.dnp) for (const k of SUMS) line[k] += g.line[k];
+  for (const g of games) if (!g.dnp) for (const k of SUMS) line[k] += g.line[k] ?? 0;
   return withPercents(line);
 }
 // Per-game averages of a totals line (shooting % and games stay as they are).
@@ -112,8 +117,10 @@ export function averages(line) {
 // Raw stats kept per player: games, minutes, the box score and every field any league season
 // scores (bonuses are per game, so added up they are right, unlike the season-total feeds).
 export const STAT_KEYS = ['gp', 'min', 'pts', 'reb', 'oreb', 'dreb', 'ast', 'stl', 'blk', 'to', 'pf', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta',
-  'plus_minus', 'dd', 'td', 'tf', 'ff', 'bonus_pt_40p', 'bonus_pt_50p', 'bonus_ast_15p', 'bonus_reb_20p'];
-export const STATS_VERSION = 2; // 2: All-Star Game rows dropped (Oct 26 2026)
+  'plus_minus', 'dd', 'td', 'tf', 'ff', 'bonus_pt_40p', 'bonus_pt_50p', 'bonus_ast_15p', 'bonus_reb_20p',
+  // His TEAM's totals in the games he played (for usage rate; owner, Oct 27 2026): FGA, FTA, turnovers, minutes.
+  'tm_fga', 'tm_fta', 'tm_to', 'tm_min'];
+export const STATS_VERSION = 3; // 2: All-Star Game rows dropped (Oct 26 2026); 3: team totals for usage (Oct 27 2026)
 const API = 'https://api.sleeper.com';
 // One week of box scores; a failed read throws (a missing week must never be saved as zeros).
 async function weekRows(season, week) {
@@ -123,10 +130,18 @@ async function weekRows(season, week) {
 }
 const r2 = x => Math.round(x * 100) / 100;
 function addRows(table, rows) {
+  // Team totals per game (every player of that team in that game): what usage rate compares a player with.
+  const team = {};
+  for (const g of rows) {
+    if (!/^\d+$/.test(g.player_id) || !played(g.stats)) continue;
+    const t = (team[`${g.game_id}|${g.team}`] ??= { tm_fga: 0, tm_fta: 0, tm_to: 0, tm_min: 0 });
+    t.tm_fga += n(g.stats, 'fga'); t.tm_fta += n(g.stats, 'fta'); t.tm_to += n(g.stats, 'to'); t.tm_min += minutes(g.stats);
+  }
   for (const g of rows) {
     if (!/^\d+$/.test(g.player_id) || !played(g.stats)) continue;
     const a = (table.players[g.player_id] ??= STAT_KEYS.map(() => 0));
-    STAT_KEYS.forEach((k, i) => { a[i] = r2(a[i] + (k === 'gp' ? 1 : k === 'min' ? minutes(g.stats) : n(g.stats, k))); });
+    const tm = team[`${g.game_id}|${g.team}`];
+    STAT_KEYS.forEach((k, i) => { a[i] = r2(a[i] + (k === 'gp' ? 1 : k === 'min' ? minutes(g.stats) : k.startsWith('tm_') ? tm[k] : n(g.stats, k))); });
     if (g.date && (!table.through || g.date > table.through)) table.through = g.date;
   }
 }
@@ -205,6 +220,7 @@ export function lineFromTable(row, keys, scoring) {
     gp: s.gp, min: s.min, pts: s.pts, reb: s.reb, oreb: s.oreb, dreb: s.dreb, ast: s.ast, stl: s.stl, blk: s.blk, to: s.to, pf: s.pf,
     fgm: s.fgm, fga: s.fga, tpm: s.tpm, tpa: s.tpa, ftm: s.ftm, fta: s.fta, pm: s.plus_minus, dd: s.dd, td: s.td, tf: s.tf,
     fp: fantasy(s, scoring),
+    tmFga: s.tm_fga, tmFta: s.tm_fta, tmTo: s.tm_to, tmMin: s.tm_min,
   });
 }
 

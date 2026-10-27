@@ -2527,6 +2527,12 @@ const nickLine = p => {
   if (!past.length) return '';
   return `<small class="bk-nick bk-nick-past" title="Nicknames managers gave him in Sleeper">${past.map(x => `“${esc(x.n)}” <span>by ${esc(name(x.owner))}</span>`).join(' · ')}</small>`;
 };
+// Usage rate (owner, Oct 27 2026; computed in breakdown.js from box scores, = Basketball-Reference within ~0.5) and the
+// role it points to (owner's table): under 20 Role Player / Connector, 20-23 Average Starter, 24-29 Co-Star / Lead
+// Scorer, 30-35 Primary Creator / Superstar, 35+ Ultra-High Usage.
+const USG_ROLES = [[20, 'Role Player / Connector'], [24, 'Average Starter'], [30, 'Co-Star / Lead Scorer'], [35, 'Primary Creator / Superstar'], [Infinity, 'Ultra-High Usage']];
+const usgRole = u => (u == null ? null : USG_ROLES.find(([max]) => Math.round(u * 10) / 10 < max)[1]);
+const BK_USG = ['usg', 'USG%', p => p.tot.usg ?? -1, p => (p.tot.usg == null ? '—' : p.tot.usg.toFixed(1))];
 const BK_ROS = ['ros', 'Ros%', p => p.owned ?? -1, p => bkShare(p.owned), { cls: 'bk-roscol' }];
 // League ranks (leagueRanks: total FP under our scoring, overall + at his main position; best first when sorted).
 const BK_RANK = ['rk', 'OVR', p => (p.rankOvr ? -p.rankOvr : -1e6), p => p.rankOvr ?? '—'];
@@ -2700,6 +2706,7 @@ const BK_VIEWS = {
     BK_ROS,
     ['gp', 'GP', p => p.tot.gp, p => p.tot.gp],
     ['min', 'Min', ...bkAvg('min')],
+    BK_USG,
     ['pts', 'Pts', ...bkAvg('pts')],
     ['reb', 'Reb', ...bkAvg('reb')],
     ['ast', 'Ast', ...bkAvg('ast')],
@@ -2738,6 +2745,7 @@ const BK_VIEWS = {
     ['ftp', 'FT%', p => p.tot.ftp ?? -1, p => bkPct(p.tot.ftp)],
     ['efg', 'eFG%', p => p.tot.efg ?? -1, p => bkPct(p.tot.efg)],
     ['ts', 'TS%', p => p.tot.ts ?? -1, p => bkPct(p.tot.ts)],
+    BK_USG,
   ] },
 };
 const bkCols = (view, list) => view.cols.filter(c => (!c[4]?.only || [].concat(c[4].only).includes(list)) && c[4]?.not !== list && (!c[4]?.tags || allTags().length));
@@ -2961,6 +2969,7 @@ async function renderBreakdown(body, params) {
           <p class="bk-meas">${[p.height && `HT: ${p.height}`, p.weight && `WT: ${p.weight}`, p.age != null && `AGE: ${p.age}`].filter(Boolean).map(esc).join(' / ')}</p>
           ${p.rankOvr ? `<p class="bk-share" title="Rank by total fantasy points under our league scoring, ${esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season))}: among all NBA players and among ${esc(p.mainPos)}s"><span class="ct-label">League rank</span> <b>${p.rankPos ?? '—'} ${esc(p.mainPos)}</b> · <b>${p.rankOvr} OVR</b> <small>(${esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season))})</small></p>` : ''}
           ${p.owned != null ? `<p class="bk-share" title="Share of Sleeper NBA dynasty leagues where he is on a roster / in a starting lineup this week (the numbers the Sleeper app shows in this league)"><span class="ct-label">Sleeper</span> Rostered <b>${bkShare(p.owned)}</b> · Started <b>${bkShare(p.started)}</b> of dynasty leagues</p>` : ''}
+          ${p.tot.usg != null ? `<p class="bk-share bk-role" title="Usage rate: the share of his team's plays he finished (shot, free-throw trip or turnover) while on the floor, ${esc(period)}. Under 20% Role Player / Connector · 20-23% Average Starter · 24-29% Co-Star / Lead Scorer · 30-35% Primary Creator / Superstar · 35%+ Ultra-High Usage"><span class="ct-label">Role</span> <b>${esc(usgRole(p.tot.usg))}</b> (${p.tot.usg.toFixed(1)}% usage${p.tot.gp < 5 ? `, ${p.tot.gp} game${p.tot.gp === 1 ? '' : 's'}` : ''})</p>` : ''}
         </div>
       </div>
       <div class="bk-info">
@@ -3149,6 +3158,7 @@ async function renderBreakdown(body, params) {
       ['Games', p => ({ v: p.tot.gp, t: p.tot.gp }), 'hi'],
       stat('Minutes', p => p.avg.min),
       stat('FP/G', p => p.avg.fp),
+      ['Usage', p => (p.tot.usg == null ? { v: null, t: '—' } : { v: p.tot.usg, t: `% · ` }), null],
       ['Total FP', p => ({ v: p.tot.fp, t: num(p.tot.fp) }), 'hi'],
       ['Locked', p => ({ v: lk[p.pid]?.pts ?? 0, t: lk[p.pid] ? num(lk[p.pid].pts) : '—' }), 'hi'],
       ['Starts', p => ({ v: lk[p.pid]?.starts ?? 0, t: lk[p.pid]?.starts ?? 0 }), 'hi'],
