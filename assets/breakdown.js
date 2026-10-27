@@ -9,6 +9,7 @@ import { ALL_STARS_FROM } from './config.js';
 import { ALL_STAR_POSITIONS } from './corrections.js';
 import { allFantasy, allStars, championshipMvp, mvpRace, playerOfTheYear, rookieClass } from './awards.js';
 import { draftOfYear } from './draft.js';
+import { normName } from './scout.js';
 
 export const fantasy = (stats, scoring) => Object.entries(scoring).reduce((sum, [k, v]) => sum + (Number(stats?.[k]) || 0) * v, 0);
 // Minutes: `min`, or seconds played / 60 (older rows have only `sp`).
@@ -262,6 +263,57 @@ export async function championshipRings(DATA) {
     for (const pid of r?.players ?? []) if (!taxi.has(pid)) (out[pid] ??= []).push({ s: season.season, o: season.champion });
   }));
   return out;
+}
+
+// Injury return estimates (owner, Oct 26 2026: "week/day/month estimate ... also Out for season"). Sleeper has
+// none, so ESPN's public injury feed (CORS open, like the scoreboard gm.js reads for tip-offs): every listed
+// injury has details.returnDate (an estimate), fantasyStatus OFS = out for the season, the injury date and a
+// one-line news note. Matched to Sleeper ids by name (normName) and NBA team; browser only, cached 15 min;
+// a failed read = null (no estimates shown). { pid: { status, since, ret, ofs, type, side, detail, note } }.
+const ESPN_INJ_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries';
+let ESPN_INJ = null;
+export async function espnInjuries(all) {
+  if (ESPN_INJ && Date.now() - ESPN_INJ.at < 15 * 60e3) return ESPN_INJ.map;
+  let map = null;
+  try {
+    const res = await fetch(ESPN_INJ_URL);
+    if (!res.ok) throw new Error(`ESPN injuries ${res.status}`);
+    const feed = await res.json();
+    const byName = {};
+    for (const [pid, p] of Object.entries(all ?? {})) {
+      if (/^\d+$/.test(pid) && p?.team) (byName[normName(p.full_name ?? `${p.first_name} ${p.last_name}`)] ??= []).push(pid);
+    }
+    const codeOf = Object.fromEntries(Object.entries(NBA_TEAMS).map(([code, n]) => [n, code]));
+    map = {};
+    for (const team of feed?.injuries ?? []) {
+      const code = codeOf[team.displayName];
+      for (const i of team.injuries ?? []) {
+        const cands = byName[normName(i.athlete?.displayName)] ?? [];
+        const pid = cands.find(c => all[c].team === code) ?? (cands.length === 1 ? cands[0] : null);
+        if (!pid) continue;
+        const d = i.details ?? {};
+        map[pid] = {
+          status: i.status ?? null, since: i.date?.slice(0, 10) ?? null, ret: d.returnDate ?? null,
+          ofs: d.fantasyStatus?.abbreviation === 'OFS', type: d.type ?? '', side: d.side ?? '', detail: d.detail ?? '',
+          note: i.shortComment ?? '',
+        };
+      }
+    }
+  } catch { map = null; }
+  ESPN_INJ = { at: Date.now(), map };
+  return map;
+}
+// Plain-words estimate: { text, tone: 'season' | 'soon' | 'days' | 'weeks' | 'months' } or null.
+export function returnEstimate(e, today = new Date()) {
+  if (!e) return null;
+  if (e.ofs) return { text: 'Out for season', tone: 'season' };
+  if (!e.ret) return null;
+  const at = new Date(`${e.ret}T12:00:00`);
+  const days = Math.round((at - today) / 864e5);
+  const when = at.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (days <= 1) return { text: 'Est. return: any day now', tone: 'soon' };
+  const span = days < 14 ? `~${days} days` : days < 60 ? `~${Math.round(days / 7)} weeks` : `~${Math.round(days / 30.4)} months`;
+  return { text: `Est. return ${when} (${span})`, tone: days < 14 ? 'days' : days < 60 ? 'weeks' : 'months' };
 }
 
 // Roster % across Sleeper leagues (owner, Oct 25 2026): Sleeper's research feed for this season's current

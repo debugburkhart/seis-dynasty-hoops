@@ -3141,3 +3141,76 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
   .bk-tray-acts { margin-left: auto; }
 }
 .bk-tray-chip { white-space: nowrap; flex: none; }
+/* 2K breakdown INJURIES view (owner, Oct 26 2026): subscriptions + one section per team with a separator. */
+.inj-sum { margin: 0 0 10px; font-size: 13px; }
+.inj-mode { margin-bottom: 10px; }
+.inj-mode button { border: 0; background: none; padding: 7px 12px; border-radius: 7px; font: 700 13px/1.2 var(--font); color: var(--ink); cursor: pointer; }
+.inj-mode button.on { background: var(--navy-900); color: #fff; }
+.inj-subs summary { cursor: pointer; font: 800 12px/1.2 var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--navy-700); padding: 4px 0; }
+.inj-subs summary small { color: var(--muted); font-weight: 700; text-transform: none; letter-spacing: 0; margin-left: 4px; }
+.inj-subgroup { margin-top: 10px; }
+.inj-subgroup .bk-bar-label { display: block; margin-bottom: 6px; color: var(--muted); }
+.inj-subgroup > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.inj-sub { padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--paper); font: 700 12px/1.3 var(--font); color: var(--ink); cursor: pointer; }
+.inj-sub small { color: #c0392b; font-weight: 800; }
+.inj-sub.on { background: var(--navy-900); border-color: var(--navy-900); color: #fff; }
+.inj-sub.on small { color: #ffaaaa; }
+.inj-sec + .inj-sec { margin-top: 18px; }
+.inj-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; margin: 0 -4px 6px; padding: 8px 10px; border-radius: 8px; background: var(--navy-900); color: #fff; }
+.inj-head img { width: 24px; height: 24px; object-fit: contain; }
+.inj-head h3 { margin: 0; font: 900 14px/1.2 var(--display); text-transform: uppercase; letter-spacing: .03em; }
+.inj-head small { color: #9fb0cc; font-size: 11.5px; }
+.inj-count { margin-left: auto; font: 800 11px/1 var(--display); letter-spacing: .05em; text-transform: uppercase; color: var(--gold); white-space: nowrap; }
+.inj-none { margin: 4px 4px 0; color: var(--muted); font-size: 12.5px; }
+.inj-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid #f0ece2; text-decoration: none; color: inherit; }
+.inj-row:hover { background: #faf8f2; }
+.inj-photo { flex: none; width: 44px; height: 32px; object-fit: cover; object-position: center top; border-radius: 6px; background: #f2efe7; }
+.inj-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.inj-main b { font-size: 13.5px; }
+.inj-main small { color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; }
+.inj-main small.inj-what { color: var(--ink); }
+.inj-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; text-align: right; }
+.inj-side small { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.inj-pill { padding: 2px 8px; border-radius: 99px; background: #fdf0d2; color: #8a5a00; font: 800 11px/1.3 var(--font); }
+.inj-pill.bad { background: #fde3e1; color: #b3261e; }
+@media (max-width: 420px) {
+  .inj-photo { width: 36px; height: 27px; }
+  .inj-side small { white-space: normal; max-width: 90px; }
+}
+/* Phones: the site's top bar (sticky, 54px) stays on screen, so team separators pin just below it. */
+@media (max-width: 860px) {
+  .inj-head { top: 54px; }
+}
+/* Injury return estimates from ESPN (owner, Oct 26 2026): chip on the Injuries rows + the 2K card. */
+.inj-est, .bk-est { display: inline-block; align-self: flex-start; margin-top: 3px; padding: 1px 8px; border-radius: 99px; font: 800 11px/1.4 var(--font); }
+.inj-est { background: #eef2f8; color: var(--navy-700); }
+.inj-est.est-soon, .inj-est.est-days { background: #e6f4ea; color: #1e6b34; }
+.inj-est.est-weeks { background: #fdf0d2; color: #8a5a00; }
+.inj-est.est-months, .inj-est.est-season { background: #fde3e1; color: #b3261e; }
+.inj-note { margin-top: 3px; color: var(--muted); font-size: 11.5px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.inj-src { margin: -4px 0 10px; color: var(--muted); font-size: 11.5px; }
+.bk-est { margin-left: 6px; margin-top: 8px; background: rgba(255,255,255,.1); color: #d6deec; }
+.bk-est.est-soon, .bk-est.est-days { background: rgba(110,220,160,.16); color: #9ff0c4; }
+.bk-est.est-weeks { background: rgba(244,194,79,.16); color: var(--gold); }
+.bk-est.est-months, .bk-est.est-season { background: rgba(255,110,110,.16); color: #ffaaaa; }
+/* Injuries view: "Your players on this team" strip under an NBA team's separator + Yours tag (owner, Oct 26 2026). */
+.inj-mine { margin: 0 0 8px; padding: 8px 10px; border: 1px solid #f1dfae; border-radius: 8px; background: #fffaf0; }
+.inj-mine .bk-bar-label { display: block; margin-bottom: 4px; color: var(--gold-ink); }
+.inj-mine ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.inj-mine li { display: flex; flex-direction: column; }
+.inj-mine li a { color: var(--ink); text-decoration: none; }
+.inj-mine li a:hover b { text-decoration: underline; }
+.inj-mine li small { color: var(--muted); font-size: 11.5px; }
+.inj-mine li.hurt b { color: #b3261e; }
+.inj-open { margin-top: 2px; color: #1e6b34 !important; font-weight: 700; }
+.inj-yours { margin-left: 4px; padding: 0 6px; border-radius: 99px; background: var(--gold); color: var(--navy-950); font: 800 9.5px/1.5 var(--display); font-style: normal; letter-spacing: .05em; text-transform: uppercase; vertical-align: 1px; }
+/* Injuries "My schedule" mode (owner, Oct 26 2026): one section per remaining matchup week. */
+.inj-wkgroup + .inj-wkgroup { margin-top: 8px; }
+.inj-wkgroup .bk-bar-label { display: block; margin: 6px 4px 2px; color: var(--muted); }
+.inj-why { max-width: 150px; color: var(--navy-700) !important; font-weight: 700; white-space: normal !important; text-align: right; }
+.inj-yourside { margin: 8px 4px 0; font-size: 12px; color: var(--muted); }
+.inj-yourside b { color: var(--ink); }
+.inj-mode { flex-wrap: wrap; }
+/* 2K breakdown opened from the Injury Report: back link on top (owner, Oct 26 2026). */
+.bk-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 99px; background: var(--navy-900); color: #fff; font: 800 12.5px/1.2 var(--font); text-decoration: none; }
+.bk-back:hover { background: var(--navy-700); }

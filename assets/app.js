@@ -21,7 +21,7 @@ import { paintSync, syncInit, syncSave } from './sync.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 import { betaCard, testTabs } from './test-features.js';
-import { NBA_TEAM_CODES, averages, championshipRings, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, seasonLines, teamLogo } from './breakdown.js';
+import { NBA_TEAM_CODES, averages, championshipRings, espnInjuries, returnEstimate, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, seasonLines, teamLogo } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -2390,7 +2390,7 @@ function renderCommish(main, params) {
     </div>`;
   const body = $('#cm-body', main);
   paintSync(main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport }[tab];
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
@@ -2405,7 +2405,9 @@ function renderCommish(main, params) {
 // game log. Three lists (owner, Oct 25 2026): one team's roster, the waiver wire (free agents) and
 // the whole league (every rostered player, with his fantasy team). Basic NBA stats and fantasy
 // points, plus the dynasty score (badge + column, owner asked). No grades or other site models.
-const BK = { pid: null, view: 'avg', sort: null, dir: -1, logAll: false, list: 'team', q: '', limit: 50, group: 'all', tag: null, tagOpen: false, dyn: () => null, locked: () => null, cmpOpen: false };
+const BK = { pid: null, view: 'avg', sort: null, dir: -1, logAll: false, list: 'team', q: '', limit: 50, group: 'all', tag: null, tagOpen: false, dyn: () => null, locked: () => null, cmpOpen: false, espn: {} };
+// ESPN return estimate chip ("Est. return Nov 20 (~3 weeks)" / "Out for season"), '' when ESPN lists nothing.
+const estChip = (e, cls = 'bk-est') => { const r = returnEstimate(e); return r ? `<span class="${cls} est-${r.tone}" title="${esc(e.note || 'ESPN injury estimate')}">${esc(r.text)}</span>` : ''; };
 // Position filter (owner, Oct 25 2026), all 3 lists: main Sleeper position's group (PG/SG/G = guard, SF/PF/F =
 // forward, C), plus players who can also play there (fantasy_positions) when "Include secondary positions" is
 // on; those rows get a small "2nd" mark. Saved like the Dynasty tab's filters (gm-bk-pos, gm-bk-sec; synced).
@@ -2545,6 +2547,7 @@ const SLOT_WORD = { BN: 'Bench', IR: 'Injured reserve', TX: 'Taxi squad', FA: 'F
 const bkFold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 async function renderBreakdown(body, params) {
+  if (params.get('list') === 'inj') { location.hash = '#/commish?tab=injuries'; return; } // old link: now its own tab
   const cur = DATA.seasons.at(-1);
   const list = BK_LISTS.some(([id]) => id === params.get('list')) ? params.get('list') : 'team';
   const me = cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH;
@@ -2555,11 +2558,14 @@ async function renderBreakdown(body, params) {
   // NBA team list (owner, Oct 26 2026): ?nba=ORL, last choice kept in gm-bk-nba.
   const nbaTeam = NBA_TEAM_CODES.includes(params.get('nba')) ? params.get('nba') : gmLoad('gm-bk-nba', 'ATL');
   if (list === 'nba') gmSave('gm-bk-nba', nbaTeam);
-  const link = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...(list === 'team' ? { team: me } : {}), ...(list !== 'team' ? { list } : {}), ...(list === 'nba' ? { nba: nbaTeam } : {}), ...(season !== cur.season ? { season } : {}), ...q })}`;
+  const fromInj = params.get('from') === 'inj';
+  const link = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...(fromInj ? { from: 'inj' } : {}), ...(list === 'team' ? { team: me } : {}), ...(list !== 'team' ? { list } : {}), ...(list === 'nba' ? { nba: nbaTeam } : {}), ...(season !== cur.season ? { season } : {}), ...q })}`;
   if (BK.list !== list) { BK.list = list; BK.q = ''; BK.limit = BK_PAGE; }
+  // Came from the Injury Report (?from=inj): a back link on top; kept in every link while browsing here.
   body.innerHTML = `<div class="loading">Pulling ${list === 'team' ? 'the roster' : list === 'fa' ? 'the waiver wire' : 'every roster'} and stats from Sleeper…</div>`;
   // Dynasty scores (gmDynasty, same values and injury setting as the Dynasty tab); a failure just hides them.
-  const [bk, dyn, rings] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, nbaTeam, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft()]);
+  const [bk, dyn, rings, , , espnOut] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, nbaTeam, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft(), get('/v1/players/nba', {}).then(espnInjuries).catch(() => null)]);
+  BK.espn = espnOut ?? {}; // ESPN injury estimates (return date, out for season) by pid
   // Season-banner awards per player (same rules as the Awards page), worked out once per visit.
   BK_AWARDS ??= playerAwards(DATA, frontOffice(DATA));
   const dynOf = pid => dyn?.v?.players?.[pid]?.score ?? null;
@@ -2591,6 +2597,7 @@ async function renderBreakdown(body, params) {
       <select class="bk-nba" aria-label="NBA team">${[...NBA_TEAM_CODES].sort((a, b) => nbaTeamName(a).localeCompare(nbaTeamName(b))).map(t => `<option value="${t}"${t === nbaTeam ? ' selected' : ''}>${esc(nbaTeamName(t))}</option>`).join('')}</select></span></label>`;
 
   body.innerHTML = `<div class="gm-page bk-page">
+    ${fromInj ? '<a class="bk-back" href="#/commish?tab=injuries">← Back to Injury Report</a>' : ''}
     ${listTabs}
     <div class="cm-pickers">
       ${list === 'team' ? gmTeamPick(me, cur.season, 'breakdown') : list === 'nba' ? nbaPick : ''}
@@ -2699,7 +2706,9 @@ async function renderBreakdown(body, params) {
     const logo = teamLogo(p.team);
     const slot = SLOT_WORD[p.slot] ?? `Starter · ${p.slot} slot`;
     const bio = [p.college || p.country, p.exp != null ? (p.exp === 0 ? 'Rookie' : `${p.exp + 1}${['st', 'nd', 'rd'][p.exp] ?? 'th'} NBA season`) : '', p.birth ? `born ${new Date(`${p.birth}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''].filter(Boolean);
-    const inj = p.injury ? `<span class="bk-inj${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}">${esc(p.injury)}${p.injuryPart ? ` · ${esc(p.injuryPart)}` : ''}${p.injuryNote ? ` (${esc(p.injuryNote)})` : ''}</span>` : '';
+    const espnInj = BK.espn[p.pid];
+    const inj = (p.injury ? `<span class="bk-inj${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}">${esc(p.injury)}${p.injuryPart ? ` · ${esc(p.injuryPart)}` : ''}${p.injuryNote ? ` (${esc(p.injuryNote)})` : ''}</span>` : '')
+      + (p.injury || espnInj ? estChip(espnInj) : '');
     return `
       <div class="bk-team">${logo ? `<img src="${logo}" alt="" onerror="this.remove()">` : ''}<span>${esc(nbaTeamName(p.team) || 'No NBA team')}</span>${cmpBtn(p.pid, true)}</div>
       <div class="bk-id">
@@ -2808,7 +2817,7 @@ async function renderBreakdown(body, params) {
       ['Age', p => ({ v: p.age, t: p.age ?? '—' }), 'lo'],
       ['NBA season', p => ({ t: p.exp == null ? '—' : p.exp === 0 ? 'Rookie' : `${p.exp + 1}${['st', 'nd', 'rd'][p.exp] ?? 'th'}` })],
       ['Height / weight', p => ({ t: [p.height, p.weight].filter(Boolean).join(' · ') || '—' })],
-      ['Injury', p => ({ t: p.injury ? `${p.injury}${p.injuryPart ? ` · ${p.injuryPart}` : ''}` : 'Healthy' })],
+      ['Injury', p => ({ t: p.injury || BK.espn[p.pid] ? `${p.injury ?? BK.espn[p.pid].status}${p.injuryPart ? ` · ${p.injuryPart}` : ''}${returnEstimate(BK.espn[p.pid]) ? ` · ${returnEstimate(BK.espn[p.pid]).text}` : ''}` : 'Healthy' })],
       ['Contract', p => ({ t: CONTRACTS?.players?.[p.pid] ? contractText(CONTRACTS.players[p.pid], cur.season, p.exp) : p.team ? 'No standard contract' : '—' })],
       ['NBA draft', p => ({ t: nbaDraftText(p.pid) ?? '—' })],
       ['League draft', p => { const lg = leagueDraftOf(DATA, p.pid); return { t: lg ? `${lg.s} ${lg.kind === 'startup' ? 'startup' : 'rookie'} ${lg.round}.${String(lg.inRound).padStart(2, '0')} by ${name(lg.owner)}` : 'Not drafted here' }; }],
@@ -3009,6 +3018,205 @@ async function renderBreakdown(body, params) {
   renderCompare();
   const p = byPid[BK.pid];
   if (p) { years(p).catch(() => {}); log(p).catch(() => {}); }
+}
+
+// Injuries view (owner, Oct 26 2026): every player Sleeper lists with an injury, grouped under team
+// separators for the teams you subscribe to (fantasy teams and/or NBA teams), or the whole league.
+// Subscriptions in gm-bk-injsub = { f: [owner ids], n: [NBA codes] } (default: your fantasy team), the
+// "My subscriptions / Whole league" switch in gm-bk-injall; both synced with the other 'gm-bk-' settings.
+const INJ_ORDER = { IR: 0, Out: 1, Sus: 1, Doubtful: 2, GTD: 3, Questionable: 3, DTD: 4, Probable: 5 };
+const injRank = s => INJ_ORDER[s] ?? 4;
+const injBad = s => /^(out|ir|sus)/i.test(s ?? '');
+// Injury Report tab (Test features, owner Oct 26 2026; was the 2K breakdown's "Injuries" list): ?team= picks "you".
+function renderInjuryReport(body, params) {
+  const cur = DATA.seasons.at(-1);
+  return renderInjuries(body, params, cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH);
+}
+async function renderInjuries(body, params, me) {
+  const cur = DATA.seasons.at(-1);
+  // A name opens his 2K breakdown card in the NBA team view of his NBA team (owner, Oct 26 2026), with ?from=inj
+  // so the card page shows "Back to Injury Report"; the report remembers where you were scrolled.
+  const cardLink = p => `#/commish?${new URLSearchParams({ tab: 'breakdown', from: 'inj', list: 'nba', nba: p.team, p: p.pid })}`;
+  const tabs = ''; // its own Test features tab now (was a list in the 2K breakdown)
+  body.innerHTML = `<div class="gm-page bk-page">${tabs}<div class="loading">Pulling the injury report from Sleeper…</div></div>`;
+  const all = await get('/v1/players/nba', {});
+  // ESPN's feed adds return estimates + "out for season" (espnInjuries); players only ESPN lists join the report.
+  const espn = (await espnInjuries(all).catch(() => null)) ?? {};
+  BK.espn = espn;
+  const pids = Object.keys(all ?? {}).filter(pid => /^\d+$/.test(pid) && all[pid]?.team && all[pid].active !== false && (all[pid].injury_status || espn[pid]));
+  // Same player builder as the lists (stats, owner, slot, roster %), this season; dynasty scores like the Dynasty tab.
+  // Plus your own roster (owner, Oct 26 2026: "see if one of my players benefits from a teammate's injury").
+  const [bk, dyn, mine, nbaState, nbaGames] = await Promise.all([
+    loadBreakdown(DATA, { list: 'pick', pids, season: cur.season, owner: me }),
+    gmDynasty(params).catch(() => null),
+    loadBreakdown(DATA, { list: 'team', owner: me, season: cur.season }).catch(() => null),
+    get('/v1/state/nba', {}),
+    get(`/schedule/nba/regular/${cur.season}`, []), // game dates per fantasy week, for My schedule
+  ]);
+  const ESPN_STATUS = { 'Day-To-Day': 'DTD', Out: 'Out' };
+  const players = bk.players.map(p => {
+    const e = espn[p.pid];
+    const r = returnEstimate(e);
+    // Sort key: out for season, then the furthest estimated return first.
+    const back = e?.ofs ? 1e9 : e?.ret ? Date.parse(`${e.ret}T12:00:00`) : 0;
+    return { ...p, injury: p.injury ?? (e ? ESPN_STATUS[e.status] ?? e.status : null), news: all[p.pid]?.news_updated ?? 0, espn: e, est: r, back };
+  });
+  const dynOf = pid => dyn?.v?.players?.[pid]?.score ?? null;
+  const teams = cur.teams.map(t => t.owner);
+  const subs = () => gmLoad('gm-bk-injsub', { f: [me], n: [] });
+  const showAll = () => gmLoad('gm-bk-injall', false);
+
+  const count = list => {
+    const by = {};
+    for (const p of list) by[p.injury] = (by[p.injury] ?? 0) + 1;
+    return Object.entries(by).sort((a, b) => injRank(a[0]) - injRank(b[0])).map(([s, n]) => `${n} ${s}`).join(' · ');
+  };
+  const row = p => {
+    const card = cardLink(p);
+    const e = p.espn;
+    const what = [p.injuryPart || [e?.side, e?.type].filter(Boolean).join(' '), p.injuryNote || e?.detail].filter(Boolean).join(' · ') || 'No details yet';
+    const since = e?.since ? `hurt ${shortMd(e.since)}` : '';
+    return `<a class="inj-row" href="${card}" title="Open his player card">
+      <img class="inj-photo" src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+      <span class="inj-main"><b>${esc(p.name)}${p.owner === me ? ' <i class="inj-yours">Yours</i>' : ''}</b><small>${esc([p.pos.join('/'), p.team].join(' · '))} · ${p.owner ? `${esc(teamName(p.owner, cur.season))}${p.slot ? ` (${esc(SLOT_WORD[p.slot] ?? p.slot)})` : ''}` : 'Free agent'}</small>
+        <small class="inj-what">${esc(what)}${since ? ` · ${esc(since)}` : ''}${p.news ? ` · news ${esc(shortMd(new Date(p.news).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })))}` : ''}</small>
+        ${estChip(e, 'inj-est')}
+        ${e?.note ? `<small class="inj-note">${esc(e.note)}</small>` : ''}</span>
+      <span class="inj-side"><span class="inj-pill${injBad(p.injury) || e?.ofs ? ' bad' : ''}">${esc(p.injury)}</span>
+        <small>${p.tot.gp ? `${bkF1(p.avg.fp)} FP/G` : 'No games yet'}${dynOf(p.pid) != null ? ` · Dyn ${dynOf(p.pid)}` : ''}</small></span>
+    </a>`;
+  };
+  // Out for season first, then status (IR, Out, Doubtful, GTD, DTD), then the longest expected absence.
+  const sorted = list => [...list].sort((a, b) => (b.espn?.ofs ? 1 : 0) - (a.espn?.ofs ? 1 : 0) || injRank(a.injury) - injRank(b.injury) || b.back - a.back || (dynOf(b.pid) ?? 0) - (dynOf(a.pid) ?? 0));
+  // "Your players" strip for an NBA team section: everyone on your roster from that team, and for the healthy ones
+  // the injured teammates who share a position group and are out (not day-to-day), longest absence first.
+  const myRoster = mine?.players ?? [];
+  const injuredIds = new Set(players.map(p => p.pid));
+  const groupsOf = p => { const g = posGroups({ pos: p.mainPos, fpos: p.pos }); return new Set([g.main, ...g.sec].filter(Boolean)); };
+  const yours = (t, list) => {
+    const mineHere = myRoster.filter(p => p.team === t);
+    if (!mineHere.length) return '';
+    const out = list.filter(p => (injBad(p.injury) || p.espn?.ofs || p.est?.tone === 'weeks' || p.est?.tone === 'months'));
+    const item = p => {
+      const hurt = injuredIds.has(p.pid);
+      const mg = groupsOf(p);
+      const opens = hurt ? [] : out.filter(o => [...groupsOf(o)].some(g => mg.has(g))).sort((a, b) => b.back - a.back);
+      return `<li${hurt ? ' class="hurt"' : ''}><a href="${cardLink(p)}" data-keep-scroll><b>${esc(p.name)}</b></a>
+        <small>${esc(p.pos.join('/'))} · ${esc(SLOT_WORD[p.slot] ?? `Starter · ${p.slot}`)} · ${p.tot.gp ? `${bkF1(p.avg.fp)} FP/G · ${bkF1(p.avg.min)} min` : 'No games yet'}${hurt ? ' · on the report below' : ''}</small>
+        ${opens.length ? `<small class="inj-open">Opening: ${opens.slice(0, 3).map(o => `${esc(o.name)} (${esc(o.pos.join('/'))}) ${esc(o.espn?.ofs ? 'out for season' : o.est ? o.est.text.replace(/^Est\. return [A-Z][a-z]{2} \d+ \((.*)\)$/, 'out $1').replace('Est. return: ', '') : o.injury)}`).join(' · ')}</small>` : ''}</li>`;
+    };
+    return `<div class="inj-mine"><span class="bk-bar-label">Your players on this team</span><ul>${mineHere.map(item).join('')}</ul></div>`;
+  };
+  const section = (key, title, sub, logo, list, nbaCode) => `<section class="inj-sec" id="inj-${key}">
+      <div class="inj-head">${logo ? `<img src="${logo}" alt="" onerror="this.remove()">` : ''}<h3>${esc(title)}</h3><small>${esc(sub)}</small>
+        <span class="inj-count">${list.length ? `${list.length} injured` : 'All healthy'}</span></div>
+      ${nbaCode ? yours(nbaCode, list) : ''}
+      ${list.length ? sorted(list).map(row).join('') : '<p class="inj-none">Nobody on the injury report.</p>'}
+    </section>`;
+
+  // ---- My schedule (owner, Oct 26 2026): your remaining regular-season matchups (DATA.schedule, saved nightly
+  // from Sleeper), each with the opponent's players projected to miss that week: out for season or ESPN's
+  // estimated return after the week's last game = "Out all week"; return inside the week = "May miss part";
+  // Out/IR with no estimate, and day-to-day, only for the current and next week (nobody knows further out).
+  const weekDates = {};
+  for (const g of nbaGames ?? []) {
+    if (!g?.week || !g.date) continue;
+    const d = (weekDates[g.week] ??= { from: g.date, to: g.date });
+    if (g.date < d.from) d.from = g.date;
+    if (g.date > d.to) d.to = g.date;
+  }
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  const liveWeek = nbaState?.season === cur.season && nbaState.season_type === 'regular' ? Number(nbaState.week) || 1 : 1;
+  const myGames = (DATA.schedule ?? []).filter(m => m.s === cur.season && (m.a === me || m.b === me) && m.w >= liveWeek && (!weekDates[m.w] || weekDates[m.w].to >= today))
+    .sort((a, b) => a.w - b.w);
+  const weekCall = (p, w) => {
+    const d = weekDates[w];
+    const e = p.espn;
+    const near = w <= liveWeek + 1;
+    // why = the extra note on the right; '' when the estimate chip on the row already says it.
+    if (e?.ofs) return { kind: 'out', why: '' };
+    if (e?.ret && d) {
+      if (e.ret > d.to) return { kind: 'out', why: '' };
+      if (e.ret > d.from) return { kind: 'part', why: `Est. back ${shortMd(e.ret)} (week runs ${shortMd(d.from)}–${shortMd(d.to)})` };
+      return null;
+    }
+    if (near && injBad(p.injury)) return { kind: 'out', why: `${p.injury}, no return estimate` };
+    if (near) return { kind: 'part', why: `${p.injury}: day-to-day` };
+    return null;
+  };
+  const scheduleHtml = () => {
+    if (!myGames.length) return '<p class="empty">No regular-season matchups left on your schedule.</p>';
+    return myGames.map(m => {
+      const opp = m.a === me ? m.b : m.a;
+      const d = weekDates[m.w];
+      // Taxi players can't start, so their injuries don't change a matchup: left out on both sides.
+      const calls = players.filter(p => p.owner === opp && p.slot !== 'TX').map(p => ({ p, c: weekCall(p, m.w) })).filter(x => x.c);
+      const outAll = calls.filter(x => x.c.kind === 'out');
+      const part = calls.filter(x => x.c.kind === 'part');
+      const mineOut = players.filter(p => p.owner === me && p.slot !== 'TX').map(p => ({ p, c: weekCall(p, m.w) })).filter(x => x.c);
+      const group = (label, list) => (list.length ? `<div class="inj-wkgroup"><span class="bk-bar-label">${label}</span>
+        ${sorted(list.map(x => x.p)).map(p => { const why = list.find(x => x.p === p).c.why; return why ? row(p).replace('<span class="inj-side">', `<span class="inj-side"><small class="inj-why">${esc(why)}</small>`) : row(p); }).join('')}</div>` : '');
+      return `<section class="inj-sec" id="inj-w${m.w}">
+        <div class="inj-head"><h3>Week ${m.w}</h3><small>${d ? `${esc(shortMd(d.from))}–${esc(shortMd(d.to))} · ` : ''}vs ${esc(teamName(opp, cur.season))} (${esc(name(opp))})</small>
+          <span class="inj-count">${outAll.length ? `${outAll.length} out` : 'Full strength'}${part.length ? ` · ${part.length} maybe` : ''}</span></div>
+        ${group('Out all week', outAll)}${group('May miss part of the week', part)}
+        ${!outAll.length && !part.length ? '<p class="inj-none">Nobody on their roster is projected to miss this week.</p>' : ''}
+        ${mineOut.length ? `<p class="inj-yourside"><b>Your side:</b> ${mineOut.map(x => `${esc(x.p.name)} (${x.c.kind === 'out' ? 'out' : 'part'})`).join(', ')}</p>` : ''}
+      </section>`;
+    }).join('');
+  };
+  const modeNow = () => gmLoad('gm-bk-injmode', showAll() ? 'all' : 'subs');
+
+  const draw = () => {
+    const s = subs();
+    const mode = modeNow();
+    const everything = mode === 'all';
+    const fantasy = everything ? [] : s.f.filter(o => teams.includes(o));
+    const nba = everything ? [...NBA_TEAM_CODES].filter(t => players.some(p => p.team === t)) : s.n.filter(t => NBA_TEAM_CODES.includes(t));
+    nba.sort((a, b) => nbaTeamName(a).localeCompare(nbaTeamName(b)));
+    const sections = [
+      ...fantasy.map(o => section(`f${o}`, teamName(o, cur.season), name(o), null, players.filter(p => p.owner === o))),
+      ...nba.map(t => section(t, nbaTeamName(t), t, teamLogo(t), players.filter(p => p.team === t), t)),
+    ];
+    const chip = (key, label, n, on) => `<button type="button" class="inj-sub${on ? ' on' : ''}" data-sub="${key}" aria-pressed="${on}">${on ? '✓ ' : '+ '}${esc(label)}${n ? ` <small>${n}</small>` : ''}</button>`;
+    $('#inj-body', body).innerHTML = `
+      ${betaCard('Injury Report', `
+        <p class="inj-sum"><b>${players.length}</b> players on the injury report: ${esc(count(players))} · <b>${players.filter(p => p.espn?.ofs).length}</b> out for the season · <b>${players.filter(p => p.owner).length}</b> on fantasy rosters here.</p>
+        <p class="inj-src">Status from Sleeper; return estimates, “out for season” and news notes from ESPN’s injury report${Object.keys(espn).length ? '' : ' (not available right now)'}. Estimates are teams’ and reporters’ timelines, so they move.</p>
+        <div class="st-tabs inj-mode" role="tablist">${[['subs', 'My subscriptions'], ['all', 'Whole league'], ['sched', 'My schedule']].map(([id, label]) => `<button type="button" role="tab" data-mode="${id}" class="${mode === id ? 'on' : ''}">${label}</button>`).join('')}</div>
+        <details class="inj-subs"${s.f.length + s.n.length ? '' : ' open'}><summary>Subscriptions <small>${s.f.length + s.n.length} teams</small></summary>
+          <div class="inj-subgroup"><span class="bk-bar-label">Fantasy teams</span><div>${teams.map(o => chip(`f:${o}`, teamName(o, cur.season), players.filter(p => p.owner === o).length, s.f.includes(o))).join('')}</div></div>
+          <div class="inj-subgroup"><span class="bk-bar-label">NBA teams</span><div>${[...NBA_TEAM_CODES].sort((a, b) => nbaTeamName(a).localeCompare(nbaTeamName(b))).map(t => chip(`n:${t}`, nbaTeamName(t), players.filter(p => p.team === t).length, s.n.includes(t))).join('')}</div></div>
+        </details>`, { cls: 'inj-card', sub: 'Sleeper, live' })}
+      ${mode === 'sched'
+    ? betaCard(`My schedule · ${esc(teamName(me, cur.season))}`, scheduleHtml(), { cls: 'inj-list', sub: `${myGames.length} matchups left · opponents' players projected to miss each week` })
+    : betaCard(everything ? 'Whole league' : 'Your teams', sections.length ? sections.join('') : '<p class="empty">No subscriptions yet: open Subscriptions above and tap a team.</p>', { cls: 'inj-list', sub: everything ? `${nba.length} NBA teams with injuries` : `${sections.length} subscribed` })}`;
+  };
+
+  body.innerHTML = `<div class="gm-page bk-page">${tabs}<div id="inj-body"></div></div>`;
+  draw();
+  try {
+    const y = Number(sessionStorage.getItem('inj-scroll'));
+    sessionStorage.removeItem('inj-scroll');
+    if (y) requestAnimationFrame(() => window.scrollTo(0, y));
+  } catch { /* no sessionStorage */ }
+  $('#inj-body', body).addEventListener('click', e => {
+    if (e.target.closest('.inj-row, [data-keep-scroll]')) { try { sessionStorage.setItem('inj-scroll', String(window.scrollY)); } catch { /* blocked */ } return; }
+    const sub = e.target.closest('[data-sub]');
+    const mode = e.target.closest('[data-mode]');
+    if (sub) {
+      const [kind, id] = sub.dataset.sub.split(':');
+      const s = subs();
+      const list = s[kind] ?? [];
+      gmSave('gm-bk-injsub', { ...s, [kind]: list.includes(id) ? list.filter(x => x !== id) : [...list, id] });
+      const open = $('.inj-subs', body)?.open;
+      draw();
+      if (open) $('.inj-subs', body).open = true;
+    } else if (mode) {
+      gmSave('gm-bk-injmode', mode.dataset.mode);
+      draw();
+    }
+  });
 }
 
 // Another device saved a synced setting (sync.js): redraw the open office tab with it. Waits

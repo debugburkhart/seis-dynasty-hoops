@@ -6,6 +6,7 @@
 // One entry per feature: tab id (#/commish?tab=id), tab label, the day it was added.
 export const TEST_FEATURES = [
   { id: 'breakdown', label: '2K breakdown', since: '2026-10-25' },
+  { id: 'injuries', label: 'Injury Report', since: '2026-10-26' },
 ];
 
 export const BETA = '<span class="gm-beta">Beta</span>';

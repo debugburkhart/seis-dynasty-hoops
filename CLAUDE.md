@@ -1031,7 +1031,59 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   eFG%, TS%). Gold cell (.best) = best of the group per row ('lo' rows: age, ranks, TO; ties all gold). Labels
   column sticky; phones ~2.5 players visible + swipe. Click listener on .bk-page (new each render). Tested Oct 26
   2026: Banchero (Team) + Brook Lopez (Waiver wire, card button) + Jokic + Murray (League search), 5th refused,
-  every row filled, golds right; layouts 402 + desktop. Column defs:
+  every row filled, golds right; layouts 402 + desktop.
+  INJURY REPORT (owner, Oct 26 2026: "subscribe to teams' injury reports", separators by team). Built as the 2K
+  breakdown's "Injuries" list, then MOVED (owner, same day: "pop it up to the 2K breakdown level, name it Injury
+  Report") to ITS OWN Test features tab: TEST_FEATURES { id: 'injuries', label: 'Injury Report' } ->
+  #/commish?tab=injuries -> renderInjuryReport(body, params) (?team= = "you", default COMMISH) ->
+  renderInjuries(body, params, me); the old ?tab=breakdown&list=inj forwards there. NAMES link to the 2K breakdown
+  NBA TEAM view of the player's NBA team with him selected (owner: "by team I meant NBA team"; cardLink:
+  ?tab=breakdown&from=inj&list=nba&nba=TEAM&p=PID) -- rows and the "Your players" strip; the report saves window.scrollY in sessionStorage
+  inj-scroll on that tap and restores it when it renders again. The 2K page with ?from=inj shows "← Back to Injury
+  Report" (.bk-back) on top and keeps from=inj in its own links (link()). .inj-* in styles.css. Every active
+  player with a Sleeper injury_status and an NBA team (Oct 26: 86 = 3 IR, 65 Out, 5 GTD, 13 DTD; Sleeper gives
+  injury_body_part, injury_notes, news_updated (no start date)), built with loadBreakdown { list: 'pick' } (this
+  season's stats, owner/slot) + dynasty. Card "Injury report": league totals line, My subscriptions / Whole league
+  switch (gm-bk-injall), "Subscriptions" fold with chips for the 8 fantasy teams + 30 NBA teams (injured count
+  in red; gm-bk-injsub = { f: [owner], n: [NBA codes] }, default { f: [you], n: [] }; synced via 'gm-bk-').
+  List card: one section per subscribed fantasy team, then NBA teams A-Z (Whole league = every NBA team with an
+  injury); navy separator (.inj-head: logo, name, "N injured" / "All healthy") sticky at the top while scrolling
+  its section (phones top: 54px under the sticky .topbar). Rows: photo, name, positions · NBA team · fantasy team
+  (slot) or Free agent, body part · note · "news Oct 26", status pill (IR/Out/Sus red, GTD/DTD gold), FP/G + Dyn;
+  sorted IR, Out, Doubtful, GTD, DTD, then dynasty; tap = his card via the NBA team list (?list=nba&nba=&p=).
+  Tested Oct 26 2026: Parma 12 injured, ORL + HOU subscribe, Whole league 27 teams / 86 rows; layouts 402 +
+  desktop. RETURN ESTIMATES (owner, Oct 26 2026: "week/day/month estimate ... also Out for season"; Sleeper has
+  none): espnInjuries(all) in breakdown.js reads ESPN's public site.api.espn.com/apis/site/v2/sports/basketball/
+  nba/injuries (CORS open, browser only, cached 15 min, failure = no estimates): per injury details.returnDate,
+  fantasyStatus OFS = out for the season, date (hurt on), type/side/detail, shortComment (news note); matched to
+  Sleeper by normName + NBA team (team displayName -> NBA_TEAMS code; Oct 26: 81 of 82, the miss = Otega Oweh,
+  no Sleeper team). returnEstimate(e) -> "Out for season" | "Est. return Nov 20 (~4 weeks)" (< 14 days "~N days",
+  < 60 "~N weeks", else "~N months"; <= 1 day "any day now"); tone colors est-days green, weeks gold, months/
+  season red. Injuries view: ESPN-only players join the report (status from ESPN: Day-To-Day = DTD), row adds
+  "hurt Oct 19", the estimate chip (.inj-est) and the 2-line news note (.inj-note); sort = out for season, status,
+  then longest expected absence; summary counts "N out for the season" + a source line. 2K card: estimate chip
+  (.bk-est) after the injury tag (BK.espn, loaded in renderBreakdown's Promise.all); Compare "Injury" row adds it.
+  Checked: Veesaar out for season (ACL), Gueye Nov 20 ~4 wks, Banchero Nov 22 ~4 wks on the card.
+  YOUR PLAYERS (owner, Oct 26 2026: "see if one of my players benefits from a teammate's injury"): every NBA team
+  section (subscribed or Whole league) starts with a "Your players on this team" strip (.inj-mine; your roster =
+  loadBreakdown { list: 'team', owner: me }, me = ?team or COMMISH): name (link to his card), positions, slot,
+  FP/G + minutes; injured ones in red ("on the report below"); healthy ones get "Opening: X (pos) out ~N weeks"
+  (.inj-open) = injured teammates sharing a position group (posGroups, main + secondary) who are Out / IR /
+  Sus / out for season or have a weeks/months estimate (day-to-day ignored), longest absence first, top 3,
+  INCLUDING your own injured players. Your injured players in the list get a gold "Yours" tag (.inj-yours).
+  Checked: ORL = Banchero (IR), da Silva "Opening: Banchero ~4 wks, Penda ~3 wks, Nelson ~3 wks", Penda (taxi).
+  MY SCHEDULE mode (owner, Oct 26 2026): third tab after My subscriptions / Whole league; mode saved in
+  gm-bk-injmode ('subs' | 'all' | 'sched'; old gm-bk-injall still read as the default). Matchups = DATA.schedule
+  (saved nightly from Sleeper; regular weeks) for you (?team or COMMISH) from Sleeper's state week on, skipping
+  weeks whose last game date has passed; week dates = min/max game date per week from /schedule/nba/regular/
+  {season}. weekCall(p, week): ESPN out for season or estimated return after the week's last game = "Out all
+  week"; return inside the week = "May miss part of the week" (note "Est. back Nov 4 (week runs Nov 2–Nov 8)");
+  no ESPN estimate: Out/IR = out and DTD/GTD = maybe, ONLY for the current and next week. TAXI players are left
+  out on both sides (can't start). Section per week: sticky separator "Week 3 · Nov 2–Nov 8 · vs team (manager)",
+  "N out · N maybe" / "Full strength", the opponent's players in the two groups (same rows as the report), and a
+  "Your side:" line with your own players projected to miss (out / part). Checked Oct 26: week 2 vs bigtrey5456
+  Butler out (Jan 2), Marshall + Hayes maybe (back Oct 28); week 3 vs loganzarvell Furphy + Duren out, Claxton
+  maybe; schedule = DATA.schedule. Column defs:
   [key, label, sort value, cell, { only / not: list, cls }], filtered by bkCols().
   DATA: table stats = SEASON STAT TABLES (breakdown.js): every player's season added up from Sleeper's per-game
   box scores /stats/nba/{season}/{week} (STAT_KEYS incl. plus_minus + bonus fields, summed per game so bonuses
