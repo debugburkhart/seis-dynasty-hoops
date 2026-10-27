@@ -1000,8 +1000,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   main position; Career = this season's rank). The roster % line
   (.bk-share; one decimal, bkShare) + "Ros%" column (BK_ROS, Averages + Totals). NICKNAMES = each Sleeper
   roster's metadata p_nick_{pid} (the nickname that manager gave him; teams keep them after he leaves; 293 on
-  Oct 25): current team's under the last name (.bk-nick, gold italic, e.g. "Banch"), others counted "+N" with
-  "also called ... by manager" in the tooltip. NOTES: textarea under the bio (.bk-note), saved 0.6 s after
+  Oct 25) under the last name (.bk-nick, gold italic). RULE (owner, Oct 26 2026): a ROSTERED player shows ONLY
+  his current team's nickname (none = nothing; old teams' nicknames hidden, e.g. Butler "Himmy Buttplug" from
+  bigtrey5456 only); a FREE AGENT shows every past nickname with the manager who gave it (.bk-nick-past: "Anferno"
+  by bigdaddyburk · "Ernee" by bigtrey5456 · "Anfony Simeon" by BenDoverPlz123; 36 free agents have some). NOTES: textarea under the bio (.bk-note), saved 0.6 s after
   typing to gm-notes { pid: text } (gmSave; SYNCED + MERGE 'object'), ✎ by the name in the table (tooltip =
   note). SEASON BY SEASON adds Locked + Starts (any team, = Player Index; Banchero 2025-26 720, 2024-25 711) and
   on Team "For team" (that team's; Banchero 2023-24 92.5 of 371).

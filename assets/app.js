@@ -2453,12 +2453,13 @@ function setNote(pid, text) {
 }
 // Sleeper-wide roster / start share as Sleeper gives it: "46.1%", "99.7%", "0%".
 const bkShare = x => (x == null ? '—' : `${Math.round(x * 10) / 10}%`);
-// Sleeper nickname (his current team's), plus other managers' older nicknames for him.
+// Sleeper nicknames (owner, Oct 26 2026): a rostered player shows ONLY the nickname his current team gave him (none
+// = nothing); a free agent shows every nickname managers gave him before, each with the manager who gave it.
 const nickLine = p => {
-  const others = p.nickOthers.filter(x => x.n !== p.nick);
-  if (!p.nick && !others.length) return '';
-  const main = p.nick ?? others.shift()?.n;
-  return `<small class="bk-nick" title="Sleeper nickname${others.length ? `; also called ${others.map(x => `“${x.n}” by ${name(x.owner)}`).join(', ')}` : ''}">“${esc(main)}”${others.length ? ` <span>+${others.length}</span>` : ''}</small>`;
+  if (p.owner) return p.nick ? `<small class="bk-nick" title="Sleeper nickname from ${esc(name(p.owner))}">“${esc(p.nick)}”</small>` : '';
+  const past = p.nickOthers.filter(x => x.n);
+  if (!past.length) return '';
+  return `<small class="bk-nick bk-nick-past" title="Nicknames managers gave him in Sleeper">${past.map(x => `“${esc(x.n)}” <span>by ${esc(name(x.owner))}</span>`).join(' · ')}</small>`;
 };
 const BK_ROS = ['ros', 'Ros%', p => p.owned ?? -1, p => bkShare(p.owned), { cls: 'bk-roscol' }];
 // League ranks (leagueRanks: total FP under our scoring, overall + at his main position; best first when sorted).
