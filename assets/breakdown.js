@@ -316,6 +316,232 @@ export function returnEstimate(e, today = new Date()) {
   return { text: `Est. return ${when} (${span})`, tone: days < 14 ? 'days' : days < 60 ? 'weeks' : 'months' };
 }
 
+// ---------- Player news + trade talk (owner, Oct 26 2026) ----------
+// Sleeper's per-player news feed /players/nba/{pid}/news (what the Sleeper app shows on a player page: FantasyPros /
+// RotoWire blurbs; Sleeper keeps only the latest few per player): [{ published (ms), source, metadata: { title,
+// description, analysis, url } }]. Each item goes to EXACTLY ONE list: trade talk when its words match TRADE_TALK,
+// else news (moved, never copied). TRADE_TALK is tight on purpose: rumor wording only, so game recaps that mention
+// a "former team" or an old draft-day trade stay in news (tested on 120 rostered players' news Oct 26 2026).
+export const TRADE_TALK = new RegExp([
+  'trade request', 'request(?:ed|s|ing)? (?:a |his )?trade', 'wants? out of', 'wants? to be (?:traded|moved|dealt)', 'trade (?:talks?|discussions?|market|chatter|rumou?rs?|candidate|target|block|speculation|interest|package|offers?)',
+  'on the (?:trade|trading) block', '(?:being )?shopp(?:ed|ing)', 'gaug(?:e|ed|ing) (?:the )?(?:trade )?(?:market|interest)', 'suitors?',
+  // "interested in acquiring", but not fantasy advice ("for those interested in acquiring Giddey ... buy-low").
+  '(?<!those )interest(?:ed)? in (?:acquiring|trading for)', '(?:have|has|are|is) (?:shown|expressed|registered) interest', 'could be (?:traded|moved|dealt)',
+  '(?:open|willing) to (?:trading|moving|dealing)', 'available (?:in|via|for) (?:a )?trades?', 'explor(?:e|es|ed|ing) (?:a |his )?trade',
+  // Only an UPCOMING deadline ("acquired at the trade deadline" = an old trade, Jaren Jackson Jr. Oct 2026).
+  '(?:ahead of|before|by|leading up to|approaching) (?:the|this season\'s|February\'s) (?:trade )?deadline',
+  'buyout', 'asked (?:out|to be traded)',
+].join('|'), 'i');
+export const isTradeTalk = item => TRADE_TALK.test([item?.metadata?.title, item?.metadata?.description, item?.metadata?.analysis].filter(Boolean).join(' '));
+// { news: [...], trade: [...] }, newest first, each item in one list only.
+export async function playerNews(pid) {
+  const items = ((await get(`/players/nba/${pid}/news`, [])) ?? []).filter(x => x?.metadata?.title || x?.metadata?.description)
+    .sort((a, b) => (b.published ?? 0) - (a.published ?? 0));
+  const out = { news: [], trade: [] };
+  for (const x of items) (isTradeTalk(x) ? out.trade : out.news).push(x);
+  return out;
+}
+
+// ---------- Auto tags (owner, Oct 26 2026) ----------
+// Facts the site sets on players by itself (can't be added or removed by hand), usable as filters like custom
+// tags. app.js decides who gets which (autoTagsOf); this file supplies the data that needs Sleeper.
+// Recently traded comes as TWO tags so they're never confused (owner, Oct 26 2026): "League trade" = traded
+// between fantasy teams here, "NBA trade" = a real NBA trade (ESPN), both within TRADED_DAYS.
+// Order = order in the filter row and the Tags column sort (owner's second batch Oct 26 2026 after #3 option).
+export const AUTO_TAGS = ['Injured', 'Trade talk', 'League trade', 'NBA trade', 'League pickup', 'Trending add',
+  '#1 option', '#2 option', '#3 option', '4-game week', '2-game week', 'Hot', 'Cold', 'Minutes up',
+  'Rookie', 'Last taxi season', 'Contract year', 'Extension next summer', 'Dynasty riser', 'Dynasty faller', 'Top 100 prospect'];
+export const TRADE_TALK_DAYS = 30; // "Trade talk" = a trade-talk news item published in the last 30 days
+export const TRADED_DAYS = 14; // "League trade" / "NBA trade" = traded in the last 14 days
+export const PICKUP_DAYS = 7; // "League pickup" = added off waivers / free agency here in the last 7 days
+export const TRENDING_TOP = 25; // "Trending add" = among Sleeper's 25 most-added NBA players in the last 48 hours
+export const DYN_MOVE = 5; // "Dynasty riser / faller" = dynasty score up / down 5+ since about 7 days ago
+// Hot / Cold / Minutes up: his last FORM.games games vs his games before them this season (needs FORM.minGp
+// games in all). Hot / Cold = FP/G 20%+ AND 5+ points above / below; Minutes up = 5+ minutes AND 20%+ more.
+// floor: only players who matter (Hot: recent 15+ FP/G, Cold: 15+ before, Minutes up: 15+ min now), so deep
+// bench players going 2 -> 8 FP/G don't fill the list.
+export const FORM = { games: 3, minGp: 5, pct: 0.2, fp: 5, min: 5, floor: 15 };
+
+// This fantasy week's NBA games per team (Sleeper's schedule, week = Sleeper's NBA state week in the regular
+// season): { week, teams: { BOS: [{ date, opp, home, done }] } } or null outside the regular season.
+export async function weekSlate() {
+  const state = await get('/v1/state/nba', {});
+  if (state?.season_type !== 'regular') return null;
+  const week = Number(state.week) || 1;
+  const schedule = await get(`/schedule/nba/regular/${state.season}`, []);
+  const teams = {};
+  for (const g of schedule ?? []) {
+    if (g.week !== week) continue;
+    const h = g.home?.team, a = g.away?.team;
+    if (h) (teams[h] ??= []).push({ date: g.date, opp: a, home: true, done: g.status === 'complete' });
+    if (a) (teams[a] ??= []).push({ date: g.date, opp: h, home: false, done: g.status === 'complete' });
+  }
+  for (const l of Object.values(teams)) l.sort((x, y) => (x.date < y.date ? -1 : 1));
+  return { week, teams };
+}
+
+// Recent form for Hot / Cold / Minutes up: per player { recent: { gp, fpg, min }, before: { gp, fpg, min } } this
+// season (league scoring), from the season table (all games) and the per-game box scores of this week and the
+// 2 weeks before (his last FORM.games games played; DNPs skipped). Cached 10 minutes.
+let FORM_HIT = null;
+export async function recentForm(DATA) {
+  if (FORM_HIT && Date.now() - FORM_HIT.at < 600_000) return FORM_HIT.out;
+  const cur = DATA.seasons.at(-1).season;
+  const state = await get('/v1/state/nba', {});
+  const week = state?.season === cur && state.season_type === 'regular' ? Number(state.week) || 1 : null;
+  if (!week) return {};
+  const weeks = [week, week - 1, week - 2].filter(w => w >= 1);
+  const [table, scoring, ...rowsByWeek] = await Promise.all([seasonTable(cur), scoringFor(DATA, cur), ...weeks.map(w => weekRows(cur, w).catch(() => []))]);
+  const games = {};
+  for (const g of rowsByWeek.flat()) if (/^\d+$/.test(g.player_id) && played(g.stats) && minutes(g.stats) > 0) (games[g.player_id] ??= []).push(g);
+  const out = {};
+  for (const [pid, list] of Object.entries(games)) {
+    const all = lineFromTable(table.players[pid], table.keys, scoring);
+    if (!(all.gp >= FORM.minGp)) continue;
+    const last = list.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, FORM.games);
+    if (last.length < FORM.games) continue;
+    const fp = last.reduce((s, g) => s + fantasy(g.stats, scoring), 0);
+    const min = last.reduce((s, g) => s + minutes(g.stats), 0);
+    const gpB = all.gp - last.length;
+    if (gpB < 1) continue;
+    const r1 = x => Math.round(x * 10) / 10;
+    out[pid] = {
+      recent: { gp: last.length, fpg: r1(fp / last.length), min: r1(min / last.length) },
+      before: { gp: gpB, fpg: r1((all.fp - fp) / gpB), min: r1((all.min - min) / gpB) },
+    };
+  }
+  FORM_HIT = { at: Date.now(), out };
+  return out;
+}
+
+// Sleeper's most-added NBA players across all leagues, last 48 hours: { pid: { rank, count } }.
+export async function trendingAdds() {
+  const list = await get(`/v1/players/nba/trending/add?lookback_hours=48&limit=${TRENDING_TOP}`, []);
+  // Sleeper's list isn't in count order: rank by adds.
+  return Object.fromEntries([...(list ?? [])].sort((a, b) => b.count - a.count).map((x, i) => [x.player_id, { rank: i + 1, count: x.count }]));
+}
+
+// Players added in THIS league off waivers / free agency within PICKUP_DAYS: { pid: { ts, to, bid } }.
+export function recentPickups(DATA, now = Date.now()) {
+  const out = {};
+  for (const x of DATA.transactions ?? []) {
+    if ((x.type !== 'waiver' && x.type !== 'free_agent') || !(x.ts >= now - PICKUP_DAYS * 864e5)) continue;
+    for (const [pid, to] of Object.entries(x.adds ?? {})) if (!out[pid] || out[pid].ts < x.ts) out[pid] = { ts: x.ts, to, bid: x.bid ?? null, type: x.type };
+  }
+  return out;
+}
+
+// #1 / #2 / #3 option: each NBA team's top 3 players by fantasy points per game this season (league scoring),
+// among players Sleeper lists on that team now with at least half as many games as the team's most-played
+// player (so a one-game cameo can't top it early on). { pid: { n, fpg, gp, team } }, cached 2 minutes.
+const OPTIONS = {};
+export async function teamOptions(DATA) {
+  const season = DATA.seasons.at(-1).season;
+  const hit = OPTIONS[season];
+  if (hit && Date.now() - hit.at < 120_000) return hit.out;
+  const [table, scoring, all] = await Promise.all([seasonTable(season), scoringFor(DATA, season), get('/v1/players/nba', {})]);
+  const byTeam = {};
+  for (const [pid, row] of Object.entries(table.players)) {
+    const team = all?.[pid]?.team;
+    if (!team || !NBA_TEAMS[team]) continue;
+    const l = lineFromTable(row, table.keys, scoring);
+    if (l.gp > 0) (byTeam[team] ??= []).push({ pid, gp: l.gp, fpg: l.fp / l.gp });
+  }
+  const out = {};
+  for (const [team, list] of Object.entries(byTeam)) {
+    const most = Math.max(...list.map(x => x.gp));
+    list.filter(x => x.gp >= most / 2).sort((a, b) => b.fpg - a.fpg).slice(0, 3)
+      .forEach((x, i) => { out[x.pid] = { n: i + 1, fpg: Math.round(x.fpg * 10) / 10, gp: x.gp, team }; });
+  }
+  OPTIONS[season] = { at: Date.now(), out };
+  return out;
+}
+
+// Players moved in a trade in this league within TRADED_DAYS: { pid: { ts, to, from } } (newest trade wins).
+export function recentTrades(DATA, now = Date.now()) {
+  const out = {};
+  for (const x of DATA.transactions ?? []) {
+    if (x.type !== 'trade' || !(x.ts >= now - TRADED_DAYS * 864e5)) continue;
+    for (const [pid, to] of Object.entries(x.adds ?? {})) {
+      if (!out[pid] || out[pid].ts < x.ts) out[pid] = { ts: x.ts, to, from: x.drops?.[pid] ?? x.owners?.find(o => o !== to) ?? null };
+    }
+  }
+  return out;
+}
+
+// Real NBA trades within TRADED_DAYS (owner, Oct 26 2026; kept apart from league trades): ESPN's public
+// transactions feed (CORS open, newest first; limit=100 covers weeks). Entries are plain sentences, one per team
+// ("Acquired G Ryan Nembhard from Dallas and G Luguentz Dort from Oklahoma City in a three-team trade that sent F
+// Zaccharie Risacher to Dallas"), with no player ids, so for each entry that mentions a trade we tag the players
+// Sleeper lists on THAT team now whose full name (normName) appears in the sentence = the players it got. Players
+// it sent away are on another team now, so they aren't tagged by this entry (their new team's entry tags them).
+// { pid: { ts, team, text } } (newest trade wins), cached 15 minutes; failure = null (no NBA trade tags).
+const ESPN_TX_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/transactions?limit=100';
+let ESPN_TX = null;
+export async function espnTrades(all, now = Date.now()) {
+  if (ESPN_TX && Date.now() - ESPN_TX.at < 15 * 60e3 && ESPN_TX.now === now) return ESPN_TX.map;
+  let map = null;
+  try {
+    const res = await fetch(ESPN_TX_URL);
+    if (!res.ok) throw new Error(`ESPN transactions ${res.status}`);
+    const feed = await res.json();
+    const codeOf = Object.fromEntries(Object.entries(NBA_TEAMS).map(([code, n]) => [n, code]));
+    const onTeam = {};
+    for (const [pid, p] of Object.entries(all ?? {})) {
+      if (/^\d+$/.test(pid) && p?.team) (onTeam[p.team] ??= []).push([pid, normName(p.full_name ?? `${p.first_name} ${p.last_name}`)]);
+    }
+    map = {};
+    for (const x of feed?.transactions ?? []) {
+      const ts = Date.parse(x.date);
+      if (!(ts >= now - TRADED_DAYS * 864e5) || ts > now + 864e5 || !/\btrade\b/i.test(x.description ?? '')) continue;
+      const team = codeOf[x.team?.displayName];
+      const text = ` ${normName(x.description)} `;
+      for (const [pid, nm] of onTeam[team] ?? []) {
+        if (nm && text.includes(` ${nm} `) && (!map[pid] || map[pid].ts < ts)) map[pid] = { ts, team, text: x.description };
+      }
+    }
+  } catch { map = null; }
+  ESPN_TX = { at: Date.now(), now, map };
+  return map;
+}
+
+// Trade talk for the whole league needs one news request per player, so the nightly job checks every rostered
+// player and every active player with an NBA team (~550 requests, 8 at a time) -> data/trade-talk.json
+// { version, at, checked, players: { pid: [published, title] } } (his newest trade-talk item, last 60 days).
+// The page adds what it learns live when a player's card opens (his news is loaded then anyway).
+export const TRADE_TALK_VERSION = 1;
+export async function updateTradeTalk(DATA, { log = () => {} } = {}) {
+  const cur = DATA.seasons.at(-1);
+  const [all, rosters] = await Promise.all([get('/v1/players/nba', {}), get(`/v1/league/${cur.leagueId}/rosters`, [])]);
+  const ids = new Set((rosters ?? []).flatMap(r => r.players ?? []));
+  for (const [pid, p] of Object.entries(all ?? {})) if (/^\d+$/.test(pid) && p?.team && p.active !== false && NBA_POS.has(p.position)) ids.add(pid);
+  const list = [...ids];
+  const players = {};
+  const since = Date.now() - 60 * 864e5;
+  let i = 0, failed = 0;
+  await Promise.all(Array.from({ length: 8 }, async () => {
+    while (i < list.length) {
+      const pid = list[i++];
+      try {
+        const t = (await playerNews(pid)).trade.find(x => (x.published ?? 0) >= since);
+        if (t) players[pid] = [t.published, t.metadata?.title || t.metadata?.description || ''];
+      } catch { failed++; }
+    }
+  }));
+  log(`Trade talk: ${list.length} players checked, ${Object.keys(players).length} with trade talk${failed ? `, ${failed} failed` : ''}`);
+  return { version: TRADE_TALK_VERSION, at: new Date().toISOString(), checked: list.length, failed, players };
+}
+let TALK;
+export async function loadTradeTalk() {
+  if (TALK !== undefined) return TALK;
+  try {
+    const res = await fetch(`data/trade-talk.json?t=${Date.now()}`, { cache: 'no-store' });
+    TALK = res.ok ? await res.json() : null;
+  } catch { TALK = null; }
+  if (TALK && TALK.version !== TRADE_TALK_VERSION) TALK = null;
+  return TALK;
+}
+
 // Roster % across Sleeper leagues (owner, Oct 25 2026): Sleeper's research feed for this season's current
 // week, { pid: { owned, started } } (percent of leagues). leagueType = our league's settings.type: the feed
 // defaults to REDRAFT leagues; league_type=2 = dynasty leagues, what the Sleeper app shows in a dynasty

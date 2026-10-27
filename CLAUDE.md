@@ -808,7 +808,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   claims, saving picks (live rules block them until the owner publishes the new rules).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json,
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json,
   dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 
@@ -958,6 +958,46 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   cell = chips, opts.html; sort = tagged first, grouped by their first tag A-Z). "Tags" filter row (#bk-tagbar,
   tagBar(): All + each tag with its count in the current list; BK.tag), works in all 3 lists. Same tag = same
   color (tagHue -> .th-0..5). A tag disappears when no player has it.
+  AUTO TAGS (owner, Oct 26 2026: "facts", set by the site, NOT editable; AUTO_TAGS in breakdown.js, autoTagsOf(p)
+  in app.js -> [[tag, why]], why = tooltip): Injured (Sleeper injury_status or an ESPN injury entry), Trade talk
+  (a TRADE_TALK news item in the last TRADE_TALK_DAYS 30: nightly data/trade-talk.json from updateTradeTalk in
+  update.mjs = every rostered + active NBA player's /players/nba/{pid}/news, 8 at a time, ~526 players ~6 s,
+  newest trade item of the last 60 days; a card whose news loaded (BK_NEWS) overrides it live and redraws the
+  chips/bar/table), "Recently traded" = TWO separate tags (owner: "make a clear distinction"), both within
+  TRADED_DAYS 14: League trade (blue .au-traded; traded between fantasy teams here: recentTrades(DATA) over
+  DATA.transactions adds) and NBA trade (purple .au-nba; espnTrades(all) in breakdown.js: ESPN's transactions
+  feed ?limit=100 (~1 month, CORS open, cached 15 min) has one plain sentence per team and no player ids, so an
+  entry mentioning "trade" tags the players Sleeper lists on THAT team now whose normName appears in it = the
+  players it got; tooltip quotes ESPN. Tested on past trades (limit=500 stub): Jul 19 ATL -> Dort, Feb 1-3 ->
+  Hunter (SAC), Huerter (DET); players since moved again aren't matched, and a trade Sleeper hasn't moved yet
+  shows once Sleeper updates his team. No NBA trades in the last 14 days on Oct 26),
+  #1 / #2 / #3 option (teamOptions(DATA): each NBA team's top 3 by FP/G this season, league scoring, players
+  Sleeper lists on that team now with >= half the team's most games; Oct 26: ORL Banchero 37 / Wagner 32.7 /
+  Carter 28.7, DEN Jokic / Murray / Gordon). BK.auto loaded by autoTagData() in renderBreakdown. Solid chips
+  with an SVG bolt (AUTO_ICON, .bk-auto .au-inj red / au-talk gold / au-traded blue / au-opt light) first in
+  the card's tag row (no ×), in the Tags column (now always shown; auto first in sort) and the Compare "Tags"
+  row; a custom tag can't take an auto tag's name. Tags filter row: auto tags with a count in this list (or
+  picked) then custom tags; "Auto" / "Mine" switches (.bk-tagsw, gm-bk-tagshow { auto, mine }, synced via
+  'gm-bk-') hide either group to save space (hiding a group drops its filter). Checked Oct 26 League list:
+  Injured 50, Trade talk 3 (Sabonis, Clayton, Porzingis), #1 30 / #2 29 / #3 28, League trade 0 (last trade
+  Oct 12; with Oct 20 as "today" League trade tags Ball / Mobley / Cunningham); 320 px no overflow.
+  SECOND BATCH (owner, Oct 26 2026; AUTO_TAGS order = filter row order; thresholds are constants at the top of
+  the auto-tag block in breakdown.js, owner may tune): League pickup (recentPickups: waiver / free_agent adds here
+  within PICKUP_DAYS 7, tooltip team + FAAB), Trending add (trendingAdds: Sleeper /v1/players/nba/trending/add
+  48 h, top TRENDING_TOP 25, ranked by count: Sleeper's list is NOT in count order), 4-game week / 2-game week
+  (weekSlate: /schedule/nba/regular rows with week = Sleeper state week, regular season only; 4+ and <= 2, chip
+  shows the real count "5-game week" via autoChip's 3rd value `label`; tooltip lists days + opponents), Hot /
+  Cold / Minutes up (recentForm: last FORM.games 3 games from per-game box scores of this + 2 earlier weeks vs
+  his games before them (season table minus those); needs FORM.minGp 5 games; Hot/Cold = 20% AND 5 FP/G,
+  Minutes up = 20% AND 5 min; FORM.floor 15 (Hot: recent FP/G, Cold: earlier FP/G, Minutes: recent min) keeps
+  deep bench out; on Oct 26 nobody has 5 games yet, with 3/2 test settings: 78 hot, 69 cold, 50 minutes up
+  league-wide before the floor), Rookie (years_exp 0), and from the page's dynasty values via autoDynasty(v):
+  Last taxi season (on taxi now and taxiLeft = 0), Contract year (readContract flag contract-year OR rookie-end)
+  and Extension next summer (rookie-ext), Dynasty riser / faller (score now vs the newest dynasty-history night
+  >= 7 days back, like fillWeekArrows; +-DYN_MOVE 5; follows gm-dyn-full), Top 100 prospect (prospectRanking;
+  chip "Top 100 prospect #12"). Colors .au-pick/-trend/-week/-light/-hot/-cold/-up/-down. Checked Oct 26 on
+  Parma: 4-game week 10, Rookie 10, Top 100 10, Last taxi season 1 (Ja'Kobe Walter), Contract year 4,
+  Extension 2, riser 4 / faller 4 (Banchero -29 after his Out listing), pickups 5 = Sleeper's transactions.
   DRAFT LINES on the card (owner, Oct 25 2026; draftLines in renderBreakdown, .bk-draft): "NBA draft" = 2022 ·
   Round 1, No. 1 by the Orlando Magic / Undrafted (nothing when the player isn't in the file) from STATIC
   assets/nba-draft.json { source, built, undrafted: [pid], players: { pid: [year, round, overall, BRef team] } }
@@ -1065,6 +1105,29 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   "hurt Oct 19", the estimate chip (.inj-est) and the 2-line news note (.inj-note); sort = out for season, status,
   then longest expected absence; summary counts "N out for the season" + a source line. 2K card: estimate chip
   (.bk-est) after the injury tag (BK.espn, loaded in renderBreakdown's Promise.all); Compare "Injury" row adds it.
+  INJURY REPORT TOGGLE on the 2K card (owner, Oct 26 2026): injured players (Sleeper status or ESPN entry) get a
+  red "Injury" pill button (MED_ICON + status, .bk-newsbtn.bk-injbtn, data-panel="inj") FIRST in the News / Trade
+  talk row (owner moved it there, same style, kept red; the injury tags stay in .bk-injline above); tap = show/hide
+  .bk-newsrep.bk-injrep (injReport(p, e) returns { btn, panel }, built by newsBlock): ESPN's report paragraph (shortComment, same as the Injury
+  Report tab; "No report from ESPN yet" otherwise), facts line (Sleeper status · hurt date · estimate · ESPN
+  side/type/detail), source line. Closed by default; BK.injOpen keeps it open across players (no redraw on toggle).
+  NEWS + TRADE TALK buttons on the 2K card (owner, Oct 26 2026; no free live rumor source exists: HoopsHype blocks
+  bots (never work around it), RotoWire/Spotrac paid/blocked; ESPN news is headline-level): Sleeper's per-player
+  news /players/nba/{pid}/news (FantasyPros / RotoWire blurbs, only Sleeper's latest ~5 per player; fields
+  published, source, metadata { title, description, analysis, url }) via playerNews(pid) in breakdown.js. Each item
+  goes to EXACTLY ONE list (owner: "moved, not copied"): TRADE_TALK regex match (trade request / requests trade,
+  wants out, trade talks/discussions/market/rumors/candidate/target/…, on the trade block, shopping, gauging the
+  market, suitors, interested in acquiring (not "those interested in acquiring" = fantasy advice), expressed
+  interest, could be traded, open to trading, exploring a trade, UPCOMING deadline only ("ahead of/before the
+  deadline"; "acquired at the trade deadline" = old trade), buyout, asked to be traded) -> trade, else news.
+  Card (newsBlock, bottom of the bio): two round buttons with counts, News (newspaper) and Trade talk (swap arrows,
+  gold when > 0) -> .bk-newsrep panels (title, date · source, description, analysis, "Read the full story" link);
+  loaded when the card opens (BK_NEWS cache; draw() fetches + replaces only .bk-newsline), toggles kept in
+  BK.newsOpen / BK.tradeOpen. Every panel has data-for="inj|news|trade" and the button opens [data-for=kind]
+  (a .bk-newsrep lookup opened the injury panel from News, owner caught it Oct 26 2026). Checked Oct 26 2026 on all 284 rostered players (1,418 items): 6 trade talk (Sharpe
+  "trade candidate", Porzingis "could be traded" + "exploring trade routes", Camara "trade discussions", Clayton
+  "trade suitor", Sabonis "trade rumors"), 0 items in both lists; Jaren Jackson "acquired at the trade deadline"
+  and Giddey fantasy "interested in acquiring" correctly stay in News.
   Checked: Veesaar out for season (ACL), Gueye Nov 20 ~4 wks, Banchero Nov 22 ~4 wks on the card.
   YOUR PLAYERS (owner, Oct 26 2026: "see if one of my players benefits from a teammate's injury"): every NBA team
   section (subscribed or Whole league) starts with a "Your players on this team" strip (.inj-mine; your roster =

@@ -3042,6 +3042,45 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 @media (max-width: 700px) {
   .bk .bk-table td.bk-tagcol { max-width: 130px; }
 }
+/* 2K breakdown AUTO tags (set by the site, can't be removed): solid chips with a bolt; colors per kind. */
+.bk-auto { border-color: transparent; font-weight: 800; }
+.bk-bolt { width: 7px; height: 10px; fill: currentColor; flex: none; }
+.au-inj { background: #d9534f; color: #fff; }
+.au-talk { background: var(--gold); color: var(--navy-950); }
+.au-traded { background: #5d82c9; color: #fff; }
+.au-nba { background: #8a5cd6; color: #fff; }
+.au-pick { background: #3f6fb0; color: #fff; }
+.au-trend { background: #c2508f; color: #fff; }
+.au-week { background: #1d9a9a; color: #fff; }
+.au-light { background: #6b7a90; color: #fff; }
+.au-hot { background: #e8833a; color: #fff; }
+.au-cold { background: #4aa3c7; color: #fff; }
+.au-up { background: #2f9e6a; color: #fff; }
+.au-down { background: #b0465a; color: #fff; }
+.au-opt { background: #e8eef9; color: var(--navy-950); }
+.bk .bk-table tr.on td.bk-tagcol .bk-auto { border-color: transparent; }
+.bk .bk-table tr.on td.bk-tagcol .bk-auto.au-opt { background: var(--navy-950); color: #fff; }
+.bk-autof .bk-bolt { margin-right: 4px; vertical-align: -1px; }
+.bk-autof.au-inj .bk-bolt { color: #ff8a86; }
+.bk-autof.au-talk .bk-bolt { color: var(--gold); }
+.bk-autof.au-traded .bk-bolt { color: #8ec5ff; }
+.bk-autof.au-nba .bk-bolt { color: #c9a8ff; }
+.bk-autof.au-pick .bk-bolt { color: #8eb4ec; }
+.bk-autof.au-trend .bk-bolt { color: #f08cc4; }
+.bk-autof.au-week .bk-bolt { color: #5fd6d6; }
+.bk-autof.au-light .bk-bolt { color: #aab6c8; }
+.bk-autof.au-hot .bk-bolt { color: #ffa45c; }
+.bk-autof.au-cold .bk-bolt { color: #7fd0f0; }
+.bk-autof.au-up .bk-bolt { color: #6fe0a6; }
+.bk-autof.au-down .bk-bolt { color: #f08a9c; }
+.bk-autof.au-opt .bk-bolt { color: #e8eef9; }
+.bk-views button.on.bk-autof .bk-bolt { color: var(--navy-950); }
+/* Tag row switches: Auto / Mine show or hide each group of tags in the filter row. */
+#bk-tagbar .bk-bar { flex-wrap: wrap; }
+.bk-tagsws { display: inline-flex; gap: 4px; }
+.bk-tagsw { padding: 3px 9px; border: 1px solid rgba(255,255,255,.3); border-radius: 99px; background: none; color: #9fb0cc; font: 700 11px/1.3 var(--font); cursor: pointer; }
+.bk-tagsw.on { border-color: var(--gold); color: var(--gold); }
+.bk-tagbar-off { padding-top: 6px; padding-bottom: 6px; }
 /* 2K breakdown: NBA draft + league draft lines on the player card. */
 .bk-draft { display: grid; gap: 3px; margin-top: 12px; font-size: 12px; color: #d6deec; }
 .bk-draft small { font-size: 12px; }
@@ -3217,3 +3256,50 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 /* Free agents' past Sleeper nicknames: each followed by the manager who gave it. */
 .bk-nick-past { font-size: 12px; line-height: 1.45; }
 .bk-nick-past span { font-style: normal; font-weight: 600; font-size: 11px; color: #9fb0cc; }
+/* 2K card injury report toggle (owner, Oct 26 2026): round medical-cross button + panel. */
+.bk-injline { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; }
+.bk-injline .bk-inj, .bk-injline .bk-est { margin-left: 0; }
+.bk-medbtn { flex: none; width: 26px; height: 26px; margin-top: 8px; padding: 0; display: inline-grid; place-items: center; border: 1px solid rgba(255,110,110,.55); border-radius: 50%; background: rgba(255,110,110,.12); cursor: pointer; }
+.bk-medbtn svg { width: 14px; height: 14px; fill: #ff8f8f; }
+.bk-medbtn:hover { background: rgba(255,110,110,.22); }
+.bk-medbtn.on { background: #ff7b7b; border-color: #ff7b7b; }
+.bk-medbtn.on svg { fill: var(--navy-950); }
+.bk-injrep { flex-basis: 100%; margin-top: 10px; padding: 10px 12px; border-left: 3px solid #ff7b7b; border-radius: 0 8px 8px 0; background: rgba(255,255,255,.06); }
+.bk-injrep[hidden] { display: none; }
+.bk-injrep b { display: block; font: 800 11px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #ffaaaa; }
+.bk-injrep p { margin: 6px 0; font-size: 13px; line-height: 1.45; color: #e8edf6; }
+.bk-injrep small { display: block; font-size: 11.5px; color: #b9c4da; }
+.bk-injrep small.bk-injsrc { margin-top: 4px; color: #8597b6; font-size: 10.5px; }
+/* 2K card News + Trade talk buttons and panels (owner, Oct 26 2026). */
+.bk-newsline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.bk-newsbtn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border: 1px solid rgba(255,255,255,.3); border-radius: 99px; background: rgba(255,255,255,.06); color: #d6deec; font: 700 12px/1 var(--font); cursor: pointer; }
+.bk-newsbtn svg { width: 22px; height: 22px; padding: 4px; border-radius: 50%; background: rgba(255,255,255,.12); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.bk-newsbtn small { min-width: 16px; padding: 1px 5px; border-radius: 99px; background: rgba(255,255,255,.14); font: 800 10.5px/1.3 var(--font); text-align: center; }
+.bk-newsbtn.on { background: #fff; border-color: #fff; color: var(--navy-950); }
+.bk-newsbtn.on svg { background: var(--navy-950); stroke: #fff; }
+.bk-tradebtn.hot { border-color: var(--gold); color: var(--gold); }
+.bk-tradebtn.hot small { background: var(--gold); color: var(--navy-950); }
+.bk-tradebtn.hot.on { background: var(--gold); color: var(--navy-950); }
+.bk-newsrep { flex-basis: 100%; padding: 10px 12px; border-left: 3px solid var(--sky); border-radius: 0 8px 8px 0; background: rgba(255,255,255,.06); }
+.bk-newsrep[hidden] { display: none; }
+.bk-traderep { border-left-color: var(--gold); }
+.bk-newshd { display: block; margin-bottom: 4px; font: 800 11px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #b9dcff; }
+.bk-traderep .bk-newshd { color: var(--gold); }
+.bk-newsitem { padding: 8px 0; border-top: 1px solid rgba(255,255,255,.08); }
+.bk-newsitem:first-of-type { border-top: 0; padding-top: 2px; }
+.bk-newsitem b { display: block; font-size: 13px; line-height: 1.35; color: #fff; }
+.bk-newsitem small { display: block; margin-top: 2px; font-size: 11px; color: #8597b6; }
+.bk-newsitem p { margin: 6px 0 0; font-size: 12.5px; line-height: 1.45; color: #d6deec; }
+.bk-newsitem p.bk-news-an { color: #b9c4da; }
+.bk-newsitem a { display: inline-block; margin-top: 6px; font-size: 11.5px; font-weight: 700; color: var(--sky); }
+.bk-news-empty { margin: 4px 0; font-size: 12.5px; color: #9fb0cc; }
+.bk-news-src { flex-basis: 100%; font-size: 10.5px; color: #8597b6; }
+/* Injury button now sits with News / Trade talk, same pill shape, red (owner, Oct 26 2026). */
+.bk-injbtn { border-color: rgba(255,110,110,.6); color: #ffaaaa; background: rgba(255,110,110,.1); }
+.bk-injbtn svg { fill: currentColor; stroke: none; background: rgba(255,110,110,.2); }
+.bk-injbtn small { background: rgba(255,110,110,.25); color: #ffd0d0; }
+.bk-injbtn.on { background: #ff7b7b; border-color: #ff7b7b; color: var(--navy-950); }
+.bk-injbtn.on svg { background: var(--navy-950); fill: #ff7b7b; stroke: none; }
+.bk-injbtn.on small { background: rgba(7,20,43,.2); color: var(--navy-950); }
+.bk-newsrep.bk-injrep { border-left-color: #ff7b7b; margin-top: 0; }
+.bk-injrep .bk-newshd { color: #ffaaaa; }

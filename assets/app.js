@@ -21,7 +21,7 @@ import { paintSync, syncInit, syncSave } from './sync.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 import { betaCard, testTabs } from './test-features.js';
-import { NBA_TEAM_CODES, averages, championshipRings, espnInjuries, returnEstimate, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, seasonLines, teamLogo } from './breakdown.js';
+import { AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, seasonLines, teamLogo } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -2406,6 +2406,60 @@ function renderCommish(main, params) {
 // the whole league (every rostered player, with his fantasy team). Basic NBA stats and fantasy
 // points, plus the dynasty score (badge + column, owner asked). No grades or other site models.
 const BK = { pid: null, view: 'avg', sort: null, dir: -1, logAll: false, list: 'team', q: '', limit: 50, group: 'all', tag: null, tagOpen: false, dyn: () => null, locked: () => null, cmpOpen: false, espn: {} };
+// Injury report on the 2K card (owner, Oct 26 2026): a round medical-cross button after the injury tags toggles a
+// small panel with ESPN's report paragraph (same note as the Injury Report tab), hurt date, estimate and Sleeper's
+// status. Open/closed is kept in BK.injOpen while you browse players.
+const MED_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 2.5h3v4h4v3h-4v4h-3v-4h-4v-3h4z"/></svg>';
+// News + Trade talk buttons on the 2K card (owner, Oct 26 2026): Sleeper's player news (playerNews in breakdown.js),
+// each item in ONE panel only: rumor wording -> Trade talk (moved out of News, never copied), the rest -> News.
+// Loaded per player when his card opens (cached in BK_NEWS for the visit); open/closed in BK.newsOpen / BK.tradeOpen.
+const NEWS_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h9v9h-8a1 1 0 0 1-1-1zM11.5 6h2v5.5a1 1 0 0 1-2 0M4.5 6h5M4.5 8.5h5M4.5 11h3"/></svg>';
+const TRADE_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5.5h9.5l-2.5-2.5M13 10.5H3.5l2.5 2.5"/></svg>';
+const BK_NEWS = {};
+const NEWS_SOURCE = { fantasy_pros: 'FantasyPros', rotowire: 'RotoWire', rotoworld: 'Rotoworld' };
+const newsItem = x => {
+  const m = x.metadata ?? {};
+  const when = x.published ? new Date(x.published).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' }) : '';
+  return `<article class="bk-newsitem"><b>${esc(m.title || m.description)}</b>
+    <small>${esc([when, NEWS_SOURCE[x.source] ?? x.source].filter(Boolean).join(' · '))}</small>
+    ${m.description && m.title ? `<p>${esc(m.description)}</p>` : ''}
+    ${m.analysis ? `<p class="bk-news-an">${esc(m.analysis)}</p>` : ''}
+    ${m.url ? `<a href="${esc(m.url)}" target="_blank" rel="noopener">Read the full story</a>` : ''}</article>`;
+};
+const newsBlock = p => {
+  const n = BK_NEWS[p.pid];
+  const btn = (kind, icon, label, list) => `<button type="button" class="bk-newsbtn bk-${kind}btn${BK[`${kind}Open`] ? ' on' : ''}${kind === 'trade' && list?.length ? ' hot' : ''}" data-panel="${kind}" aria-expanded="${!!BK[`${kind}Open`]}" title="${label}">${icon}<span>${label}</span><small>${n ? list.length : '…'}</small></button>`;
+  const panel = (kind, title, list, empty) => `<div class="bk-newsrep bk-${kind}rep" data-for="${kind}"${BK[`${kind}Open`] ? '' : ' hidden'}><b class="bk-newshd">${title}</b>${!n ? '<p class="bk-news-empty">Loading from Sleeper…</p>' : list.length ? list.map(newsItem).join('') : `<p class="bk-news-empty">${empty}</p>`}</div>`;
+  // Injured players: the red Injury button leads the row (owner, Oct 26 2026: moved down here, same style, red).
+  const e = BK.espn[p.pid];
+  const inj = p.injury || e ? injReport(p, e) : null;
+  return `<div class="bk-newsline" data-news="${p.pid}">
+    ${inj ? inj.btn : ''}${btn('news', NEWS_ICON, 'News', n?.news)}${btn('trade', TRADE_ICON, 'Trade talk', n?.trade)}
+    ${inj ? inj.panel : ''}
+    ${panel('news', 'Latest news', n?.news ?? [], 'No recent news from Sleeper.')}
+    ${panel('trade', 'Trade talk', n?.trade ?? [], 'No trade talk in his recent news.')}
+    <small class="bk-news-src">Sleeper player news (its latest items for him); trade talk = items with rumor wording, moved out of News.</small>
+  </div>`;
+};
+const injReport = (p, e) => {
+  const est = returnEstimate(e);
+  const facts = [
+    p.injury && `Sleeper: ${p.injury}${p.injuryPart ? ` · ${p.injuryPart}` : ''}${p.injuryNote ? ` (${p.injuryNote})` : ''}`,
+    e?.since && `Hurt ${shortMd(e.since)}`,
+    est?.text,
+    e && [e.side, e.type, e.detail].filter(Boolean).join(' ') && `ESPN: ${e.status ?? ''} · ${[e.side, e.type, e.detail].filter(Boolean).join(' ')}`,
+  ].filter(Boolean);
+  // Same button + panel shape as News / Trade talk (data-panel="inj" -> BK.injOpen, .bk-injrep), red.
+  return {
+    btn: `<button type="button" class="bk-newsbtn bk-injbtn${BK.injOpen ? ' on' : ''}" data-panel="inj" aria-expanded="${!!BK.injOpen}" title="Injury report">${MED_ICON}<span>Injury</span><small>${esc(e?.ofs ? 'Season' : p.injury ?? e?.status ?? '')}</small></button>`,
+    panel: `<div class="bk-newsrep bk-injrep" data-for="inj"${BK.injOpen ? '' : ' hidden'}>
+      <b class="bk-newshd">Injury report</b>
+      <p>${esc(e?.note || 'No report from ESPN yet; Sleeper lists him as shown.')}</p>
+      ${facts.length ? `<small>${facts.map(esc).join(' · ')}</small>` : ''}
+      <small class="bk-injsrc">Report and estimate: ESPN · status: Sleeper</small>
+    </div>`,
+  };
+};
 // ESPN return estimate chip ("Est. return Nov 20 (~3 weeks)" / "Out for season"), '' when ESPN lists nothing.
 const estChip = (e, cls = 'bk-est') => { const r = returnEstimate(e); return r ? `<span class="${cls} est-${r.tone}" title="${esc(e.note || 'ESPN injury estimate')}">${esc(r.text)}</span>` : ''; };
 // Position filter (owner, Oct 25 2026), all 3 lists: main Sleeper position's group (PG/SG/G = guard, SF/PF/F =
@@ -2468,8 +2522,112 @@ const BK_PRANK = ['prk', 'Pos Rk', p => (p.rankPos ? -p.rankPos : -1e6), p => (p
 // Same tag = same color everywhere (6 colors, picked from the tag's letters).
 const tagHue = tag => [...bkFold(tag)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 6;
 const tagChip = (tag, x) => `<span class="bk-tag th-${tagHue(tag)}">${esc(tag)}${x ? `<button type="button" data-untag="${esc(tag)}" aria-label="Remove tag ${esc(tag)}">×</button>` : ''}</span>`;
-// Tags column (only once a tag exists): sorting puts tagged players first, grouped by their first tag A-Z.
-const BK_TAGCOL = ['tags', 'Tags', p => { const t = tagsOf(p.pid); if (!t.length) return -1; const all = allTags(); return 1000 - Math.min(...t.map(x => all.indexOf(x))); }, p => tagsOf(p.pid).map(t => tagChip(t)).join('') || '—', { cls: 'bk-tagcol', tags: true, html: true }];
+// Auto tags (owner, Oct 26 2026): facts the site sets itself, never edited by hand (AUTO_TAGS in breakdown.js).
+// BK.auto = { opt: teamOptions, talk: data/trade-talk.json players, traded: recentTrades } (loaded by
+// renderBreakdown); a card whose news has loaded (BK_NEWS) overrides the nightly trade-talk answer.
+const AUTO_CLS = { Injured: 'au-inj', 'Trade talk': 'au-talk', 'League trade': 'au-traded', 'NBA trade': 'au-nba', 'League pickup': 'au-pick', 'Trending add': 'au-trend',
+  '4-game week': 'au-week', '2-game week': 'au-light', Hot: 'au-hot', Cold: 'au-cold', 'Minutes up': 'au-up', 'Dynasty riser': 'au-up', 'Dynasty faller': 'au-down' };
+const bkDay = ms => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' });
+// [[tag, why]] for a player (p = a loadBreakdown player).
+function autoTagsOf(p) {
+  const a = BK.auto ?? {};
+  const out = [];
+  const e = BK.espn?.[p.pid];
+  if (p.injury || e) {
+    const est = returnEstimate(e);
+    out.push(['Injured', [p.injury ?? e?.status, p.injuryPart, est?.text].filter(Boolean).join(' · ')]);
+  }
+  const since = Date.now() - TRADE_TALK_DAYS * 864e5;
+  const live = BK_NEWS[p.pid]?.trade?.find(x => (x.published ?? 0) >= since);
+  const saved = a.talk?.[p.pid];
+  const talk = BK_NEWS[p.pid] ? (live ? [live.published, live.metadata?.title || live.metadata?.description || ''] : null) : saved?.[0] >= since ? saved : null;
+  if (talk) out.push(['Trade talk', `${bkDay(talk[0])}: ${talk[1]}`]);
+  const tr = a.traded?.[p.pid];
+  if (tr) out.push(['League trade', `Traded in our league ${bkDay(tr.ts)}${tr.from ? ` from ${name(tr.from)}` : ''} to ${name(tr.to)}`]);
+  const nt = a.nba?.[p.pid];
+  if (nt) out.push(['NBA trade', `Real NBA trade ${bkDay(nt.ts)}, to the ${nbaTeamName(nt.team)} (ESPN: ${nt.text})`]);
+  const pu = a.pickups?.[p.pid];
+  if (pu) out.push(['League pickup', `Picked up in our league ${bkDay(pu.ts)} by ${name(pu.to)} (${pu.type === 'waiver' ? `waiver claim${pu.bid != null ? `, $${pu.bid} FAAB` : ''}` : 'free agent'})`]);
+  const tn = a.trending?.[p.pid];
+  if (tn) out.push(['Trending add', `No. ${tn.rank} most-added NBA player on Sleeper in the last 48 hours (${Number(tn.count).toLocaleString('en-US')} adds across all leagues)`]);
+  const o = a.opt?.[p.pid];
+  if (o) out.push([`#${o.n} option`, `${['Top', '2nd-best', '3rd-best'][o.n - 1]} fantasy scorer per game on the ${nbaTeamName(o.team)} this season: ${o.fpg} FP/G in ${o.gp} games`]);
+  // Games this fantasy week (his NBA team's schedule); the chip says the real count (1-, 5-game week).
+  const wk = a.slate?.teams?.[p.team];
+  if (wk) {
+    const n = wk.length;
+    const why = `${n} NBA game${n === 1 ? '' : 's'} in fantasy week ${a.slate.week}: ${wk.map(g => `${new Date(`${g.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' })} ${g.home ? 'vs' : '@'} ${g.opp}${g.done ? ' (played)' : ''}`).join(', ')}`;
+    if (n >= 4) out.push(['4-game week', why, `${n}-game week`]);
+    else if (n <= 2) out.push(['2-game week', why, `${n}-game week`]);
+  }
+  // Recent form: his last FORM.games games vs his games before them this season.
+  const fm = a.form?.[p.pid];
+  if (fm) {
+    const d = fm.recent.fpg - fm.before.fpg;
+    const vs = `last ${fm.recent.gp} games ${fm.recent.fpg} FP/G vs ${fm.before.fpg} in his ${fm.before.gp} game${fm.before.gp === 1 ? '' : 's'} before`;
+    if (d >= FORM.fp && fm.recent.fpg >= fm.before.fpg * (1 + FORM.pct) && fm.recent.fpg >= FORM.floor) out.push(['Hot', `Hot: ${vs}`]);
+    if (-d >= FORM.fp && fm.recent.fpg <= fm.before.fpg * (1 - FORM.pct) && fm.before.fpg >= FORM.floor) out.push(['Cold', `Cold: ${vs}`]);
+    const dm = fm.recent.min - fm.before.min;
+    if (dm >= FORM.min && fm.recent.min >= fm.before.min * (1 + FORM.pct) && fm.recent.min >= FORM.floor) out.push(['Minutes up', `Last ${fm.recent.gp} games ${fm.recent.min} min a game vs ${fm.before.min} before`]);
+  }
+  if (p.exp === 0) out.push(['Rookie', 'First NBA season']);
+  // Dynasty-based tags (from the page's dynasty values; none when they fail to load).
+  const dp = a.dyn?.[p.pid];
+  if (dp && p.slot === 'TX' && taxiLeft(dp) === 0) out.push(['Last taxi season', 'On taxi in his last season allowed there (rule 2.1: through his 3rd NBA season): he must be activated after this season']);
+  const c = dp && CONTRACTS?.players?.[p.pid];
+  const flags = c ? readContract(c, DATA.seasons.at(-1).season, dp.nbaSeasons)?.flags ?? [] : [];
+  const ends = flags.find(f => f.id === 'contract-year' || f.id === 'rookie-end');
+  if (ends) out.push(['Contract year', `${ends.label}: ${ends.why}`]);
+  const ext = flags.find(f => f.id === 'rookie-ext');
+  if (ext) out.push(['Extension next summer', ext.why]);
+  const mv = a.dynMove?.[p.pid];
+  if (mv != null && mv >= DYN_MOVE) out.push(['Dynasty riser', `Dynasty score +${mv} since ${shortMd(a.dynBase)} (now ${dp?.score ?? '?'})`]);
+  if (mv != null && mv <= -DYN_MOVE) out.push(['Dynasty faller', `Dynasty score ${mv} since ${shortMd(a.dynBase)} (now ${dp?.score ?? '?'})`]);
+  const pr = a.prospects?.[p.pid];
+  if (pr) out.push(['Top 100 prospect', `No. ${pr.rank} on the Top 100 Prospects list (prospect grade ${pr.grade})`, `Top 100 prospect #${pr.rank}`]);
+  return out;
+}
+// Loads BK.auto (each source on its own: a failure just leaves that tag out). The dynasty-based parts come from
+// autoDynasty (they need the page's dynasty values).
+async function autoTagData() {
+  const [opt, talk, nba, trending, slate, form] = await Promise.all([
+    teamOptions(DATA).catch(() => null), loadTradeTalk().catch(() => null), get('/v1/players/nba', {}).then(all => espnTrades(all)).catch(() => null),
+    trendingAdds().catch(() => null), weekSlate().catch(() => null), recentForm(DATA).catch(() => null),
+  ]);
+  BK.auto = { ...BK.auto, opt, talk: talk?.players ?? null, talkAt: talk?.at ?? null, traded: recentTrades(DATA), nba, pickups: recentPickups(DATA), trending, slate, form };
+}
+// Dynasty values -> Last taxi season / Contract year / Extension / Dynasty riser-faller / Top 100 prospect.
+// v = the dynastyValues result (null = those tags are left out).
+async function autoDynasty(v) {
+  BK.auto ??= {};
+  if (!v) { Object.assign(BK.auto, { dyn: null, dynMove: null, prospects: null }); return; }
+  const prospects = {};
+  prospectRanking(v).forEach((p, i) => { prospects[p.pid] = { rank: i + 1, grade: p.prospect.grade }; });
+  // Riser / faller: today's score vs the newest saved night at least 7 days back (same as the Dynasty tab arrows).
+  let dynMove = null, dynBase = null;
+  try {
+    const hist = await loadDynHistory();
+    const full = Boolean(gmLoad('gm-dyn-full', false));
+    const today = ctDate();
+    const dates = Object.keys(hist.days ?? {}).filter(d => d >= `${seasonOfDate(today)}-08-01` && d < today).sort();
+    if (dates.length) {
+      const back = new Date(`${today}T12:00:00`); back.setDate(back.getDate() - 7);
+      dynBase = [...dates].reverse().find(d => d <= back.toISOString().slice(0, 10)) ?? dates[0];
+      const day = hist.days[dynBase];
+      const at = pid => { const x = day[pid]; return x == null ? 0 : Array.isArray(x) ? (full ? x[1] : x[0]) : x; };
+      dynMove = Object.fromEntries(Object.values(v.players).map(p => [p.pid, p.score - at(p.pid)]));
+    }
+  } catch { dynMove = null; }
+  Object.assign(BK.auto, { dyn: v.players, prospects, dynMove, dynBase });
+}
+const autoNames = p => autoTagsOf(p).map(x => x[0]);
+const tagsAll = p => [...autoNames(p), ...tagsOf(p.pid)];
+const AUTO_ICON = '<svg class="bk-bolt" viewBox="0 0 10 14" aria-hidden="true"><path d="M6 0 0 8h4l-1 6 6-8H5z"/></svg>';
+// label = what the chip says when it differs from the filter name ("5-game week", "Top 100 prospect #12").
+const autoChip = (tag, why, label) => `<span class="bk-tag bk-auto ${AUTO_CLS[tag] ?? 'au-opt'}" title="Auto tag${why ? `: ${esc(why)}` : ''}">${AUTO_ICON}${esc(label ?? tag)}</span>`;
+// Tags column: auto tags first, then his own; sorting puts tagged players first, grouped by their first tag
+// (auto tags in AUTO_TAGS order, then custom tags A-Z).
+const BK_TAGCOL = ['tags', 'Tags', p => { const t = tagsAll(p); if (!t.length) return -1; const order = [...AUTO_TAGS, ...allTags()]; return 1000 - Math.min(...t.map(x => order.indexOf(x))); }, p => [...autoTagsOf(p).map(x => autoChip(...x)), ...tagsOf(p.pid).map(t => tagChip(t))].join('') || '—', { cls: 'bk-tagcol', html: true }];
 const BK_PAGE = 50;
 let BK_AWARDS = null; // playerAwards(DATA, fo), once per visit
 const BK_LISTS = [['team', 'Team'], ['fa', 'Waiver wire'], ['league', 'League'], ['nba', 'NBA team']];
@@ -2565,8 +2723,9 @@ async function renderBreakdown(body, params) {
   // Came from the Injury Report (?from=inj): a back link on top; kept in every link while browsing here.
   body.innerHTML = `<div class="loading">Pulling ${list === 'team' ? 'the roster' : list === 'fa' ? 'the waiver wire' : 'every roster'} and stats from Sleeper…</div>`;
   // Dynasty scores (gmDynasty, same values and injury setting as the Dynasty tab); a failure just hides them.
-  const [bk, dyn, rings, , , espnOut] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, nbaTeam, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft(), get('/v1/players/nba', {}).then(espnInjuries).catch(() => null)]);
+  const [bk, dyn, rings, , , espnOut] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, nbaTeam, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft(), get('/v1/players/nba', {}).then(espnInjuries).catch(() => null), autoTagData()]);
   BK.espn = espnOut ?? {}; // ESPN injury estimates (return date, out for season) by pid
+  await autoDynasty(dyn?.v ?? null); // taxi / contract / riser-faller / Top 100 prospect auto tags
   // Season-banner awards per player (same rules as the Awards page), worked out once per visit.
   BK_AWARDS ??= playerAwards(DATA, frontOffice(DATA));
   const dynOf = pid => dyn?.v?.players?.[pid]?.score ?? null;
@@ -2667,7 +2826,7 @@ async function renderBreakdown(body, params) {
   const tagRow = p => {
     const mine = tagsOf(p.pid);
     const sugg = allTags().filter(t => !mine.includes(t));
-    return `<div class="bk-tagrow">${mine.map(t => tagChip(t, true)).join('')}<button type="button" class="bk-tagadd" aria-expanded="${BK.tagOpen}">${BK.tagOpen ? 'Done' : '+ Tag'}</button></div>
+    return `<div class="bk-tagrow">${autoTagsOf(p).map(x => autoChip(...x)).join('')}${mine.map(t => tagChip(t, true)).join('')}<button type="button" class="bk-tagadd" aria-expanded="${BK.tagOpen}">${BK.tagOpen ? 'Done' : '+ Tag'}</button></div>
       ${BK.tagOpen ? `<form class="bk-tagform" autocomplete="off"><input type="text" maxlength="24" placeholder="New tag, e.g. Trade bait" aria-label="New tag"><button type="submit">Add</button></form>
         ${sugg.length ? `<div class="bk-tagsugg">${sugg.map(t => `<button type="button" class="bk-tag th-${tagHue(t)}" data-addtag="${esc(t)}">+ ${esc(t)}</button>`).join('')}</div>` : ''}` : ''}`;
   };
@@ -2686,18 +2845,28 @@ async function renderBreakdown(body, params) {
     const pos = gmLoad('gm-bk-pos', 'all');
     return pos !== 'all' && bkGroups(p).main !== pos ? `<i class="bk-2nd" title="Secondary position: ${POS_WORD[pos][0]}">2nd</i>` : '';
   };
-  // Tag filter row (once any tag exists): All + every tag with how many players in this list have it.
+  // Tag filter row: All + auto tags (only those someone in this list has, or the one picked) + his own tags, each
+  // with how many players in this list have it. "Auto" / "Mine" switches hide either group from the row to save
+  // space (owner, Oct 26 2026; gm-bk-tagshow = { auto, mine }, synced); hiding a group drops its filter.
   const tagBar = () => {
-    const tags = allTags();
-    if (BK.tag && !tags.includes(BK.tag)) BK.tag = null;
-    if (!tags.length) return '';
-    const count = t => bk.players.filter(p => tagsOf(p.pid).includes(t)).length;
-    return `<div class="bk-bar bk-bar2"><span class="bk-bar-label">Tags</span>
-      <div class="bk-views bk-tagfilter" role="tablist"><button type="button" data-tagf="" class="${BK.tag ? '' : 'on'}">All</button>${tags.map(t => `<button type="button" data-tagf="${esc(t)}" class="${BK.tag === t ? 'on' : ''}"><i class="bk-swatch th-${tagHue(t)}"></i>${esc(t)} <small>${count(t)}</small></button>`).join('')}</div></div>`;
+    const show = { auto: true, mine: true, ...gmLoad('gm-bk-tagshow', {}) };
+    const counts = {};
+    for (const p of bk.players) for (const t of tagsAll(p)) counts[t] = (counts[t] ?? 0) + 1;
+    const autos = show.auto ? AUTO_TAGS.filter(t => counts[t] || BK.tag === t) : [];
+    const mine = show.mine ? allTags() : [];
+    if (BK.tag && !autos.includes(BK.tag) && !mine.includes(BK.tag)) BK.tag = null;
+    const sw = (k, label) => `<button type="button" class="bk-tagsw${show[k] ? ' on' : ''}" data-tagshow="${k}" aria-pressed="${show[k]}" title="${show[k] ? 'Hide' : 'Show'} ${k === 'auto' ? 'auto tags' : 'your tags'} in this row">${show[k] ? '✓ ' : ''}${label}</button>`;
+    const chips = [
+      ...autos.map(t => `<button type="button" data-tagf="${esc(t)}" class="bk-autof ${AUTO_CLS[t] ?? 'au-opt'}${BK.tag === t ? ' on' : ''}">${AUTO_ICON}${esc(t)} <small>${counts[t] ?? 0}</small></button>`),
+      ...mine.map(t => `<button type="button" data-tagf="${esc(t)}" class="${BK.tag === t ? 'on' : ''}"><i class="bk-swatch th-${tagHue(t)}"></i>${esc(t)} <small>${counts[t] ?? 0}</small></button>`),
+    ];
+    return `<div class="bk-bar bk-bar2${chips.length ? '' : ' bk-tagbar-off'}"><span class="bk-bar-label">Tags</span><span class="bk-tagsws">${sw('auto', 'Auto')}${sw('mine', 'Mine')}</span>
+      ${chips.length ? `<div class="bk-views bk-tagfilter" role="tablist"><button type="button" data-tagf="" class="${BK.tag ? '' : 'on'}">All</button>${chips.join('')}</div>` : ''}</div>`;
   };
   const addTag = (p, raw) => {
     const text = raw.trim().replace(/\s+/g, ' ').slice(0, 24);
     if (!text) return;
+    if (AUTO_TAGS.some(t => t.toLowerCase() === text.toLowerCase())) return; // auto tags are set by the site only
     const tag = allTags().find(t => t.toLowerCase() === text.toLowerCase()) ?? text; // reuse an existing spelling
     if (!tagsOf(p.pid).includes(tag)) setTags(p.pid, [...tagsOf(p.pid), tag]);
   };
@@ -2739,7 +2908,8 @@ async function renderBreakdown(body, params) {
         ${awardLine(p)}
         ${tagRow(p)}
         ${contractLine({ pid: p.pid, team: p.team, nbaSeasons: p.exp })}
-        ${inj}
+        ${inj ? `<div class="bk-injline">${inj}</div>` : ''}
+        ${newsBlock(p)}
       </div>`;
   };
 
@@ -2749,7 +2919,7 @@ async function renderBreakdown(body, params) {
     const keep = list === 'team' ? (BK_GROUPS.find(g => g[0] === BK.group) ?? BK_GROUPS[0])[2] : () => true;
     const pos = gmLoad('gm-bk-pos', 'all');
     const sec = gmLoad('gm-bk-sec', true);
-    return bk.players.filter(p => keep(p) && bkPosOk(p, pos, sec) && (!BK.tag || tagsOf(p.pid).includes(BK.tag)) && (!q || bkFold(p.name).includes(q))).sort((a, b) => {
+    return bk.players.filter(p => keep(p) && bkPosOk(p, pos, sec) && (!BK.tag || tagsAll(p).includes(BK.tag)) && (!q || bkFold(p.name).includes(q))).sort((a, b) => {
       const x = col[2](a), y = col[2](b);
       return (typeof x === 'string' ? x.localeCompare(y) : x - y) * BK.dir || b.avg.fp - a.avg.fp || slotRank(a) - slotRank(b);
     });
@@ -2823,7 +2993,7 @@ async function renderBreakdown(body, params) {
       ['NBA draft', p => ({ t: nbaDraftText(p.pid) ?? '—' })],
       ['League draft', p => { const lg = leagueDraftOf(DATA, p.pid); return { t: lg ? `${lg.s} ${lg.kind === 'startup' ? 'startup' : 'rookie'} ${lg.round}.${String(lg.inRound).padStart(2, '0')} by ${name(lg.owner)}` : 'Not drafted here' }; }],
       ['Awards', p => ({ t: awardsOf(p.pid) || '—' })],
-      ['Tags', p => ({ t: tagsOf(p.pid).join(', ') || '—' })],
+      ['Tags', p => ({ t: tagsAll(p).join(', ') || '—' })],
       ['Note', p => ({ t: noteOf(p.pid) || '—' })],
       [null, 'Value'],
       ['Dynasty score', p => ({ v: dynOf(p.pid), t: dynOf(p.pid) ?? '—' }), 'hi'],
@@ -2917,6 +3087,22 @@ async function renderBreakdown(body, params) {
     drawTable();
     for (const b of body.querySelectorAll('.bk-views button[data-view]')) b.classList.toggle('on', b.dataset.view === BK.view);
     for (const b of body.querySelectorAll('.bk-groups button')) b.classList.toggle('on', b.dataset.group === BK.group);
+    // His news isn't loaded yet: fetch it, then redraw only the news block (if he's still the one shown).
+    if (p && !BK_NEWS[p.pid]) {
+      const before = autoNames(p).join();
+      playerNews(p.pid).catch(() => ({ news: [], trade: [] })).then(r => {
+        BK_NEWS[p.pid] = r;
+        const box = $(`.bk-newsline[data-news="${p.pid}"]`, body);
+        if (box && BK.pid === p.pid) box.outerHTML = newsBlock(p);
+        // Live news can add or clear his Trade talk auto tag (the nightly list is up to a day old).
+        if (autoNames(p).join() !== before) {
+          const row = $('#bk-hero .bk-tagrow', body);
+          if (row && BK.pid === p.pid) { row.querySelectorAll('.bk-auto').forEach(x => x.remove()); row.insertAdjacentHTML('afterbegin', autoTagsOf(p).map(x => autoChip(...x)).join('')); }
+          $('#bk-tagbar', body).innerHTML = tagBar();
+          drawTable();
+        }
+      });
+    }
   };
   const pick = pid => {
     if (!byPid[pid] || pid === BK.pid) return;
@@ -2940,6 +3126,29 @@ async function renderBreakdown(body, params) {
   $('.bk-search', body)?.addEventListener('input', e => { BK.q = e.target.value; BK.limit = BK_PAGE; drawTable(); });
   const heroEl = $('#bk-hero', body);
   heroEl.addEventListener('click', e => {
+    // Medical-cross button: show / hide the injury report paragraph (no redraw; choice kept in BK.injOpen).
+    // News / Trade talk buttons: show or hide that panel (BK.newsOpen / BK.tradeOpen kept across players).
+    const nb = e.target.closest('.bk-newsbtn');
+    if (nb) {
+      const kind = nb.dataset.panel;
+      BK[`${kind}Open`] = !BK[`${kind}Open`];
+      nb.classList.toggle('on', BK[`${kind}Open`]);
+      nb.setAttribute('aria-expanded', String(BK[`${kind}Open`]));
+      // Each button opens ITS panel (data-for): every panel carries .bk-newsrep, so a class lookup for "news"
+      // found the injury panel first once it led the row (owner caught it, Oct 26 2026).
+      const panel = $(`[data-for="${kind}"]`, heroEl);
+      if (panel) panel.hidden = !BK[`${kind}Open`];
+      return;
+    }
+    const med = e.target.closest('.bk-medbtn');
+    if (med) {
+      BK.injOpen = !BK.injOpen;
+      med.setAttribute('aria-expanded', String(BK.injOpen));
+      med.classList.toggle('on', BK.injOpen);
+      const panel = $('.bk-injrep', heroEl);
+      if (panel) panel.hidden = !BK.injOpen;
+      return;
+    }
     const p = byPid[BK.pid];
     const un = e.target.closest('[data-untag]');
     const add = e.target.closest('[data-addtag]');
@@ -2985,6 +3194,14 @@ async function renderBreakdown(body, params) {
     draw();
   });
   $('#bk-tagbar', body).addEventListener('click', e => {
+    const sw = e.target.closest('[data-tagshow]');
+    if (sw) {
+      const show = { auto: true, mine: true, ...gmLoad('gm-bk-tagshow', {}) };
+      show[sw.dataset.tagshow] = !show[sw.dataset.tagshow];
+      gmSave('gm-bk-tagshow', show);
+      draw();
+      return;
+    }
     const b = e.target.closest('[data-tagf]');
     if (!b) return;
     BK.tag = b.dataset.tagf || null;

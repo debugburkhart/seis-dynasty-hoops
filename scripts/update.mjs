@@ -396,6 +396,16 @@ try {
   console.log(`Season stats skipped: ${e.message}`);
 }
 
+// Trade talk auto tag (2K breakdown, owner Oct 26 2026): every rostered / NBA player's Sleeper news checked for
+// trade-talk wording -> data/trade-talk.json (assets/breakdown.js). Never stops the update.
+try {
+  const { updateTradeTalk } = await import('../assets/breakdown.js');
+  const talk = await updateTradeTalk(data, { log: m => console.log(m) });
+  await writeFile('data/trade-talk.json', JSON.stringify(talk));
+} catch (e) {
+  console.log(`Trade talk skipped: ${e.message}`);
+}
+
 // Weekly Props (owner, Oct 2026): the 10 props for the next week that hasn't tipped off, lines from
 // the same week simulation as the coach, redone every night until the first game; a locked week is
 // never changed -> data/props.json (assets/props.js). Picks live in Firestore. Never stops the update.
