@@ -18,6 +18,10 @@ const LIVE_WEEKS_KEPT = 4;
 const r1 = n => Math.round((Number(n) || 0) * 10) / 10;
 const tenth = n => Math.round((Number(n) || 0) * 10);
 const fantasy = (stats, scoring) => Object.entries(scoring).reduce((sum, [k, v]) => sum + (Number(stats?.[k]) || 0) * v, 0);
+// The All-Star Game sits in Sleeper's box scores as a regular-season game (team / opponent not one of the 30 NBA
+// codes, e.g. EST-WST); it never counts in matchups. Kept here (no imports in this file; same list as config.js).
+const NBA = new Set(['ATL', 'BOS', 'BKN', 'CHA', 'CHI', 'CLE', 'DAL', 'DEN', 'DET', 'GSW', 'HOU', 'IND', 'LAC', 'LAL', 'MEM', 'MIA', 'MIL', 'MIN', 'NOP', 'NYK', 'OKC', 'ORL', 'PHI', 'PHX', 'POR', 'SAC', 'SAS', 'TOR', 'UTA', 'WAS']);
+const allStarRow = g => [g?.team, g?.opponent].some(c => c && !NBA.has(c));
 const chicagoDate = iso => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date(iso));
 
 // ---------- Official totals ----------
@@ -117,7 +121,7 @@ export async function finishedGames(season, week, fetchImpl = globalThis.fetch.b
   const complete = new Set(slate.filter(g => g.status === 'complete').map(g => g.game_id));
   const out = {};
   for (const g of rows) {
-    if (!/^\d+$/.test(g.player_id) || !(g.stats?.gp || g.stats?.sp) || !complete.has(g.game_id)) continue;
+    if (!/^\d+$/.test(g.player_id) || !(g.stats?.gp || g.stats?.sp) || !complete.has(g.game_id) || allStarRow(g)) continue;
     out[g.player_id] = (out[g.player_id] ?? 0) + 1;
   }
   return out;
@@ -134,7 +138,7 @@ export async function weekGames(season, week, scoring, fetchImpl = globalThis.fe
   if (!res?.ok) return null;
   const out = {};
   for (const g of (await res.json()) ?? []) {
-    if (!/^\d+$/.test(g.player_id) || !g.stats || !(g.stats.gp || g.stats.sp)) continue;
+    if (!/^\d+$/.test(g.player_id) || !g.stats || !(g.stats.gp || g.stats.sp) || allStarRow(g)) continue; // never counts in matchups
     (out[g.player_id] ??= []).push({ date: g.date, p: r1(fantasy(g.stats, scoring)) });
   }
   for (const list of Object.values(out)) list.sort((a, b) => (a.date < b.date ? -1 : 1));

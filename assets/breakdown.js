@@ -5,7 +5,7 @@
 // season stat tables (updateSeasonStats -> data/season-stats.json).
 
 import { get } from './commish.js';
-import { ALL_STARS_FROM } from './config.js';
+import { ALL_STARS_FROM, exhibitionRow } from './config.js';
 import { ALL_STAR_POSITIONS } from './corrections.js';
 import { allFantasy, allStars, championshipMvp, mvpRace, playerOfTheYear, rookieClass } from './awards.js';
 import { draftOfYear } from './draft.js';
@@ -113,13 +113,13 @@ export function averages(line) {
 // scores (bonuses are per game, so added up they are right, unlike the season-total feeds).
 export const STAT_KEYS = ['gp', 'min', 'pts', 'reb', 'oreb', 'dreb', 'ast', 'stl', 'blk', 'to', 'pf', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta',
   'plus_minus', 'dd', 'td', 'tf', 'ff', 'bonus_pt_40p', 'bonus_pt_50p', 'bonus_ast_15p', 'bonus_reb_20p'];
-export const STATS_VERSION = 1;
+export const STATS_VERSION = 2; // 2: All-Star Game rows dropped (Oct 26 2026)
 const API = 'https://api.sleeper.com';
 // One week of box scores; a failed read throws (a missing week must never be saved as zeros).
 async function weekRows(season, week) {
   const res = await fetch(`${API}/stats/nba/${season}/${week}?season_type=regular&t=${Date.now()}`);
   if (!res.ok) throw new Error(`Sleeper box scores ${season} week ${week}: HTTP ${res.status}`);
-  return (await res.json()) ?? [];
+  return ((await res.json()) ?? []).filter(r => !exhibitionRow(r)); // no All-Star Game (config.js)
 }
 const r2 = x => Math.round(x * 100) / 100;
 function addRows(table, rows) {
@@ -609,7 +609,7 @@ export function lockedTotals(DATA, { season = 'career', owner = null } = {}) {
 // { list, owner, statSeason, players: [{ pid, owner, slot, bio..., tot, avg }], top, through }.
 // list 'nba' (owner, Oct 26 2026) = every active player Sleeper lists on NBA team nbaTeam, rostered here or not.
 // list 'pick' (compare, Oct 26 2026) = exactly the players in pids, from any list (League-style Career).
-export async function loadBreakdown(DATA, { list = 'team', owner, season: statSeason, stints = [], nbaTeam = null, pids = [] }) {
+export async function loadBreakdown(DATA, { list = 'team', owner, season: statSeason, stints = [], nbaTeam = null, pids = [], withFa = false }) {
   const cur = DATA.seasons.at(-1);
   const career = statSeason === 'career';
   const seasons = career ? DATA.seasons.map(s => s.season) : [statSeason];
@@ -650,6 +650,8 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
     ids = Object.keys(where).filter(pid => where[pid].owner === owner);
   } else if (list === 'league') {
     ids = Object.keys(where);
+    // "Include waiver wire" (owner, Oct 26 2026): plus every free agent the Waiver wire list shows.
+    if (withFa) ids.push(...Object.keys(all ?? {}).filter(pid => /^\d+$/.test(pid) && !where[pid] && all[pid]?.team && all[pid].active !== false && NBA_POS.has(all[pid].position)));
   } else if (list === 'pick') {
     ids = pids.filter(pid => all?.[pid] || DATA.players?.[pid]);
   } else if (list === 'nba') {
@@ -720,7 +722,7 @@ export async function gameLog(DATA, pid, season) {
     scoringFor(DATA, season),
   ]);
   return Object.values(weeks ?? {}).flat()
-    .filter(g => g?.date)
+    .filter(g => g?.date && !exhibitionRow(g)) // no All-Star Game
     .map(g => ({ date: g.date, week: g.week, opp: g.opponent ?? '', away: !!g.is_away_team, team: g.team ?? '', dnp: !played(g.stats), line: statLine(g.stats ?? {}, scoring) }))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 }

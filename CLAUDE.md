@@ -190,6 +190,42 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   DATA.rookiesScoring records the scoring each saved rookie list used; update.mjs passes it
   back, and a list is redone only when that differs (once after a scoring change). Draft Kit stats
   keep each season's own scoring.
+  PAST AWARDS ARE FROZEN (owner, Oct 26 2026: "any changes we make now shouldn't affect that"): update.mjs passes
+  last night's DATA.mvp and DATA.draftStats to buildLeagueData; a COMPLETED season (lg.status complete) keeps them
+  as saved (MVP / All-Fantasy list; draft stats behind Draft of the Year / Steal banners and past Draft Grades
+  seasons); only the season in progress is rebuilt. rookies / allStars were already carried. Tested: a planted
+  value in the saved 2024 list survived a full build; 2026 rebuilt. NEVER rebuild a past season's award data
+  without the owner's OK.
+  SLEEPER SEASON TOTALS vs GAME BY GAME (found Oct 26 2026, owner compared Jokic with Sleeper's History): Sleeper's
+  season-total feed (/v1/stats/nba/regular/{s}, used for DATA.mvp, draftStats, rookies, dynasty past seasons, award
+  races) (1) counts each bonus (40/50 pts, 20 reb, 15 ast) at most ONCE a season and flags bonuses for players who
+  never earned them, (2) can miss games (2023-24 Jokic 78 GP: the Apr 14 2024 game vs MEM is missing). The 2K
+  breakdown adds per-game box scores = how matchups score. BUT Sleeper's per-game data also contains the ALL-STAR
+  GAME as a regular-season game (team/opponent not NBA codes: EST/WST 2024, CHK/SHQ 2025, STP/STR 2026; ~15-24
+  players a season), so the 2K numbers include it (Jokic 2023-24: 80 GP / 2,098 pts vs official 79 / 2,085;
+  without it = Basketball-Reference exactly). It never counted in matchups (all 47 All-Star-week starters 2023-25
+  locked a real game). FIXED Oct 26 2026: config.js NBA_CODES + exhibitionRow(g) (team or opponent not one of the
+  30 codes) skips All-Star rows in every per-game reader: breakdown.js weekRows (season tables, recentForm) +
+  gameLog, gm.js loadBoxes + lockedPoints, dynasty.js seasonActuals, commish.js loadWaivers; weekfix.js has its own
+  copy (allStarRow; no imports there). STATS_VERSION 2 makes the nightly job rebuild data/season-stats.json (until
+  then pages build tables themselves). Jokic 2023-24 now 79 GP / 2,989 FP (2023 scoring) = Basketball-Reference.
+  The NBA CUP FINAL is in Sleeper's per-game data too (1,231 games a season; Basketball-Reference leaves it out) but
+  it DOES count in matchups (2024 wk 9 Giannis locked 64 = Cup final, 2025 wk 9 Anunoby 42), so it is KEPT.
+  END-OF-SEASON CHECK (owner asked, Oct 26 2026): per-game data for 2023-2025 has every scheduled team-game with
+  stats through the last day (2024-04-14, 2025-04-13, 2026-04-12); the only schedule entries without stats are
+  postponed games listed twice. The missing last game is a SEASON-TOTAL feed problem (DATA.mvp, draftStats,
+  rookies, award races, dynasty past seasons); past seasons are frozen, the current season still uses the feed.
+  SMALL PRINT fpNote(kind) in app.js (.fp-note): 'game' = 2K list card, Season by season, Compare, Injury Report;
+  'season' = Awards page (above the lg-fine line), Draft Grades.
+  AWARD RACES SHOW BOTH (owner, Oct 26 2026: "default to Sleeper totals but also show game by game"; commish
+  Award races only): renderRaces loads gameByGameTotals(season) (breakdown.js season table, AWARD_SCORING scoring;
+  { pid: { fp, gp } }) next to seasonTotals(). MVP, ROY, All-Stars race so far, All-Fantasy, All-Rookie rows: big =
+  Sleeper's total (decides the race, as before), small .cm-gbg "game by game N +/-gap · N gp" (gp only when it
+  differs); line under each list (.cm-gbg-line, gbgLine) = who would be in/out or move if it went game by game.
+  Explainer fold .cm-gbg-help at the top (replaces fpNote there): bonuses once a season + phantom bonuses, missed
+  games, timing (Sleeper's total a day behind in season), Cup final (in game by game + matchups, NOT in Sleeper's
+  total or Basketball-Reference: 2024-25 SGA 77 vs 76, Giannis 68 vs 67), All-Star Game in neither. Checked:
+  2024-25 same top 5/10; 2023-24 All-Fantasy same 10, Brunson 8 -> 7, Durant 7 -> 9; ROY Jaquez/Podziemski swap.
   Rookie of the Year / All-Rookie Team (top 5) = DATA.rookies: total fantasy points, rookie =
   NBA games that season and none in the 10 seasons before (Sleeper's years_exp is wrong for
   some players, e.g. Amen Thompson, Yabusele); computed once per completed season, carried
@@ -280,7 +316,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Health report: GitHub runs, scoring-check.txt, week-guard.json, warnings, corrections,
   lineup check, activity (flag >21 days in season), trade review (750+ net, 4+ trades/pair).
 - `assets/gm.js` + "My GM" tabs in the commish office (Assistant GM, owner's plan Oct 2026).
-  The commish tab bar has two groups: My GM (Briefing = default tab, Lock-in coach) and League
+  The commish tab bar has groups: My GM (Briefing = default tab; the Lock-in coach is now "Assistant Coach" and
+  was MOVED to Test features by the owner Oct 26 2026: TEST_FEATURES entry id 'coach', so ?tab=coach and the
+  Briefing's links still work; code comments still say Lock-in coach) and League
   office (the 8 older tabs; Scouting now needs ?tab=scout). Every GM tab has a team picker
   (default COMMISH). Planned next, in order (owner agreed): dynasty value model (3 seasons,
   this one weighted most) -> Dynasty + Managers tabs, Trade finder (Sleeper's trade block is NOT
@@ -915,6 +953,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (tab id = #/commish?tab=id; testTabs() adds the tag to the tab label), BETA (the tag), betaCard(title,
   body, { sub, cls, id }) = a card with the tag in its title: draw EVERY card of a test feature with it.
   To add one: an entry in TEST_FEATURES + its renderer in renderCommish's `show` map (app.js).
+  A test tab's body gets class tf-body (renderCommish); CSS adds a Beta pseudo-tag to every `.card-head h2` there
+  without a .gm-beta, so pages built before they moved here (Assistant Coach) are tagged without code changes.
 - GRADUATING (only when the owner says so): move the feature out of Test features to its real place
   (a public page in NAV/READY, or a My GM / League office tab), remove its TEST_FEATURES entry, swap
   betaCard for plain cards (no Beta tags), and note the date + new place here.
@@ -937,7 +977,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   LISTS (owner, Oct 25 2026): chips Team / Waiver wire / League above the card (?list=fa|league; team picker
   only on Team). Waiver wire = active players with an NBA team and a G/F/C position on no roster TODAY (~247);
   League = every rostered player (~280) + a "Fantasy team" column (BK_OWN, only: 'league') and the card names
-  his team + manager. NBA TEAM list (owner, Oct 26 2026, "evaluate how teams are operating"; ?list=nba&nba=ORL,
+  his team + manager. "Include waiver wire" checkbox on the League list (owner, Oct 26 2026; "Show" bar, gm-bk-lgfa
+  via gmSave, synced): loadBreakdown { withFa } adds every Waiver wire player (same filter); ticking it rebuilds the
+  page (search, sort, picked player kept); subtitle "N on a fantasy roster + M free agents" (Oct 26: 287 + 239). NBA TEAM list (owner, Oct 26 2026, "evaluate how teams are operating"; ?list=nba&nba=ORL,
   last pick saved in gm-bk-nba, default ATL): every active player Sleeper lists on that NBA team (G/F/C), rostered
   here or not; NBA team picker (.bk-nba, 30 teams A-Z by name, NBA_TEAM_CODES in breakdown.js) in place of the
   fantasy team picker; card title = team name, sub "N players on the roster (Sleeper) · M on fantasy rosters
@@ -951,6 +993,11 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   fantasy_positions reach that group; marked "2nd" by the name, secMark). Saved with gmSave: gm-bk-pos
   ('all'|'G'|'F'|'C'), gm-bk-sec (default on); 'gm-bk-' is in SYNCED. Check: Centers on Parma 11 with, 10
   without (John Collins PF/C).
+  CARD TOP (owner, Oct 26 2026): .bk-top = .bk-id (headshot, FP/G ring right under it) beside .bk-head (#number +
+  positions, first/LAST name, HT/WT/AGE, league rank, Sleeper %); the rest (.bk-info) below. One column up to
+  1199px; from 1200px the top sits left (max 440px) and .bk-info right. Long last names shrink (h3.bk-l1 10-12
+  letters, .bk-l2 13+); at <= 360px the number/position boxes move into a row above the name. Checked
+  Antetokounmpo at 320 / 402 / desktop.
   CUSTOM TAGS (owner, Oct 25 2026: his own words, not a fixed list): localStorage gm-tags = { pid: [tag] } via
   gmSave (SYNCED in sync.js, MERGE 'object' = per player on first connect). Card: chips with × + "+ Tag" ->
   input (24 chars; a tag typed in another case reuses the existing spelling) + his other tags to tap
@@ -958,6 +1005,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   cell = chips, opts.html; sort = tagged first, grouped by their first tag A-Z). "Tags" filter row (#bk-tagbar,
   tagBar(): All + each tag with its count in the current list; BK.tag), works in all 3 lists. Same tag = same
   color (tagHue -> .th-0..5). A tag disappears when no player has it.
+  TAG COLORS (owner, Oct 26 2026): 10 choices TAG_COLORS (Gold, Blue, Green, Red, Purple, Orange, Teal, Pink,
+  Silver, Lime = .th-0..9); a picked color is saved PER TAG in gm-tag-colors { tag: index } (gmSave; SYNCED + MERGE
+  'object' in sync.js) and used everywhere (tagHue = saved ?? old letter hash 0-5, so old tags keep their color).
+  "+ Tag" box: color dots under the input (BK.newColor, tap again = automatic; typed text kept in BK.tagDraft while
+  picking); his tag chips become buttons: tap one = recolor mode (BK.recolor, "Color for X (every player)" + Done),
+  a dot sets that tag's color at once. Typing an existing tag with a color picked also recolors it.
   AUTO TAGS (owner, Oct 26 2026: "facts", set by the site, NOT editable; AUTO_TAGS in breakdown.js, autoTagsOf(p)
   in app.js -> [[tag, why]], why = tooltip): Injured (Sleeper injury_status or an ESPN injury entry), Trade talk
   (a TRADE_TALK news item in the last TRADE_TALK_DAYS 30: nightly data/trade-talk.json from updateTradeTalk in
@@ -1047,6 +1100,19 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   typing to gm-notes { pid: text } (gmSave; SYNCED + MERGE 'object'), ✎ by the name in the table (tooltip =
   note). SEASON BY SEASON adds Locked + Starts (any team, = Player Index; Banchero 2025-26 720, 2024-25 711) and
   on Team "For team" (that team's; Banchero 2023-24 92.5 of 371).
+  SEASON BY SEASON SWITCHES (owner, Oct 26 2026; years() in renderBreakdown, .bk-yrtabs/.bk-yrs/.bk-yr-* in
+  styles.css): NBA / League (gm-bk-yrmode) over Averages / Totals / Shooting (gm-bk-yrview; columns mirror the list
+  views; both synced via 'gm-bk-'). NBA = one row per season (NBA team, ranks, Locked/Starts any team, For team on
+  the Team list). League = per season, his played games in date order grouped into stretches by ownerAtWeek over
+  frontOffice(DATA).stints (BK_STINTS, cached; week key season*100 + game week, same rule as Team career): one
+  row per stretch, NEWEST FIRST within a season like the seasons (owner: reads bottom-up in date order), with date range + fantasy team (that season's name) + manager, a mid-season trade = two rows,
+  nobody had him = muted "Not on a roster" row; Locked/Starts = that season's playerWeeks for that owner, each
+  start given to the owner's stretch holding that week (else the nearest), so a start in the trade week still
+  counts and rows add up to Career. Last row Career: NBA = every season since the league started ("N seasons");
+  League = games while on a league team. Game logs per player cached for the visit (BK_YR_GAMES; seasonLines no
+  longer used by app.js). Verified Oct 26: Banchero 2023-24 tzola 22 GP / logan 38 GP 278.5 locked / Parma 21 GP
+  92.5 (= 81 GP, 371), career 201 GP 1,851 locked = sum of rows; Robert Williams III 2025-26 = 5 stretches incl.
+  3 "Not on a roster"; 320 px no overflow.
   AWARDS ROW (owner, Oct 25 2026; awardLine, .bk-aw chips, tooltips name the season + fantasy team):
   playerAwards(DATA, frontOffice(DATA)) in breakdown.js = the Record Book's Awards rules (completed seasons
   with a champion): Player of the Year, League MVP, Rookie of the Year, Championship MVP, Steal of the Draft

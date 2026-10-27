@@ -50,6 +50,8 @@ const weekFix = {
 const pulled = await buildLeagueData(LEAGUE_ID, undefined, {
   weekFix,
   frozen, allStars: previous?.allStars ?? {}, rookies: previous?.rookies ?? {}, rookiesScoring: previous?.rookiesScoring ?? {},
+  // Past awards are frozen (owner, Oct 26 2026): completed seasons' MVP / All-Fantasy list and draft stats are kept.
+  mvp: previous?.mvp ?? {}, draftStats: previous?.draftStats ?? {},
   // scripts/preseason-fix.json: hand-restored editions (Oct 21 2026: the 2026 one was rebuilt from Sleeper's
   // broken in-season feed; this is the copy saved Oct 20, 5:56 PM CT, before tip-off). It wins over last night's.
   rookiePool: previous?.rookiePool ?? {}, preseason: { ...(previous?.preseason ?? {}), ...((await readJson('scripts/preseason-fix.json')) ?? {}) },

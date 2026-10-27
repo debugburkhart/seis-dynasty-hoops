@@ -7,6 +7,8 @@
 export const TEST_FEATURES = [
   { id: 'breakdown', label: '2K breakdown', since: '2026-10-25' },
   { id: 'injuries', label: 'Injury Report', since: '2026-10-26' },
+  // Moved here from My GM by the owner (Oct 26 2026; was the Lock-in coach). Tab id stays 'coach' so old links work.
+  { id: 'coach', label: 'Assistant Coach', since: '2026-10-26' },
 ];
 
 export const BETA = '<span class="gm-beta">Beta</span>';

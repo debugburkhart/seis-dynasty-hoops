@@ -43,3 +43,11 @@ export const RIVALRY_BONUS = { major: 10, minor: 5 };
 // `cap` times (then it passes to the next-lowest manager under the cap). Home shows
 // the tracker from now until the week after `to`.
 export const WAGER = { season: '2026', from: 8, to: 14, stake: 5, cap: 2 };
+
+// The 30 NBA teams' Sleeper codes. Sleeper's per-game box scores also list the All-Star Game as a regular-season
+// game (team / opponent EST-WST 2024, CHK-SHQ 2025, STP-STR 2026...). It never counts in fantasy matchups, so
+// every per-game reader skips those rows (owner, Oct 26 2026: Jokic 2023-24 showed 80 games instead of 79).
+export const NBA_CODES = new Set(['ATL', 'BOS', 'BKN', 'CHA', 'CHI', 'CLE', 'DAL', 'DEN', 'DET', 'GSW', 'HOU', 'IND', 'LAC', 'LAL', 'MEM',
+  'MIA', 'MIL', 'MIN', 'NOP', 'NYK', 'OKC', 'ORL', 'PHI', 'PHX', 'POR', 'SAC', 'SAS', 'TOR', 'UTA', 'WAS']);
+const notNba = code => !!code && !NBA_CODES.has(code);
+export const exhibitionRow = g => notNba(g?.team) || notNba(g?.opponent);

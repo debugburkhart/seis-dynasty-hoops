@@ -2,7 +2,7 @@
 // and a league health report. The site is public files, so the passcode only
 // keeps the section out of casual view; only its SHA-256 fingerprint is stored here.
 
-import { AWARD_SCORING } from './config.js';
+import { AWARD_SCORING, exhibitionRow } from './config.js';
 
 export const PASSCODE_SHA256 = '86477df6cc9ac53fe05aa7a71b6d5ac9f1063f23b76142bc2393ec40d8f85884';
 export const COMMISH = '1035475215997906944'; // bigdaddyburk (Parma John Wall): the default team to scout

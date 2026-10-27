@@ -116,7 +116,7 @@ export async function allStarPool(season, scoring, fetchImpl = globalThis.fetch.
 // weekFix: { official, live, notes: [] } (data/official-weeks.json + data/live-weeks.json, see
 // assets/weekfix.js), updated in place; the nightly job saves them. Without it (the browser),
 // finished weeks come straight from the matchup feed.
-export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {}, allStars: knownAllStars = null, rookies: knownRookies = null, rookiesScoring: knownRookiesScoring = {}, rookiePool: knownRookiePool = {}, preseason: knownPreseason = {}, weekFix = null } = {}) {
+export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bind(globalThis), { frozen = {}, allStars: knownAllStars = null, rookies: knownRookies = null, rookiesScoring: knownRookiesScoring = {}, rookiePool: knownRookiePool = {}, preseason: knownPreseason = {}, weekFix = null, mvp: knownMvp = {}, draftStats: knownDraftStats = {} } = {}) {
   // Sleeper's cache can serve stale matchup scores for weeks after the fact
   // (2025 week 17 came back 290-315 instead of the real 355-352), so every
   // request carries a unique value to force a fresh copy.
@@ -512,9 +512,11 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
 
   // League MVP and the All-Fantasy Team: each season's top 60 (All-Fantasy only counts
   // players on a playoff team, so it needs more than the top 10).
+  // FROZEN once a season is complete (owner, Oct 26 2026: "freeze all past awards"): last night's list is kept, so
+  // later changes to how totals are counted, or Sleeper changing its old season totals, never move a past award.
   const mvp = {};
   for (const lg of chain) {
-    const rows = (await totalsFor(lg)).slice(0, 60);
+    const rows = lg.status === 'complete' && knownMvp[lg.season]?.length ? knownMvp[lg.season] : (await totalsFor(lg)).slice(0, 60);
     for (const r of rows) usedPlayers.add(r.pid);
     if (rows.length) mvp[lg.season] = rows;
   }
@@ -523,7 +525,10 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
   // in each season, under that season's league scoring. [points, games] by player.
   const draftStats = {};
   const drafted = draftedPlayers({ drafts });
+  // Completed seasons are FROZEN like the awards (Draft of the Year / Steal of the Draft banners read these). A later
+  // draft class doesn't need them: grades only count a pick's seasons from his draft on.
   for (const lg of chain) {
+    if (lg.status === 'complete' && knownDraftStats[lg.season] && Object.keys(knownDraftStats[lg.season]).length) { draftStats[lg.season] = knownDraftStats[lg.season]; continue; }
     const pts = seasonPoints(await statsFor(lg.season), lg.scoring_settings, drafted);
     if (Object.keys(pts).length) draftStats[lg.season] = pts;
   }

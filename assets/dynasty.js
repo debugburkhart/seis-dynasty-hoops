@@ -3,6 +3,7 @@
 // 3 seasons, this one counting most. Live Sleeper data in the browser.
 
 import { get, pickLedger, loadTradedPicks } from './commish.js';
+import { exhibitionRow } from './config.js';
 import { draftGrades, projectedOrder } from './draft.js';
 import { standingsBefore } from './hype.js';
 import { classStrength } from './scout.js';

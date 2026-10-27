@@ -2,6 +2,7 @@
 // Daily briefing. Live Sleeper data in the browser, on top of commish.js's loadWeek.
 
 import { get, teamRoster } from './commish.js';
+import { exhibitionRow } from './config.js';
 
 const r1 = n => Math.round(n * 10) / 10;
 const fantasy = (stats, scoring) => Object.entries(scoring).reduce((sum, [k, v]) => sum + (Number(stats?.[k]) || 0) * v, 0);
@@ -62,7 +63,7 @@ export async function loadBoxes(season, week, scoring) {
   const rows = await get(`/stats/nba/${season}/${week}?season_type=regular`, []);
   const out = {};
   for (const g of rows ?? []) {
-    if (!/^\d+$/.test(g.player_id) || !g.stats || !(g.stats.gp || g.stats.sp)) continue;
+    if (!/^\d+$/.test(g.player_id) || !g.stats || !(g.stats.gp || g.stats.sp) || exhibitionRow(g)) continue; // no All-Star Game
     (out[g.player_id] ??= []).push({ date: g.date, pts: r1(fantasy(g.stats, scoring)) });
   }
   for (const list of Object.values(out)) list.sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -135,7 +136,7 @@ export async function lockedPoints(season, week, leagueId, rows) {
   const team = {};
   const boxes = {};
   for (const g of stats ?? []) {
-    if (!/^\d+$/.test(g.player_id)) continue;
+    if (!/^\d+$/.test(g.player_id) || exhibitionRow(g)) continue; // no All-Star Game
     team[g.player_id] ??= g.team ?? g.player?.team;
     if (g.stats && (g.stats.gp || g.stats.sp)) (boxes[g.player_id] ??= []).push({ date: g.date, pts: r1(fantasy(g.stats, scoring)) });
   }

@@ -3026,6 +3026,10 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .th-3 { background: rgba(255,130,130,.16); border-color: rgba(255,130,130,.5); color: #ffb3b3; }
 .th-4 { background: rgba(200,160,255,.16); border-color: rgba(200,160,255,.5); color: #dcc4ff; }
 .th-5 { background: rgba(255,170,100,.16); border-color: rgba(255,170,100,.5); color: #ffc898; }
+.th-6 { background: rgba(80,210,210,.16); border-color: rgba(80,210,210,.5); color: #8ff0ee; }
+.th-7 { background: rgba(255,120,190,.16); border-color: rgba(255,120,190,.5); color: #ffb0da; }
+.th-8 { background: rgba(210,220,235,.14); border-color: rgba(210,220,235,.5); color: #e6ecf5; }
+.th-9 { background: rgba(190,235,90,.16); border-color: rgba(190,235,90,.5); color: #d6f59a; }
 .bk-tagrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
 .bk-tagadd { padding: 3px 10px; border: 1px dashed rgba(255,255,255,.4); border-radius: 99px; background: none; color: #d6deec; font: 700 11px/1.3 var(--font); cursor: pointer; }
 .bk-tagform { display: flex; gap: 6px; margin-top: 8px; max-width: 340px; }
@@ -3303,3 +3307,92 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-injbtn.on small { background: rgba(7,20,43,.2); color: var(--navy-950); }
 .bk-newsrep.bk-injrep { border-left-color: #ff7b7b; margin-top: 0; }
 .bk-injrep .bk-newshd { color: #ffaaaa; }
+/* 2K breakdown Season by season: NBA / League + Averages / Totals / Shooting switches, team stretches, Career row. */
+.bk-yrtabs { margin-bottom: 8px; flex-wrap: wrap; }
+.bk-yrtabs + .bk-yrtabs { margin-top: -4px; }
+.bk-yrs td.bk-yr-team { text-align: left; white-space: nowrap; }
+.bk-yrs td.bk-yr-team small { display: block; color: var(--muted); font-size: 11px; }
+.bk-yr-when { display: block; color: var(--muted); font-size: 10.5px; font-weight: 600; white-space: nowrap; }
+.bk-yrs tr.bk-yr-fa td { color: var(--muted); font-style: italic; }
+.bk-yrs tr.bk-yr-career td { border-top: 2px solid var(--navy-900); font-weight: 800; }
+/* Small print: why fantasy points can differ a little from the Sleeper app (fpNote in app.js). */
+.fp-note { margin: 10px 0 0; font-size: 11px; line-height: 1.45; color: var(--muted); }
+.fp-note b { font-weight: 700; }
+.bk.card .fp-note { margin: 0; padding: 0 18px 14px; color: #9fb0cc; }
+@media (max-width: 700px) {
+  .bk.card .fp-note { padding: 0 14px 12px; }
+}
+/* Commish Award races: game-by-game totals next to Sleeper's season totals (gameByGameTotals in app.js). */
+.cm-gbg { display: block; white-space: normal; margin-top: 2px; font-size: 10.5px; font-weight: 500; color: var(--muted); text-align: right; }
+.cm-gbg i { font-style: normal; font-weight: 700; }
+.cm-gbg i.up, .cm-gbg-help i.up { color: #2f8a5a; }
+.cm-gbg i.down { color: #b0465a; }
+.aw-race li.win .cm-gbg { font-weight: 500; }
+.cm-gbg-line { margin: 6px 0 0; font-size: 11px; color: var(--muted); }
+.cm-gbg-line b { color: var(--ink); }
+.cm-gbg-help { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card, #fff); font-size: 12px; line-height: 1.45; color: var(--ink); }
+.cm-gbg-help summary { cursor: pointer; color: var(--muted); }
+.cm-gbg-help summary b { color: var(--ink); }
+.cm-gbg-help ul { margin: 6px 0; padding-left: 18px; }
+.cm-gbg-help li { margin: 3px 0; }
+.cm-gbg-help p { margin: 6px 0 0; }
+.cm-races .aw-race li b { text-align: right; flex: none; max-width: 60%; }
+/* Test features page (#cm-body.tf-body): every card title carries the Beta tag, also on pages built before they moved
+   here (Assistant Coach, Oct 26 2026). Cards drawn with betaCard() already have one, so they're skipped. */
+.tf-body .card-head h2:not(:has(.gm-beta))::after { content: 'Beta'; display: inline-block; margin-left: 6px; padding: 1px 5px; border-radius: 99px; background: #fdf0d2; color: #8a5a00; font: 800 8px/1.4 var(--display); letter-spacing: .06em; text-transform: uppercase; vertical-align: 2px; }
+/* Tag color picker (2K card, open "+ Tag" box): 10 dots, tap a tag chip to recolor it. */
+.bk-tagcolors { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.bk-tagcolor-label { font: 700 11px/1.2 var(--font); color: #9fb0cc; margin-right: 2px; }
+.bk-tagcolor-label b { color: #fff; }
+.bk-colordot { width: 22px; height: 22px; padding: 0; border: 2px solid; border-radius: 50%; cursor: pointer; }
+.bk-colordot.on { outline: 2px solid #fff; outline-offset: 2px; }
+.bk-taghint { width: 100%; font-size: 11px; color: #9fb0cc; }
+.bk-colordone { padding: 3px 10px; border: 1px solid rgba(255,255,255,.4); border-radius: 99px; background: none; color: #fff; font: 700 11px/1.3 var(--font); cursor: pointer; }
+.bk-tag .bk-tagname { padding: 0; font: inherit; opacity: 1; cursor: pointer; }
+.bk-tag.bk-recolor { outline: 2px solid #fff; outline-offset: 1px; }
+/* 2K card top (owner, Oct 26 2026): headshot next to the number + positions, FP/G ring right under the headshot. */
+.bk-top { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 16px; align-items: start; min-width: 0; }
+.bk-top .bk-id { flex-direction: column; align-items: center; gap: 10px; }
+.bk-top .bk-ring { margin-bottom: 0; }
+.bk-head { min-width: 0; }
+.bk-head .bk-name { gap: 10px; align-items: flex-start; }
+.bk-head .bk-tags { padding-top: 4px; }
+.bk-hero { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1200px) {
+  .bk-hero { align-items: start; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .bk-top .bk-photo { width: 120px; }
+  .bk-head .bk-name h3 { font-size: 26px; }
+  .bk-head .bk-name small { font-size: 13px; }
+}
+@media (max-width: 360px) {
+  .bk-top { gap: 12px 10px; }
+  .bk-top .bk-photo { width: 96px; }
+  .bk-top .bk-ring { width: 70px; height: 70px; }
+  .bk-top .bk-ring > div { width: 56px; height: 56px; }
+  .bk-top .bk-ring b { font-size: 20px; }
+  .bk-head .bk-name h3 { font-size: 22px; }
+  .bk-head .bk-tags span { min-width: 28px; font-size: 10px; }
+}
+/* Long last names shrink instead of breaking mid-word (bk-l1 = 10-12 letters, bk-l2 = 13+; hyphenated names wrap
+   at the hyphen). */
+.bk-head .bk-name h3 { overflow-wrap: normal; }
+.bk-head .bk-name h3.bk-l1 { font-size: 30px; }
+.bk-head .bk-name h3.bk-l2 { font-size: 26px; }
+@media (max-width: 700px) {
+  .bk-head .bk-name h3.bk-l1 { font-size: 22px; }
+  .bk-head .bk-name h3.bk-l2 { font-size: 20px; }
+}
+@media (max-width: 360px) {
+  .bk-head .bk-name h3.bk-l1 { font-size: 19px; }
+  .bk-head .bk-name h3.bk-l2 { font-size: 17px; }
+}
+@media (max-width: 360px) {
+  /* Smallest phones: number + positions in a row above the name, so the name gets the full width. */
+  .bk-head .bk-name { flex-direction: column; gap: 4px; }
+  .bk-head .bk-tags { flex-direction: row; padding-top: 0; }
+}
+/* 2K League list: "Include waiver wire" box. */
+.bk-lgfa-box { margin-left: 0; white-space: normal; }
+.bk-lgfa-box small { font-weight: 500; color: #9fb0cc; }
