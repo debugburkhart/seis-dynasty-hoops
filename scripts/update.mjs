@@ -408,6 +408,16 @@ try {
   console.log(`Trade talk skipped: ${e.message}`);
 }
 
+// Taxi players of the week (Home; owner, Oct 27 2026): top 5 single games by taxi players in the last
+// finished week, built once per week -> data/taxi-week.json (assets/taxiweek.js). Never stops the update.
+try {
+  const { updateTaxiWeek } = await import('../assets/taxiweek.js');
+  const tw = await updateTaxiWeek(data, await readJson('data/taxi-week.json'), { getJson, log: m => console.log(m) });
+  if (tw) await writeFile('data/taxi-week.json', JSON.stringify(tw));
+} catch (e) {
+  console.log(`Taxi players of the week skipped: ${e.message}`);
+}
+
 // Weekly Props (owner, Oct 2026): the 10 props for the next week that hasn't tipped off, lines from
 // the same week simulation as the coach, redone every night until the first game; a locked week is
 // never changed -> data/props.json (assets/props.js). Picks live in Firestore. Never stops the update.

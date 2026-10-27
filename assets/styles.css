@@ -1501,7 +1501,6 @@ a.tx-row.tx-link:hover { background: #fbf6e6; }
 .hm-dot.on { background: var(--navy-800); }
 .hm-arrow { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--line, #d9dee8); border-radius: 50%; background: #fff; color: var(--navy-800); font: 800 20px/1 var(--display); cursor: pointer; }
 .hm-arrow:active { background: var(--navy-800); color: var(--gold); }
-@media (hover: hover) and (pointer: fine) { .hm-arrow { display: none; } }
 @media (prefers-reduced-motion: reduce) { .hm-slide, .hm-slide.on { transition: none; } }
 .hm-main-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .hm-kicker { display: inline-flex; align-items: center; gap: 6px; font: 800 10.5px/1.2 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
@@ -3062,6 +3061,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .au-up { background: #2f9e6a; color: #fff; }
 .au-down { background: #b0465a; color: #fff; }
 .au-opt { background: #e8eef9; color: var(--navy-950); }
+.au-taxi { background: #3a9d5d; color: #fff; }
 .bk .bk-table tr.on td.bk-tagcol .bk-auto { border-color: transparent; }
 .bk .bk-table tr.on td.bk-tagcol .bk-auto.au-opt { background: var(--navy-950); color: #fff; }
 .bk-autof .bk-bolt { margin-right: 4px; vertical-align: -1px; }
@@ -3078,6 +3078,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-autof.au-up .bk-bolt { color: #6fe0a6; }
 .bk-autof.au-down .bk-bolt { color: #f08a9c; }
 .bk-autof.au-opt .bk-bolt { color: #e8eef9; }
+.bk-autof.au-taxi .bk-bolt { color: #8be0a8; }
 .bk-views button.on.bk-autof .bk-bolt { color: var(--navy-950); }
 /* Tag row switches: Auto / Mine show or hide each group of tags in the filter row. */
 #bk-tagbar .bk-bar { flex-wrap: wrap; }
@@ -3133,6 +3134,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-aw.ring { background: linear-gradient(#ffe39a, var(--gold)); color: var(--navy-950); }
 .bk-aw.indiv { border: 1px solid var(--gold); color: #ffd978; }
 .bk-aw.team { border: 1px solid rgba(142,197,255,.5); color: #b9dcff; }
+.bk-aw.taxi { border: 1px solid rgba(160,231,180,.55); color: #b8f0c9; }
 /* 2K breakdown season chips (Career + 4 seasons) wrap on narrow phones instead of widening the page. */
 .bk-seasons { flex-wrap: wrap; max-width: 100%; }
 /* 2K breakdown list buttons (Team / Waiver wire / League / NBA team) wrap on narrow phones. */
@@ -3396,3 +3398,34 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 /* 2K League list: "Include waiver wire" box. */
 .bk-lgfa-box { margin-left: 0; white-space: normal; }
 .bk-lgfa-box small { font-weight: 500; color: #9fb0cc; }
+
+/* Home "Taxi players of the week" (homeTaxi in app.js; data/taxi-week.json). */
+.hm-taxi-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.hm-taxi-list li { display: grid; grid-template-columns: 18px 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 2px; }
+.hm-taxi-list li + li { border-top: 1px solid var(--line); }
+.hm-taxi-rank { font: 900 15px/1 var(--display); color: var(--brass); text-align: center; }
+.hm-taxi-img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; background: var(--paper); }
+.hm-taxi-who { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hm-taxi-who b { font-size: 13.5px; }
+.hm-taxi-who small { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.hm-taxi-fp { display: flex; flex-direction: column; align-items: flex-end; }
+.hm-taxi-fp b { font: 900 20px/1 var(--display); color: var(--navy-800); font-variant-numeric: tabular-nums; }
+.hm-taxi-fp small { font: 800 9px/1.4 var(--display); letter-spacing: .12em; color: var(--muted); }
+
+/* Home "What's new" (homeNew / WHATS_NEW in app.js). */
+.hm-new-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.hm-new-list li + li { border-top: 1px solid var(--line); }
+.hm-new-item { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 4px; color: inherit; text-decoration: none; border-radius: 8px; }
+.hm-new-item:hover { background: #fbf6e6; }
+.hm-new-item > .ic { width: 14px; height: 14px; color: var(--brass); }
+.hm-new-ic { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--navy-800); color: var(--gold); }
+.hm-new-ic .ic { width: 17px; height: 17px; }
+.hm-new-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hm-new-body b { font-size: 13.5px; }
+.hm-new-body small { font-size: 12px; color: var(--muted); }
+#hm-taxi { scroll-margin-top: 70px; }
+.hm-taxi-nav { display: inline-flex; align-items: center; gap: 8px; font: 800 11px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--navy-800); white-space: nowrap; }
+.hm-taxi-nav .hm-arrow { width: 30px; height: 30px; font-size: 18px; }
+.hm-taxi-nav .hm-arrow:disabled { opacity: .35; cursor: default; }
+.hm-taxi-x { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 99px; background: var(--navy-800); color: var(--gold); font: 800 10.5px/1.4 var(--display); vertical-align: 1px; }
+.hm-taxi-key { margin: 4px 2px 0; font-size: 11.5px; color: var(--muted); }

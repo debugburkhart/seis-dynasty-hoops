@@ -350,7 +350,7 @@ export async function playerNews(pid) {
 // Order = order in the filter row and the Tags column sort (owner's second batch Oct 26 2026 after #3 option).
 export const AUTO_TAGS = ['Injured', 'Trade talk', 'League trade', 'NBA trade', 'League pickup', 'Trending add',
   '#1 option', '#2 option', '#3 option', '4-game week', '2-game week', 'Hot', 'Cold', 'Minutes up',
-  'Rookie', 'Last taxi season', 'Contract year', 'Extension next summer', 'Dynasty riser', 'Dynasty faller', 'Top 100 prospect'];
+  'Rookie', 'Last taxi season', 'Contract year', 'Extension next summer', 'Dynasty riser', 'Dynasty faller', 'Top 100 prospect', 'Made Taxi POTW'];
 export const TRADE_TALK_DAYS = 30; // "Trade talk" = a trade-talk news item published in the last 30 days
 export const TRADED_DAYS = 14; // "League trade" / "NBA trade" = traded in the last 14 days
 export const PICKUP_DAYS = 7; // "League pickup" = added off waivers / free agency here in the last 7 days

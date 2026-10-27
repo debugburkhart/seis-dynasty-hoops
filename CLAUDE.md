@@ -44,7 +44,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (owner) the card holds EVERY game of that week as slides in hype order (homeSlide per game, kicker says
   "Main event" / "Game N of M"): desktop ((hover: hover) and (pointer: fine)) auto-advances every
   HM_CYCLE_MS 8 s, paused while hovered/focused or the tab is hidden (cycles even with Reduce Motion, owner
-  asked; that only drops the fade); phones get ‹ › arrows + dots, no auto-advance (bindHomeSlides). Slides
+  asked; that only drops the fade); phones get ‹ › arrows + dots, no auto-advance (bindHomeSlides). Since
+  Oct 27 2026 (owner) the ‹ › arrows show on desktop too; a manual move restarts the 8 s timer; only keyboard
+  focus (:focus-visible) pauses, a mouse click on an arrow doesn't. Slides
   share one grid cell (.hm-slides) so the card keeps the tallest slide's height; the shown slide
   (box.dataset.slide) survives the minute score refresh;
   "Record watch" ticker (newest 8 league + 6 personal record events): desktop auto-scrolls;
@@ -63,6 +65,28 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   URL), owner pastes and commits (push redeploys, ~3-5 min); last save kept 20 min in
   localStorage wager-saved so the form shows it until GitHub publishes. Card stays up after
   week 15 until every paid week has a result.
+  WHAT'S NEW (owner, Oct 27 2026; homeNew in app.js, .hm-new-*): card right under the Main event (above the Props
+  / Trade Court lines) listing new features with an icon, one line and a link: WHATS_NEW = [{ icon, title, text,
+  href | jump }] (jump = id of a Home card to scroll to, e.g. hm-taxi). Now: Trade Court, Weekly Props, Taxi players
+  of the week. Edit WHATS_NEW to add/remove items.
+  TAXI PLAYERS OF THE WEEK (owner, Oct 27 2026; homeTaxi in app.js, #hm-taxi under Power/Standings, .hm-taxi-*):
+  the 5 best SINGLE games by taxi-squad players in the last finished week, one game per player (his best), from
+  data/taxi-week.json built by update.mjs -> assets/taxiweek.js updateTaxiWeek(): week = the newest week of the
+  current season in data.games; taxi = Sleeper rosters' taxi lists at build time; box scores /stats/nba/{s}/{w}
+  (All-Star rows skipped, gp or sp), that league's scoring; BUILT ONCE PER WEEK (a week already in the file is
+  never rebuilt), so a player called up later stays listed. File version 2 (owner, Oct 27 2026) = { version, at,
+  weeks: [{ season, week, dates, taxiPlayers, played, games }] } oldest first, EVERY week kept (a version 1
+  one-week file is carried in). Card: ‹ Week N › arrows (.hm-taxi-nav) step through saved weeks (opens on the
+  newest); each name has a pill "N×" (.hm-taxi-x) = times on the list through the week shown (taxiAppearances
+  in taxiweek.js; tooltip lists the weeks) + a key line under the list. 2K breakdown (owner, Oct 27 2026): the
+  AWARD "Taxi player of the week" = the week's No. 1 ONLY (owner: "only give the award to the top player each
+  week"): green Awards chip (.bk-aw.taxi) "2 x Taxi player of the week (Wk 1, Wk 2)" (season names only when weeks
+  span seasons; tooltip per week: rank, FP, opponent, fantasy team); Compare's Awards row counts No. 1s only.
+  Anyone in a week's top 5 gets the AUTO TAG "Made Taxi POTW" (AUTO_TAGS in breakdown.js, au-taxi green), chip
+  "Made Taxi POTW ×N" (N = top-5 appearances, tooltip lists week, rank, FP), in the Tags filter row too. Both from
+  loadTaxiWeeks() (BK_TAXIW, data/taxi-week.json, once per visit). Card: rank, photo, name, fantasy team, NBA team vs opponent + day,
+  stat line + minutes, FP. No file = no card. Week 1 2026: Lendeborg 40, Ja'Kobe Walter 33, Harper 31, Brazile
+  30, Traore 28 (83 taxi players, 57 played).
   Record links use `#/records/{cat}?rec={slug}` (+ `manager=` for personal),
   which opens and scrolls to that leaderboard.
 - `assets/build-data.js`: pulls everything from Sleeper (`api.sleeper.com`, cache-busted),
@@ -846,7 +870,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   claims, saving picks (live rules block them until the owner publishes the new rules).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json,
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json, taxi-week.json,
   dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 

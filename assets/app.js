@@ -19,6 +19,7 @@ import { gradeOf } from './scout.js';
 import { CONTRACTS_SOURCE, contractText, readContract } from './contracts.js';
 import { paintSync, syncInit, syncSave } from './sync.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
+import { taxiAppearances } from './taxiweek.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 import { betaCard, isTestTab, testTabs } from './test-features.js';
 import { AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
@@ -2547,7 +2548,7 @@ const tagChip = (tag, x) => `<span class="bk-tag th-${tagHue(tag)}">${esc(tag)}$
 // BK.auto = { opt: teamOptions, talk: data/trade-talk.json players, traded: recentTrades } (loaded by
 // renderBreakdown); a card whose news has loaded (BK_NEWS) overrides the nightly trade-talk answer.
 const AUTO_CLS = { Injured: 'au-inj', 'Trade talk': 'au-talk', 'League trade': 'au-traded', 'NBA trade': 'au-nba', 'League pickup': 'au-pick', 'Trending add': 'au-trend',
-  '4-game week': 'au-week', '2-game week': 'au-light', Hot: 'au-hot', Cold: 'au-cold', 'Minutes up': 'au-up', 'Dynasty riser': 'au-up', 'Dynasty faller': 'au-down' };
+  '4-game week': 'au-week', '2-game week': 'au-light', Hot: 'au-hot', Cold: 'au-cold', 'Minutes up': 'au-up', 'Dynasty riser': 'au-up', 'Dynasty faller': 'au-down', 'Made Taxi POTW': 'au-taxi' };
 const bkDay = ms => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' });
 // [[tag, why]] for a player (p = a loadBreakdown player).
 function autoTagsOf(p) {
@@ -2606,6 +2607,9 @@ function autoTagsOf(p) {
   if (mv != null && mv <= -DYN_MOVE) out.push(['Dynasty faller', `Dynasty score ${mv} since ${shortMd(a.dynBase)} (now ${dp?.score ?? '?'})`]);
   const pr = a.prospects?.[p.pid];
   if (pr) out.push(['Top 100 prospect', `No. ${pr.rank} on the Top 100 Prospects list (prospect grade ${pr.grade})`, `Top 100 prospect #${pr.rank}`]);
+  // Made the Home card's Taxi players of the week top 5 (owner, Oct 27 2026); chip shows how many times.
+  const tw = BK_TAXIW?.[p.pid] ?? [];
+  if (tw.length) out.push(['Made Taxi POTW', `In the weekly top 5 taxi games ${tw.length} time${tw.length === 1 ? '' : 's'}: ${tw.map(x => `${bkSeason(x.season)} week ${x.week} No. ${x.rank} (${num(x.fp)} FP)`).join(', ')}`, `Made Taxi POTW ×${tw.length}`]);
   return out;
 }
 // Loads BK.auto (each source on its own: a failure just leaves that tag out). The dynasty-based parts come from
@@ -2651,6 +2655,21 @@ const autoChip = (tag, why, label) => `<span class="bk-tag bk-auto ${AUTO_CLS[ta
 const BK_TAGCOL = ['tags', 'Tags', p => { const t = tagsAll(p); if (!t.length) return -1; const order = [...AUTO_TAGS, ...allTags()]; return 1000 - Math.min(...t.map(x => order.indexOf(x))); }, p => [...autoTagsOf(p).map(x => autoChip(...x)), ...tagsOf(p.pid).map(t => tagChip(t))].join('') || '—', { cls: 'bk-tagcol', html: true }];
 const BK_PAGE = 50;
 let BK_AWARDS = null; // playerAwards(DATA, fo), once per visit
+// Taxi players of the week (Home card; data/taxi-week.json) by player: { pid: [{ season, week, fp, owner, date, opp }] }.
+// Loaded once per visit; a missing file = none. Shown as an Awards chip on the 2K card (owner, Oct 27 2026).
+let BK_TAXIW = null;
+async function loadTaxiWeeks() {
+  if (BK_TAXIW) return BK_TAXIW;
+  const out = {};
+  try {
+    const res = await fetch(`data/taxi-week.json?t=${Date.now()}`, { cache: 'no-store' });
+    const tw = res.ok ? await res.json() : null;
+    for (const w of tw?.weeks ?? (tw?.games ? [tw] : [])) {
+      for (const g of w.games ?? []) (out[g.pid] ??= []).push({ season: w.season, week: w.week, fp: g.fp, owner: g.owner, date: g.date, opp: g.opp, rank: (w.games ?? []).indexOf(g) + 1 });
+    }
+  } catch { /* none */ }
+  return (BK_TAXIW = out);
+}
 const BK_LISTS = [['team', 'Team'], ['fa', 'Waiver wire'], ['league', 'League'], ['nba', 'NBA team']];
 const bkPct = x => (x == null ? '—' : `${(x * 100).toFixed(1)}`);
 const bkF1 = x => (x == null ? '—' : (Math.round(x * 10) / 10).toFixed(1));
@@ -2746,7 +2765,7 @@ async function renderBreakdown(body, params) {
   // Dynasty scores (gmDynasty, same values and injury setting as the Dynasty tab); a failure just hides them.
   // League list "Include waiver wire" (owner, Oct 26 2026): rostered players + every free agent, saved in gm-bk-lgfa.
   const lgFa = list === 'league' && gmLoad('gm-bk-lgfa', false);
-  const [bk, dyn, rings, , , espnOut] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, nbaTeam, withFa: lgFa, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft(), get('/v1/players/nba', {}).then(espnInjuries).catch(() => null), autoTagData()]);
+  const [bk, dyn, rings, , , espnOut] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, nbaTeam, withFa: lgFa, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft(), get('/v1/players/nba', {}).then(espnInjuries).catch(() => null), autoTagData(), loadTaxiWeeks()]);
   BK.espn = espnOut ?? {}; // ESPN injury estimates (return date, out for season) by pid
   await autoDynasty(dyn?.v ?? null); // taxi / contract / riser-faller / Top 100 prospect auto tags
   // Season-banner awards per player (same rules as the Awards page), worked out once per visit.
@@ -2832,8 +2851,14 @@ async function renderBreakdown(body, params) {
       .sort((a, b) => KIND.indexOf(a.kind) - KIND.indexOf(b.kind) || b.wins.at(-1).s.localeCompare(a.wins.at(-1).s));
     const why = a => (a.kind === 'ring' ? `${bkSeason(a.s)} ring: on ${teamName(a.o, a.s)}'s roster (${name(a.o)}) in championship week, not on taxi` : `${bkSeason(a.s)} ${a.label}${a.o ? ` · with ${teamName(a.o, a.s)} (${name(a.o)})` : ''}`);
     const text = g => (g.wins.length > 1 ? `${g.wins.length} x ${g.label} (${g.wins.map(a => bkSeason(a.s)).join(', ')})` : `${bkSeason(g.wins[0].s)} ${g.label}`);
-    return `<div class="bk-awards"><span class="ct-label">Awards</span>${list.length
-      ? list.map(g => `<span class="bk-aw ${g.kind}" title="${esc(g.wins.map(why).join('\n'))}">${g.kind === 'ring' ? icon('trophy') : ''}${esc(text(g))}</span>`).join('')
+    // Taxi player of the week = the week's No. 1 only (owner, Oct 27 2026; the top 5 = "Made Taxi POTW" auto tag),
+    // one chip: "2 x Taxi player of the week (Wk 1, Wk 3)"; seasons named only when they span more than one.
+    const tw = (BK_TAXIW?.[p.pid] ?? []).filter(x => x.rank === 1).sort((a, b) => a.season - b.season || a.week - b.week);
+    const many = new Set(tw.map(x => x.season)).size > 1;
+    const twLabel = x => `${many ? `${bkSeason(x.season)} ` : ''}Wk ${x.week}`;
+    const twChip = tw.length ? `<span class="bk-aw taxi" title="${esc(tw.map(x => `${bkSeason(x.season)} week ${x.week}: No. ${x.rank} with ${num(x.fp)} FP vs ${x.opp ?? ''} (${teamName(x.owner, x.season)})`).join('\n'))}">${icon('bolt')}${esc(tw.length > 1 ? `${tw.length} x Taxi player of the week (${tw.map(twLabel).join(', ')})` : `Taxi player of the week (${twLabel(tw[0])})`)}</span>` : '';
+    return `<div class="bk-awards"><span class="ct-label">Awards</span>${list.length || twChip
+      ? list.map(g => `<span class="bk-aw ${g.kind}" title="${esc(g.wins.map(why).join('\n'))}">${g.kind === 'ring' ? icon('trophy') : ''}${esc(text(g))}</span>`).join('') + twChip
       : '<small>None yet</small>'}</div>`;
   };
   // Draft lines on the player card (owner, Oct 25 2026): the real NBA draft and this league's own draft.
@@ -3152,6 +3177,8 @@ async function renderBreakdown(body, params) {
       const g = {};
       for (const r of rings[pid] ?? []) g.Champion = (g.Champion ?? 0) + 1;
       for (const a of BK_AWARDS[pid] ?? []) g[a.label] = (g[a.label] ?? 0) + 1;
+      const twWins = (BK_TAXIW?.[pid] ?? []).filter(x => x.rank === 1).length;
+      if (twWins) g['Taxi player of the week'] = twWins;
       return Object.entries(g).map(([label, n]) => `${n > 1 ? `${n} x ` : ''}${label}`).join(', ');
     };
     const rows = cmpRows(lk, awardsOf).map(([label, f, better]) => {
@@ -7196,8 +7223,11 @@ function bindHomeSlides(box) {
     box.dataset.slide = k;
   };
   const cur = () => Number(box.dataset.slide) || 0;
-  box.querySelectorAll('.hm-arrow').forEach(b => b.addEventListener('click', () => show(cur() + Number(b.dataset.step))));
-  box.querySelectorAll('.hm-dot').forEach(b => b.addEventListener('click', () => show(Number(b.dataset.go))));
+  // Arrows + dots work everywhere (owner, Oct 27 2026: manual buttons on desktop too); a manual move
+  // restarts the desktop timer so the next auto step waits a full HM_CYCLE_MS.
+  let restart = () => {};
+  box.querySelectorAll('.hm-arrow').forEach(b => b.addEventListener('click', () => { show(cur() + Number(b.dataset.step)); restart(); }));
+  box.querySelectorAll('.hm-dot').forEach(b => b.addEventListener('click', () => { show(Number(b.dataset.go)); restart(); }));
   clearInterval(box._cycle);
   const desktop = matchMedia('(hover: hover) and (pointer: fine)').matches;
   if (!desktop) return;
@@ -7205,12 +7235,18 @@ function bindHomeSlides(box) {
   const wrap = box.querySelector('.hm-slides');
   wrap.addEventListener('mouseenter', () => { paused = true; });
   wrap.addEventListener('mouseleave', () => { paused = false; });
-  wrap.addEventListener('focusin', () => { paused = true; });
+  // Keyboard focus pauses; a mouse click on an arrow doesn't (it would stay paused until clicking elsewhere).
+  wrap.addEventListener('focusin', e => { if (e.target.matches(':focus-visible')) paused = true; });
   wrap.addEventListener('focusout', () => { paused = false; });
-  box._cycle = setInterval(() => {
-    if (!box.isConnected) return clearInterval(box._cycle);
-    if (!paused && !document.hidden) show(cur() + 1);
-  }, HM_CYCLE_MS);
+  const start = () => {
+    clearInterval(box._cycle);
+    box._cycle = setInterval(() => {
+      if (!box.isConnected) return clearInterval(box._cycle);
+      if (!paused && !document.hidden) show(cur() + 1);
+    }, HM_CYCLE_MS);
+  };
+  restart = start;
+  start();
 }
 
 // One game's slide on Home (the first is the week's Main event).
@@ -7600,6 +7636,7 @@ function renderHome(main, preview = null) {
         <div><div class="eyebrow">${esc(DATA.name)}</div><h1>Home</h1></div>
       </div>
       <div id="hm-hype"><div class="hm-main hm-loading"><span class="hm-kicker">${icon('bolt')} Main event</span><p>Checking this week’s slate…</p></div></div>
+      ${homeNew()}
       <div id="hm-props"></div>
       <div id="hm-court"></div>
       ${homeTicker()}
@@ -7607,6 +7644,7 @@ function renderHome(main, preview = null) {
         ${homePower()}
         ${homeStandings()}
       </div>
+      <div id="hm-taxi"></div>
       <section class="card hm-card hm-trophies">
         <div class="hm-head"><h2>${icon('swords')} Rivalry trophies</h2><a class="hm-all" href="#/rivalry">Rivalries ${icon('arrow')}</a></div>
         <p class="card-sub">Season series and who holds each traveling trophy</p>
@@ -7618,6 +7656,11 @@ function renderHome(main, preview = null) {
   homeWagerLive(main);
   homeProps(main);
   homeCourt(main);
+  homeTaxi(main);
+  main.querySelectorAll('.hm-new-item[data-jump]').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    $(`#${a.dataset.jump}`, main)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
 
   main.querySelectorAll('.hm-tabs button').forEach(b => b.addEventListener('click', () => {
     homeBy = b.dataset.by;
@@ -8556,6 +8599,76 @@ async function renderProps(main, params) {
 let PR_BOARD = 'season'; // standings card: 'season' | 'all' (kept while browsing weeks)
 
 // Home: one line about the props week (no Firestore here, so Home stays light).
+// "What's new" (owner, Oct 27 2026): newest features with links, right under the Main event. Edit WHATS_NEW to
+// change it; `jump` scrolls to a card on Home instead of opening a page.
+const WHATS_NEW = [
+  { icon: 'scale', title: 'Trade Court', text: 'Vote on every trade in league history and see the jury’s verdict.', href: '#/trade-court' },
+  { icon: 'ticket', title: 'Weekly Props', text: '10 picks a week on spreads, totals and player lines. Sign in to play.', href: '#/props' },
+  { icon: 'bolt', title: 'Taxi players of the week', text: 'The 5 best single games by taxi-squad players last week.', jump: 'hm-taxi' },
+];
+function homeNew() {
+  return `
+    <section class="card hm-card hm-new">
+      <div class="hm-head"><h2>${icon('bolt')} What’s new</h2></div>
+      <ul class="hm-new-list">${WHATS_NEW.map(n => `
+        <li><a class="hm-new-item" href="${n.href ?? '#/home'}"${n.jump ? ` data-jump="${n.jump}"` : ''}>
+          <span class="hm-new-ic">${icon(n.icon)}</span>
+          <span class="hm-new-body"><b>${esc(n.title)}</b><small>${esc(n.text)}</small></span>
+          ${icon('arrow')}
+        </a></li>`).join('')}
+      </ul>
+    </section>`;
+}
+
+// Taxi players of the week (owner, Oct 27 2026): the 5 best single games by taxi players last week, one per
+// player, from data/taxi-week.json (built nightly once per week, assets/taxiweek.js). No file = no card.
+async function homeTaxi(main) {
+  const box = $('#hm-taxi', main);
+  if (!box) return;
+  let tw = null;
+  try {
+    const res = await fetch(`data/taxi-week.json?t=${Date.now()}`, { cache: 'no-store' });
+    if (res.ok) tw = await res.json();
+  } catch { /* no card */ }
+  // Version 2 = every week (taxiweek.js); an old one-week file still shows.
+  const weeks = (tw?.weeks ?? (tw?.games ? [tw] : [])).filter(w => w.games?.length);
+  if (!box.isConnected || !weeks.length) return;
+  const md = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const day = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
+  const line = l => [[l.pts, 'pts'], [l.reb, 'reb'], [l.ast, 'ast'], [l.stl, 'stl'], [l.blk, 'blk'], [l.tpm, '3pm']]
+    .filter(([v, k]) => v || ['pts', 'reb', 'ast'].includes(k)).map(([v, k]) => `${v} ${k}`).join(' · ');
+  // Arrows step through the saved weeks (newest first shown); each player's pill = times on the list
+  // through the week shown (tooltip names the weeks).
+  const draw = i => {
+    const w = weeks[i];
+    const seen = taxiAppearances(weeks, i);
+    box.innerHTML = `
+      <section class="card hm-card hm-taxi">
+        <div class="hm-head"><h2>${icon('bolt')} Taxi players of the week</h2>
+          <span class="hm-taxi-nav">
+            <button type="button" class="hm-arrow" data-tw="-1" aria-label="Earlier week"${i ? '' : ' disabled'}>‹</button>
+            <span>Week ${w.week}</span>
+            <button type="button" class="hm-arrow" data-tw="1" aria-label="Later week"${i < weeks.length - 1 ? '' : ' disabled'}>›</button>
+          </span></div>
+        <p class="card-sub">${w.season === DATA.seasons.at(-1)?.season ? '' : `${esc(w.season)} · `}Week ${w.week}${w.dates ? ` · ${md(w.dates[0])}–${md(w.dates[1])}` : ''} · best single game, one per player</p>
+        <ol class="hm-taxi-list">${w.games.map((g, k) => {
+          const times = seen[g.pid] ?? [];
+          return `
+          <li>
+            <span class="hm-taxi-rank">${k + 1}</span>
+            <img class="hm-taxi-img" src="${esc(playerPhoto(DATA, g.pid))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+            <span class="hm-taxi-who"><b>${esc(g.name)} <span class="hm-taxi-x" title="On the list ${times.length} time${times.length === 1 ? '' : 's'}: ${esc(times.join(', '))}">${times.length}×</span></b><small>${esc(teamName(g.owner, w.season))} · ${esc(g.team ?? '')} vs ${esc(g.opp ?? '')}, ${day(g.date)}</small><small>${esc(line(g.line))} · ${num(g.line.min)} min</small></span>
+            <span class="hm-taxi-fp"><b>${num(g.fp)}</b><small>FP</small></span>
+          </li>`;
+        }).join('')}
+        </ol>
+        <p class="hm-taxi-key">The number by each name is how many times he has made this list so far.</p>
+      </section>`;
+    box.querySelectorAll('[data-tw]').forEach(b => b.addEventListener('click', () => draw(Math.max(0, Math.min(weeks.length - 1, i + Number(b.dataset.tw))))));
+  };
+  draw(weeks.length - 1);
+}
+
 async function homeProps(main) {
   const box = $('#hm-props', main);
   if (!box) return;
