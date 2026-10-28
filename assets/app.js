@@ -3420,6 +3420,9 @@ const REPORTS = [
   { id: 'burk-2024-champ', added: '2026-10-28', title: 'bigdaddyburk’s 2024 title team: who’s still there?',
     sub: 'The champion’s roster in the 2024 final (won 423–401 over bigtrey5456) vs his roster today',
     run: () => reportFinalRoster(COMMISH, '2024') },
+  { id: 'trey-2024-vs-2025', added: '2026-10-28', title: 'bigtrey5456: 2024 championship team vs 2025 playoff team',
+    sub: 'Who carried over from the 2024 runner-up roster to the 2025 semifinal run, who left, who came in',
+    run: () => reportCompareRuns('1035999704737259520', '2024', '2025') },
 ];
 
 async function renderReports(body) { // async: renderCommish calls .catch() on every tab's result
@@ -3468,6 +3471,7 @@ function printReport(r, html) {
     <h1>${esc(r.title)}</h1>${r.sub ? `<p class="rp-psub">${esc(r.sub)}</p>` : ''}
     <p class="rp-pat">Read from Sleeper ${esc(at)} CT</p>
     <div class="rp-body">${html}</div>`;
+  el.querySelectorAll('details').forEach(d => { d.open = true; }); // folded parts print too
   document.body.append(el);
   const title = document.title;
   document.title = `${r.title.replace(/[\\/:*?"<>|]/g, '')} (${new Date().toISOString().slice(0, 10)})`;
@@ -3535,6 +3539,102 @@ async function reportFinalRoster(owner, season) {
     <h3 class="rp-h">Gone (${gone.length})</h3>
     <ul class="rp-rows">${gone.map(row).join('') || '<li><small>Nobody.</small></li>'}</ul>
     <p class="cm-rule">Read from Sleeper just now: his roster today (incl. taxi and IR) vs Sleeper’s final ${esc(season)} league roster. “How he left” = his last trade or drop of that player after the final.</p>`;
+}
+
+// One manager's playoff rosters in two seasons side by side. Roster = Sleeper's matchup `players` in his LAST
+// bracket game that season (taxi included; taxi flag = that season's closed league roster); playoff points = his
+// locked points over his bracket games (P) that season, from DATA.playerWeeks. Players only in the first season:
+// how they left (his last trade/drop between the two rosters); only in the second: how they came (trade, waiver,
+// free agent or his rookie draft pick).
+async function reportCompareRuns(owner, sa, sb) {
+  const all = await get('/v1/players/nba', {});
+  const pname = pid => DATA.players?.[pid]?.n || [all?.[pid]?.first_name, all?.[pid]?.last_name].filter(Boolean).join(' ') || pid;
+  const fmt = ts => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' });
+  const run = async season => {
+    const s = DATA.seasons.find(x => x.season === season);
+    const games = DATA.games.filter(g => g.s === season && g.t === 'P' && (g.a === owner || g.b === owner)).sort((a, b) => a.w - b.w);
+    if (!s || !games.length) return null;
+    const lastW = games.at(-1).w;
+    const [mu, rosters] = await Promise.all([get(`/v1/league/${s.leagueId}/matchups/${lastW}`, []), get(`/v1/league/${s.leagueId}/rosters`, [])]);
+    const rid = (rosters ?? []).find(r => r.owner_id === owner)?.roster_id;
+    const m = (mu ?? []).find(x => x.roster_id === rid);
+    const weeks = new Set(games.map(g => g.w));
+    const pts = {};
+    for (const x of DATA.playerWeeks) if (x.s === season && x.o === owner && weeks.has(x.w)) pts[x.pid] = (pts[x.pid] ?? 0) + x.p;
+    const endTs = Math.max(0, ...DATA.transactions.filter(t => t.s === season && t.w <= lastW).map(t => t.ts ?? 0));
+    const line = g => {
+      const me = g.a === owner;
+      return `${esc(g.label ?? `Week ${g.w}`)}: ${(g.win === 'a') === me ? 'beat' : 'lost to'} ${esc(name(me ? g.b : g.a))} ${num(me ? g.ap : g.bp)}–${num(me ? g.bp : g.ap)}${g.ap === g.bp ? ' (tiebreaker)' : ''}`;
+    };
+    // Seed = regular-season table order (win %, then points for), the same rule as the Awards banner's finish.
+    const pct = t => (t.w + t.t / 2) / Math.max(1, t.w + t.l + t.t);
+    const table = [...s.teams].sort((a, b) => pct(b) - pct(a) || b.pf - a.pf);
+    const seed = table.findIndex(t => t.owner === owner) + 1;
+    const rec = table[seed - 1];
+    return { season, s, games, lastW, endTs, seed, rec, players: m?.players ?? [], taxi: new Set((rosters ?? []).find(r => r.owner_id === owner)?.taxi ?? []), pts, lines: games.map(line) };
+  };
+  const [A, B] = await Promise.all([run(sa), run(sb)]);
+  if (!A || !B || !A.players.length || !B.players.length) return '<p class="empty">Sleeper didn’t return one of those playoff rosters.</p>';
+  const lab = s => `${s}–${String(Number(s) + 1).slice(-2)}`;
+  const inB = new Set(B.players);
+  const inA = new Set(A.players);
+  const both = A.players.filter(p => inB.has(p));
+  const onlyA = A.players.filter(p => !inB.has(p));
+  const onlyB = B.players.filter(p => !inA.has(p));
+  const tx = [...DATA.transactions].filter(t => (t.ts ?? 0) > A.endTs && (t.ts ?? 0) <= B.endTs).sort((a, b) => b.ts - a.ts);
+  const leftHow = pid => {
+    const t = tx.find(x => x.drops?.[pid] === owner);
+    if (!t) return 'left the roster';
+    return t.type === 'trade' ? `traded to ${esc(name(t.adds?.[pid] ?? t.owners.find(o => o !== owner)))} ${fmt(t.ts)}` : `dropped ${fmt(t.ts)}`;
+  };
+  const cameHow = pid => {
+    const t = tx.find(x => x.adds?.[pid] === owner);
+    if (t) return t.type === 'trade' ? `trade with ${esc(name(t.drops?.[pid] ?? t.owners.find(o => o !== owner)))} ${fmt(t.ts)}` : `${t.type === 'waiver' ? 'waiver claim' : 'free agent pickup'} ${fmt(t.ts)}`;
+    const d = DATA.drafts?.find(x => x.kind !== 'startup' && x.s > sa && x.s <= sb && x.picks?.some(p => p.pid === pid && p.o === owner));
+    const p = d?.picks.find(x => x.pid === pid);
+    return p ? `drafted ${d.s} rookie draft, ${p.round}.${String(p.no - (p.round - 1) * (d.picks.length / Math.max(...d.picks.map(x => x.round)))).padStart(2, '0')}` : 'joined the roster';
+  };
+  const total = (R, list) => list.reduce((t, p) => t + (R.pts[p] ?? 0), 0);
+  const sortBy = (list, ...Rs) => [...list].sort((a, b) => Rs.reduce((t, R) => t + (R.pts[b] ?? 0), 0) - Rs.reduce((t, R) => t + (R.pts[a] ?? 0), 0) || pname(a).localeCompare(pname(b)));
+  const startersA = Object.keys(A.pts);
+  const startersB = Object.keys(B.pts);
+  const sumA = total(A, startersA);
+  const sumB = total(B, startersB);
+  // Side by side (owner, Oct 28 2026: "easier readable, side by side"): left column = season A, right = season B.
+  // A cell = name + his playoff points that season (gold) or Bench / Taxi, + how he left / came under it.
+  const role = (R, pid) => R.pts[pid] != null ? `<span class="rp-pts">${num(R.pts[pid])}</span>` : `<span class="rp-role">${R.taxi.has(pid) ? 'Taxi' : 'Bench'}</span>`;
+  const cell = (R, pid, how) => pid
+    ? `<div class="rp-c ${R === A ? 'rp-l' : 'rp-r'}"><span class="rp-cn"><b>${esc(pname(pid))}</b>${role(R, pid)}</span>${how ? `<small>${how}</small>` : ''}</div>`
+    : `<div class="rp-c rp-c0 ${R === A ? 'rp-l' : 'rp-r'}"></div>`;
+  const pairs = (left, right) => Array.from({ length: Math.max(left.length, right.length) },
+    (_, i) => cell(A, left[i], left[i] && leftHow(left[i])) + cell(B, right[i], right[i] && cameHow(right[i]))).join('');
+  const sec = (text, n) => `<div class="rp-sec">${text}${n != null ? ` <small>${n}</small>` : ''}</div>`;
+  const goneSt = sortBy(onlyA.filter(p => A.pts[p] != null), A);
+  const newSt = sortBy(onlyB.filter(p => B.pts[p] != null), B);
+  const goneRest = sortBy(onlyA.filter(p => A.pts[p] == null), A);
+  const newRest = sortBy(onlyB.filter(p => B.pts[p] == null), B);
+  const head = R => `<div class="rp-vh ${R === A ? 'rp-l' : 'rp-r'}"><b>${lab(R.season)} playoffs</b><span>${esc(teamName(owner, R.season))}</span>
+      ${R.seed ? `<span class="rp-seed">No. ${R.seed} seed${R.seed <= 2 && R.games[0]?.label !== 'Quarterfinal' ? ' · first-round bye' : ''}</span><small>Regular season ${R.rec.w}-${R.rec.l}${R.rec.t ? `-${R.rec.t}` : ''}</small>` : ''}
+      <small>${R.lines.join('<br>')}</small>
+      <small>${R.players.length} players (${R.players.filter(p => R.taxi.has(p)).length} taxi) · ${Object.keys(R.pts).length} starters · <b>${num(Math.round(10 * (R === A ? sumA : sumB)) / 10)}</b> playoff pts</small></div>`;
+  return `
+    <div class="rp-stats">
+      <div><b>${both.length}<small>/${A.players.length}</small></b><span>of the ${lab(sa)} roster still there for the ${lab(sb)} playoffs</span></div>
+      <div><b>${startersB.filter(p => inA.has(p)).length}<small>/${startersB.length}</small></b><span>${lab(sb)} playoff starters who were on the ${lab(sa)} team</span></div>
+      <div><b>${Math.round(100 * total(B, both) / (sumB || 1))}<small>%</small></b><span>of his ${lab(sb)} playoff points scored by holdovers</span></div>
+    </div>
+    <div class="rp-vs">
+      ${head(A)}${head(B)}
+      ${sec('Carried over: on both teams', both.length)}
+      ${sortBy(both, A, B).map(p => cell(A, p, '') + cell(B, p, '')).join('')}
+      ${sec('Playoff starters: gone vs new',`${goneSt.length} out · ${newSt.length} in`)}
+      ${pairs(goneSt, newSt)}
+    </div>
+    <details class="rp-more">
+      <summary>Bench &amp; taxi: ${goneRest.length} gone, ${newRest.length} new</summary>
+      <div class="rp-vs">${pairs(goneRest, newRest)}</div>
+    </details>
+    <p class="cm-rule">Left = ${lab(sa)}, right = ${lab(sb)}. Gold number = locked points he got from that player across his playoff games that season; Bench / Taxi = on the roster but never started in the playoffs (Taxi = on his taxi squad when that season closed). Under each name: how he left (left side) or arrived (right side). Rosters = Sleeper’s lineup data for his last playoff game each season (week ${A.lastW} of ${lab(sa)}, week ${B.lastW} of ${lab(sb)}), taxi included.</p>`;
 }
 
 // Injuries view (owner, Oct 26 2026): every player Sleeper lists with an injury, grouped under team

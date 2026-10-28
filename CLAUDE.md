@@ -1003,7 +1003,20 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   current holder (or free agent) + how he left (last DATA.transactions drop by that owner after the final). Oct 28
   2026: 5 of 29 still there (Mobley, Gobert, Hart, Powell, Shannon), 3 of 9 final starters, 4 of 28 without taxi.
   Report 2 (same function, owner COMMISH): bigdaddyburk's 2024 title team, Oct 28 2026: 14 of 37, 7 of 9 final
-  starters (Trae Young + Draymond Green gone), 12 of 28 without taxi. renderReports must stay async (renderCommish
+  starters (Trae Young + Draymond Green gone), 12 of 28 without taxi.
+  Report 3 reportCompareRuns(owner, seasonA, seasonB): one manager's PLAYOFF rosters side by side; roster =
+  Sleeper matchup `players` of his last bracket (P) game that season (taxi incl.; taxi flag = that season's closed
+  league roster), playoff locked points over his P games (playerWeeks), run summary (each game, players, starters,
+  points), On both / A only (how he left) / B only (how he came: trade, waiver, FA, rookie draft pick between the
+  two). bigtrey5456 2024 vs 2025 (Oct 28 2026): 5 of 29 carried over (Hart, Gobert, Powell, Oubre, Shannon), 2 of 13
+  2025 playoff starters, holdovers 24% of his 2025 playoff points; 771 / 689 = the game scores. SIDE BY SIDE (owner,
+  Oct 28 2026): .rp-vs 2-column grid (left = season A .rp-l, right = B .rp-r, navy divider): run headers, navy
+  section bars (.rp-sec) "Carried over" (same player both sides) and "Playoff starters: gone vs new" (A-only and
+  B-only starters paired by rank of playoff points, how he left / came under each), bench + taxi in a fold
+  (.rp-more; printReport opens every <details> so PDFs include it). Run headers show the SEED (owner, Oct 28 2026;
+  gold .rp-seed "No. 2 seed · first-round bye") + regular-season record: seed = table order by win %, then PF (same
+  rule as the Awards banner; bigtrey 2024 No. 2 (bye, tied 14-7 with TRT3 on record), 2025 No. 5 (QF vs No. 4
+  TRT3), matching the real brackets). renderReports must stay async (renderCommish
   calls .catch() on every tab's result; a plain function crashed the office page).
   2K BREAKDOWN (tab=breakdown; owner's NBA 2K roster screenshot, Oct 25 2026; logic `assets/breakdown.js`, no
   DOM; renderBreakdown + BK state/BK_VIEWS in app.js, .bk-* in styles.css). Team picker (default COMMISH) +
