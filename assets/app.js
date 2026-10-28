@@ -3417,12 +3417,16 @@ const REPORTS = [
   { id: 'trey-2024-final', added: '2026-10-28', title: 'bigtrey5456’s 2024 championship roster: who’s still there?',
     sub: 'His roster in the 2024 final (lost 401–423 to bigdaddyburk) vs his roster today',
     run: () => reportFinalRoster('1035999704737259520', '2024') },
+  { id: 'burk-2024-champ', added: '2026-10-28', title: 'bigdaddyburk’s 2024 title team: who’s still there?',
+    sub: 'The champion’s roster in the 2024 final (won 423–401 over bigtrey5456) vs his roster today',
+    run: () => reportFinalRoster(COMMISH, '2024') },
 ];
 
-function renderReports(body) {
+async function renderReports(body) { // async: renderCommish calls .catch() on every tab's result
   // Month groups, newest month first; newest report first inside a month.
   const monthOf = r => (r.added ?? '').slice(0, 7);
-  const sorted = [...REPORTS].sort((a, b) => (b.added ?? '').localeCompare(a.added ?? ''));
+  // Same day: the one added later in REPORTS first.
+  const sorted = REPORTS.map((r, i) => [r, i]).sort(([a, i], [b, j]) => (b.added ?? '').localeCompare(a.added ?? '') || j - i).map(([r]) => r);
   const months = [...new Set(sorted.map(monthOf))];
   const monthName = m => (m ? new Date(`${m}-15T12:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Undated');
   const item = r => `

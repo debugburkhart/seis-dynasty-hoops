@@ -1002,6 +1002,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   rosters (cache-busted); starters + locked points of the final week from DATA.playerWeeks; gone players show the
   current holder (or free agent) + how he left (last DATA.transactions drop by that owner after the final). Oct 28
   2026: 5 of 29 still there (Mobley, Gobert, Hart, Powell, Shannon), 3 of 9 final starters, 4 of 28 without taxi.
+  Report 2 (same function, owner COMMISH): bigdaddyburk's 2024 title team, Oct 28 2026: 14 of 37, 7 of 9 final
+  starters (Trae Young + Draymond Green gone), 12 of 28 without taxi. renderReports must stay async (renderCommish
+  calls .catch() on every tab's result; a plain function crashed the office page).
   2K BREAKDOWN (tab=breakdown; owner's NBA 2K roster screenshot, Oct 25 2026; logic `assets/breakdown.js`, no
   DOM; renderBreakdown + BK state/BK_VIEWS in app.js, .bk-* in styles.css). Team picker (default COMMISH) +
   season chips (?season=, every league season; ?p=pid = picked player, kept with history.replaceState). Dark
