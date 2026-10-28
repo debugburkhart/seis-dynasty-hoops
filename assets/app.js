@@ -3543,15 +3543,16 @@ async function reportFinalRoster(owner, season) {
 
 // What `owner` received in a trade (owner, Oct 28 2026: shown under every traded-away player in Reports):
 // players added to him + picks sent to him ("2027 1st (TRT3's)"; orig = original roster id, ids are stable).
-function tradeReturn(t, owner, pname) {
+// gave = true: what he SENT in it instead (shown under every player who arrived by trade).
+function tradeReturn(t, owner, pname, gave = false) {
   const byRid = Object.fromEntries(DATA.seasons.at(-1).teams.map(x => [x.rosterId, x.owner]));
   const ord = r => ['1st', '2nd', '3rd'][r - 1] ?? `${r}th`;
   const got = [
-    ...Object.entries(t.adds ?? {}).filter(([, o]) => o === owner).map(([pid]) => esc(pname(pid))),
-    ...(t.picks ?? []).filter(p => p.to === owner).sort((a, b) => a.season - b.season || a.round - b.round)
+    ...Object.entries((gave ? t.drops : t.adds) ?? {}).filter(([, o]) => o === owner).map(([pid]) => esc(pname(pid))),
+    ...(t.picks ?? []).filter(p => (gave ? p.from : p.to) === owner).sort((a, b) => a.season - b.season || a.round - b.round)
       .map(p => `${p.season} ${ord(p.round)}${!byRid[p.orig] ? '' : byRid[p.orig] === owner ? ' (his own)' : ` (${esc(name(byRid[p.orig]))}’s)`}`),
   ];
-  return got.length ? `Got back: ${got.join(', ')}` : 'Got back: nothing';
+  return `${gave ? 'Gave up' : 'Got back'}: ${got.join(', ') || 'nothing'}`;
 }
 
 // One manager's playoff rosters in two seasons side by side. Roster = Sleeper's matchup `players` in his LAST
@@ -3602,7 +3603,7 @@ async function reportCompareRuns(owner, sa, sb) {
   };
   const cameHow = pid => {
     const t = tx.find(x => x.adds?.[pid] === owner);
-    if (t) return t.type === 'trade' ? `trade with ${esc(name(t.drops?.[pid] ?? t.owners.find(o => o !== owner)))} ${fmt(t.ts)}` : `${t.type === 'waiver' ? 'waiver claim' : 'free agent pickup'} ${fmt(t.ts)}`;
+    if (t) return t.type === 'trade' ? `trade with ${esc(name(t.drops?.[pid] ?? t.owners.find(o => o !== owner)))} ${fmt(t.ts)}<span class="rp-got">${tradeReturn(t, owner, pname, true)}</span>` :`${t.type === 'waiver' ? 'waiver claim' : 'free agent pickup'} ${fmt(t.ts)}`;
     const d = DATA.drafts?.find(x => x.kind !== 'startup' && x.s > sa && x.s <= sb && x.picks?.some(p => p.pid === pid && p.o === owner));
     const p = d?.picks.find(x => x.pid === pid);
     return p ? `drafted ${d.s} rookie draft, ${p.round}.${String(p.no - (p.round - 1) * (d.picks.length / Math.max(...d.picks.map(x => x.round)))).padStart(2, '0')}` : 'joined the roster';

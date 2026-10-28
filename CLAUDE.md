@@ -1018,7 +1018,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   rule as the Awards banner; bigtrey 2024 No. 2 (bye, tied 14-7 with TRT3 on record), 2025 No. 5 (QF vs No. 4
   TRT3), matching the real brackets). Every traded-away player in Reports (reports 1 and 3) shows "Got back: ..."
   (owner, Oct 28 2026; tradeReturn(t, owner, pname): players added to him + picks sent to him, "2027 1st
-  (simeoncampbell7's)" / "(his own)" from the pick's orig roster id; .rp-got small navy line). renderReports must stay async (renderCommish
+  (simeoncampbell7's)" / "(his own)" from the pick's orig roster id; .rp-got small navy line). Players who ARRIVED
+  by trade (report 3 right side) show "Gave up: ..." (tradeReturn(..., gave = true): his drops + picks he sent). renderReports must stay async (renderCommish
   calls .catch() on every tab's result; a plain function crashed the office page).
   2K BREAKDOWN (tab=breakdown; owner's NBA 2K roster screenshot, Oct 25 2026; logic `assets/breakdown.js`, no
   DOM; renderBreakdown + BK state/BK_VIEWS in app.js, .bk-* in styles.css). Team picker (default COMMISH) +
