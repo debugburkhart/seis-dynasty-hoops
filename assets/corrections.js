@@ -46,15 +46,19 @@ export const CORRECTIONS = [
       tzola13: { 'Amen Thompson': 41 },
       loganzarvell: { 'Cooper Flagg': 43, 'Jalen Smith': 34 },
       bigtrey5456: { 'Ty Jerome': 61, 'Zach LaVine': 45, 'Josh Hart': 24 },
-      jimmycooks2: { 'Jaylen Brown': 35, 'Karl-Anthony Towns': 41, 'Joel Embiid': 50, 'Kawhi Leonard': 41 },
-      TRT3: { 'Domantas Sabonis': 34 },
+      // Brown / Buzelis / Wembanyama read in the Sleeper app by the owner (Oct 28 2026; was Brown 35 / Wemby 43).
+      jimmycooks2: { 'Jaylen Brown': 38, 'Matas Buzelis': 27, 'Victor Wembanyama': 40, 'Karl-Anthony Towns': 41, 'Joel Embiid': 50, 'Kawhi Leonard': 41 },
+      // TRT3: whole lineup read in the Sleeper app by the owner (Oct 28 2026; was Sabonis 34 / Siakam 39, a
+      // guess among 7 combinations that add up to 394). Sum = 394.
+      TRT3: { 'Luka Doncic': 75, 'Austin Reaves': 37, 'Stephon Castle': 34, 'Trey Murphy III': 34, 'Julius Randle': 46,
+        'Giannis Antetokounmpo': 57, 'Domantas Sabonis': 40, 'Pascal Siakam': 33, 'Jalen Brunson': 38 },
       // Read in the Sleeper app by the owner (Oct 26 2026). simeon's whole lineup is pinned: the feed kept
       // changing his players' points after the week ended (Dëmin 5 -> 31, Jones 17 -> 20).
       simeoncampbell7: { 'Jamal Murray': 57, 'Egor Demin': 31, 'Josh Giddey': 29, 'Ace Bailey': 34, 'Caleb Wilson': 54,
         'Derrick Jones Jr.': 17, 'Nikola Jokic': 67, 'Collin Murray-Boyles': 12, 'Ivica Zubac': 4 },
       // Trae Young, RJ Barrett and Wendell Carter Jr. are the values the site already had when the owner
       // checked this team in the app (only the 3 before them needed fixing); pinned Oct 26 2026 so the
-      // automatic week check (assets/weekfix.js) has one answer. Change them if the app says otherwise.
+      // automatic week check (assets/weekfix.js) has one answer. Confirmed in the app by the owner Oct 28 2026.
       BenDoverPlz123: { 'Keyonte George': 40, 'LeBron James': 36, 'Paul Reed': 21, 'Trae Young': 36, 'RJ Barrett': 38, 'Wendell Carter Jr.': 21 },
     } },
 ];

@@ -466,7 +466,11 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Week 1 fixed by hand in corrections.js (scores from fpts; players = the only combination of each
   starter's box-score games that sums to the official score, closest to Sunday night's saved values;
   simeoncampbell7 + BenDoverPlz123 had several fits: the owner read them in the Sleeper app Oct 26; all 8 teams
-  now sum to the official scores).
+  now sum to the official scores). Oct 28 2026: TRT3 had 7 fits and the pick was WRONG (Sabonis 34 / Siakam 39;
+  app: 40 / 33): whole lineup now pinned from the owner's app read. Same day the owner read the last open players:
+  jimmycooks2 Brown 38 / Buzelis 27 / Wembanyama 40 (was 35 / 27 / 43, also WRONG), BenDoverPlz123 Young 36 /
+  Barrett 38 / Carter 21 (right). Week 1 is now fully confirmed (every multi-fit team read in the app). CAUTION: in the app the
+  owner first read each player's best game (sum 408 vs official 394); always check a team's pins add up to fpts.
   AUTOMATIC FIX BUILT Oct 26 2026 (`assets/weekfix.js`, no DOM/Node APIs; called from build-data only when
   update.mjs passes `weekFix`; the browser fallback still uses the feed): every run recordOfficial() saves
   the official cumulative totals per owner [pf, w, l, t] under last_scored_leg in data/official-weeks.json
