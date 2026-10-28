@@ -3411,30 +3411,71 @@ async function renderBreakdown(body, params) {
 // ---------- Reports (Test features, owner Oct 28 2026) ----------
 // One-off questions answered from live data. Every report is a title (a <details> fold, Beta tag) that loads its
 // body when opened, from today's Sleeper rosters, so it's current after any trade, pickup or drop. To add one: an
-// entry in REPORTS = { id, title, sub, run: async () => html }.
+// entry in REPORTS = { id, title, sub, added: 'YYYY-MM-DD' (the list is grouped by its month), run: async () => html }.
+// Every report gets "Save as PDF" (owner, Oct 28 2026): the browser's print dialog on a print-only copy (#rp-print).
 const REPORTS = [
-  { id: 'trey-2024-final', title: 'bigtrey5456’s 2024 championship roster: who’s still there?',
+  { id: 'trey-2024-final', added: '2026-10-28', title: 'bigtrey5456’s 2024 championship roster: who’s still there?',
     sub: 'His roster in the 2024 final (lost 401–423 to bigdaddyburk) vs his roster today',
     run: () => reportFinalRoster('1035999704737259520', '2024') },
 ];
 
 function renderReports(body) {
-  body.innerHTML = `
-    <div class="gm-page rp-page">
-      ${betaCard('Reports', `<p class="cm-rule">Tap a report to open it. Each one reads today’s Sleeper rosters when you open it, so it’s always up to date.</p>
-        <div class="rp-list">${REPORTS.map(r => `
+  // Month groups, newest month first; newest report first inside a month.
+  const monthOf = r => (r.added ?? '').slice(0, 7);
+  const sorted = [...REPORTS].sort((a, b) => (b.added ?? '').localeCompare(a.added ?? ''));
+  const months = [...new Set(sorted.map(monthOf))];
+  const monthName = m => (m ? new Date(`${m}-15T12:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Undated');
+  const item = r => `
           <details class="rp-item" data-rp="${r.id}">
             <summary><span class="rp-title"><b>${esc(r.title)}</b>${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span>${icon('arrow')}</summary>
+            <div class="rp-tools"><button type="button" class="rp-pdf" data-pdf disabled>Save as PDF</button></div>
             <div class="rp-body"><p class="empty">Loading…</p></div>
-          </details>`).join('')}</div>`)}
+          </details>`;
+  body.innerHTML = `
+    <div class="gm-page rp-page">
+      ${betaCard('Reports', `<p class="cm-rule">Tap a report to open it. Each one reads today’s Sleeper rosters when you open it, so it’s always up to date. “Save as PDF” opens the print screen: pick “Save as PDF” there (iPhone: Print, then Share → Save to Files).</p>
+        ${months.map(m => `
+        <h3 class="rp-month">${esc(monthName(m))} <small>${sorted.filter(r => monthOf(r) === m).length}</small></h3>
+        <div class="rp-list">${sorted.filter(r => monthOf(r) === m).map(item).join('')}</div>`).join('')}`)}
     </div>`;
-  body.querySelectorAll('.rp-item').forEach(d => d.addEventListener('toggle', async () => {
-    if (!d.open) return;
+  body.querySelectorAll('.rp-item').forEach(d => {
     const r = REPORTS.find(x => x.id === d.dataset.rp);
     const box = d.querySelector('.rp-body');
-    box.innerHTML = '<p class="empty">Reading today’s rosters from Sleeper…</p>';
-    try { box.innerHTML = await r.run(); } catch (e) { box.innerHTML = `<p class="empty">Couldn’t load this report (${esc(e.message)}).</p>`; }
-  }));
+    const pdf = d.querySelector('[data-pdf]');
+    d.addEventListener('toggle', async () => {
+      if (!d.open) return;
+      pdf.disabled = true;
+      box.innerHTML = '<p class="empty">Reading today’s rosters from Sleeper…</p>';
+      try { box.innerHTML = await r.run(); pdf.disabled = false; } catch (e) { box.innerHTML = `<p class="empty">Couldn’t load this report (${esc(e.message)}).</p>`; }
+    });
+    pdf.addEventListener('click', () => printReport(r, box.innerHTML));
+  });
+}
+
+// Print-only copy of one report (header with the title + when it was read), shown alone by the print CSS
+// (html.rp-printing); the page title becomes the PDF's file name. Cleaned up after the print dialog closes.
+function printReport(r, html) {
+  document.getElementById('rp-print')?.remove();
+  const at = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
+  const el = document.createElement('div');
+  el.id = 'rp-print';
+  el.innerHTML = `
+    <header class="rp-ph"><img src="assets/logo.svg" alt=""><span>Seis Dynasty Basketball · Report</span></header>
+    <h1>${esc(r.title)}</h1>${r.sub ? `<p class="rp-psub">${esc(r.sub)}</p>` : ''}
+    <p class="rp-pat">Read from Sleeper ${esc(at)} CT</p>
+    <div class="rp-body">${html}</div>`;
+  document.body.append(el);
+  const title = document.title;
+  document.title = `${r.title.replace(/[\\/:*?"<>|]/g, '')} (${new Date().toISOString().slice(0, 10)})`;
+  document.documentElement.classList.add('rp-printing');
+  const done = () => {
+    document.documentElement.classList.remove('rp-printing');
+    document.title = title;
+    el.remove();
+    window.removeEventListener('afterprint', done);
+  };
+  window.addEventListener('afterprint', done);
+  window.print();
 }
 
 // A team's roster in that season's final (Sleeper closes a league after the final, so that season's league

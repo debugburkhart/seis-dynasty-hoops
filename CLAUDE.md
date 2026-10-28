@@ -991,8 +991,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   REPORTS (tab=reports; owner, Oct 28 2026: "all reports show the title with the option to see the report as a
   dropdown"): REPORTS = [{ id, title, sub, run }] in app.js; renderReports draws one betaCard with a <details
   class="rp-item"> per report (closed); opening one calls run() FRESH each time (live Sleeper, so it's always up to
-  date after any transaction, nothing saved). .rp-* in styles.css. TO ADD A REPORT: a REPORTS entry whose run()
-  returns HTML. Report 1: bigtrey5456's 2024 championship roster (reportFinalRoster(owner, season)): his roster in
+  date after any transaction, nothing saved). .rp-* in styles.css. TO ADD A REPORT: a REPORTS entry with
+  added: 'YYYY-MM-DD' whose run() returns HTML. Grouped by the month of `added` (owner, Oct 28 2026; .rp-month
+  "October 2026" + count, newest month and report first). PDF EXPORT (owner, Oct 28 2026, every report): "Save as
+  PDF" button (.rp-pdf, enabled once the report loaded) -> printReport(): a print-only copy #rp-print (logo
+  header, title, sub, "Read from Sleeper {time} CT", the report body) + html.rp-printing; @media print in
+  styles.css shows only that copy; document.title = title + date (= the PDF file name); afterprint cleans up.
+  Uses the browser's print screen (Save as PDF; iPhone: Print -> Share -> Save to Files), no library. Report 1: bigtrey5456's 2024 championship roster (reportFinalRoster(owner, season)): his roster in
   the season's final = that season's Sleeper league rosters (closed after the final; taxi listed) vs today's
   rosters (cache-busted); starters + locked points of the final week from DATA.playerWeeks; gone players show the
   current holder (or free agent) + how he left (last DATA.transactions drop by that owner after the final). Oct 28
