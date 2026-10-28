@@ -3485,6 +3485,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 #rp-print .rp-more > summary { display: none; }
 #rp-print .rp-more { border: 0; padding: 0; }
 @media (max-width: 400px) { .rp-cn { flex-direction: column; align-items: flex-start; gap: 2px; } .rp-vs > .rp-l { padding-right: 7px; } .rp-vs > .rp-r { padding-left: 7px; } }
+.rp-got { display: block; margin-top: 1px; font-size: 11px; color: var(--navy-800); opacity: .8; }
 .rp-month { display: flex; align-items: baseline; gap: 8px; margin: 16px 0 8px; font: 800 13px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--navy-800); }
 .rp-month small { padding: 2px 7px; border-radius: 99px; background: var(--paper); color: var(--muted); font-size: 11px; letter-spacing: 0; }
 .rp-tools { display: flex; justify-content: flex-end; padding: 10px 14px 0; border-top: 1px solid var(--line); }

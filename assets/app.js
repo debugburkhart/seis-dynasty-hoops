@@ -3510,7 +3510,7 @@ async function reportFinalRoster(owner, season) {
     const t = [...DATA.transactions].filter(x => (x.ts ?? 0) > endTs && x.drops?.[pid] === owner).sort((a, b) => b.ts - a.ts)[0];
     if (!t) return 'left the roster';
     const when = new Date(t.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' });
-    return t.type === 'trade' ? `traded to ${name(t.adds?.[pid] ?? t.owners.find(o => o !== owner))} ${when}` : `dropped ${when}`;
+    return t.type === 'trade' ? `traded to ${esc(name(t.adds?.[pid] ?? t.owners.find(o => o !== owner)))} ${when}<span class="rp-got">${tradeReturn(t, owner, pname)}</span>` : `dropped ${when}`;
   };
   const taxiThen = new Set(then.taxi ?? []);
   const nowSet = new Set(nowR.players ?? []);
@@ -3525,7 +3525,7 @@ async function reportFinalRoster(owner, season) {
   const team = teamName(owner, cur.season);
   const row = r => `<li>
       <span class="rp-n"><b>${esc(r.name)}</b>${r.start != null ? `<span class="rp-st">Started the final · ${num(r.start)}</span>` : ''}${r.taxi ? '<span class="rp-tx">Taxi then</span>' : ''}</span>
-      <small>${r.stays ? `Still here · ${nowSlot(r.pid)} today` : (() => { const h = holder(r.pid); return `${h ? `Now on ${esc(teamName(h, cur.season))} (${esc(name(h))})` : 'Free agent now'} · ${esc(leftHow(r.pid))}`; })()}</small>
+      <small>${r.stays ? `Still here · ${nowSlot(r.pid)} today` : (() => { const h = holder(r.pid); return `${h ? `Now on ${esc(teamName(h, cur.season))} (${esc(name(h))})` : 'Free agent now'} · ${leftHow(r.pid)}`; })()}</small>
     </li>`;
   return `
     <div class="rp-stats">
@@ -3539,6 +3539,19 @@ async function reportFinalRoster(owner, season) {
     <h3 class="rp-h">Gone (${gone.length})</h3>
     <ul class="rp-rows">${gone.map(row).join('') || '<li><small>Nobody.</small></li>'}</ul>
     <p class="cm-rule">Read from Sleeper just now: his roster today (incl. taxi and IR) vs Sleeper’s final ${esc(season)} league roster. “How he left” = his last trade or drop of that player after the final.</p>`;
+}
+
+// What `owner` received in a trade (owner, Oct 28 2026: shown under every traded-away player in Reports):
+// players added to him + picks sent to him ("2027 1st (TRT3's)"; orig = original roster id, ids are stable).
+function tradeReturn(t, owner, pname) {
+  const byRid = Object.fromEntries(DATA.seasons.at(-1).teams.map(x => [x.rosterId, x.owner]));
+  const ord = r => ['1st', '2nd', '3rd'][r - 1] ?? `${r}th`;
+  const got = [
+    ...Object.entries(t.adds ?? {}).filter(([, o]) => o === owner).map(([pid]) => esc(pname(pid))),
+    ...(t.picks ?? []).filter(p => p.to === owner).sort((a, b) => a.season - b.season || a.round - b.round)
+      .map(p => `${p.season} ${ord(p.round)}${!byRid[p.orig] ? '' : byRid[p.orig] === owner ? ' (his own)' : ` (${esc(name(byRid[p.orig]))}’s)`}`),
+  ];
+  return got.length ? `Got back: ${got.join(', ')}` : 'Got back: nothing';
 }
 
 // One manager's playoff rosters in two seasons side by side. Roster = Sleeper's matchup `players` in his LAST
@@ -3585,7 +3598,7 @@ async function reportCompareRuns(owner, sa, sb) {
   const leftHow = pid => {
     const t = tx.find(x => x.drops?.[pid] === owner);
     if (!t) return 'left the roster';
-    return t.type === 'trade' ? `traded to ${esc(name(t.adds?.[pid] ?? t.owners.find(o => o !== owner)))} ${fmt(t.ts)}` : `dropped ${fmt(t.ts)}`;
+    return t.type === 'trade' ? `traded to ${esc(name(t.adds?.[pid] ?? t.owners.find(o => o !== owner)))} ${fmt(t.ts)}<span class="rp-got">${tradeReturn(t, owner, pname)}</span>` : `dropped ${fmt(t.ts)}`;
   };
   const cameHow = pid => {
     const t = tx.find(x => x.adds?.[pid] === owner);
