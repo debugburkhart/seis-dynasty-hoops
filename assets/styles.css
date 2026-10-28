@@ -3429,3 +3429,30 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .hm-taxi-nav .hm-arrow:disabled { opacity: .35; cursor: default; }
 .hm-taxi-x { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 99px; background: var(--navy-800); color: var(--gold); font: 800 10.5px/1.4 var(--display); vertical-align: 1px; }
 .hm-taxi-key { margin: 4px 2px 0; font-size: 11.5px; color: var(--muted); }
+
+/* Commish -> Test features -> Reports (renderReports in app.js): each report is a fold. */
+.rp-list { display: flex; flex-direction: column; gap: 8px; }
+.rp-item { border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.rp-item > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; cursor: pointer; list-style: none; }
+.rp-item > summary::-webkit-details-marker { display: none; }
+.rp-item > summary > .ic { width: 14px; height: 14px; color: var(--brass); transition: transform .15s; flex: none; }
+.rp-item[open] > summary > .ic { transform: rotate(90deg); }
+.rp-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rp-title b { font-size: 14px; color: var(--navy-800); }
+.rp-title small { font-size: 12px; color: var(--muted); }
+.rp-body { padding: 0 14px 14px; border-top: 1px solid var(--line); }
+.rp-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0 6px; }
+.rp-stats > div { display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 8px; background: var(--paper); }
+.rp-stats b { font: 900 24px/1 var(--display); color: var(--navy-800); }
+.rp-stats b small { font-size: 14px; color: var(--muted); }
+.rp-stats span { font-size: 11.5px; color: var(--muted); }
+.rp-h { margin: 14px 0 4px; font: 800 11px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--brass); }
+.rp-rows { list-style: none; margin: 0; padding: 0; }
+.rp-rows li { display: flex; flex-direction: column; gap: 2px; padding: 7px 0; }
+.rp-rows li + li { border-top: 1px solid var(--line); }
+.rp-n { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13.5px; }
+.rp-st, .rp-tx { padding: 1px 6px; border-radius: 99px; font: 700 10.5px/1.4 var(--font); }
+.rp-st { background: var(--navy-800); color: var(--gold); }
+.rp-tx { background: #e8eef9; color: var(--navy-800); }
+.rp-rows small { font-size: 12px; color: var(--muted); }
+@media (max-width: 420px) { .rp-stats { grid-template-columns: 1fr; } .rp-stats > div { flex-direction: row; align-items: baseline; gap: 8px; } }

@@ -2392,7 +2392,7 @@ function renderCommish(main, params) {
     </div>`;
   const body = $('#cm-body', main);
   paintSync(main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports }[tab];
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
@@ -3406,6 +3406,90 @@ async function renderBreakdown(body, params) {
   renderCompare();
   const p = byPid[BK.pid];
   if (p) { years(p).catch(() => {}); log(p).catch(() => {}); }
+}
+
+// ---------- Reports (Test features, owner Oct 28 2026) ----------
+// One-off questions answered from live data. Every report is a title (a <details> fold, Beta tag) that loads its
+// body when opened, from today's Sleeper rosters, so it's current after any trade, pickup or drop. To add one: an
+// entry in REPORTS = { id, title, sub, run: async () => html }.
+const REPORTS = [
+  { id: 'trey-2024-final', title: 'bigtrey5456’s 2024 championship roster: who’s still there?',
+    sub: 'His roster in the 2024 final (lost 401–423 to bigdaddyburk) vs his roster today',
+    run: () => reportFinalRoster('1035999704737259520', '2024') },
+];
+
+function renderReports(body) {
+  body.innerHTML = `
+    <div class="gm-page rp-page">
+      ${betaCard('Reports', `<p class="cm-rule">Tap a report to open it. Each one reads today’s Sleeper rosters when you open it, so it’s always up to date.</p>
+        <div class="rp-list">${REPORTS.map(r => `
+          <details class="rp-item" data-rp="${r.id}">
+            <summary><span class="rp-title"><b>${esc(r.title)}</b>${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span>${icon('arrow')}</summary>
+            <div class="rp-body"><p class="empty">Loading…</p></div>
+          </details>`).join('')}</div>`)}
+    </div>`;
+  body.querySelectorAll('.rp-item').forEach(d => d.addEventListener('toggle', async () => {
+    if (!d.open) return;
+    const r = REPORTS.find(x => x.id === d.dataset.rp);
+    const box = d.querySelector('.rp-body');
+    box.innerHTML = '<p class="empty">Reading today’s rosters from Sleeper…</p>';
+    try { box.innerHTML = await r.run(); } catch (e) { box.innerHTML = `<p class="empty">Couldn’t load this report (${esc(e.message)}).</p>`; }
+  }));
+}
+
+// A team's roster in that season's final (Sleeper closes a league after the final, so that season's league
+// rosters = the roster in championship week; taxi listed separately) vs the same manager's roster today.
+// Gone players: where they are now (another team / free agent) and how they left (his last move sending them
+// away after the final, from DATA.transactions). Starters in the final with their locked points (playerWeeks).
+async function reportFinalRoster(owner, season) {
+  const s = DATA.seasons.find(x => x.season === season);
+  const cur = DATA.seasons.at(-1);
+  const [oldRosters, nowRosters, all] = await Promise.all([
+    get(`/v1/league/${s.leagueId}/rosters`, []), get(`/v1/league/${cur.leagueId}/rosters?t=${Date.now()}`, []), get('/v1/players/nba', {}),
+  ]);
+  const then = (oldRosters ?? []).find(r => r.owner_id === owner);
+  const nowR = (nowRosters ?? []).find(r => r.owner_id === owner);
+  if (!then || !nowR) return '<p class="empty">Sleeper didn’t return those rosters.</p>';
+  const finalWeek = Math.max(...DATA.games.filter(g => g.s === season && g.t === 'P').map(g => g.w));
+  const final = DATA.games.find(g => g.s === season && g.w === finalWeek && g.t === 'P' && (g.a === owner || g.b === owner));
+  const started = Object.fromEntries(DATA.playerWeeks.filter(x => x.s === season && x.w === finalWeek && x.o === owner).map(x => [x.pid, x.p]));
+  const pname = pid => DATA.players?.[pid]?.n || [all?.[pid]?.first_name, all?.[pid]?.last_name].filter(Boolean).join(' ') || pid;
+  const nowSlot = pid => (nowR.taxi ?? []).includes(pid) ? 'Taxi' : (nowR.reserve ?? []).includes(pid) ? 'IR' : (nowR.starters ?? []).includes(pid) ? 'Starter' : 'Bench';
+  const holder = pid => (nowRosters ?? []).find(r => (r.players ?? []).includes(pid))?.owner_id ?? null;
+  const endTs = Math.max(0, ...DATA.transactions.filter(t => t.s === season && t.w <= finalWeek).map(t => t.ts ?? 0));
+  const leftHow = pid => {
+    const t = [...DATA.transactions].filter(x => (x.ts ?? 0) > endTs && x.drops?.[pid] === owner).sort((a, b) => b.ts - a.ts)[0];
+    if (!t) return 'left the roster';
+    const when = new Date(t.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' });
+    return t.type === 'trade' ? `traded to ${name(t.adds?.[pid] ?? t.owners.find(o => o !== owner))} ${when}` : `dropped ${when}`;
+  };
+  const taxiThen = new Set(then.taxi ?? []);
+  const nowSet = new Set(nowR.players ?? []);
+  const rows = (then.players ?? []).map(pid => ({ pid, name: pname(pid), taxi: taxiThen.has(pid), start: started[pid], stays: nowSet.has(pid) }))
+    .sort((a, b) => (b.start ?? -1) - (a.start ?? -1) || a.name.localeCompare(b.name));
+  const kept = rows.filter(r => r.stays);
+  const gone = rows.filter(r => !r.stays);
+  const starters = rows.filter(r => r.start != null);
+  const keptStarters = starters.filter(r => r.stays);
+  const nonTaxi = rows.filter(r => !r.taxi);
+  const pct = (a, b) => (b ? Math.round(100 * a / b) : 0);
+  const team = teamName(owner, cur.season);
+  const row = r => `<li>
+      <span class="rp-n"><b>${esc(r.name)}</b>${r.start != null ? `<span class="rp-st">Started the final · ${num(r.start)}</span>` : ''}${r.taxi ? '<span class="rp-tx">Taxi then</span>' : ''}</span>
+      <small>${r.stays ? `Still here · ${nowSlot(r.pid)} today` : (() => { const h = holder(r.pid); return `${h ? `Now on ${esc(teamName(h, cur.season))} (${esc(name(h))})` : 'Free agent now'} · ${esc(leftHow(r.pid))}`; })()}</small>
+    </li>`;
+  return `
+    <div class="rp-stats">
+      <div><b>${kept.length}<small>/${rows.length}</small></b><span>still on ${esc(team)} (${pct(kept.length, rows.length)}%)</span></div>
+      <div><b>${keptStarters.length}<small>/${starters.length}</small></b><span>of his starters in the final</span></div>
+      <div><b>${nonTaxi.filter(r => r.stays).length}<small>/${nonTaxi.length}</small></b><span>not counting taxi players</span></div>
+    </div>
+    ${final ? `<p class="cm-rule">${esc(season)}–${String(Number(season) + 1).slice(-2)} final (week ${finalWeek}): ${esc(name(final.a))} ${num(final.ap)} – ${num(final.bp)} ${esc(name(final.b))}. Roster = his ${rows.length} players that week (${taxiThen.size} on taxi).</p>` : ''}
+    <h3 class="rp-h">Still on the team (${kept.length})</h3>
+    <ul class="rp-rows">${kept.map(row).join('') || '<li><small>Nobody.</small></li>'}</ul>
+    <h3 class="rp-h">Gone (${gone.length})</h3>
+    <ul class="rp-rows">${gone.map(row).join('') || '<li><small>Nobody.</small></li>'}</ul>
+    <p class="cm-rule">Read from Sleeper just now: his roster today (incl. taxi and IR) vs Sleeper’s final ${esc(season)} league roster. “How he left” = his last trade or drop of that player after the final.</p>`;
 }
 
 // Injuries view (owner, Oct 26 2026): every player Sleeper lists with an injury, grouped under team

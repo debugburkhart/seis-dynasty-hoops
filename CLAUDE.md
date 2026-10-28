@@ -988,6 +988,15 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (a public page in NAV/READY, or a My GM / League office tab), remove its TEST_FEATURES entry, swap
   betaCard for plain cards (no Beta tags), and note the date + new place here.
 - Current test features:
+  REPORTS (tab=reports; owner, Oct 28 2026: "all reports show the title with the option to see the report as a
+  dropdown"): REPORTS = [{ id, title, sub, run }] in app.js; renderReports draws one betaCard with a <details
+  class="rp-item"> per report (closed); opening one calls run() FRESH each time (live Sleeper, so it's always up to
+  date after any transaction, nothing saved). .rp-* in styles.css. TO ADD A REPORT: a REPORTS entry whose run()
+  returns HTML. Report 1: bigtrey5456's 2024 championship roster (reportFinalRoster(owner, season)): his roster in
+  the season's final = that season's Sleeper league rosters (closed after the final; taxi listed) vs today's
+  rosters (cache-busted); starters + locked points of the final week from DATA.playerWeeks; gone players show the
+  current holder (or free agent) + how he left (last DATA.transactions drop by that owner after the final). Oct 28
+  2026: 5 of 29 still there (Mobley, Gobert, Hart, Powell, Shannon), 3 of 9 final starters, 4 of 28 without taxi.
   2K BREAKDOWN (tab=breakdown; owner's NBA 2K roster screenshot, Oct 25 2026; logic `assets/breakdown.js`, no
   DOM; renderBreakdown + BK state/BK_VIEWS in app.js, .bk-* in styles.css). Team picker (default COMMISH) +
   season chips (?season=, every league season; ?p=pid = picked player, kept with history.replaceState). Dark
