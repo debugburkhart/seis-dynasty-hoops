@@ -43,6 +43,7 @@ export const SYNCED = [
   'gm-autotag-order', // auto tag order in the 2K filter row: [tag]
   'gm-bk-', // 2K breakdown filters (pos / sec)
   'gm-notes', // player notes (2K breakdown): { pid: text }
+  'gm-dc-', // Depth Chart: view, NBA team, custom order per fantasy team (gm-dc-chart-{owner})
 ];
 export const isSynced = key => SYNCED.some(k => (k.endsWith('-') ? key.startsWith(k) : key === k));
 

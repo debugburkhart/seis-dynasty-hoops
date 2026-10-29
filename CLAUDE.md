@@ -927,7 +927,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   wins per player), gm-block- lists unioned, gm-tracker-seen- max, others newer wins; any replaced local
   value is kept in localStorage sync-backup. gm.js lockedPoints still reads gm-locks from localStorage.
 - Synced keys = SYNCED in sync.js: gm-locks-*, gm-whatif-*, gm-mode, gm-block-*, gm-eval, gm-dyn-*,
-  gm-tracker-seen-*, gm-inj-*, wager-saved, gm-tags, gm-bk-*, gm-notes. NOT synced: gm-tips-{date} (cache), sessionStorage cm-open,
+  gm-tracker-seen-*, gm-inj-*, wager-saved, gm-tags, gm-bk-*, gm-notes, gm-dc-* (Depth Chart). NOT synced: gm-tips-{date} (cache), sessionStorage cm-open,
   sync-* bookkeeping. **To sync a new setting:** save it with gmSave/gmLoad (never raw localStorage)
   and add its key or prefix (ending in '-') to SYNCED; add a MERGE rule if two devices' values should be
   combined instead of newest-wins; the rules need no change.
@@ -992,6 +992,41 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (a public page in NAV/READY, or a My GM / League office tab), remove its TEST_FEATURES entry, swap
   betaCard for plain cards (no Beta tags), and note the date + new place here.
 - Current test features:
+  DEPTH CHART (tab=depth; owner, Oct 29 2026; renderDepth / dcAuto / dcChart in app.js, .dc-* in styles.css). Owner's
+  answers: BOTH views with a switch (?view=fantasy|nba, gm-dc-view), a dropdown per view (?team= fantasy team, default
+  COMMISH; ?nba= NBA team, gm-dc-nba, default ATL); rows show FP/G + min, NBA GS/GP (only when nba-starts is full),
+  LOCKED POINTS this season (owner, Oct 29 2026; lockedTotals over DATA.playerWeeks = finished weeks: "Locked 39 · 1
+  st" for any team; on a fantasy chart, if he also scored for another team, "Locked {this team} · {all} all teams",
+  or "(other teams)"; grey "Locked 0" = none; checked: all 43 Parma rows = league.json after week 1),
+  LGS (this team's on a fantasy chart, any team on an NBA chart; "—" until data/lgs.json exists), dynasty score +
+  tierTag, injury pill + ESPN estimate; name = link to the 2K card. Columns PG / SG / SF / PF / C (Sleeper's main
+  `position` is always one of these). FANTASY: "Auto-generate best depth chart" button = dcAuto by role: Sleeper
+  starters, healthy bench by FP/G, no games yet (by dynasty), IR / Out (injBad), taxi last; an EMPTY column borrows
+  the best non-taxi player whose fantasy_positions include it from a column with 2+ players (gold "from PF" tag).
+  Owner's own order: drag (dragSort with new opts { vertical, fixed: '.dc-end' }: before/after by height, page
+  scrolls near the screen edge, "Drop here" spots so an empty column takes drops; phones press and hold 0.35 s) or
+  the ⋮ menu (Up / Down / Move to PG..C, positions he can play outlined). Saved per team gm-dc-chart-{owner} = { at,
+  cols } via gmSave ('gm-dc-' in SYNCED); players who joined since go to the bottom of their auto column with a green
+  "New" tag, gone players drop out; the button (confirm when a custom order exists) clears it back to automatic.
+  "Can also play X" line under each column. HIDE TAXI (owner, Oct 29 2026): checkbox next to the button, fantasy view
+  only (gm-dc-hidetaxi, synced): taxi rows aren't drawn, ranks/counts cover the rest; any change made while hidden
+  puts each hidden taxi player back right after the player who was above him (domCols + DC.cols), so nothing is lost;
+  ⋮ "Move to" lands a non-taxi player above that column's taxi group. AT A GLANCE (owner, Oct 29 2026: "positions down
+  the y axis, players across the x axis"): glance() in renderDepth draws a table at the top of the chart card (both
+  views; chart.lines = the shown order per position, so it follows drags, ⋮ moves and Hide taxi): rows PG..C (sticky
+  navy labels), columns 1st, 2nd, ... ; chip .dc-chip = "D. Murray" + FP/G + "L {locked points}" + injury line; gold =
+  1st, taxi muted, Out/IR red; tap = scroll to that player's row in that column + gold flash (.flash). The table
+  scrolls sideways inside .dc-glance-wrap (page never does); checked 320 / 402 / 1440. NBA: ESPN's OFFICIAL depth chart, live, read-only: espnDepthChart(code,
+  all) in breakdown.js = ESPN team roster site.api.espn.com/.../nba/teams/{ESPN_TEAM_ID}/roster (names, ids, season
+  year; CORS open) + core API sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/{year}/teams/{id}/
+  depthcharts (ranks by ESPN id; CORS open; site.api's own /depthcharts has names but NO CORS); ids missing from the
+  roster feed (two-way) get their name from the core athlete page; matched by normName on that team, then the one
+  player Sleeper lists on that team with the same last name (ESPN "RJ Nembhard Jr." = Sleeper "Ryan Nembhard"), then
+  a unique name anywhere; cached 15 min. A player can sit in several columns (as ESPN lists him); "On the roster,
+  not on ESPN's chart" = Sleeper players on that team ESPN doesn't list. Tested Oct 29 2026: all 30 teams, 997 chart
+  spots, every one named + matched (2 = Sleeper players with no team: Lovering, Wesley); ORL = ESPN's order exactly;
+  Parma auto chart (Haliburton Out ~2 wks -> PG7), ⋮ moves, mouse drag PG -> C, save + auto reset; layouts 320 / 402
+  / 1440 (5 columns from 1400px with rank over photo, auto-fill 260px columns below, 1 column under 560px).
   REPORTS (tab=reports; owner, Oct 28 2026: "all reports show the title with the option to see the report as a
   dropdown"): REPORTS = [{ id, title, sub, run }] in app.js; renderReports draws one betaCard with a <details
   class="rp-item"> per report (closed); opening one calls run() FRESH each time (live Sleeper, so it's always up to

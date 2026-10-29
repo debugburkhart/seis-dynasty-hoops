@@ -887,3 +887,58 @@ export async function seasonLines(DATA, pid, seasons) {
     return tot.gp ? { season, team: games.find(g => !g.dnp)?.team ?? '', tot } : null;
   }))).filter(Boolean);
 }
+
+// ---------- NBA depth charts (Depth Chart test feature, owner Oct 29 2026) ----------
+// ESPN keeps each NBA team's official depth chart (PG, SG, SF, PF, C, deepest last). Two public feeds, both CORS
+// open: the team roster (names + ESPN ids + the ESPN season year) and the core-API depth chart (ranks by ESPN id).
+// (site.api's own /depthcharts has names but no CORS, so a browser can't read it.) Matched to Sleeper ids by name
+// (normName) on that NBA team first, then a unique name anywhere. Cached 15 min per team; null on failure.
+// -> { at, cols: { PG: [{ espnId, name, pid, rank }] } }; a player can sit in more than one column (ESPN does that).
+export const ESPN_TEAM_ID = { ATL: 1, BOS: 2, BKN: 17, CHA: 30, CHI: 4, CLE: 5, DAL: 6, DEN: 7, DET: 8, GSW: 9, HOU: 10, IND: 11, LAC: 12, LAL: 13, MEM: 29,
+  MIA: 14, MIL: 15, MIN: 16, NOP: 3, NYK: 18, OKC: 25, ORL: 19, PHI: 20, PHX: 21, POR: 22, SAC: 23, SAS: 24, TOR: 28, UTA: 26, WAS: 27 };
+export const DEPTH_POS = ['PG', 'SG', 'SF', 'PF', 'C'];
+const ESPN_DEPTH = {};
+export async function espnDepthChart(code, all) {
+  const id = ESPN_TEAM_ID[code];
+  if (!id) return null;
+  const hit = ESPN_DEPTH[code];
+  if (hit && Date.now() - hit.at < 15 * 60e3) return hit;
+  try {
+    const roster = await (await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${id}/roster`)).json();
+    const year = roster?.season?.year;
+    const res = await fetch(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/${year}/teams/${id}/depthcharts`);
+    if (!year || !res.ok) throw new Error('ESPN depth chart');
+    const chart = (await res.json())?.items?.[0]?.positions ?? {};
+    const names = Object.fromEntries((roster.athletes ?? []).map(a => [String(a.id), a.displayName ?? a.fullName ?? '']));
+    const byName = {};
+    for (const [pid, p] of Object.entries(all ?? {})) {
+      if (/^\d+$/.test(pid) && p?.active !== false) (byName[normName(p.full_name ?? `${p.first_name} ${p.last_name}`)] ??= []).push(pid);
+    }
+    // Players on the chart but not in the roster feed (two-way deals, Oct 29 2026: 7 league-wide): ESPN's athlete page.
+    const missing = [...new Set(Object.values(chart).flatMap(c => c?.athletes ?? []).map(a => /athletes\/(\d+)/.exec(a.athlete?.$ref ?? '')?.[1]).filter(x => x && !names[x]))];
+    await Promise.all(missing.map(async x => {
+      try { names[x] = (await (await fetch(`https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/${year}/athletes/${x}`)).json())?.displayName ?? ''; } catch { /* stays unnamed */ }
+    }));
+    // No name match on this team: the only player Sleeper lists on it with that last name (ESPN "RJ Nembhard Jr." =
+    // Sleeper "Ryan Nembhard", DEN), before a same-name player elsewhere.
+    const lastOf = nm => normName(nm).split(' ').at(-1);
+    const onTeam = Object.keys(all ?? {}).filter(pid => /^\d+$/.test(pid) && all[pid]?.team === code && all[pid].active !== false);
+    const pidOf = nm => {
+      const c = byName[normName(nm)] ?? [];
+      const here = c.find(x => all[x]?.team === code);
+      if (here) return here;
+      const same = onTeam.filter(pid => lastOf(all[pid].full_name ?? all[pid].last_name) === lastOf(nm));
+      return same.length === 1 ? same[0] : c.length === 1 ? c[0] : null;
+    };
+    const cols = {};
+    for (const pos of DEPTH_POS) {
+      cols[pos] = (chart[pos.toLowerCase()]?.athletes ?? [])
+        .map(a => ({ espnId: /athletes\/(\d+)/.exec(a.athlete?.$ref ?? '')?.[1] ?? null, rank: a.rank }))
+        .filter(a => a.espnId)
+        .sort((a, b) => a.rank - b.rank)
+        .map(a => ({ ...a, name: names[a.espnId] ?? '', pid: names[a.espnId] ? pidOf(names[a.espnId]) : null }));
+    }
+    ESPN_DEPTH[code] = { at: Date.now(), cols };
+    return ESPN_DEPTH[code];
+  } catch { return null; }
+}

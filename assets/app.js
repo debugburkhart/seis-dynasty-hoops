@@ -22,7 +22,7 @@ import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } fr
 import { taxiAppearances } from './taxiweek.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 import { betaCard, isTestTab, testTabs } from './test-features.js';
-import { loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
+import { DEPTH_POS, espnDepthChart, loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -2392,7 +2392,7 @@ function renderCommish(main, params) {
     </div>`;
   const body = $('#cm-body', main);
   paintSync(main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth }[tab];
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
@@ -2494,7 +2494,9 @@ const orderBy = (list, saved, fallback) => [...list].sort((a, b) => { const i = 
 // is held). sel = the draggable chips; same(a, b) keeps a drop inside its own group; done(keys) gets the new order
 // of that group (keyOf each chip). The click that ends a drag is swallowed, so it never toggles or removes a tag.
 // Bound once per container (the container stays; its contents can be redrawn).
-function dragSort(box, sel, keyOf, done, same = () => true) {
+// opts (Depth Chart, Oct 29 2026): vertical = lists, before/after by height (+ page scroll near the screen edge);
+// fixed = selector of drop targets that can't be dragged (an empty column's "drop here" spot: lands before it).
+function dragSort(box, sel, keyOf, done, same = () => true, opts = {}) {
   let st = null;
   let quietUntil = 0;
   const block = e => { if (st?.on) e.preventDefault(); };
@@ -2515,7 +2517,7 @@ function dragSort(box, sel, keyOf, done, same = () => true) {
   };
   box.addEventListener('pointerdown', e => {
     const el = e.target.closest(sel);
-    if (!el || !box.contains(el) || e.button > 0 || e.target.closest('[data-untag]')) return;
+    if (!el || !box.contains(el) || e.button > 0 || e.target.closest('[data-untag]') || (opts.fixed && el.matches(opts.fixed))) return;
     stop();
     st = { el, x: e.clientX, y: e.clientY, id: e.pointerId, on: false, touch: e.pointerType !== 'mouse' };
     document.addEventListener('touchmove', block, { passive: false });
@@ -2529,10 +2531,12 @@ function dragSort(box, sel, keyOf, done, same = () => true) {
       if (moved < 6) return;
       begin(e);
     }
+    if (opts.vertical) { if (e.clientY < 70) window.scrollBy(0, -14); else if (e.clientY > window.innerHeight - 70) window.scrollBy(0, 14); }
     const over = document.elementFromPoint(e.clientX, e.clientY)?.closest(sel);
     if (!over || over === st.el || !box.contains(over) || !same(st.el, over)) return;
     const r = over.getBoundingClientRect();
-    over.parentNode.insertBefore(st.el, e.clientX > r.left + r.width / 2 ? over.nextSibling : over);
+    const after = opts.fixed && over.matches(opts.fixed) ? false : opts.vertical ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2;
+    over.parentNode.insertBefore(st.el, after ? over.nextSibling : over);
   });
   const end = e => {
     if (!st || e.pointerId !== st.id) return;
@@ -3963,6 +3967,271 @@ async function renderInjuries(body, params, me) {
       if (open) $('.inj-subs', body).open = true;
     } else if (mode) {
       gmSave('gm-bk-injmode', mode.dataset.mode);
+      draw();
+    }
+  });
+}
+
+// ---------- Depth Chart (Test features, owner Oct 29 2026) ----------
+// Fantasy teams: each league roster laid out PG / SG / SF / PF / C (column = his main Sleeper position), deepest last.
+// "Auto-generate best depth chart" = by role: Sleeper starters, then the healthy bench by FP/G, then players with no
+// games yet (by dynasty score), IR / Out, taxi last; a column left empty borrows the best player who can also play
+// there from a column with 2+ players. Drag (or the ⋮ menu) to customize: saved per team in gm-dc-chart-{owner} =
+// { at, cols: { PG: [pid] } } (gmSave, synced via 'gm-dc-'); players who joined since go to the bottom of their auto
+// column ("New"), players who left drop out. NBA teams: ESPN's official depth chart (espnDepthChart), live, read-only.
+const DC_WORD = { PG: 'Point guard', SG: 'Shooting guard', SF: 'Small forward', PF: 'Power forward', C: 'Center' };
+const DC = { menu: null, cols: null };
+const hideTaxi = () => gmLoad('gm-dc-hidetaxi', false);
+const dcHome = p => (DEPTH_POS.includes(p.mainPos) ? p.mainPos : p.pos.find(x => DEPTH_POS.includes(x)) ?? 'SF');
+function dcAuto(players, dynOf) {
+  const band = p => (p.slot === 'TX' ? 4 : p.slot === 'IR' || injBad(p.injury) ? 3 : p.order >= 0 ? 0 : p.tot.gp ? 1 : 2);
+  const fpg = p => (p.tot.gp ? p.avg.fp : 0);
+  const ranked = [...players].sort((a, b) => band(a) - band(b) || (band(a) === 2 ? 0 : fpg(b) - fpg(a)) || (dynOf(b.pid) ?? 0) - (dynOf(a.pid) ?? 0));
+  const cols = Object.fromEntries(DEPTH_POS.map(pos => [pos, []]));
+  for (const p of ranked) cols[dcHome(p)].push(p.pid);
+  const moved = {}; // pid -> the column he was borrowed from
+  const colOf = pid => DEPTH_POS.find(x => cols[x].includes(pid));
+  for (const pos of DEPTH_POS) {
+    if (cols[pos].length) continue;
+    const cand = ranked.find(p => p.slot !== 'TX' && !moved[p.pid] && p.pos.includes(pos) && cols[colOf(p.pid)].length >= 2 && cols[colOf(p.pid)][0] !== p.pid);
+    if (!cand) continue;
+    const from = colOf(cand.pid);
+    cols[from] = cols[from].filter(x => x !== cand.pid);
+    cols[pos].push(cand.pid);
+    moved[cand.pid] = from;
+  }
+  return { cols, moved };
+}
+// The chart shown: your saved order where there is one, everyone else from the automatic chart.
+function dcChart(players, saved, auto) {
+  const ids = new Set(players.map(p => p.pid));
+  const placed = new Set();
+  const fresh = new Set();
+  const cols = {};
+  for (const pos of DEPTH_POS) cols[pos] = (saved?.cols?.[pos] ?? []).filter(pid => ids.has(pid) && !placed.has(pid) && placed.add(pid));
+  for (const pos of DEPTH_POS) for (const pid of auto.cols[pos]) if (!placed.has(pid)) { cols[pos].push(pid); placed.add(pid); if (saved) fresh.add(pid); }
+  return { cols, fresh };
+}
+async function renderDepth(body, params) {
+  const cur = DATA.seasons.at(-1);
+  const view = ['fantasy', 'nba'].includes(params.get('view')) ? params.get('view') : gmLoad('gm-dc-view', 'fantasy');
+  const me = cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH;
+  const nba = NBA_TEAM_CODES.includes(params.get('nba')) ? params.get('nba') : gmLoad('gm-dc-nba', 'ATL');
+  gmSave('gm-dc-view', view);
+  if (view === 'nba') gmSave('gm-dc-nba', nba);
+  const fantasyView = view === 'fantasy';
+  body.innerHTML = `<div class="loading">Pulling ${fantasyView ? 'the roster' : 'ESPN’s depth chart'} and stats…</div>`;
+  const all = await get('/v1/players/nba', {});
+  const [bk, dyn, espn, lgsData, depth] = await Promise.all([
+    loadBreakdown(DATA, fantasyView ? { list: 'team', owner: me, season: cur.season } : { list: 'nba', nbaTeam: nba, season: cur.season }),
+    gmDynasty(params).catch(() => null),
+    espnInjuries(all).catch(() => null),
+    loadLgs().catch(() => null),
+    fantasyView ? null : espnDepthChart(nba, all),
+  ]);
+  const players = bk?.players ?? [];
+  const byId = Object.fromEntries(players.map(p => [p.pid, p]));
+  const dynOf = pid => dyn?.v?.players?.[pid]?.score ?? null;
+  // League Games Started this season: this team's only on a fantasy chart, any team on an NBA chart.
+  const lgs = lgsData ? lgsCounts(lgsData, cur.season, fantasyView ? me : null) : null;
+  // Locked points this season (owner, Oct 29 2026; DATA.playerWeeks = finished weeks, like the Player Index): any team,
+  // plus this team's share on a fantasy chart when he also scored for another team.
+  const lockAll = lockedTotals(DATA, { season: cur.season });
+  const lockHere = fantasyView ? lockedTotals(DATA, { season: cur.season, owner: me }) : null;
+  const key = `gm-dc-chart-${me}`;
+  const auto = dcAuto(players, dynOf);
+  const cardLink = p => `#/commish?${new URLSearchParams(fantasyView ? { tab: 'breakdown', team: me, p: p.pid } : { tab: 'breakdown', list: 'nba', nba, p: p.pid })}`;
+
+  const row = (p, i, pos, o = {}) => {
+    const e = espn?.[p.pid];
+    const injury = p.injury ?? (e ? ({ 'Day-To-Day': 'DTD' }[e.status] ?? e.status) : null);
+    const d = dynOf(p.pid);
+    const l = lgs?.[p.pid];
+    const role = fantasyView
+      ? (SLOT_WORD[p.slot] ?? `Starter · ${p.slot}`)
+      : p.owner ? `${esc(teamName(p.owner, cur.season))} · ${esc(SLOT_WORD[p.slot] ?? 'Starter')}` : 'Free agent';
+    const where = fantasyView ? [p.pos.join('/'), p.team || 'No NBA team'].join(' · ') : p.pos.join('/');
+    const stats = p.tot?.gp
+      ? `<b>${bkF1(p.avg.fp)}</b> FP/G · ${bkF1(p.avg.min)} min · <span title="NBA games started / games played">GS ${p.tot.gs ?? '—'}/${p.tot.gp}</span>`
+      : 'No games yet';
+    const lgsText = `<span title="League Games Started: started in a fantasy lineup when his NBA game tipped (${l ? `${l.n} of ${l.seen} games watched${l.u ? `, ${l.u} unsure` : ''}` : 'none recorded'})">LGS ${l ? l.n : '—'}</span>`;
+    const la = lockAll[p.pid];
+    const lh = lockHere?.[p.pid];
+    const st = n => `${n} start${n === 1 ? '' : 's'}`;
+    const lockText = !la ? '<span class="dc-lock none" title="Locked points this season: none yet">Locked 0</span>'
+      : lh && lh.pts !== la.pts ? `<span class="dc-lock" title="Locked points this season: ${num(lh.pts)} for this team (${st(lh.starts)}), ${num(la.pts)} for all teams (${st(la.starts)})">Locked <b>${num(lh.pts)}</b> · ${num(la.pts)} all teams</span>`
+      : `<span class="dc-lock" title="Locked points this season${lockHere && !lh ? ', all for other teams' : ''} (${st(la.starts)})">Locked <b>${num(la.pts)}</b>${lockHere && !lh ? ' (other teams)' : ''} · ${la.starts} st</span>`;
+    const open = fantasyView && DC.menu === p.pid;
+    return `<div class="dc-row${p.slot === 'TX' ? ' tx' : ''}${injury && (injBad(injury) || e?.ofs) ? ' hurt' : ''}${open ? ' open' : ''}" data-dc="${p.pid}">
+      <span class="dc-rank${i === 0 ? ' first' : ''}">${pos}${i + 1}</span>
+      <img class="dc-photo" src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy" draggable="false" onerror="this.style.visibility='hidden'">
+      <span class="dc-main">
+        <span class="dc-name"><a href="${cardLink(p)}" draggable="false">${esc(p.name)}</a>${o.fresh ? '<i class="dc-new">New</i>' : ''}${o.from ? `<i class="dc-from" title="Borrowed from ${o.from}: he can also play ${pos}">from ${o.from}</i>` : ''}</span>
+        <small>${esc(where)} · ${role}</small>
+        <small class="dc-stats">${stats} · ${lockText} · ${lgsText}${d != null ? ` · Dyn <b>${d}</b> ${tierTag(d)}` : ''}</small>
+        ${injury || e ? `<span class="dc-inj">${injury ? `<span class="inj-pill${injBad(injury) || e?.ofs ? ' bad' : ''}">${esc(injury)}</span>` : ''}${estChip(e, 'inj-est')}</span>` : ''}
+      </span>
+      ${fantasyView ? `<button type="button" class="dc-menu" data-menu="${p.pid}" aria-label="Move ${esc(p.name)}" aria-expanded="${open}">⋮</button>` : ''}
+      ${open ? `<span class="dc-move"><button type="button" data-mv="up">↑ Up</button><button type="button" data-mv="down">↓ Down</button>
+        <span>Move to</span>${DEPTH_POS.filter(x => x !== pos).map(x => `<button type="button" data-mv="${x}"${p.pos.includes(x) ? ' class="fits"' : ''}>${x}</button>`).join('')}</span>` : ''}
+    </div>`;
+  };
+  const column = (pos, list, extra = '') => `<section class="dc-col" data-pos="${pos}">
+      <div class="dc-head"><b>${pos}</b><small>${DC_WORD[pos]}</small><span>${list.length}</span></div>
+      <div class="dc-list">${list.join('')}${fantasyView ? `<div class="dc-end" data-dc="end:${pos}">${list.length ? 'Drop here' : 'Nobody here · drop a player'}</div>` : list.length ? '' : '<p class="dc-none">Nobody listed.</p>'}</div>
+      ${extra}
+    </section>`;
+
+  const fantasyChart = () => {
+    const saved = gmLoad(key, null);
+    const { cols, fresh } = dcChart(players, saved, auto);
+    // Players in other columns who can also play this one (Sleeper's fantasy positions), taxi left out.
+    const also = pos => {
+      const list = DEPTH_POS.filter(x => x !== pos).flatMap(x => cols[x].map(pid => [byId[pid], x])).filter(([p]) => p.slot !== 'TX' && p.pos.includes(pos));
+      return list.length ? `<p class="dc-also">Can also play ${pos}: ${list.map(([p, x]) => `${esc(p.name)} <small>(${x})</small>`).join(', ')}</p>` : '';
+    };
+    // "Hide taxi" (owner, Oct 29 2026; gm-dc-hidetaxi, synced): taxi rows aren't drawn but keep their place in the order.
+    const shown = pid => !(hideTaxi() && byId[pid].slot === 'TX');
+    DC.cols = cols;
+    const html = DEPTH_POS.map(pos => column(pos, cols[pos].filter(shown).map((pid, i) => row(byId[pid], i, pos, { fresh: fresh.has(pid), from: !saved && auto.moved[pid] })), also(pos))).join('');
+    return { html, saved, cols, lines: Object.fromEntries(DEPTH_POS.map(pos => [pos, cols[pos].filter(shown).map(pid => byId[pid])])) };
+  };
+  const nbaChart = () => {
+    if (!depth) return { html: '<p class="empty">Couldn’t read ESPN’s depth chart right now. Try again in a few minutes.</p>', listed: new Set(), lines: null };
+    const listed = new Set();
+    const lines = {};
+    const html = DEPTH_POS.map(pos => column(pos, depth.cols[pos].map((a, i) => {
+      if (a.pid) listed.add(a.pid);
+      const p = byId[a.pid] ?? (a.pid ? { pid: a.pid, name: a.name, pos: all[a.pid]?.fantasy_positions ?? [], slot: 'FA', owner: null, tot: { gp: 0 } } : null);
+      (lines[pos] ??= []).push(p ?? { pid: null, name: a.name || 'Unknown player', tot: { gp: 0 } });
+      return p ? row(p, i, pos) : `<div class="dc-row"><span class="dc-rank${i === 0 ? ' first' : ''}">${pos}${i + 1}</span><span class="dc-main"><span class="dc-name">${esc(a.name || 'Unknown player')}</span><small>Not found in Sleeper</small></span></div>`;
+    }))).join('');
+    return { html, listed, lines };
+  };
+
+  // At a glance (owner, Oct 29 2026): the whole chart as one table, positions down the side and players across in
+  // depth order (1st, 2nd, ...); tap a name to jump to his full row below. Scrolls sideways on phones, PG..C stay put.
+  const ordinal = n => `${n}${[, 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10] ?? 'th'}`;
+  const short = p => (p.first && p.last ? `${p.first[0]}. ${p.last}` : p.name);
+  const glance = lines => {
+    if (!lines) return '';
+    const most = Math.max(1, ...DEPTH_POS.map(pos => lines[pos]?.length ?? 0));
+    const cell = (p, pos, i) => {
+      const e = espn?.[p.pid];
+      const injury = p.injury ?? (e ? ({ 'Day-To-Day': 'DTD' }[e.status] ?? e.status) : null);
+      const hurt = injury && (injBad(injury) || e?.ofs);
+      const la = lockAll[p.pid];
+      return `<td><button type="button" class="dc-chip${i === 0 ? ' first' : ''}${p.slot === 'TX' ? ' tx' : ''}${hurt ? ' hurt' : ''}"${p.pid ? ` data-goto="${p.pid}" data-pos="${pos}"` : ' disabled'} title="${esc(p.name)}${injury ? ` · ${esc(injury)}` : ''}${p.slot === 'TX' ? ' · taxi' : ''}">
+        <b>${esc(short(p))}</b><small>${p.tot?.gp ? `${bkF1(p.avg.fp)} FP/G` : 'No games'}${la ? ` · L ${num(la.pts)}` : ''}</small>${injury ? `<small><i>${esc(injury)}</i></small>` : ''}</button></td>`;
+    };
+    return `<div class="dc-glance-wrap"><table class="dc-glance">
+      <thead><tr><th scope="col" aria-label="Position"></th>${Array.from({ length: most }, (_, i) => `<th scope="col">${ordinal(i + 1)}</th>`).join('')}</tr></thead>
+      <tbody>${DEPTH_POS.map(pos => `<tr><th scope="row">${pos}</th>${(lines[pos] ?? []).map((p, i) => cell(p, pos, i)).join('')}${'<td></td>'.repeat(most - (lines[pos]?.length ?? 0))}</tr>`).join('')}</tbody>
+    </table></div>
+    <p class="dc-glance-note">L = locked points this season${fantasyView ? '' : ' (any fantasy team)'}. Tap a name for his full row.</p>`;
+  };
+
+  const draw = () => {
+    const nbaOpts = [...NBA_TEAM_CODES].sort((a, b) => nbaTeamName(a).localeCompare(nbaTeamName(b)));
+    const pick = fantasyView
+      ? `<select class="dc-pick" aria-label="Fantasy team">${cur.teams.map(t => `<option value="${esc(t.owner)}"${t.owner === me ? ' selected' : ''}>${esc(teamName(t.owner, cur.season))} (${esc(name(t.owner))})</option>`).join('')}</select>`
+      : `<select class="dc-pick" aria-label="NBA team">${nbaOpts.map(t => `<option value="${t}"${t === nba ? ' selected' : ''}>${esc(nbaTeamName(t))}</option>`).join('')}</select>`;
+    const chart = fantasyView ? fantasyChart() : nbaChart();
+    const off = fantasyView ? [] : players.filter(p => !chart.listed.has(p.pid)).sort((a, b) => (b.tot.gp ? b.avg.fp : 0) - (a.tot.gp ? a.avg.fp : 0));
+    const rostered = players.filter(p => p.owner).length;
+    const savedAt = chart.saved?.at ? new Date(chart.saved.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+    $('#dc-top', body).innerHTML = betaCard('Depth Chart', `
+      <div class="st-tabs dc-view" role="tablist">${[['fantasy', 'Fantasy teams'], ['nba', 'NBA teams']].map(([id, label]) => `<button type="button" role="tab" data-view="${id}" class="${view === id ? 'on' : ''}">${label}</button>`).join('')}</div>
+      <div class="dc-controls">
+        <label class="hy-pick dc-picker"><span class="hy-pick-label">${fantasyView ? 'Team' : 'NBA team'}</span>
+          <span class="ed-select"><span class="hy-pick-val">${esc(fantasyView ? teamName(me, cur.season) : nbaTeamName(nba))}</span>
+            <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>${pick}</span></label>
+        ${fantasyView ? `<button type="button" class="btn dc-auto">Auto-generate best depth chart</button>
+          <label class="dc-check"><input type="checkbox" data-hidetaxi${hideTaxi() ? ' checked' : ''}> Hide taxi <small>(${players.filter(p => p.slot === 'TX').length})</small></label>` : ''}
+      </div>
+      ${fantasyView
+    ? `<p class="dc-status">${chart.saved ? `<b>Your custom order</b> · saved ${esc(savedAt)} (follows you to your other devices when signed in)` :'<b>Automatic order</b> (by role)'}. Drag a player to reorder or move him to another position (phones: press and hold, then drag), or tap ⋮.</p>
+         <p class="dc-help">Automatic order: Sleeper starters first, then the healthy bench by fantasy points per game, players without a game yet (by dynasty score), injured (IR / Out), taxi last. Columns = each player’s main Sleeper position; an empty column borrows the best player who can also play there.</p>`
+    : `<p class="dc-status"><b>ESPN’s official depth chart</b>, read live. ${rostered} of ${players.length} ${esc(nbaTeamName(nba))} players are on fantasy rosters here. Some players are listed at more than one position, as ESPN does.</p>`}
+      ${fpNote('game')}`, { cls: 'dc-card', sub: fantasyView ? 'Sleeper, live' : 'ESPN, live' });
+    $('#dc-chart', body).innerHTML = betaCard(fantasyView ? esc(teamName(me, cur.season)) : `${teamLogo(nba) ? `<img class="dc-logo" src="${teamLogo(nba)}" alt="" onerror="this.remove()">` : ''}${esc(nbaTeamName(nba))}`,
+      `${glance(chart.lines)}
+       <div class="dc-grid">${chart.html}</div>
+       ${off.length ? `<div class="dc-off"><span class="bk-bar-label">On the roster, not on ESPN’s chart</span>${off.map((p, i) => row(p, i, '')).join('')}</div>` : ''}`,
+      { cls: 'dc-chartcard', sub: fantasyView ? `${players.length} players${hideTaxi() ? ' (taxi hidden)' : ''} · ${esc(name(me))}` : `${players.length} players (Sleeper)` });
+  };
+  // The chart as it is on screen now (after a drag): { PG: [pid] }. Hidden taxi players go back where they were
+  // in their column (right after the player who was above them), so hiding them never loses your order.
+  const domCols = () => {
+    const cols = Object.fromEntries([...body.querySelectorAll('.dc-col')].map(c => [c.dataset.pos, [...c.querySelectorAll('.dc-row[data-dc]')].map(r => r.dataset.dc)]));
+    if (fantasyView && hideTaxi()) {
+      for (const pos of DEPTH_POS) {
+        let at = 0;
+        for (const pid of DC.cols?.[pos] ?? []) {
+          if (byId[pid]?.slot === 'TX') cols[pos].splice(at++, 0, pid);
+          else if (cols[pos].includes(pid)) at = cols[pos].indexOf(pid) + 1;
+        }
+      }
+    }
+    return cols;
+  };
+  const save = cols => gmSave(key, { at: Date.now(), cols });
+
+  body.innerHTML = '<div class="gm-page dc-page"><div id="dc-top"></div><div id="dc-chart"></div></div>';
+  draw();
+  if (fantasyView) {
+    dragSort($('#dc-chart', body), '.dc-row, .dc-end', el => el.dataset.dc, () => { DC.menu = null; save(domCols()); draw(); }, () => true, { vertical: true, fixed: '.dc-end' });
+  }
+  const page = $('.dc-page', body); // new on every render, so a sync redraw never doubles the listeners
+  page.addEventListener('change', e => {
+    if (e.target.matches('[data-hidetaxi]')) { gmSave('gm-dc-hidetaxi', e.target.checked); DC.menu = null; draw(); return; }
+    if (!e.target.matches('.dc-pick')) return;
+    location.hash = `#/commish?${new URLSearchParams({ tab: 'depth', view, ...(fantasyView ? { team: e.target.value } : { nba: e.target.value }) })}`;
+  });
+  page.addEventListener('click', e => {
+    const v = e.target.closest('[data-view]');
+    if (v) { location.hash = `#/commish?${new URLSearchParams({ tab: 'depth', view: v.dataset.view, ...(v.dataset.view === 'fantasy' ? { team: me } : { nba }) })}`; return; }
+    if (e.target.closest('.dc-auto')) {
+      if (gmLoad(key, null) && !confirm(`Replace your custom order for ${teamName(me, cur.season)} with the automatic one?`)) return;
+      gmSave(key, null);
+      DC.menu = null;
+      draw();
+      return;
+    }
+    const go = e.target.closest('[data-goto]');
+    if (go) {
+      const el = body.querySelector(`.dc-col[data-pos="${go.dataset.pos}"] .dc-row[data-dc="${go.dataset.goto}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.remove('flash');
+        void el.offsetWidth; // restart the highlight
+        el.classList.add('flash');
+        el.addEventListener('animationend', () => el.classList.remove('flash'), { once: true });
+      }
+      return;
+    }
+    const m = e.target.closest('[data-menu]');
+    if (m) { DC.menu = DC.menu === m.dataset.menu ? null : m.dataset.menu; draw(); return; }
+    const mv = e.target.closest('[data-mv]');
+    if (mv) {
+      const pid = mv.closest('[data-dc]').dataset.dc;
+      const cols = domCols();
+      const pos = DEPTH_POS.find(x => cols[x].includes(pid));
+      const list = cols[pos];
+      const i = list.indexOf(pid);
+      if (mv.dataset.mv === 'up' || mv.dataset.mv === 'down') {
+        const j = mv.dataset.mv === 'up' ? i - 1 : i + 1;
+        if (j < 0 || j >= list.length) return;
+        [list[i], list[j]] = [list[j], list[i]];
+      } else {
+        list.splice(i, 1);
+        // Lands at the bottom of the active players, above that column's taxi (unless he's on taxi himself).
+        const to = cols[mv.dataset.mv];
+        const lastActive = to.findLastIndex(x => byId[x]?.slot !== 'TX');
+        to.splice(byId[pid]?.slot === 'TX' ? to.length : lastActive + 1, 0, pid);
+        DC.menu = null;
+      }
+      save(cols);
       draw();
     }
   });

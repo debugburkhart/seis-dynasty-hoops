@@ -3527,3 +3527,104 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-tagdel { padding: 3px 10px; border: 1px solid rgba(255,130,130,.6); border-radius: 99px; background: none; color: #ffb3b3; font: 700 11px/1.3 var(--font); cursor: pointer; }
 .bk-tagdel:hover { background: rgba(255,130,130,.12); }
 #bk-tagbar .bk-tagdel { margin-top: 6px; }
+/* Depth Chart (Test features, Oct 29 2026; renderDepth in app.js): one column per position, 5 across on wide screens. */
+.dc-view button { border: 0; background: none; padding: 7px 12px; border-radius: 7px; font: 700 13px/1.2 var(--font); color: var(--ink); cursor: pointer; }
+.dc-view button.on { background: var(--navy-900); color: #fff; }
+.dc-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin: 10px 0 6px; }
+.dc-picker .ed-select { max-width: 320px; }
+.dc-auto { background: var(--gold); color: var(--navy-900); }
+.dc-auto:hover { background: var(--brass); }
+.dc-check { display: inline-flex; align-items: center; gap: 6px; padding: 7px 4px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.dc-check input { width: 16px; height: 16px; accent-color: var(--navy-700); }
+.dc-check small { color: var(--muted); font-weight: 500; }
+.dc-status { margin: 8px 0 4px; font-size: 13px; }
+.dc-help { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+.dc-logo { width: 26px; height: 26px; vertical-align: -7px; margin-right: 6px; }
+.dc-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.dc-col { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: #fcfbf8; overflow: hidden; }
+.dc-head { display: flex; align-items: baseline; gap: 8px; padding: 7px 10px; background: var(--navy-800); color: #fff; }
+.dc-head b { font: 800 15px/1.2 var(--display); color: var(--gold); }
+.dc-head small { flex: 1; min-width: 0; color: #c9d4e6; font-size: 11px; }
+.dc-head span { font: 700 11px/1 var(--font); color: #c9d4e6; }
+.dc-list { padding: 4px; }
+.dc-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 7px; padding: 7px 5px; border-bottom: 1px solid #f0ece2; background: #fff; border-radius: 6px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.dc-row.tx { background: #f7f5ef; opacity: .85; }
+.dc-row.hurt .dc-name a { color: #b3261e; }
+.dc-row.dragging { box-shadow: 0 6px 18px rgba(11,29,61,.25); outline: 2px solid var(--gold); position: relative; z-index: 2; }
+.dc-rank { flex: none; min-width: 32px; padding: 2px 4px; border-radius: 5px; background: #e8eef6; color: var(--navy-700); font: 800 10px/1.3 var(--display); text-align: center; }
+.dc-rank.first { background: var(--gold); color: var(--navy-900); }
+.dc-photo { flex: none; width: 34px; height: 26px; object-fit: cover; object-position: center top; border-radius: 5px; background: #f2efe7; }
+.dc-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.dc-name { font-weight: 700; font-size: 13px; line-height: 1.25; overflow-wrap: anywhere; }
+.dc-name a { color: var(--navy-900); text-decoration: none; }
+.dc-name a:hover { text-decoration: underline; }
+.dc-main small { color: var(--muted); font-size: 11px; line-height: 1.35; }
+.dc-stats b { color: var(--ink); }
+.dc-lock b { color: var(--navy-700); }
+.dc-lock.none { color: #b7b2a4; }
+.dc-stats .tier { font-size: 8.5px; padding: 1px 5px; }
+.dc-inj { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; }
+.dc-inj .inj-pill { font-size: 10px; padding: 1px 6px; }
+.dc-inj .inj-est { margin-top: 0; font-size: 10px; }
+.dc-new, .dc-from { margin-left: 5px; padding: 0 5px; border-radius: 4px; font: 800 9px/1.5 var(--font); font-style: normal; text-transform: uppercase; vertical-align: 1px; }
+.dc-new { background: #e6f4ea; color: #1e6b34; }
+.dc-from { background: #fdf0d2; color: #8a5a00; }
+.dc-menu { flex: none; width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--navy-700); font: 800 15px/1 var(--font); cursor: pointer; }
+.dc-row.open .dc-menu { background: var(--navy-700); color: #fff; }
+.dc-move { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 6px 0 0 39px; }
+.dc-move span { font-size: 11px; color: var(--muted); margin-left: 4px; }
+.dc-move button { padding: 3px 9px; border: 1px solid var(--line); border-radius: 99px; background: #fff; color: var(--navy-700); font: 700 11px/1.3 var(--font); cursor: pointer; }
+.dc-move button.fits { border-color: var(--navy-600); }
+.dc-move button:hover { background: #eef2f8; }
+.dc-end { margin: 4px 2px 2px; padding: 6px; border: 1px dashed transparent; border-radius: 6px; color: transparent; font-size: 11px; text-align: center; }
+.dc-end:only-child, .drag-on .dc-end { border-color: #c9d4e6; color: var(--muted); }
+.drag-on .dc-row:not(.dragging) { cursor: grabbing; }
+.dc-none { margin: 8px; color: var(--muted); font-size: 12px; }
+.dc-also { margin: 0; padding: 6px 10px 8px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
+.dc-off { margin-top: 14px; }
+.dc-off .dc-row { max-width: 560px; }
+.dc-off .dc-rank { display: none; }
+@media (max-width: 1399px) {
+  .dc-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+}
+/* 5 narrow columns: rank over photo on the left, ⋮ in the corner, so the name and numbers get the width. */
+@media (min-width: 1400px) {
+  .dc-grid .dc-row { position: relative; display: grid; grid-template-columns: 34px minmax(0, 1fr); column-gap: 7px; row-gap: 4px; }
+  .dc-grid .dc-rank { min-width: 0; grid-column: 1; grid-row: 1; }
+  .dc-grid .dc-photo { grid-column: 1; grid-row: 2; }
+  .dc-grid .dc-main { grid-column: 2; grid-row: 1 / span 3; }
+  .dc-grid .dc-menu { position: absolute; top: 6px; right: 4px; width: 22px; height: 22px; font-size: 13px; }
+  .dc-grid .dc-name { padding-right: 24px; }
+  .dc-grid .dc-move { grid-column: 1 / -1; padding-left: 0; }
+}
+@media (max-width: 560px) {
+  .dc-grid { grid-template-columns: 1fr; }
+  .dc-auto { flex: 1 1 100%; justify-content: center; }
+  .dc-picker { flex: 1 1 100%; }
+  .dc-picker .ed-select { max-width: none; flex: 1; min-width: 0; justify-content: space-between; }
+}
+/* Depth Chart at a glance: positions down, players across (glance() in renderDepth). Scrolls sideways inside its box. */
+.dc-glance-wrap { overflow-x: auto; margin: 0 0 4px; border: 1px solid var(--line); border-radius: 10px; background: #fcfbf8; -webkit-overflow-scrolling: touch; }
+.dc-glance { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+.dc-glance th { padding: 6px 8px; font: 800 11px/1.2 var(--display); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); text-align: left; white-space: nowrap; }
+.dc-glance thead th { border-bottom: 1px solid var(--line); }
+.dc-glance tbody th { position: sticky; left: 0; z-index: 1; width: 44px; background: var(--navy-800); color: var(--gold); font-size: 13px; text-align: center; }
+.dc-glance tbody tr + tr th { border-top: 1px solid var(--navy-700); }
+.dc-glance thead th:first-child { position: sticky; left: 0; z-index: 1; background: #fcfbf8; }
+.dc-glance td { padding: 4px; border-bottom: 1px solid #f0ece2; vertical-align: top; }
+.dc-glance tbody tr:last-child td { border-bottom: 0; }
+.dc-chip { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 118px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--navy-900); text-align: left; cursor: pointer; font: inherit; }
+.dc-chip:hover { border-color: var(--navy-600); }
+.dc-chip b { font-size: 12px; line-height: 1.25; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-chip small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.dc-chip small i { font-style: normal; font-weight: 700; color: #8a5a00; }
+.dc-chip.first { border-color: var(--gold); background: #fff9e8; }
+.dc-chip.tx { background: #f7f5ef; opacity: .8; }
+.dc-chip.hurt b, .dc-chip.hurt small i { color: #b3261e; }
+.dc-chip:disabled { cursor: default; }
+.dc-glance-note { margin: 0 0 12px; font-size: 11px; color: var(--muted); }
+.dc-row.flash { animation: dc-flash 1.6s ease-out; }
+@keyframes dc-flash { 0%, 30% { background: #fff3cf; box-shadow: 0 0 0 2px var(--gold); } 100% { background: #fff; box-shadow: none; } }
+@media (max-width: 560px) {
+  .dc-chip { width: 104px; }
+}

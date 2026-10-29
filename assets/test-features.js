@@ -11,6 +11,8 @@ export const TEST_FEATURES = [
   { id: 'coach', label: 'Assistant Coach', since: '2026-10-26' },
   // Reports (owner, Oct 28 2026): one-off questions answered from live data; each report is a title that opens.
   { id: 'reports', label: 'Reports', since: '2026-10-28' },
+  // Depth Chart (owner, Oct 29 2026): fantasy rosters by position (auto + drag order) and ESPN's NBA depth charts.
+  { id: 'depth', label: 'Depth Chart', since: '2026-10-29' },
 ];
 
 export const BETA = '<span class="gm-beta">Beta</span>';
