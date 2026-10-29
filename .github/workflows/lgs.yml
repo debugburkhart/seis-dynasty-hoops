@@ -1,0 +1,37 @@
+name: League games started
+
+# Game-day watcher (scripts/lgs.mjs): records which fantasy starters were in a starting slot when their NBA game
+# tipped (data/lgs.json), and starts the nightly update at 2:00 AM Central sharp (GitHub's own 2 AM schedule runs
+# hours late). The first morning try that starts watches the whole day; before GitHub's 6-hour limit it starts its
+# own replacement (that kind of start happens within about a minute). Only one runs at a time; extra starts wait.
+# Times below are UTC: about 8, 9, 10 and 11 AM Central in daylight time (7-10 AM in standard time).
+on:
+  schedule:
+    - cron: '0 13 * * *'
+    - cron: '0 14 * * *'
+    - cron: '0 15 * * *'
+    - cron: '0 16 * * *'
+  workflow_dispatch: # "Run workflow" button: start right away (the watcher also starts itself this way)
+
+permissions:
+  contents: write # save data/lgs.json and data/nightly.json
+  actions: write # start its replacement and the nightly update
+
+concurrency:
+  group: lgs
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Watch tip-offs and lineups
+        run: node scripts/lgs.mjs
+        env:
+          LGS_MINUTES: 340
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
