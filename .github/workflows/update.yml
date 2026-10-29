@@ -7,6 +7,13 @@ on:
     # below skips whichever one isn't 2 AM right now.
     - cron: '0 7 * * *'
     - cron: '0 8 * * *'
+    # Sunday evening, 8 PM and 11 PM Central (Monday in UTC): extra snapshots of the
+    # week's lineups while it's still live, so Sunday's locks are seen before Sleeper
+    # closes the week (assets/weekfix.js). Same gate as above.
+    - cron: '0 1 * * 1'
+    - cron: '0 2 * * 1'
+    - cron: '0 4 * * 1'
+    - cron: '0 5 * * 1'
   workflow_dispatch: # adds the "Run workflow" button on the Actions tab
   push:
     branches: [main] # redeploy whenever you upload changes
@@ -27,21 +34,34 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - name: Only run at 2 AM Central
+      - name: Only run at 2 AM Central (and Sunday 8 PM / 11 PM)
         id: gate
         run: |
           RUN=true
           if [ "${{ github.event_name }}" = "schedule" ]; then
             OFFSET=$(TZ=America/Chicago date +%z)   # -0500 in summer, -0600 in winter
-            if [ "${{ github.event.schedule }}" = "0 7 * * *" ] && [ "$OFFSET" != "-0500" ]; then RUN=false; fi
-            if [ "${{ github.event.schedule }}" = "0 8 * * *" ] && [ "$OFFSET" != "-0600" ]; then RUN=false; fi
+            case "${{ github.event.schedule }}" in
+              "0 7 * * *"|"0 1 * * 1"|"0 4 * * 1") [ "$OFFSET" = "-0500" ] || RUN=false ;;
+              "0 8 * * *"|"0 2 * * 1"|"0 5 * * 1") [ "$OFFSET" = "-0600" ] || RUN=false ;;
+            esac
+            # GitHub starts these schedules hours late, so the game-day watcher (lgs.yml) starts this update at
+            # 2 AM / Sunday 8 PM / 11 PM sharp and records it in data/nightly.json. Skip a late copy it already ran.
+            DONE=$(curl -s "https://raw.githubusercontent.com/${{ github.repository }}/main/data/nightly.json?t=$(date +%s)")
+            case "${{ github.event.schedule }}" in
+              "0 7 * * *"|"0 8 * * *")
+                DAY=$(TZ=America/Chicago date -d '12 hours ago' +%F)
+                echo "$DONE" | grep -q "\"day\":\"$DAY\"" && { echo "Tonight's update already ran at 2 AM."; RUN=false; } ;;
+              *)
+                SUN=$(TZ=America/Chicago date -d '6 hours ago' +%F)
+                echo "$DONE" | grep -q "\"sunday\":\"$SUN\"" && { echo "Sunday's snapshots already ran on time."; RUN=false; } ;;
+            esac
           fi
           echo "run=$RUN" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         if: steps.gate.outputs.run == 'true'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.gate.outputs.run == 'true'
         with:
           node-version: 22
@@ -78,17 +98,17 @@ jobs:
           sed -i "s/?v=dev/?v=$VERSION/g" index.html
           echo "Site files tagged v=$VERSION"
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
         if: steps.gate.outputs.run == 'true'
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         if: steps.gate.outputs.run == 'true'
         with:
           path: .
 
       - id: deploy
         if: steps.gate.outputs.run == 'true'
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
       # Runs after the site is published, so a mismatch never blocks the update.
       # Failing here marks the run with a red X, and GitHub emails you about it.
