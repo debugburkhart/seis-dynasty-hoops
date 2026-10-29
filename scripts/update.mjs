@@ -398,6 +398,16 @@ try {
   console.log(`Season stats skipped: ${e.message}`);
 }
 
+// NBA games started (2K breakdown GS, owner Oct 28 2026): ESPN game summaries say who started; this season every
+// night, past seasons up to `budget` games a night until complete -> data/nba-starts.json. Never stops the update.
+try {
+  const { updateNbaStarts } = await import('../assets/breakdown.js');
+  const starts = await updateNbaStarts(data, await readJson('data/nba-starts.json'), { log: m => console.log(m), budget: 400 });
+  await writeFile('data/nba-starts.json', JSON.stringify(starts));
+} catch (e) {
+  console.log(`NBA starts skipped: ${e.message}`);
+}
+
 // Trade talk auto tag (2K breakdown, owner Oct 26 2026): every rostered / NBA player's Sleeper news checked for
 // trade-talk wording -> data/trade-talk.json (assets/breakdown.js). Never stops the update.
 try {

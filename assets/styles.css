@@ -3510,3 +3510,16 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
   #rp-print .rp-rows li { break-inside: avoid; }
   #rp-print .rp-h { break-after: avoid; }
 }
+/* Tag drag-to-reorder (dragSort in app.js; card tags + Tags filter row) and the filter row wrapping like on phones
+   at every width (owner, Oct 28 2026: no scroll bar on desktop). */
+.bk-tagfilter { flex-wrap: wrap; overflow: visible; }
+.bk-tagrow [data-dtag], .bk-tagfilter [data-tagf]:not([data-tagf=""]) { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+@media (hover: hover) {
+  .bk-tagrow [data-dtag], .bk-tagfilter [data-tagf]:not([data-tagf=""]) { cursor: grab; }
+}
+.drag-on, .drag-on * { cursor: grabbing !important; }
+.dragging { opacity: .6; transform: scale(1.08); box-shadow: 0 4px 14px rgba(0,0,0,.35); position: relative; z-index: 2; }
+.bk-draghint { display: block; width: 100%; margin-top: 4px; font-size: 10.5px; color: #9fb0cc; }
+#bk-tagbar .bk-bar { flex-wrap: wrap; }
+/* NBA games started in the 2K Game log (owner, Oct 28 2026): a gold check on games he started. */
+.bk-table td.bk-gs { color: var(--gold); font-weight: 800; text-align: center; }

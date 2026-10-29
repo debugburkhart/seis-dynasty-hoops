@@ -39,6 +39,8 @@ export const SYNCED = [
   'wager-saved', // Wager Weeks results waiting for GitHub
   'gm-tags', // custom player tags (2K breakdown): { pid: [tag] }
   'gm-tag-colors', // custom tag colors (2K breakdown): { tag: color index }
+  'gm-tag-order', // custom tag order (2K breakdown, drag to sort): [tag]
+  'gm-autotag-order', // auto tag order in the 2K filter row: [tag]
   'gm-bk-', // 2K breakdown filters (pos / sec)
   'gm-notes', // player notes (2K breakdown): { pid: text }
 ];

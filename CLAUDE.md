@@ -879,7 +879,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   claims, saving picks (live rules block them until the owner publishes the new rules).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json, taxi-week.json,
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json, taxi-week.json, lgs.json (written by scripts/lgs.mjs via lgs.yml, not the nightly job),
   dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 
@@ -1059,6 +1059,57 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   fantasy_positions reach that group; marked "2nd" by the name, secMark). Saved with gmSave: gm-bk-pos
   ('all'|'G'|'F'|'C'), gm-bk-sec (default on); 'gm-bk-' is in SYNCED. Check: Centers on Parma 11 with, 10
   without (John Collins PF/C).
+  LEAGUE GAMES STARTED (LGS; owner, Oct 28 2026, going forward only, no backfill): times a fantasy team had a player
+  in one of the starting slots when his NBA game TIPPED (one per player per NBA game, any slot; a locked player stays
+  in the lineup, so his later games that week count by the same rule). Sleeper keeps no lineup history and managers
+  CAN move / sub players during their own games (owner corrected this), so scripts/lgs.mjs WATCHES: started by
+  .github/workflows/lgs.yml (NEW file, the owner creates it on GitHub: Add file -> Create new file, name
+  .github/workflows/lgs.yml, paste; crons 16:30 / 21:30 / 02:15 UTC + Run workflow button; concurrency group lgs,
+  queued, never cancelled; job <= 355 min, script budget LGS_MINUTES 340). Each run: Sleeper state (regular season
+  only), game day = Chicago date of now - 5 h, ESPN scoreboard for that day (tip times + state pre/in/post, ESPN codes
+  mapped, non-NBA teams dropped), exits if the first tip is > 5.5 h away. Loop every 60 s: matchups/{week} snapshot
+  for games tipping within 4 min (every minute until ESPN says live), the first tick a game is live, and every 10 min
+  while live; per game per rostered player on its teams: pre (last pre-tip look), inn (first live look), owner, res
+  (taxi / IR from ROSTERS: the matchups feed lacks taxi/reserve), late (no pre look and the run didn't see it go live
+  within 3 min). Final (ESPN post): v = pre === inn ? inn : 'u'; no pre -> inn ('l' flag). NOTE: matchups
+  players_points includes BENCH players, so it can't show a mid-game sub-in; the verdict relies on the pre/live looks.
+  data/lgs.json { version 1, at, since, seasons: { s: { games: { 'YYYY-MM-DD|AWY@HOM': { d, w, tip, a, h } }, p: { pid:
+  { key: [v, owner, flags 'l'/'r'] } }, open: { key: { pid: rec } } } } }; open games survive a hand-off to the next
+  run. Saves = git commit of data/lgs.json + push with pull --rebase -X theirs retries, after each final game and every
+  20 min (GITHUB_TOKEN pushes don't trigger update.yml, so the site isn't redeployed: breakdown.js loadLgs reads
+  raw.githubusercontent.com first, then data/lgs.json). UI: lgsCounts(lgs, season|'career', owner|null) -> { n, seen
+  (taxi/IR left out unless he started), u }; "LGS" column (BK_LGS, Averages after Locked, Totals after Starts) and card
+  line "League Games Started 3 of 4 games (1 unsure)" (.bk-lgs; label spelled out, owner Oct 28 2026; Team list = that team's only, like Locked). Tested Oct 28 2026 in the
+  browser with the script (node imports stubbed) on the live OKC@DAL + LAL@LAC games: 44 rostered players, 13
+  starters, 9 bench, 22 taxi/IR; page with sample data. NOT run in Actions yet; first real night Oct 29 2026. TO
+  CHECK after the first nights: lgs.yml runs + pushes, no 'u' flood, handoffs, the 2 AM update starts on time.
+  GITHUB SCHEDULES RUN HOURS LATE (found Oct 28 2026: the "2 AM" update.yml cron started 6:00-8:40 AM CT every day
+  for two weeks; a cron at 07:00 UTC started 12:00-13:40 UTC). FIX = the watcher CHAINS itself with workflow_dispatch
+  (starts in ~1 minute; GITHUB_TOKEN can start workflow_dispatch runs, lgs.yml has actions: write): lgs.yml crons
+  13/14/15/16 UTC (morning tries; extra ones queue and exit fast); the run watches the whole game day (sleeps 5 min
+  between looks when nothing tips within 20 min), and at its LGS_MINUTES budget saves + dispatches lgs.yml (the
+  replacement reads data/lgs.json, open games kept). After the last game it waits until 2:00 AM CT (twoAm(day):
+  07:00 UTC daylight / 08:00 standard) and dispatches update.yml (ensureNightly: skipped if an update.yml run already
+  started after that 2 AM, checked via the GitHub API), then writes data/nightly.json { day, at, sunday }. Every run
+  first catches up the last due night (dueDay). Sunday game days also dispatch update.yml at 8 PM and 11 PM CT
+  (sundaySnaps, db.sunday) for weekfix's snapshots. update.yml's gate now curls raw data/nightly.json and SKIPS a
+  late 2 AM cron when day = Chicago(now - 12 h), and a late Sunday cron when sunday = Chicago(now - 6 h). Days with
+  no games / out of season: the morning run only does the catch-up, so the update then runs when that run starts.
+  The live update.yml on GitHub was still the pre-Oct-27 version on Oct 28 (no Sunday crons, v4 actions): the owner
+  pastes the whole local file.
+  NBA GAMES STARTED (GS; owner, Oct 28 2026; Sleeper's box rows have no gs): ESPN game summaries
+  site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=ID (boxscore.players[].statistics[].athletes[]
+  .starter; ~0.5 MB a game; scoreboard?dates= gives the day's event ids). updateNbaStarts() in breakdown.js, run by
+  update.mjs (try/catch, budget 400 games a night) -> data/nba-starts.json { version, at, seasons: { s: { full,
+  through, dates: [days read], starts: { pid: [YYYYMMDD] }, miss } } }: the season in progress first (every finished
+  day < today), then past seasons newest first until complete (~10 nights for 2023-2025). A day is read only when all
+  its NBA games are final (playoffs / All-Star skipped); ESPN names matched to Sleeper ids through Sleeper's own box
+  rows that date + team (normName). Pages show a season's GS only when `full` (else "—", never partial): list column
+  GS right after GP (BK_GS, Averages + Totals), totals via startDates() (Career = every season full), Team career +
+  Season by season (both modes) + Career rows via gameLog g.gs (1/0; undefined = today's game, read tonight; null =
+  season not collected) summed in totalOf (line.gs null if any game null), Game log "GS" column (✓, .bk-gs) after
+  Opp, Compare "Games started" row. Tested Oct 28 2026: 2026 so far 8 days / 56 games / 560 starts, 0 unmatched; vs
+  Basketball-Reference NBA_2027_per_game GS: 83 of 83 comparable players identical (teams playing that night skipped).
   USAGE RATE (owner, Oct 27 2026; Sleeper has none): computed = Basketball-Reference's formula 100 x (FGA + .44 FTA
   + TOV) x (team min / 5) / (min x (team FGA + .44 team FTA + team TOV)) over his games. The season tables now also
   store his TEAM's totals in the games he played (STAT_KEYS tm_fga / tm_fta / tm_to / tm_min, summed per game in
@@ -1087,6 +1138,15 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   "+ Tag" box: color dots under the input (BK.newColor, tap again = automatic; typed text kept in BK.tagDraft while
   picking); his tag chips become buttons: tap one = recolor mode (BK.recolor, "Color for X (every player)" + Done),
   a dot sets that tag's color at once. Typing an existing tag with a color picked also recolors it.
+  DRAG TO SORT TAGS (owner, Oct 28 2026, every device): dragSort(box, sel, keyOf, done, same) in app.js = pointer
+  events on a container bound once (mouse: press + move 6px; touch: press and hold 350 ms, then a non-passive
+  document touchmove blocks scrolling only while a chip is held; setPointerCapture on the box; the click ending a drag
+  is swallowed for 500 ms; long-press menu blocked; .dragging / .drag-on styles; chips get user-select / touch-callout
+  none). Card: his own tags ([data-dtag] on tagChip(x) and the open-box chips; auto chips fixed first) -> setTags(pid,
+  new order). Filter row: [data-tagf] chips, auto with auto / his own with his own (same() by .bk-autof) ->
+  gm-tag-order / gm-autotag-order (gmSave, both in SYNCED); allTags() and autoOrder() sort by those (unsaved: A-Z /
+  AUTO_TAGS order), so the Tags column grouping follows. Hint line .bk-draghint under the row. The Tags filter row
+  WRAPS at every width now (.bk-tagfilter flex-wrap, no desktop scroll bar). Tested with mouse + touch pointer events.
   AUTO TAGS (owner, Oct 26 2026: "facts", set by the site, NOT editable; AUTO_TAGS in breakdown.js, autoTagsOf(p)
   in app.js -> [[tag, why]], why = tooltip): Injured (Sleeper injury_status or an ESPN injury entry), Trade talk
   (a TRADE_TALK news item in the last TRADE_TALK_DAYS 30: nightly data/trade-talk.json from updateTradeTalk in

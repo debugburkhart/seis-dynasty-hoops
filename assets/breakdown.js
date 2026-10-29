@@ -101,7 +101,13 @@ const SUMS = ['gp', 'min', 'pts', 'reb', 'oreb', 'dreb', 'ast', 'stl', 'blk', 't
   'tmFga', 'tmFta', 'tmTo', 'tmMin']; // team totals in his games (season tables only; usage rate)
 export function totalOf(games) {
   const line = Object.fromEntries(SUMS.map(k => [k, 0]));
-  for (const g of games) if (!g.dnp) for (const k of SUMS) line[k] += g.line[k] ?? 0;
+  let gs = 0;
+  for (const g of games) {
+    if (g.dnp) continue;
+    for (const k of SUMS) line[k] += g.line[k] ?? 0;
+    gs = gs === null || g.gs === null ? null : gs + (g.gs ?? 0); // games started: null when a season isn't collected yet
+  }
+  line.gs = gs;
   return withPercents(line);
 }
 // Per-game averages of a totals line (shooting % and games stay as they are).
@@ -548,6 +554,125 @@ export async function updateTradeTalk(DATA, { log = () => {} } = {}) {
   return { version: TRADE_TALK_VERSION, at: new Date().toISOString(), checked: list.length, failed, players };
 }
 let TALK;
+// ---------- NBA games started (owner, Oct 28 2026) ----------
+// Sleeper's box scores don't say who started; ESPN's game summaries do (boxscore.players[].statistics[].athletes[]
+// .starter, 10 per game, CORS open but ~0.5 MB each). The nightly job reads every finished regular-season game once
+// -> data/nba-starts.json { version, at, seasons: { s: { full, through, dates: [days done], starts: { pid: [YYYYMMDD] },
+// miss: [names] } } }. ESPN players are matched to Sleeper ids through Sleeper's own box-score rows of that date and
+// team (normName), so traded / same-name players land right. The season in progress first, then past seasons a few
+// hundred games a night (budget) until they're complete; `full` = every date through the season's end (or yesterday)
+// is done, and pages only show a season's GS when it's full (never a partial count).
+export const STARTS_VERSION = 1;
+const ESPN_TEAM = { GS: 'GSW', NO: 'NOP', NY: 'NYK', SA: 'SAS', UTAH: 'UTA', WSH: 'WAS' };
+export async function updateNbaStarts(DATA, prev, { log = () => {}, budget = 400 } = {}) {
+  const out = prev?.version === STARTS_VERSION ? prev : { version: STARTS_VERSION, seasons: {} };
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+  const getJ = async url => { for (let i = 0; i < 3; i++) { try { const r = await fetch(url); if (r.ok) return await r.json(); } catch { /* retry */ } } return null; };
+  let left = budget;
+  for (const season of DATA.seasons.map(s => s.season).reverse()) { // newest first
+    const S = (out.seasons[season] ??= { full: false, through: null, dates: [], starts: {}, miss: [] });
+    if (S.full && season !== DATA.seasons.at(-1).season) continue;
+    const schedule = await get(`/schedule/nba/regular/${season}`, []);
+    const weekOf = {};
+    for (const g of schedule ?? []) if (g.date && g.week) weekOf[g.date] ??= g.week;
+    const dates = Object.keys(weekOf).filter(d => d < today).sort();
+    const done = new Set(S.dates);
+    const rowsByWeek = {};
+    for (const d of dates) {
+      if (done.has(d)) continue;
+      if (left <= 0) break;
+      const sb = await getJ(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${d.replaceAll('-', '')}`);
+      if (!sb) break; // ESPN down: try again tomorrow
+      // That day's NBA games (not the playoffs or the All-Star Game); a day is read only once all are final.
+      const nba = e => (e.competitions?.[0]?.competitors ?? []).every(c => NBA_TEAMS[ESPN_TEAM[c.team?.abbreviation] ?? c.team?.abbreviation]);
+      const events = (sb.events ?? []).filter(e => e.season?.type !== 3 && nba(e));
+      if (events.some(e => !e.status?.type?.completed)) break;
+      const w = weekOf[d];
+      rowsByWeek[w] ??= await weekRows(season, w).catch(() => []);
+      const sleeper = {}; // team -> normName -> pid, players with a Sleeper box row that date
+      for (const r of rowsByWeek[w]) if (r.date === d && /^\d+$/.test(r.player_id)) {
+        const nm = normName(r.player ? `${r.player.first_name} ${r.player.last_name}` : '');
+        if (nm) (sleeper[r.team] ??= {})[nm] = r.player_id;
+      }
+      let ok = true;
+      await Promise.all(events.map(async ev => {
+        const sum = await getJ(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=${ev.id}`);
+        if (!sum) { ok = false; return; }
+        for (const side of sum.boxscore?.players ?? []) {
+          const a = side.team?.abbreviation;
+          const team = ESPN_TEAM[a] ?? a;
+          for (const block of side.statistics ?? []) for (const x of block.athletes ?? []) {
+            if (!x.starter) continue;
+            const nm = normName(x.athlete?.displayName);
+            const pid = sleeper[team]?.[nm] ?? Object.values(sleeper).map(t => t[nm]).find(Boolean);
+            if (pid) (S.starts[pid] ??= []).push(d.replaceAll('-', ''));
+            else if (!S.miss.includes(`${x.athlete?.displayName} (${team} ${d})`)) S.miss.push(`${x.athlete?.displayName} (${team} ${d})`);
+          }
+        }
+      }));
+      if (!ok) break; // a game summary failed: redo this date next time
+      left -= events.length;
+      S.dates.push(d);
+      S.through = d;
+    }
+    for (const list of Object.values(S.starts)) { const u = [...new Set(list)].sort(); list.length = 0; list.push(...u); }
+    S.miss = S.miss.slice(-200);
+    const need = dates.filter(d => !S.dates.includes(d));
+    S.full = need.length === 0;
+    log(`NBA starts ${season}: ${S.dates.length} of ${dates.length} days${S.full ? ' (complete)' : ''}, ${S.miss.length} unmatched`);
+  }
+  out.at = new Date().toISOString();
+  return out;
+}
+let STARTS;
+export async function loadNbaStarts() {
+  if (STARTS !== undefined) return STARTS;
+  try {
+    const res = await fetch(`data/nba-starts.json?t=${Date.now()}`, { cache: 'no-store' });
+    STARTS = res.ok ? await res.json() : null;
+  } catch { STARTS = null; }
+  if (STARTS && STARTS.version !== STARTS_VERSION) STARTS = null;
+  return STARTS;
+}
+// Start dates (YYYYMMDD set) for a player in a season, or null when that season isn't complete yet.
+export function startDates(starts, season, pid) {
+  const S = starts?.seasons?.[season];
+  return S?.full ? new Set(S.starts?.[pid] ?? []) : null;
+}
+
+// League Games Started (owner, Oct 28 2026): data/lgs.json written by scripts/lgs.mjs while games are played
+// (it pushes straight to the repo without redeploying the site, so the page reads GitHub's raw copy first = minutes
+// old, then the site's copy). lgsCounts -> { pid: { n (LGS), seen (games watched while on a roster, taxi/IR left
+// out), u (unsure) } } for a season ('career' = every season) and an owner (null = any team).
+const LGS_RAW = 'https://raw.githubusercontent.com/debugburkhart/seis-dynasty-hoops/main/data/lgs.json';
+let LGS;
+export async function loadLgs() {
+  if (LGS !== undefined) return LGS;
+  for (const url of [LGS_RAW, 'data/lgs.json']) {
+    try {
+      const res = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' });
+      if (res.ok) { LGS = await res.json(); break; }
+    } catch { /* next */ }
+  }
+  if (!LGS || LGS.version !== 1) LGS = null;
+  return LGS;
+}
+export function lgsCounts(lgs, season, owner = null) {
+  const out = {};
+  for (const [s, S] of Object.entries(lgs?.seasons ?? {})) {
+    if (season !== 'career' && s !== season) continue;
+    for (const [pid, games] of Object.entries(S.p ?? {})) {
+      for (const [v, o, flags = ''] of Object.values(games)) {
+        if (owner && o !== owner) continue;
+        if (flags.includes('r') && v !== 1) continue; // on taxi / IR: couldn't start
+        const c = (out[pid] ??= { n: 0, seen: 0, u: 0 });
+        if (v === 'u') c.u++; else { c.seen++; if (v === 1) c.n++; }
+      }
+    }
+  }
+  return out;
+}
+
 export async function loadTradeTalk() {
   if (TALK !== undefined) return TALK;
   try {
@@ -629,13 +754,14 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
   const cur = DATA.seasons.at(-1);
   const career = statSeason === 'career';
   const seasons = career ? DATA.seasons.map(s => s.season) : [statSeason];
-  const [league, rosters, all, tables, scorings] = await Promise.all([
+  const [league, rosters, all, tables, scorings, starts] = await Promise.all([
     get(`/v1/league/${cur.leagueId}`, {}),
     get(`/v1/league/${cur.leagueId}/rosters`, []),
     get('/v1/players/nba', {}),
     // Team career works from game logs, so it needs only this season's table (for the ring).
     Promise.all((career && list === 'team' ? [cur.season] : seasons).map(seasonTable)),
     Promise.all(seasons.map(s => scoringFor(DATA, s))),
+    loadNbaStarts(),
   ]);
   const [research, ranks] = await Promise.all([
     rosterShares(cur.season, league.settings?.type ?? 2),
@@ -691,6 +817,11 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
     }));
   } else {
     for (const pid of ids) totals[pid] = sumLines(seasons.map((s, i) => lineFromTable(tables[career ? i : 0].players[pid], tables[career ? i : 0].keys, scoringOf[s])));
+    // NBA games started (ESPN, collected nightly): only when every season shown is complete, else null ("—").
+    for (const pid of ids) {
+      const sets = seasons.map(s => startDates(starts, s, pid));
+      totals[pid].gs = sets.every(Boolean) ? sets.reduce((a, x) => a + x.size, 0) : null;
+    }
   }
 
   const players = ids.map(pid => {
@@ -733,13 +864,18 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
 // One player's games in a season, newest first: [{ date, week, opp, away, dnp, line }].
 // DNP rows (Sleeper lists them with empty stats) are kept and marked.
 export async function gameLog(DATA, pid, season) {
-  const [weeks, scoring] = await Promise.all([
+  const [weeks, scoring, starts] = await Promise.all([
     get(`/stats/nba/player/${pid}?season_type=regular&season=${season}&grouping=week`, {}),
     scoringFor(DATA, season),
+    loadNbaStarts(),
   ]);
+  const started = startDates(starts, season, pid); // null = this season's starts aren't collected yet
+  const through = starts?.seasons?.[season]?.through ?? '';
   return Object.values(weeks ?? {}).flat()
     .filter(g => g?.date && !exhibitionRow(g)) // no All-Star Game
-    .map(g => ({ date: g.date, week: g.week, opp: g.opponent ?? '', away: !!g.is_away_team, team: g.team ?? '', dnp: !played(g.stats), line: statLine(g.stats ?? {}, scoring) }))
+    .map(g => ({ date: g.date, week: g.week, opp: g.opponent ?? '', away: !!g.is_away_team, team: g.team ?? '', dnp: !played(g.stats), line: statLine(g.stats ?? {}, scoring),
+      // 1 / 0 = started or not; undefined = today's game (read tonight); null = season not collected yet
+      gs: !started ? null : g.date <= through ? (started.has(g.date.replaceAll('-', '')) ? 1 : 0) : undefined }))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
