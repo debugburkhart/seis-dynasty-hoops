@@ -3523,3 +3523,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 #bk-tagbar .bk-bar { flex-wrap: wrap; }
 /* NBA games started in the 2K Game log (owner, Oct 28 2026): a gold check on games he started. */
 .bk-table td.bk-gs { color: var(--gold); font-weight: 800; text-align: center; }
+/* Delete a custom tag everywhere (deleteTag in app.js): in the card's recolor mode and under the filter row. */
+.bk-tagdel { padding: 3px 10px; border: 1px solid rgba(255,130,130,.6); border-radius: 99px; background: none; color: #ffb3b3; font: 700 11px/1.3 var(--font); cursor: pointer; }
+.bk-tagdel:hover { background: rgba(255,130,130,.12); }
+#bk-tagbar .bk-tagdel { margin-top: 6px; }

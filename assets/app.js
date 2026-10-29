@@ -2606,6 +2606,17 @@ const BK_PRANK = ['prk', 'Pos Rk', p => (p.rankPos ? -p.rankPos : -1e6), p => (p
 const TAG_COLORS = ['Gold', 'Blue', 'Green', 'Red', 'Purple', 'Orange', 'Teal', 'Pink', 'Silver', 'Lime'];
 const tagColors = () => gmLoad('gm-tag-colors', {});
 const tagHue = tag => tagColors()[tag] ?? [...bkFold(tag)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 6;
+// Delete a tag everywhere (owner, Oct 28 2026): off every player, its color and its place in the order. Asks first.
+function deleteTag(tag) {
+  const n = Object.values(bkTags()).filter(l => l.includes(tag)).length;
+  if (!confirm(`Delete the tag "${tag}" from ${n === 1 ? 'the 1 player who has it' : `all ${n} players who have it`}?`)) return false;
+  gmSave('gm-tags', Object.fromEntries(Object.entries(bkTags()).map(([pid, l]) => [pid, l.filter(t => t !== tag)]).filter(([, l]) => l.length)));
+  const c = { ...tagColors() }; delete c[tag]; gmSave('gm-tag-colors', c);
+  gmSave('gm-tag-order', gmLoad('gm-tag-order', []).filter(t => t !== tag));
+  if (BK.tag === tag) BK.tag = null;
+  if (BK.recolor === tag) BK.recolor = null;
+  return true;
+}
 function setTagColor(tag, i) {
   const c = { ...tagColors() };
   if (i == null) delete c[tag]; else c[tag] = i;
@@ -2970,7 +2981,7 @@ async function renderBreakdown(body, params) {
         <div class="bk-tagcolors" role="radiogroup" aria-label="${BK.recolor ? `Color for ${esc(BK.recolor)}` : 'Color for the new tag'}">
           <span class="bk-tagcolor-label">${BK.recolor ? `Color for <b>${esc(BK.recolor)}</b> (every player)` : 'Color'}</span>
           ${TAG_COLORS.map((label, i) => `<button type="button" class="bk-colordot th-${i}${pickFor === i ? ' on' : ''}" data-color="${i}" role="radio" aria-checked="${pickFor === i}" title="${label}" aria-label="${label}"></button>`).join('')}
-          ${BK.recolor ? `<button type="button" class="bk-colordone" data-recolor="">Done</button>` : `<small class="bk-taghint">${BK.newColor == null ? 'Automatic until you pick one' : TAG_COLORS[BK.newColor]}${mine.length ? ' · tap a tag above to recolor it' : ''}</small>`}
+          ${BK.recolor ? `<button type="button" class="bk-colordone" data-recolor="">Done</button><button type="button" class="bk-tagdel" data-deltag="${esc(BK.recolor)}">Delete tag</button>` : `<small class="bk-taghint">${BK.newColor == null ? 'Automatic until you pick one' : TAG_COLORS[BK.newColor]}${mine.length ? ' · tap a tag above to recolor or delete it' : ''}</small>`}
         </div>
         ${sugg.length ? `<div class="bk-tagsugg">${sugg.map(t => `<button type="button" class="bk-tag th-${tagHue(t)}" data-addtag="${esc(t)}">+ ${esc(t)}</button>`).join('')}</div>` : ''}` : ''}`;
   };
@@ -3006,6 +3017,7 @@ async function renderBreakdown(body, params) {
     ];
     return `<div class="bk-bar bk-bar2${chips.length ? '' : ' bk-tagbar-off'}"><span class="bk-bar-label">Tags</span><span class="bk-tagsws">${sw('auto', 'Auto')}${sw('mine', 'Mine')}</span>
       ${chips.length ? `<div class="bk-views bk-tagfilter" role="tablist"><button type="button" data-tagf="" class="${BK.tag ? '' : 'on'}">All</button>${chips.join('')}</div>` : ''}
+      ${BK.tag && allTags().includes(BK.tag) ? `<button type="button" class="bk-tagdel" data-deltag="${esc(BK.tag)}">Delete the tag "${esc(BK.tag)}"</button>` : ''}
       ${chips.length > 1 ? '<small class="bk-draghint">Drag tags to reorder (on a phone: press and hold, then drag)</small>' : ''}</div>`;
   };
   const addTag = (p, raw) => {
@@ -3103,15 +3115,26 @@ async function renderBreakdown(body, params) {
     const pw = (DATA.playerWeeks ?? []).filter(x => x.pid === p.pid);
     const lockOf = keep => { const l = pw.filter(keep); return { pts: l.reduce((a, x) => a + x.p, 0), starts: l.length, mine: l.filter(x => x.o === me).reduce((a, x) => a + x.p, 0) }; };
     const mineCol = list === 'team' && mode === 'nba';
+    // League Games Started for a row (data/lgs.json; tracked from the 2026-27 season on): count of his games kept by
+    // keep(season, date, owner). A season that wasn't tracked gives null ("—"); tracked with no starts gives 0.
+    const lgsIn = (keep, onlySeason = null) => {
+      const seasonsT = Object.keys(lgsData?.seasons ?? {});
+      if (onlySeason ? !seasonsT.includes(onlySeason) : !seasonsT.length) return null;
+      let n = 0;
+      for (const s of seasonsT) for (const [key, [v, o]] of Object.entries(lgsData.seasons[s].p?.[p.pid] ?? {})) {
+        if (v === 1 && keep(s, key.slice(0, 10), o)) n++;
+      }
+      return n;
+    };
     // Rows: { s, label, team (html), tot, rank, lk, cls }.
     let rows = [];
     let career;
     if (mode === 'nba') {
       rows = order.map((s, i) => {
         const tot = totalOf(games[i]);
-        return tot.gp ? { s, label: bkSeason(s), team: esc(games[i].find(g => !g.dnp)?.team ?? ''), tot, rank: rankOf[s], lk: lockOf(x => x.s === s) } : null;
+        return tot.gp ? { s, label: bkSeason(s), team: esc(games[i].find(g => !g.dnp)?.team ?? ''), tot, rank: rankOf[s], lk: lockOf(x => x.s === s), lgs: lgsIn(ss => ss === s, s) } : null;
       }).filter(Boolean);
-      career = { label: 'Career', team: `${rows.length} season${rows.length === 1 ? '' : 's'}`, tot: totalOf(games.flat()), lk: lockOf(() => true) };
+      career = { label: 'Career', team: `${rows.length} season${rows.length === 1 ? '' : 's'}`, tot: totalOf(games.flat()), lk: lockOf(() => true), lgs: lgsIn(() => true) };
     } else {
       BK_STINTS ??= frontOffice(DATA).stints;
       const stints = BK_STINTS.filter(st => st.pid === p.pid);
@@ -3138,10 +3161,11 @@ async function renderBreakdown(body, params) {
             s, label: bkSeason(s), when: `${shortMd(seg.from.date)}–${shortMd(seg.to.date)}`,
             team: seg.o ? `${esc(teamName(seg.o, s))} <small>${esc(name(seg.o))}</small>` : '<small>Not on a roster</small>',
             tot: totalOf(seg.games), cls: seg.o ? '' : 'bk-yr-fa', lk: seg.lk,
+            lgs: seg.o ? lgsIn((ss, d, o) => ss === s && o === seg.o && d >= seg.from.date && d <= seg.to.date, s) : null,
           });
         }
       });
-      career = { label: 'Career', team: 'On league teams', tot: totalOf(onTeam), lk: lockOf(() => true) };
+      career = { label: 'Career', team: 'On league teams', tot: totalOf(onTeam), lk: lockOf(() => true), lgs: lgsIn(() => true) };
     }
     const lkCells = r => (r.lk ? `<td><b>${r.lk.pts ? num(r.lk.pts) : '—'}</b></td><td>${r.lk.starts}</td>` : '<td>—</td><td>—</td>');
     // Columns per view: [header, cell(row, averages), title?].
@@ -3156,10 +3180,10 @@ async function renderBreakdown(body, params) {
     }[view];
     const ranks = mode === 'nba' && view !== 'shoot';
     const locks = view !== 'shoot';
-    const head = `<tr><th class="bk-nm">Season</th><th>${mode === 'nba' ? 'NBA team' : 'Fantasy team'}</th>${COLS.map(([h, , c]) => `<th${c ? ` class="${c}"` : ''}>${h}</th>`).join('')}${ranks ? '<th title="Rank among all NBA players by total fantasy points that season, our league scoring">OVR</th><th>Pos Rk</th>' : ''}${locks ? `<th title="${mode === 'nba' ? 'Locked points for any team' : 'Locked points for this team in these weeks'}">Locked</th><th>Starts</th>` : ''}${mineCol && locks ? `<th title="Locked points for ${esc(teamName(me, cur.season))}">For team</th>` : ''}</tr>`;
+    const head = `<tr><th class="bk-nm">Season</th><th>${mode === 'nba' ? 'NBA team' : 'Fantasy team'}</th>${COLS.map(([h, , c]) => `<th${c ? ` class="${c}"` : ''}>${h}</th>`).join('')}${ranks ? '<th title="Rank among all NBA players by total fantasy points that season, our league scoring">OVR</th><th>Pos Rk</th>' : ''}${locks ? `<th title="${mode === 'nba' ? 'Locked points for any team' : 'Locked points for this team in these weeks'}">Locked</th><th>Starts</th><th title="League Games Started: games where ${mode === 'nba' ? 'a fantasy team' : 'this team'} had him in a starting slot when his NBA game tipped off. Tracked since the 2026-27 season (earlier seasons: —)">LGS</th>` : ''}${mineCol && locks ? `<th title="Locked points for ${esc(teamName(me, cur.season))}">For team</th>` : ''}</tr>`;
     const line = (r, career) => {
       const a = averages(r.tot);
-      return `<tr class="${[!career && r.s === season ? 'on' : '', r.cls ?? '', career ? 'bk-yr-career' : ''].join(' ').trim()}"><td class="bk-nm">${esc(r.label)}${r.when ? `<small class="bk-yr-when">${esc(r.when)}</small>` : ''}</td><td class="bk-yr-team">${r.team}</td>${COLS.map(([, f, c]) => `<td${c ? ` class="${c}"` : ''}>${r.tot.gp ? f(r, a) : '—'}</td>`).join('')}${ranks ? (career ? '<td>—</td><td>—</td>' : `<td>${r.rank?.ovr ?? '—'}</td><td>${r.rank?.pos ? `${r.rank.pos} ${esc(p.mainPos)}` : '—'}</td>`) : ''}${locks ? lkCells(r) : ''}${mineCol && locks ? `<td>${r.lk?.mine ? num(r.lk.mine) : '—'}</td>` : ''}</tr>`;
+      return `<tr class="${[!career && r.s === season ? 'on' : '', r.cls ?? '', career ? 'bk-yr-career' : ''].join(' ').trim()}"><td class="bk-nm">${esc(r.label)}${r.when ? `<small class="bk-yr-when">${esc(r.when)}</small>` : ''}</td><td class="bk-yr-team">${r.team}</td>${COLS.map(([, f, c]) => `<td${c ? ` class="${c}"` : ''}>${r.tot.gp ? f(r, a) : '—'}</td>`).join('')}${ranks ? (career ? '<td>—</td><td>—</td>' : `<td>${r.rank?.ovr ?? '—'}</td><td>${r.rank?.pos ? `${r.rank.pos} ${esc(p.mainPos)}` : '—'}</td>`) : ''}${locks ? `${lkCells(r)}<td>${r.lgs ?? '—'}</td>` : ''}${mineCol && locks ? `<td>${r.lk?.mine ? num(r.lk.mine) : '—'}</td>` : ''}</tr>`;
     };
     const tabs = (items, cur, attr) => `<div class="st-tabs inj-mode bk-yrtabs" role="tablist">${items.map(([id, label]) => `<button type="button" role="tab" data-${attr}="${id}" class="${cur === id ? 'on' : ''}" aria-selected="${cur === id}">${label}</button>`).join('')}</div>`;
     box.innerHTML = `${tabs(YR_MODES, mode, 'yrmode')}${tabs(YR_VIEWS, view, 'yrview')}
@@ -3393,6 +3417,8 @@ async function renderBreakdown(body, params) {
       return;
     }
     const p = byPid[BK.pid];
+    const del = e.target.closest('[data-deltag]');
+    if (del) { if (deleteTag(del.dataset.deltag)) draw(); return; }
     const un = e.target.closest('[data-untag]');
     const add = e.target.closest('[data-addtag]');
     const color = e.target.closest('[data-color]');
@@ -3462,6 +3488,8 @@ async function renderBreakdown(body, params) {
       draw();
       return;
     }
+    const del = e.target.closest('[data-deltag]');
+    if (del) { if (deleteTag(del.dataset.deltag)) { BK.limit = BK_PAGE; draw(); } return; }
     const b = e.target.closest('[data-tagf]');
     if (!b) return;
     BK.tag = b.dataset.tagf || null;

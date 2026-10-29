@@ -1079,6 +1079,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   20 min (GITHUB_TOKEN pushes don't trigger update.yml, so the site isn't redeployed: breakdown.js loadLgs reads
   raw.githubusercontent.com first, then data/lgs.json). UI: lgsCounts(lgs, season|'career', owner|null) -> { n, seen
   (taxi/IR left out unless he started), u }; "LGS" column (BK_LGS, Averages after Locked, Totals after Starts) and card
+  Season by season (owner, Oct 28 2026): "LGS" column after Starts (Averages + Totals, not Shooting) via lgsIn() in
+  years(): NBA rows = his v === 1 games that season (any team), League rows = that owner's within the stretch's
+  dates, Career = all; a season not in lgs.json (before 2026-27) shows "—".
   line "League Games Started 3 of 4 games (1 unsure)" (.bk-lgs; label spelled out, owner Oct 28 2026; Team list = that team's only, like Locked). Tested Oct 28 2026 in the
   browser with the script (node imports stubbed) on the live OKC@DAL + LAL@LAC games: 44 rostered players, 13
   starters, 9 bench, 22 taxi/IR; page with sample data. NOT run in Actions yet; first real night Oct 29 2026. TO
@@ -1138,6 +1141,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   "+ Tag" box: color dots under the input (BK.newColor, tap again = automatic; typed text kept in BK.tagDraft while
   picking); his tag chips become buttons: tap one = recolor mode (BK.recolor, "Color for X (every player)" + Done),
   a dot sets that tag's color at once. Typing an existing tag with a color picked also recolors it.
+  DELETE A TAG (owner, Oct 28 2026): deleteTag(tag) in app.js asks (confirm "Delete the tag X from all N players who
+  have it?"), then removes it from every player in gm-tags, its gm-tag-colors entry and its gm-tag-order place, and
+  clears the filter / recolor state. Buttons (.bk-tagdel, red outline): "Delete tag" in the card's recolor mode (open
+  "+ Tag", tap one of his tags) and "Delete the tag X" under the filter row while that custom tag is the filter.
   DRAG TO SORT TAGS (owner, Oct 28 2026, every device): dragSort(box, sel, keyOf, done, same) in app.js = pointer
   events on a container bound once (mouse: press + move 6px; touch: press and hold 350 ms, then a non-passive
   document touchmove blocks scrolling only while a chip is held; setPointerCapture on the box; the click ending a drag
