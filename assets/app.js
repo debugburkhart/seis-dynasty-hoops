@@ -2862,10 +2862,10 @@ async function renderBreakdown(body, params) {
     const keep = season !== cur.season ? { season } : {};
     const to = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...q, ...keep, p: p.pid, ...here })}`;
     const arrows = [
-      NBA_TEAM_CODES.includes(p.team) && !(list === 'nba' && nbaTeam === p.team) ? `<a class="bk-view" href="${to({ list: 'nba', nba: p.team })}">View on NBA team (${esc(p.team)}) →</a>` : '',
-      list !== 'league' ? `<a class="bk-view" href="${to({ list: 'league', ...(p.owner ? {} : { fa: '1' }) })}">View in League →</a>` : ''
+      NBA_TEAM_CODES.includes(p.team) && !(list === 'nba' && nbaTeam === p.team) ? `<a class="bk-gotoa" href="${to({ list: 'nba', nba: p.team })}">View on NBA team (${esc(p.team)}) →</a>` : '',
+      list !== 'league' ? `<a class="bk-gotoa" href="${to({ list: 'league', ...(p.owner ? {} : { fa: '1' }) })}">View in League →</a>` : ''
     ].filter(Boolean);
-    return arrows.length ? `<div class="bk-views">${arrows.join('')}</div>` : '';
+    return arrows.length ? `<div class="bk-goto">${arrows.join('')}</div>` : '';
   };
   if (BK.list !== list) { BK.list = list; BK.q = ''; BK.limit = BK_PAGE; }
   // Came from the Injury Report (?from=inj): a back link on top; kept in every link while browsing here.
@@ -3113,8 +3113,8 @@ async function renderBreakdown(body, params) {
       return (typeof x === 'string' ? x.localeCompare(y) : x - y) * BK.dir || b.avg.fp - a.avg.fp || slotRank(a) - slotRank(b);
     });
   };
-  const table = rows => `<thead><tr><th class="bk-nm">Name</th>${cols().map(([k, label, , , o]) => `<th data-k="${k}" class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}" aria-sort="${k === BK.sort ? (BK.dir < 0 ? 'descending' : 'ascending') : 'none'}">${k === BK.sort ? (BK.dir < 0 ? '▼' : '▲') : ''}${label}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(p => `<tr data-pid="${p.pid}" class="${p.pid === BK.pid ? 'on' : ''}${p.slot === 'IR' || p.slot === 'TX' ? ' bk-res' : ''}" tabindex="0"><td class="bk-nm">${cmpBtn(p.pid)}<span>${esc(p.first ? `${p.first[0]}. ${p.last}` : p.name)}</span>${secMark(p)}${noteOf(p.pid) ? `<i class="bk-hasnote" title="${esc(noteOf(p.pid))}">✎</i>` : ''}${p.injury ? `<i class="bk-dot${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}" title="${esc(p.injury)}"></i>` : ''}</td>${cols().map(([k, , , cell, o]) => `<td class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}">${o?.html ? cell(p) : esc(cell(p))}</td>`).join('')}</tr>`).join('') || `<tr><td class="bk-nm" colspan="${cols().length + 1}">No player by that name.</td></tr>`}</tbody>`;
+  const table = rows => `<thead><tr><th class="bk-nm"><span class="bk-rk">#</span>Name</th>${cols().map(([k, label, , , o]) => `<th data-k="${k}" class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}" aria-sort="${k === BK.sort ? (BK.dir < 0 ? 'descending' : 'ascending') : 'none'}">${k === BK.sort ? (BK.dir < 0 ? '▼' : '▲') : ''}${label}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((p, i) => `<tr data-pid="${p.pid}" class="${p.pid === BK.pid ? 'on' : ''}${p.slot === 'IR' || p.slot === 'TX' ? ' bk-res' : ''}" tabindex="0"><td class="bk-nm"><span class="bk-rk">${i + 1}</span>${cmpBtn(p.pid)}<span>${esc(p.first ? `${p.first[0]}. ${p.last}` : p.name)}</span>${secMark(p)}${noteOf(p.pid) ? `<i class="bk-hasnote" title="${esc(noteOf(p.pid))}">✎</i>` : ''}${p.injury ? `<i class="bk-dot${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}" title="${esc(p.injury)}"></i>` : ''}</td>${cols().map(([k, , , cell, o]) => `<td class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}">${o?.html ? cell(p) : esc(cell(p))}</td>`).join('')}</tr>`).join('') || `<tr><td class="bk-nm" colspan="${cols().length + 1}">No player by that name.</td></tr>`}</tbody>`;
 
   // Season by season (owner, Oct 26 2026): "NBA" = one row per NBA season (as before); "League" = one row per
   // stretch on a fantasy team in that season (games in weeks a team had him, Front Office stints, same rule as

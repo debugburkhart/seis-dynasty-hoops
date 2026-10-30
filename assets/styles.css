@@ -2943,6 +2943,8 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-table th { padding: 7px 8px; font: 800 10.5px/1.2 var(--display); letter-spacing: .05em; text-transform: uppercase; text-align: center; white-space: nowrap; color: var(--muted); border-bottom: 1px solid var(--line); }
 .bk-table td { padding: 7px 8px; text-align: center; white-space: nowrap; border-bottom: 1px solid #f0ece2; }
 .bk-table .bk-nm { position: sticky; left: 0; z-index: 1; text-align: left; font-weight: 700; background: var(--paper); }
+/* Rank in the current sort, inside the locked name cell (owner, Oct 30 2026). */
+.bk-table .bk-rk { display: inline-block; min-width: 2.1em; margin-right: 4px; text-align: right; font: 800 11px/1 var(--display); color: var(--gold-ink); opacity: .85; }
 .bk-table .srt { background: #fbf0d3; color: var(--gold-ink); font-weight: 800; }
 .bk-table tr.on td { background: #fbf6e6; }
 .bk-table tr.on td.srt { background: #f6e3ae; }
@@ -2952,6 +2954,8 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk .bk-table th.bk-nm { cursor: default; }
 .bk .bk-table td { color: #e8edf6; border-bottom-color: rgba(255,255,255,.06); }
 .bk .bk-table .bk-nm { background: var(--navy-950); }
+.bk .bk-table .bk-rk { color: #e8b84a; }
+.bk .bk-table tr.on .bk-rk { color: var(--navy-950); }
 .bk .bk-table th.srt { background: var(--gold); color: var(--navy-950); }
 .bk .bk-table td.srt { background: rgba(244,194,79,.16); color: var(--gold); }
 .bk .bk-table tbody tr { cursor: pointer; }
@@ -3260,9 +3264,9 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 99px; background: var(--navy-900); color: #fff; font: 800 12.5px/1.2 var(--font); text-decoration: none; }
 .bk-back:hover { background: var(--navy-700); }
 /* Card arrows: View on NBA team / View in League (dark 2K card, gold outline). */
-.bk-views { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
-.bk-view { display: inline-flex; align-items: center; padding: 5px 11px; border-radius: 99px; border: 1px solid rgba(232, 184, 74, .55); color: #e8b84a; font: 800 11.5px/1.2 var(--font); text-decoration: none; }
-.bk-view:hover { background: rgba(232, 184, 74, .14); }
+.bk-goto { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+.bk-gotoa { display: inline-flex; align-items: center; padding: 5px 11px; border-radius: 99px; border: 1px solid rgba(232, 184, 74, .55); color: #e8b84a; font: 800 11.5px/1.2 var(--font); text-decoration: none; }
+.bk-gotoa:hover { background: rgba(232, 184, 74, .14); }
 /* Free agents' past Sleeper nicknames: each followed by the manager who gave it. */
 .bk-nick-past { font-size: 12px; line-height: 1.45; }
 .bk-nick-past span { font-style: normal; font-weight: 600; font-size: 11px; color: #9fb0cc; }

@@ -1198,11 +1198,15 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Co-Star / Lead Scorer, < 35 Primary Creator / Superstar, else Ultra-High Usage (rounded to 0.1 first).
   BACK LINKS + VIEW ARROWS (owner, Oct 30 2026): generic ?back=<hash>&backl=<name> on the 2K page = a "← Back to
   {backl}" pill (.bk-back; replaces the from=inj one when present), kept in link() while browsing. Card arrows under
-  the NBA team line (viewArrows, .bk-views/.bk-view): "View on NBA team (ORL) →" (list=nba, hidden on that team's list
+  the NBA team line (viewArrows, .bk-goto/.bk-gotoa): "View on NBA team (ORL) →" (list=nba, hidden on that team's list
   or with no NBA team) and "View in League →" (list=league, hidden on League; a free agent adds ?fa=1 = include the
   waiver wire for that visit; unticking the checkbox drops fa from the hash); both carry back = this list + player and
   backl = "Team / Waiver Wire / League / NBA team view" (VIEW_NAME), so chains work (Depth Chart -> Team -> League ->
   back -> back). Tested Oct 30 2026 at 402 px.
+  RANK COLUMN (owner, Oct 30 2026: "rankings locked to the left of player names on all views"): every 2K list table
+  (Team / Waiver wire / League / NBA team, Averages / Totals / Shooting) starts each name cell with .bk-rk = place in
+  the current sort + filters (1..N over all rows, not just the 50 shown); it sits in the sticky .bk-nm cell, so it
+  stays put when the stats scroll sideways. Header "# Name". Season by season / Game log have no rank.
   CARD TOP (owner, Oct 26 2026): .bk-top = .bk-id (headshot, FP/G ring right under it) beside .bk-head (#number +
   positions, first/LAST name, HT/WT/AGE, league rank, Sleeper %); the rest (.bk-info) below. One column up to
   1199px; from 1200px the top sits left (max 440px) and .bk-info right. Long last names shrink (h3.bk-l1 10-12
