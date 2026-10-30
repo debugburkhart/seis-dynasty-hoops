@@ -1016,7 +1016,33 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   views; chart.lines = the shown order per position, so it follows drags, ⋮ moves and Hide taxi): rows PG..C (sticky
   navy labels), columns 1st, 2nd, ... ; chip .dc-chip = "D. Murray" + FP/G + "L {locked points}" + injury line; gold =
   1st, taxi muted, Out/IR red; tap = scroll to that player's row in that column + gold flash (.flash). The table
-  scrolls sideways inside .dc-glance-wrap (page never does); checked 320 / 402 / 1440. NBA: ESPN's OFFICIAL depth chart, live, read-only: espnDepthChart(code,
+  scrolls sideways inside .dc-glance-wrap (page never does); checked 320 / 402 / 1440. DESIGNATIONS (owner, Oct 29
+  2026; fantasy view only): DESIG = Starting 9 (blue, max DESIG_MAX 9: its button is disabled at 9/9), Rotation
+  (yellow), Development (purple), Stream (green), Hold (orange .dg-hold, owner added Oct 29 2026; placed before IR so
+  IR stays last), IR (red, owner added) in that order (desktop from 1400px: 2 rows of 3 groups); per team gm-dc-desig-{owner} =
+  { at, d: { pid: key }, order: { key: [pid] } } (gmSave, synced via 'gm-dc-'); set in a player's ⋮ menu (chart rows
+  and the list below; tap the current one again = clear; setDesig). Tints (.dg-* classes set --dg-bg / --dg-c) on chart
+  rows (+ a label chip .dc-dg by the name) and at-a-glance chips. "Designations" card (#dc-desig, drawDesig) UNDER
+  everything: one group per designation (.dc-dgroup, phones stacked in DESIG order, 5 columns from 1400px with the
+  compact row layout), each in its own saved order (players not ordered yet follow in chart order); its own dragSort
+  (same() = same group, so drags never leave a group) saves only order[key] and never touches the chart; "Not
+  designated" fold (DC.undes keeps it open) with ⋮ on each. Tested Oct 29 2026: 9 starters + 10th refused, groups,
+  tints 16 rows + 16 chips, group drag + cross-group drag refused, chart order + saved chart unchanged, survives a
+  reload; 320 / 402 / 1440. ROSTER LIMIT (owner, Oct 29 2026): ROSTER_LIMIT 23 (= Sleeper's 9 starting spots + 14
+  bench; Sleeper also has 5 IR + 15 taxi slots outside it); limitLine() at the top of the fantasy chart card counts
+  starters + bench + IR (owner chose to COUNT IR: they come back onto the roster), taxi not counted: "28 / 23 · 5 over
+  the limit" (red .dc-limit.over), "At the limit", or "N spots open" (green), with the starters / bench / IR / taxi
+  split. Checked Oct 29 2026: all 8 teams = Sleeper non-taxi counts (28, 27, 26, 22, 23, 25, 26, 25). CUT TAG + CUT
+  LIST (owner, Oct 29 2026): a red "✂ Cut" tag ON TOP of any designation tint, toggled by the "✂ Cut" button in every
+  ⋮ menu (desigBtns; toggleCut); stored as gm-dc-desig-{owner}.cut = [pid] in Cut List order (setDesig keeps it via
+  ...D). Shown as .dc-cut chips by names (chart rows, designation rows) and a red outline + ✂ on at-a-glance chips.
+  "✂ Cut List" card (#dc-cut, drawCut, under Designations): rows tinted by designation + its label, own dragSort (saves
+  D.cut only; never touches the chart or groups), one-tap sorts lowest first by FP/G / Dynasty / Locked (CUT_SORTS,
+  rewrites the order). Roster limit box adds "After your Cut List (N, M on taxi): X / 23 · still K over" (taxi cuts
+  don't count). drow(p, i, k, g): k = tint, g = list ('cut' / designation / ''), menus keyed "g:pid" (DC.dmenu).
+  LOCKED WEEKS (owner, Oct 29 2026): every locked-points number on the Depth Chart is followed by the weeks locked
+  in parentheses ("Locked 39 (1)", "Locked 40 (2) · 76.5 (3) all teams", glance "L 39 (1)", designation / Cut List
+  rows); no locked points = unchanged ("Locked 0"). Checked: every Parma row = playerWeeks count. NBA: ESPN's OFFICIAL depth chart, live, read-only: espnDepthChart(code,
   all) in breakdown.js = ESPN team roster site.api.espn.com/.../nba/teams/{ESPN_TEAM_ID}/roster (names, ids, season
   year; CORS open) + core API sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/{year}/teams/{id}/
   depthcharts (ranks by ESPN id; CORS open; site.api's own /depthcharts has names but NO CORS); ids missing from the

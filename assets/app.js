@@ -3980,8 +3980,19 @@ async function renderInjuries(body, params, me) {
 // { at, cols: { PG: [pid] } } (gmSave, synced via 'gm-dc-'); players who joined since go to the bottom of their auto
 // column ("New"), players who left drop out. NBA teams: ESPN's official depth chart (espnDepthChart), live, read-only.
 const DC_WORD = { PG: 'Point guard', SG: 'Shooting guard', SF: 'Small forward', PF: 'Power forward', C: 'Center' };
-const DC = { menu: null, cols: null };
+const DC = { menu: null, dmenu: null, undes: false, cols: null };
 const hideTaxi = () => gmLoad('gm-dc-hidetaxi', false);
+// Designations (owner, Oct 29 2026): the manager's own label per player and team: Starting 9 (blue, at most 9),
+// Rotation (yellow), Development (purple), Stream (green), Hold (orange, added Oct 29 2026), IR (red), in this order
+// (phones list them top to bottom; IR stays last).
+// gm-dc-desig-{owner} = { at, d: { pid: key }, order: { key: [pid] } } (gmSave, synced via 'gm-dc-'). Tints the chart
+// rows and the at-a-glance chips; the Designations card under the chart lists each group, and dragging there only
+// changes the order inside that group (order[key]), never the depth chart above.
+const DESIG = [['start', 'Starting 9'], ['rot', 'Rotation'], ['dev', 'Development'], ['stream', 'Stream'], ['hold', 'Hold'], ['ir', 'IR']];
+const DESIG_MAX = 9; // Starting 9
+// Legal roster limit (owner, Oct 29 2026): 23 = Sleeper's 9 starting spots + 14 bench. Counted here = starters + bench
+// + IR (owner chose to count IR: those players come back onto the roster), taxi left out.
+const ROSTER_LIMIT = 23;
 const dcHome = p => (DEPTH_POS.includes(p.mainPos) ? p.mainPos : p.pos.find(x => DEPTH_POS.includes(x)) ?? 'SF');
 function dcAuto(players, dynOf) {
   const band = p => (p.slot === 'TX' ? 4 : p.slot === 'IR' || injBad(p.injury) ? 3 : p.order >= 0 ? 0 : p.tot.gp ? 1 : 2);
@@ -4038,6 +4049,38 @@ async function renderDepth(body, params) {
   // plus this team's share on a fantasy chart when he also scored for another team.
   const lockAll = lockedTotals(DATA, { season: cur.season });
   const lockHere = fantasyView ? lockedTotals(DATA, { season: cur.season, owner: me }) : null;
+  const dkey = `gm-dc-desig-${me}`;
+  // cut = the Cut List (owner, Oct 29 2026): ordered [pid], a red "Cut" tag on top of any designation tint.
+  const desig = () => { const D = gmLoad(dkey, null); return { d: {}, order: {}, cut: [], ...D }; };
+  const cutIds = () => desig().cut.filter(pid => byId[pid]);
+  const isCut = pid => fantasyView && desig().cut.includes(pid);
+  const cutTag = pid => (isCut(pid) ? '<i class="dc-cut" title="On your Cut List">✂ Cut</i>' : '');
+  const toggleCut = pid => {
+    const D = desig();
+    gmSave(dkey, { ...D, at: Date.now(), cut: D.cut.includes(pid) ? D.cut.filter(x => x !== pid) : [...D.cut, pid] });
+  };
+  const desigOf = pid => (fantasyView ? desig().d[pid] ?? null : null);
+  const dgCls = pid => { const k = desigOf(pid); return k ? ` dg-${k}` : ''; };
+  const dgLabel = k => DESIG.find(([x]) => x === k)?.[1] ?? '';
+  const startCount = () => Object.entries(desig().d).filter(([pid, k]) => k === 'start' && byId[pid]).length;
+  // The designation buttons (in a player's ⋮ menu, above and below). Tap the current one again = no designation.
+  const desigBtns = pid => {
+    const curK = desigOf(pid);
+    const n = startCount();
+    return `<span class="dc-dgset"><span>Designation</span>${DESIG.map(([k, label]) => {
+      const full = k === 'start' && curK !== 'start' && n >= DESIG_MAX;
+      return `<button type="button" class="dg-btn dg-${k}${curK === k ? ' on' : ''}" data-desig="${k}" data-pid="${pid}" aria-pressed="${curK === k}"${full ? ` disabled title="Starting 9 is full (${DESIG_MAX} of ${DESIG_MAX}): take someone out first"` : ''}>${label}${k === 'start' ? ` <small>${n}/${DESIG_MAX}</small>` : ''}</button>`;
+    }).join('')}<button type="button" class="dc-cutbtn${isCut(pid) ? ' on' : ''}" data-cut="${pid}" aria-pressed="${isCut(pid)}">✂ ${isCut(pid) ? 'On Cut List' : 'Cut'}</button></span>`;
+  };
+  const setDesig = (pid, k) => {
+    const D = desig();
+    const d = { ...D.d };
+    if (d[pid] === k) delete d[pid];
+    else if (k === 'start' && startCount() >= DESIG_MAX) return;
+    else d[pid] = k;
+    const order = Object.fromEntries(Object.entries(D.order ?? {}).map(([g, list]) => [g, list.filter(x => x !== pid || d[pid] === g)]));
+    gmSave(dkey, { ...D, at: Date.now(), d, order });
+  };
   const key = `gm-dc-chart-${me}`;
   const auto = dcAuto(players, dynOf);
   const cardLink = p => `#/commish?${new URLSearchParams(fantasyView ? { tab: 'breakdown', team: me, p: p.pid } : { tab: 'breakdown', list: 'nba', nba, p: p.pid })}`;
@@ -4059,21 +4102,22 @@ async function renderDepth(body, params) {
     const lh = lockHere?.[p.pid];
     const st = n => `${n} start${n === 1 ? '' : 's'}`;
     const lockText = !la ? '<span class="dc-lock none" title="Locked points this season: none yet">Locked 0</span>'
-      : lh && lh.pts !== la.pts ? `<span class="dc-lock" title="Locked points this season: ${num(lh.pts)} for this team (${st(lh.starts)}), ${num(la.pts)} for all teams (${st(la.starts)})">Locked <b>${num(lh.pts)}</b> · ${num(la.pts)} all teams</span>`
-      : `<span class="dc-lock" title="Locked points this season${lockHere && !lh ? ', all for other teams' : ''} (${st(la.starts)})">Locked <b>${num(la.pts)}</b>${lockHere && !lh ? ' (other teams)' : ''} · ${la.starts} st</span>`;
+      : lh && lh.pts !== la.pts ? `<span class="dc-lock" title="Locked points this season: ${num(lh.pts)} for this team (${st(lh.starts)}), ${num(la.pts)} for all teams (${st(la.starts)})">Locked <b>${num(lh.pts)}</b> (${lh.starts}) · ${num(la.pts)} (${la.starts}) all teams</span>`
+      : `<span class="dc-lock" title="Locked points this season${lockHere && !lh ? ', all for other teams' : ''} (${st(la.starts)})">Locked <b>${num(la.pts)}</b> (${la.starts})${lockHere && !lh ? ' other teams' : ''}</span>`;
     const open = fantasyView && DC.menu === p.pid;
-    return `<div class="dc-row${p.slot === 'TX' ? ' tx' : ''}${injury && (injBad(injury) || e?.ofs) ? ' hurt' : ''}${open ? ' open' : ''}" data-dc="${p.pid}">
+    const dk = desigOf(p.pid);
+    return `<div class="dc-row${p.slot === 'TX' ? ' tx' : ''}${injury && (injBad(injury) || e?.ofs) ? ' hurt' : ''}${open ? ' open' : ''}${dgCls(p.pid)}" data-dc="${p.pid}">
       <span class="dc-rank${i === 0 ? ' first' : ''}">${pos}${i + 1}</span>
       <img class="dc-photo" src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy" draggable="false" onerror="this.style.visibility='hidden'">
       <span class="dc-main">
-        <span class="dc-name"><a href="${cardLink(p)}" draggable="false">${esc(p.name)}</a>${o.fresh ? '<i class="dc-new">New</i>' : ''}${o.from ? `<i class="dc-from" title="Borrowed from ${o.from}: he can also play ${pos}">from ${o.from}</i>` : ''}</span>
+        <span class="dc-name"><a href="${cardLink(p)}" draggable="false">${esc(p.name)}</a>${o.fresh ? '<i class="dc-new">New</i>' : ''}${o.from ? `<i class="dc-from" title="Borrowed from ${o.from}: he can also play ${pos}">from ${o.from}</i>` : ''}${dk ? `<i class="dc-dg dg-${dk}">${dgLabel(dk)}</i>` : ''}${cutTag(p.pid)}</span>
         <small>${esc(where)} · ${role}</small>
         <small class="dc-stats">${stats} · ${lockText} · ${lgsText}${d != null ? ` · Dyn <b>${d}</b> ${tierTag(d)}` : ''}</small>
         ${injury || e ? `<span class="dc-inj">${injury ? `<span class="inj-pill${injBad(injury) || e?.ofs ? ' bad' : ''}">${esc(injury)}</span>` : ''}${estChip(e, 'inj-est')}</span>` : ''}
       </span>
       ${fantasyView ? `<button type="button" class="dc-menu" data-menu="${p.pid}" aria-label="Move ${esc(p.name)}" aria-expanded="${open}">⋮</button>` : ''}
       ${open ? `<span class="dc-move"><button type="button" data-mv="up">↑ Up</button><button type="button" data-mv="down">↓ Down</button>
-        <span>Move to</span>${DEPTH_POS.filter(x => x !== pos).map(x => `<button type="button" data-mv="${x}"${p.pos.includes(x) ? ' class="fits"' : ''}>${x}</button>`).join('')}</span>` : ''}
+        <span>Move to</span>${DEPTH_POS.filter(x => x !== pos).map(x => `<button type="button" data-mv="${x}"${p.pos.includes(x) ? ' class="fits"' : ''}>${x}</button>`).join('')}</span>${desigBtns(p.pid)}` : ''}
     </div>`;
   };
   const column = (pos, list, extra = '') => `<section class="dc-col" data-pos="${pos}">
@@ -4121,16 +4165,33 @@ async function renderDepth(body, params) {
       const injury = p.injury ?? (e ? ({ 'Day-To-Day': 'DTD' }[e.status] ?? e.status) : null);
       const hurt = injury && (injBad(injury) || e?.ofs);
       const la = lockAll[p.pid];
-      return `<td><button type="button" class="dc-chip${i === 0 ? ' first' : ''}${p.slot === 'TX' ? ' tx' : ''}${hurt ? ' hurt' : ''}"${p.pid ? ` data-goto="${p.pid}" data-pos="${pos}"` : ' disabled'} title="${esc(p.name)}${injury ? ` · ${esc(injury)}` : ''}${p.slot === 'TX' ? ' · taxi' : ''}">
-        <b>${esc(short(p))}</b><small>${p.tot?.gp ? `${bkF1(p.avg.fp)} FP/G` : 'No games'}${la ? ` · L ${num(la.pts)}` : ''}</small>${injury ? `<small><i>${esc(injury)}</i></small>` : ''}</button></td>`;
+      return `<td><button type="button" class="dc-chip${i === 0 ? ' first' : ''}${p.slot === 'TX' ? ' tx' : ''}${hurt ? ' hurt' : ''}${p.pid ? dgCls(p.pid) : ''}${p.pid && isCut(p.pid) ? ' cut' : ''}"${p.pid ? ` data-goto="${p.pid}" data-pos="${pos}"` : ' disabled'} title="${esc(p.name)}${injury ? ` · ${esc(injury)}` : ''}${p.slot === 'TX' ? ' · taxi' : ''}${p.pid && isCut(p.pid) ? ' · on your Cut List' : ''}">
+        <b>${p.pid && isCut(p.pid) ? '<i class="dc-chipcut">✂</i>' : ''}${esc(short(p))}</b><small>${p.tot?.gp ? `${bkF1(p.avg.fp)} FP/G` : 'No games'}${la ? ` · L ${num(la.pts)} (${la.starts})` : ''}</small>${injury ? `<small><i>${esc(injury)}</i></small>` : ''}</button></td>`;
     };
     return `<div class="dc-glance-wrap"><table class="dc-glance">
       <thead><tr><th scope="col" aria-label="Position"></th>${Array.from({ length: most }, (_, i) => `<th scope="col">${ordinal(i + 1)}</th>`).join('')}</tr></thead>
       <tbody>${DEPTH_POS.map(pos => `<tr><th scope="row">${pos}</th>${(lines[pos] ?? []).map((p, i) => cell(p, pos, i)).join('')}${'<td></td>'.repeat(most - (lines[pos]?.length ?? 0))}</tr>`).join('')}</tbody>
     </table></div>
-    <p class="dc-glance-note">L = locked points this season${fantasyView ? '' : ' (any fantasy team)'}. Tap a name for his full row.</p>`;
+    <p class="dc-glance-note">L = locked points this season (weeks locked in parentheses)${fantasyView ? '' : ' (any fantasy team)'}. Tap a name for his full row.</p>`;
   };
 
+  // Roster limit line (fantasy): starters + bench + IR against ROSTER_LIMIT, taxi not counted.
+  const limitLine = () => {
+    const n = { st: 0, bn: 0, ir: 0, tx: 0 };
+    for (const p of players) n[p.slot === 'TX' ? 'tx' : p.slot === 'IR' ? 'ir' : p.slot === 'BN' ? 'bn' : 'st']++;
+    const count = n.st + n.bn + n.ir;
+    const over = count - ROSTER_LIMIT;
+    const verdict = over > 0 ? `<b class="dc-over">${over} over the limit</b>` : over === 0 ? '<b class="dc-full">At the limit</b>' : `<b class="dc-open">${-over} spot${over === -1 ? '' : 's'} open</b>`;
+    // After the Cut List: only cut players who count (not taxi) bring the number down.
+    const cuts = cutIds().map(pid => byId[pid]);
+    const cutCount = cuts.filter(p => p.slot !== 'TX').length;
+    const after = count - cutCount;
+    const afterTxt = !cuts.length ? '' : `<small class="dc-limit-after${after > ROSTER_LIMIT ? ' over' : ''}">✂ After your Cut List (${cuts.length}${cuts.length !== cutCount ? `, ${cuts.length - cutCount} on taxi` : ''}): <b>${after} / ${ROSTER_LIMIT}</b> · ${after > ROSTER_LIMIT ? `still ${after - ROSTER_LIMIT} over` : after === ROSTER_LIMIT ? 'at the limit' : `${ROSTER_LIMIT - after} open`}</small>`;
+    return `<div class="dc-limit${over > 0 ? ' over' : ''}">
+      <span class="dc-limit-n"><b>${count}</b> / ${ROSTER_LIMIT}</span>
+      <span class="dc-limit-txt">${verdict}${afterTxt}<small>Rostered = ${n.st} starters + ${n.bn} bench + ${n.ir} IR · taxi (${n.tx}) not counted. Limit ${ROSTER_LIMIT}; IR counts because those players come back onto the roster.</small></span>
+    </div>`;
+  };
   const draw = () => {
     const nbaOpts = [...NBA_TEAM_CODES].sort((a, b) => nbaTeamName(a).localeCompare(nbaTeamName(b)));
     const pick = fantasyView
@@ -4155,10 +4216,68 @@ async function renderDepth(body, params) {
     : `<p class="dc-status"><b>ESPN’s official depth chart</b>, read live. ${rostered} of ${players.length} ${esc(nbaTeamName(nba))} players are on fantasy rosters here. Some players are listed at more than one position, as ESPN does.</p>`}
       ${fpNote('game')}`, { cls: 'dc-card', sub: fantasyView ? 'Sleeper, live' : 'ESPN, live' });
     $('#dc-chart', body).innerHTML = betaCard(fantasyView ? esc(teamName(me, cur.season)) : `${teamLogo(nba) ? `<img class="dc-logo" src="${teamLogo(nba)}" alt="" onerror="this.remove()">` : ''}${esc(nbaTeamName(nba))}`,
-      `${glance(chart.lines)}
+      `${fantasyView ? limitLine() : ''}${glance(chart.lines)}
        <div class="dc-grid">${chart.html}</div>
        ${off.length ? `<div class="dc-off"><span class="bk-bar-label">On the roster, not on ESPN’s chart</span>${off.map((p, i) => row(p, i, '')).join('')}</div>` : ''}`,
       { cls: 'dc-chartcard', sub: fantasyView ? `${players.length} players${hideTaxi() ? ' (taxi hidden)' : ''} · ${esc(name(me))}` : `${players.length} players (Sleeper)` });
+    drawDesig();
+  };
+  // Designations card (fantasy only): one group per designation in DESIG order, each in its own saved order
+  // (players never ordered there follow in depth-chart order), then "Not designated" in a fold.
+  // k = his designation (tint), g = the list this row sits in (a designation, 'cut', or '' for Not designated).
+  const drow = (p, i, k, g = k) => {
+    const la = lockAll[p.pid];
+    const mk = `${g || 'none'}:${p.pid}`; // one menu per list, so the same player in two lists opens only where tapped
+    const open = DC.dmenu === mk;
+    const dk = desigOf(p.pid);
+    return `<div class="dc-drow${k ? ` dg-${k}` : ''}${open ? ' open' : ''}" data-dp="${p.pid}" data-g="${g ?? ''}">
+      ${g ? `<span class="dc-rank">${i + 1}</span>` : ''}
+      <img class="dc-photo" src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy" draggable="false" onerror="this.style.visibility='hidden'">
+      <span class="dc-main"><span class="dc-name"><a href="${cardLink(p)}" draggable="false">${esc(p.name)}</a>${g === 'cut' && dk ? `<i class="dc-dg dg-${dk}">${dgLabel(dk)}</i>` : ''}${g === 'cut' ? '' : cutTag(p.pid)}</span>
+        <small>${esc([p.pos.join('/'), p.team || 'No NBA team'].join(' · '))} · ${SLOT_WORD[p.slot] ?? `Starter · ${p.slot}`}</small>
+        <small class="dc-stats">${p.tot?.gp ? `<b>${bkF1(p.avg.fp)}</b> FP/G` : 'No games yet'} · Locked <b>${la ? num(la.pts) : 0}</b>${la ? ` (${la.starts})` : ''}${p.injury ? ` · <i class="dc-dinj">${esc(p.injury)}</i>` : ''}</small></span>
+      <button type="button" class="dc-menu" data-dmenu="${mk}" aria-label="Designation for ${esc(p.name)}" aria-expanded="${open}">⋮</button>
+      ${open ? desigBtns(p.pid) : ''}
+    </div>`;
+  };
+  const drawDesig = () => {
+    const box = $('#dc-desig', body);
+    if (!box) return;
+    if (!fantasyView) { box.innerHTML = ''; return; }
+    const D = desig();
+    const chartOrder = DEPTH_POS.flatMap(pos => DC.cols?.[pos] ?? []);
+    const at = pid => { const i = chartOrder.indexOf(pid); return i < 0 ? 1e6 : i; };
+    const groups = DESIG.map(([k, label]) => {
+      const ids = players.filter(p => D.d[p.pid] === k).map(p => p.pid);
+      const saved = (D.order?.[k] ?? []).filter(pid => ids.includes(pid));
+      const list = [...saved, ...ids.filter(pid => !saved.includes(pid)).sort((a, b) => at(a) - at(b))];
+      return `<section class="dc-dgroup dg-${k}" data-g="${k}">
+        <div class="dc-dhead"><b>${label}</b><span>${k === 'start' ? `${list.length} / ${DESIG_MAX}` : list.length}</span></div>
+        <div class="dc-dlist">${list.length ? list.map((pid, i) => drow(byId[pid], i, k)).join('') : `<p class="dc-none">Nobody yet. Tap ⋮ on a player and pick ${label}.</p>`}</div>
+      </section>`;
+    });
+    const none = players.filter(p => !D.d[p.pid] && !(hideTaxi() && p.slot === 'TX')).sort((a, b) => at(a.pid) - at(b.pid));
+    box.innerHTML = betaCard('Designations', `
+      <p class="dc-help">Your own labels: <b class="dc-dg dg-start">Starting 9</b> (up to ${DESIG_MAX}) <b class="dc-dg dg-rot">Rotation</b> <b class="dc-dg dg-dev">Development</b> <b class="dc-dg dg-stream">Stream</b> <b class="dc-dg dg-hold">Hold</b> <b class="dc-dg dg-ir">IR</b>. Set one with ⋮ on any player (here or in the chart above); tap it again to clear it. Drag players to order each group (phones: press and hold, then drag); that order stays in its group and doesn’t change the depth chart.</p>
+      <div class="dc-dgrid">${groups.join('')}</div>
+      ${none.length ? `<details class="dc-undes"${DC.undes ? ' open' : ''}><summary>Not designated <small>${none.length}</small></summary><div class="dc-dlist">${none.map(p => drow(p, 0, null)).join('')}</div></details>` : ''}`,
+    { cls: 'dc-dcard', sub: `${Object.keys(D.d).filter(pid => byId[pid]).length} of ${players.length} designated` });
+    drawCut();
+  };
+  // Cut List (owner, Oct 29 2026): every player with the Cut tag, in your order (drag, or a one-tap sort that rewrites
+  // the order; you can drag again after). Its own list: never changes the depth chart or the designation groups.
+  const CUT_SORTS = [['fp', 'FP/G', p => (p.tot?.gp ? p.avg.fp : 0)], ['dyn', 'Dynasty', p => dynOf(p.pid) ?? 0], ['lock', 'Locked', p => lockAll[p.pid]?.pts ?? 0]];
+  const drawCut = () => {
+    const box = $('#dc-cut', body);
+    if (!box) return;
+    if (!fantasyView) { box.innerHTML = ''; return; }
+    const list = cutIds().map(pid => byId[pid]);
+    const counted = list.filter(p => p.slot !== 'TX').length;
+    box.innerHTML = betaCard('✂ Cut List', `
+      <p class="dc-help">Players you’re thinking of cutting. Tag one with ⋮ → <b class="dc-cut">✂ Cut</b> anywhere on this page; the tag sits on top of his designation color. Drag to put them in the order you’d cut them (phones: press and hold, then drag), or sort once with a button below, lowest first.</p>
+      ${list.length > 1 ? `<div class="dc-cutsort"><span>Sort lowest first by</span>${CUT_SORTS.map(([id, label]) => `<button type="button" data-cutsort="${id}">${label}</button>`).join('')}</div>` : ''}
+      <div class="dc-dlist dc-cutlist">${list.length ? list.map((p, i) => drow(p, i, desigOf(p.pid), 'cut')).join('') : '<p class="dc-none">No players on your Cut List yet.</p>'}</div>`,
+    { cls: 'dc-cutcard', sub: list.length ? `${list.length} player${list.length === 1 ? '' : 's'} · ${counted} count toward the ${ROSTER_LIMIT}` : 'empty' });
   };
   // The chart as it is on screen now (after a drag): { PG: [pid] }. Hidden taxi players go back where they were
   // in their column (right after the player who was above them), so hiding them never loses your order.
@@ -4177,10 +4296,26 @@ async function renderDepth(body, params) {
   };
   const save = cols => gmSave(key, { at: Date.now(), cols });
 
-  body.innerHTML = '<div class="gm-page dc-page"><div id="dc-top"></div><div id="dc-chart"></div></div>';
+  body.innerHTML = '<div class="gm-page dc-page"><div id="dc-top"></div><div id="dc-chart"></div><div id="dc-desig"></div><div id="dc-cut"></div></div>';
   draw();
   if (fantasyView) {
     dragSort($('#dc-chart', body), '.dc-row, .dc-end', el => el.dataset.dc, () => { DC.menu = null; save(domCols()); draw(); }, () => true, { vertical: true, fixed: '.dc-end' });
+    // Designation groups: a drag stays inside its group and only saves that group's order.
+    dragSort($('#dc-desig', body), '.dc-dgroup .dc-drow', el => el.dataset.dp, keys => {
+      const g = body.querySelector(`.dc-dgroup .dc-drow[data-dp="${keys[0]}"]`)?.dataset.g;
+      if (!g) return;
+      const D = desig();
+      gmSave(dkey, { ...D, at: Date.now(), order: { ...D.order, [g]: keys } });
+      DC.dmenu = null;
+      drawDesig();
+    }, (a, b) => a.dataset.g === b.dataset.g, { vertical: true });
+    // Cut List order: saved as D.cut itself.
+    dragSort($('#dc-cut', body), '.dc-cutlist .dc-drow', el => el.dataset.dp, keys => {
+      const D = desig();
+      gmSave(dkey, { ...D, at: Date.now(), cut: [...keys, ...D.cut.filter(pid => !keys.includes(pid))] });
+      DC.dmenu = null;
+      drawCut();
+    }, () => true, { vertical: true });
   }
   const page = $('.dc-page', body); // new on every render, so a sync redraw never doubles the listeners
   page.addEventListener('change', e => {
@@ -4210,6 +4345,23 @@ async function renderDepth(body, params) {
       }
       return;
     }
+    const dg = e.target.closest('[data-desig]');
+    if (dg) { setDesig(dg.dataset.pid, dg.dataset.desig); draw(); return; }
+    const ct = e.target.closest('[data-cut]');
+    if (ct) { toggleCut(ct.dataset.cut); draw(); return; }
+    const cs = e.target.closest('[data-cutsort]');
+    if (cs) {
+      const by = CUT_SORTS.find(([id]) => id === cs.dataset.cutsort)[2];
+      const D = desig();
+      const kept = D.cut.filter(pid => byId[pid]).sort((a, b) => by(byId[a]) - by(byId[b]));
+      gmSave(dkey, { ...D, at: Date.now(), cut: kept });
+      drawCut();
+      return;
+    }
+    const dm = e.target.closest('[data-dmenu]');
+    if (dm) { DC.dmenu = DC.dmenu === dm.dataset.dmenu ? null : dm.dataset.dmenu; drawDesig(); return; }
+    const sum = e.target.closest('.dc-undes > summary');
+    if (sum) { DC.undes = !sum.parentElement.open; return; }
     const m = e.target.closest('[data-menu]');
     if (m) { DC.menu = DC.menu === m.dataset.menu ? null : m.dataset.menu; draw(); return; }
     const mv = e.target.closest('[data-mv]');
