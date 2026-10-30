@@ -942,3 +942,22 @@ export async function espnDepthChart(code, all) {
     return ESPN_DEPTH[code];
   } catch { return null; }
 }
+
+// League rank by fantasy points PER GAME this season (Depth Chart auto designations, owner Oct 30 2026): every NBA
+// player with enough games (FPG_MIN_SHARE of the most games anyone has played, at least 1) ranked by FP/G under that
+// season's league scoring; ties share. Players with too few games aren't ranked. Cached 2 min. { pid: rank }.
+export const FPG_MIN_SHARE = 0.4;
+const FPG_RANKS = {};
+export async function fpgRanks(DATA, season) {
+  const hit = FPG_RANKS[season];
+  if (hit && Date.now() - hit.at < 120_000) return hit.ranks;
+  const [table, scoring] = await Promise.all([seasonTable(season), scoringFor(DATA, season)]);
+  const lines = Object.entries(table.players).map(([pid, row]) => ({ pid, l: lineFromTable(row, table.keys, scoring) }));
+  const most = Math.max(0, ...lines.map(x => x.l.gp || 0));
+  const need = Math.max(1, Math.round(most * FPG_MIN_SHARE));
+  const rows = lines.filter(x => x.l.gp >= need).map(x => ({ pid: x.pid, v: Math.round((x.l.fp / x.l.gp) * 10) / 10 })).sort((a, b) => b.v - a.v);
+  const ranks = {};
+  rows.forEach((r, i) => { const prev = rows[i - 1]; r.rk = prev && prev.v === r.v ? prev.rk : i + 1; ranks[r.pid] = r.rk; });
+  FPG_RANKS[season] = { at: Date.now(), ranks };
+  return ranks;
+}

@@ -1043,7 +1043,29 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   don't count). drow(p, i, k, g): k = tint, g = list ('cut' / designation / ''), menus keyed "g:pid" (DC.dmenu).
   LOCKED WEEKS (owner, Oct 29 2026): every locked-points number on the Depth Chart is followed by the weeks locked
   in parentheses ("Locked 39 (1)", "Locked 40 (2) · 76.5 (3) all teams", glance "L 39 (1)", designation / Cut List
-  rows); no locked points = unchanged ("Locked 0"). Checked: every Parma row = playerWeeks count. NBA: ESPN's OFFICIAL depth chart, live, read-only: espnDepthChart(code,
+  rows); no locked points = unchanged ("Locked 0"). Checked: every Parma row = playerWeeks count.
+  AUTOMATIC DESIGNATIONS (owner, Oct 30 2026; autoDesigs in app.js): IR = in a Sleeper IR spot; Starting 9 = best
+  healthy lineup (not IR / taxi / injBad) for DC_SLOTS PG SG G SF PF F C UTIL UTIL by FP/G (gm.js bestFit + fits,
+  +0.001 so a no-games player can still fill a slot); the rest by league rank in FP/G (fpgRanks in breakdown.js:
+  players with >= FPG_MIN_SHARE 40% of the most games played, ties share; 382 ranked Oct 30): Rotation = rank <=
+  DESIG_ROT 125, Development = age <= DESIG_YOUNG 25 outside it, Hold = older and rank >= DESIG_HOLD 150 or unranked,
+  Stream = the rest (owner's rules; "fringe young" read as young + outside the top 125). Used UNTIL THE OWNER CHANGES
+  ONE (owner's choice): rawDesig = saved, desig() swaps in AUTO_D unless dcCustom(saved) (custom flag; older saves
+  with any d count); the first change saves the whole set + custom: true. "Auto-generate best depth chart" now resets
+  BOTH the chart order and the designations (custom: false, order cleared, Cut List kept) and re-renders; the auto
+  chart's first band = the Starting 9 (dcAuto starts set) instead of Sleeper's current starters. Checked Oct 30 2026:
+  all 8 teams get 9 starters; Parma's 43 players all match the rules; Starting 9 = top 9 healthy by FP/G.
+  ASSISTANT COACH EDGE STRIPS (owner, Oct 30 2026; first an outline, then the owner asked for "a thick colored area"
+  on the outside): every player on the Lock-in coach board (starters, bench, IR; both sides) gets a strip on his OUTER
+  edge (left for you, right for the opponent: dgBar() is the first child and .mb-r is row-reverse) in HIS team's
+  designation color with the short label stacked letter by letter (DESIG_SHORT S9 / ROT / DEV / STR / HOLD / IR;
+  .mb-dgbar writing-mode vertical-rl + text-orientation upright, 17px wide, 13px at <= 360px; .mb-p.mb-dg drops the
+  outer padding so it sits flush). teamDesigs(owner) = saved custom set or autoDesigs from loadBreakdown + fpgRanks,
+  cached 5 min in DESIG_CACHE; key line .mb-dgkey ("Edge strip = Depth Chart designation", S9 Starting 9 ...).
+  Checked 320 / 402. TODAY CHIP FIX (owner, Oct 30 2026): at <= 430 px the green "Today vs X · time" chip (.mb-today)
+  flows like text (inline-block, wraps between words, dot inline) and .mb-tags/.mb-today cap at the name column's
+  width, so it no longer runs under the score box (was ~8 rows at 320 px, before the strips too). Checked 0 overlaps
+  at 320 / 375 / 402 / 430 / 1440, both sides. NBA: ESPN's OFFICIAL depth chart, live, read-only: espnDepthChart(code,
   all) in breakdown.js = ESPN team roster site.api.espn.com/.../nba/teams/{ESPN_TEAM_ID}/roster (names, ids, season
   year; CORS open) + core API sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/{year}/teams/{id}/
   depthcharts (ranks by ESPN id; CORS open; site.api's own /depthcharts has names but NO CORS); ids missing from the

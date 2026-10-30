@@ -5,7 +5,7 @@ import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from '.
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, isRivalry, moments, seasonSeries, seasonWeeks, seriesBefore, standingsBefore, trophyHistory, trophyImg, trophyOf, weekPairs } from './hype.js';
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, get, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
-import { LOCK_CAL, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach, lockedPoints, startingPipeline, tipTime, valueNow } from './gm.js';
+import { LOCK_CAL, bestFit, fits as slotFits, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach, lockedPoints, startingPipeline, tipTime, valueNow } from './gm.js';
 import { PROSPECT_LIST, PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, prospectRanking, taxiLeft } from './dynasty.js';
 import { CENTERPIECE, evaluateTrade, moveImpacts, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, teamSnapshot, tradeContext, unpackTeam } from './tradefinder.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
@@ -22,7 +22,7 @@ import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } fr
 import { taxiAppearances } from './taxiweek.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 import { betaCard, isTestTab, testTabs } from './test-features.js';
-import { DEPTH_POS, espnDepthChart, loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
+import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -4010,12 +4010,53 @@ const hideTaxi = () => gmLoad('gm-dc-hidetaxi', false);
 // changes the order inside that group (order[key]), never the depth chart above.
 const DESIG = [['start', 'Starting 9'], ['rot', 'Rotation'], ['dev', 'Development'], ['stream', 'Stream'], ['hold', 'Hold'], ['ir', 'IR']];
 const DESIG_MAX = 9; // Starting 9
+// Short labels for the Assistant Coach edge strip (owner, Oct 30 2026), read top to bottom.
+const DESIG_SHORT = { start: 'S9', rot: 'ROT', dev: 'DEV', stream: 'STR', hold: 'HOLD', ir: 'IR' };
 // Legal roster limit (owner, Oct 29 2026): 23 = Sleeper's 9 starting spots + 14 bench. Counted here = starters + bench
 // + IR (owner chose to count IR: those players come back onto the roster), taxi left out.
 const ROSTER_LIMIT = 23;
+// Automatic designations (owner, Oct 30 2026), used for a team until you change one of its designations:
+// IR = in a Sleeper IR spot; Starting 9 = best healthy lineup (not IR / taxi / Out) for Sleeper's 9 slots by FP/G
+// (bestFit, slot eligibility from fantasy_positions); then by league rank in FP/G (fpgRanks in breakdown.js):
+// Rotation = top DESIG_ROT, Development = DESIG_YOUNG or younger outside it, Hold = older with rank DESIG_HOLD or
+// worse (or no rank yet), Stream = everyone else. The Auto-generate button resets a team to these.
+const DESIG_ROT = 125, DESIG_HOLD = 150, DESIG_YOUNG = 25;
+const DC_SLOTS = ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'UTIL', 'UTIL'];
+function autoDesigs(players, ranks) {
+  const d = {};
+  for (const p of players) if (p.slot === 'IR') d[p.pid] = 'ir';
+  const fpg = p => (p.tot?.gp ? p.avg.fp : 0);
+  const pool = players.filter(p => !d[p.pid] && p.slot !== 'TX' && !injBad(p.injury));
+  // + 0.001 so a player without a game yet still fills an otherwise empty slot.
+  const { slotOf } = bestFit(DC_SLOTS.length, pool.length, (c, s) => (slotFits(DC_SLOTS[s], pool[c].pos) ? fpg(pool[c]) + 0.001 : null));
+  slotOf.forEach((s, c) => { if (s >= 0) d[pool[c].pid] = 'start'; });
+  for (const p of players) {
+    if (d[p.pid]) continue;
+    const rk = ranks?.[p.pid] ?? Infinity;
+    d[p.pid] = rk <= DESIG_ROT ? 'rot' : p.age != null && p.age <= DESIG_YOUNG ? 'dev' : rk >= DESIG_HOLD ? 'hold' : 'stream';
+  }
+  return d;
+}
+// A saved designation set the manager made himself (older saves without the flag count when they hold any).
+const dcCustom = saved => Boolean(saved && (saved.custom ?? Object.keys(saved.d ?? {}).length > 0));
+// Any team's designations (Assistant Coach colors): saved ones, else automatic (cached 5 min per team).
+const DESIG_CACHE = {};
+async function teamDesigs(owner) {
+  const saved = gmLoad(`gm-dc-desig-${owner}`, null);
+  if (dcCustom(saved)) return saved.d;
+  const hit = DESIG_CACHE[owner];
+  if (hit && Date.now() - hit.at < 300_000) return hit.d;
+  const cur = DATA.seasons.at(-1);
+  const [bk, ranks] = await Promise.all([loadBreakdown(DATA, { list: 'team', owner, season: cur.season }), fpgRanks(DATA, cur.season)]);
+  const d = bk ? autoDesigs(bk.players, ranks) : {};
+  DESIG_CACHE[owner] = { at: Date.now(), d };
+  return d;
+}
 const dcHome = p => (DEPTH_POS.includes(p.mainPos) ? p.mainPos : p.pos.find(x => DEPTH_POS.includes(x)) ?? 'SF');
-function dcAuto(players, dynOf) {
-  const band = p => (p.slot === 'TX' ? 4 : p.slot === 'IR' || injBad(p.injury) ? 3 : p.order >= 0 ? 0 : p.tot.gp ? 1 : 2);
+// starts = the team's Starting 9 (designations), which lead each column (Oct 30 2026; was Sleeper's current starters).
+function dcAuto(players, dynOf, starts = null) {
+  const isStart = p => (starts ? starts.has(p.pid) : p.order >= 0);
+  const band = p => (p.slot === 'TX' ? 4 : p.slot === 'IR' || injBad(p.injury) ? 3 : isStart(p) ? 0 : p.tot.gp ? 1 : 2);
   const fpg = p => (p.tot.gp ? p.avg.fp : 0);
   const ranked = [...players].sort((a, b) => band(a) - band(b) || (band(a) === 2 ? 0 : fpg(b) - fpg(a)) || (dynOf(b.pid) ?? 0) - (dynOf(a.pid) ?? 0));
   const cols = Object.fromEntries(DEPTH_POS.map(pos => [pos, []]));
@@ -4053,12 +4094,13 @@ async function renderDepth(body, params) {
   const fantasyView = view === 'fantasy';
   body.innerHTML = `<div class="loading">Pulling ${fantasyView ? 'the roster' : 'ESPN’s depth chart'} and stats…</div>`;
   const all = await get('/v1/players/nba', {});
-  const [bk, dyn, espn, lgsData, depth] = await Promise.all([
+  const [bk, dyn, espn, lgsData, depth, ranks] = await Promise.all([
     loadBreakdown(DATA, fantasyView ? { list: 'team', owner: me, season: cur.season } : { list: 'nba', nbaTeam: nba, season: cur.season }),
     gmDynasty(params).catch(() => null),
     espnInjuries(all).catch(() => null),
     loadLgs().catch(() => null),
     fantasyView ? null : espnDepthChart(nba, all),
+    fantasyView ? fpgRanks(DATA, cur.season).catch(() => ({})) : {},
   ]);
   const players = bk?.players ?? [];
   const byId = Object.fromEntries(players.map(p => [p.pid, p]));
@@ -4071,12 +4113,16 @@ async function renderDepth(body, params) {
   const lockHere = fantasyView ? lockedTotals(DATA, { season: cur.season, owner: me }) : null;
   const dkey = `gm-dc-desig-${me}`;
   // cut = the Cut List (owner, Oct 29 2026): ordered [pid], a red "Cut" tag on top of any designation tint.
-  const desig = () => { const D = gmLoad(dkey, null); return { d: {}, order: {}, cut: [], ...D }; };
+  // rawDesig = what's saved; desig = the same with d = your designations once you've changed any (custom), else the
+  // automatic ones (AUTO_D, worked out once per page from this season's FP/G and league ranks).
+  const AUTO_D = fantasyView ? autoDesigs(players, ranks) : {};
+  const rawDesig = () => ({ d: {}, order: {}, cut: [], ...gmLoad(dkey, null) });
+  const desig = () => { const R = rawDesig(); return { ...R, d: dcCustom(R) ? R.d : AUTO_D }; };
   const cutIds = () => desig().cut.filter(pid => byId[pid]);
   const isCut = pid => fantasyView && desig().cut.includes(pid);
   const cutTag = pid => (isCut(pid) ? '<i class="dc-cut" title="On your Cut List">✂ Cut</i>' : '');
   const toggleCut = pid => {
-    const D = desig();
+    const D = rawDesig();
     gmSave(dkey, { ...D, at: Date.now(), cut: D.cut.includes(pid) ? D.cut.filter(x => x !== pid) : [...D.cut, pid] });
   };
   const desigOf = pid => (fantasyView ? desig().d[pid] ?? null : null);
@@ -4099,10 +4145,10 @@ async function renderDepth(body, params) {
     else if (k === 'start' && startCount() >= DESIG_MAX) return;
     else d[pid] = k;
     const order = Object.fromEntries(Object.entries(D.order ?? {}).map(([g, list]) => [g, list.filter(x => x !== pid || d[pid] === g)]));
-    gmSave(dkey, { ...D, at: Date.now(), d, order });
+    gmSave(dkey, { ...D, at: Date.now(), d, order, custom: true }); // from now on this team keeps your version
   };
   const key = `gm-dc-chart-${me}`;
-  const auto = dcAuto(players, dynOf);
+  const auto = dcAuto(players, dynOf, new Set(Object.entries(desig().d).filter(([, k]) => k === 'start').map(([pid]) => pid)));
   // A name opens his 2K card with a "Back to Depth Chart" link (back / backl, owner Oct 30 2026) to this same view.
   const dcBack = { back: `#/commish?${new URLSearchParams(fantasyView ? { tab: 'depth', view: 'fantasy', team: me } : { tab: 'depth', view: 'nba', nba })}`, backl: 'Depth Chart' };
   const cardLink = p => `#/commish?${new URLSearchParams(fantasyView ? { tab: 'breakdown', team: me, p: p.pid, ...dcBack } : { tab: 'breakdown', list: 'nba', nba, p: p.pid, ...dcBack })}`;
@@ -4234,7 +4280,7 @@ async function renderDepth(body, params) {
       </div>
       ${fantasyView
     ? `<p class="dc-status">${chart.saved ? `<b>Your custom order</b> · saved ${esc(savedAt)} (follows you to your other devices when signed in)` :'<b>Automatic order</b> (by role)'}. Drag a player to reorder or move him to another position (phones: press and hold, then drag), or tap ⋮.</p>
-         <p class="dc-help">Automatic order: Sleeper starters first, then the healthy bench by fantasy points per game, players without a game yet (by dynasty score), injured (IR / Out), taxi last. Columns = each player’s main Sleeper position; an empty column borrows the best player who can also play there.</p>`
+         <p class="dc-help">The button also resets this team’s designations to automatic (your Cut List stays). Automatic order: the Starting 9 first, then the healthy bench by fantasy points per game, players without a game yet (by dynasty score), injured (IR / Out), taxi last. Columns = each player’s main Sleeper position; an empty column borrows the best player who can also play there.</p>`
     : `<p class="dc-status"><b>ESPN’s official depth chart</b>, read live. ${rostered} of ${players.length} ${esc(nbaTeamName(nba))} players are on fantasy rosters here. Some players are listed at more than one position, as ESPN does.</p>`}
       ${fpNote('game')}`, { cls: 'dc-card', sub: fantasyView ? 'Sleeper, live' : 'ESPN, live' });
     $('#dc-chart', body).innerHTML = betaCard(fantasyView ? esc(teamName(me, cur.season)) : `${teamLogo(nba) ? `<img class="dc-logo" src="${teamLogo(nba)}" alt="" onerror="this.remove()">` : ''}${esc(nbaTeamName(nba))}`,
@@ -4280,7 +4326,8 @@ async function renderDepth(body, params) {
     });
     const none = players.filter(p => !D.d[p.pid] && !(hideTaxi() && p.slot === 'TX')).sort((a, b) => at(a.pid) - at(b.pid));
     box.innerHTML = betaCard('Designations', `
-      <p class="dc-help">Your own labels: <b class="dc-dg dg-start">Starting 9</b> (up to ${DESIG_MAX}) <b class="dc-dg dg-rot">Rotation</b> <b class="dc-dg dg-dev">Development</b> <b class="dc-dg dg-stream">Stream</b> <b class="dc-dg dg-hold">Hold</b> <b class="dc-dg dg-ir">IR</b>. Set one with ⋮ on any player (here or in the chart above); tap it again to clear it. Drag players to order each group (phones: press and hold, then drag); that order stays in its group and doesn’t change the depth chart.</p>
+      <p class="dc-status">${dcCustom(rawDesig()) ? "<b>Your designations</b> (you changed one, so this team keeps yours; Auto-generate at the top resets them)." : `<b>Automatic designations</b> (they update with stats and injuries until you change one): Starting 9 = best healthy lineup by FP/G; IR = Sleeper IR; then by league rank in FP/G: Rotation = top ${DESIG_ROT}, Development = ${DESIG_YOUNG} or younger outside it, Hold = older than ${DESIG_YOUNG} and ranked ${DESIG_HOLD}+ (or not ranked yet), Stream = the rest.`}</p>
+      <p class="dc-help">Labels: <b class="dc-dg dg-start">Starting 9</b> (up to ${DESIG_MAX}) <b class="dc-dg dg-rot">Rotation</b> <b class="dc-dg dg-dev">Development</b> <b class="dc-dg dg-stream">Stream</b> <b class="dc-dg dg-hold">Hold</b> <b class="dc-dg dg-ir">IR</b>. Set one with ⋮ on any player (here or in the chart above); tap it again to clear it. Drag players to order each group (phones: press and hold, then drag); that order stays in its group and doesn’t change the depth chart.</p>
       <div class="dc-dgrid">${groups.join('')}</div>
       ${none.length ? `<details class="dc-undes"${DC.undes ? ' open' : ''}><summary>Not designated <small>${none.length}</small></summary><div class="dc-dlist">${none.map(p => drow(p, 0, null)).join('')}</div></details>` : ''}`,
     { cls: 'dc-dcard', sub: `${Object.keys(D.d).filter(pid => byId[pid]).length} of ${players.length} designated` });
@@ -4335,14 +4382,14 @@ async function renderDepth(body, params) {
     dragSort($('#dc-desig', body), '.dc-dgroup .dc-drow', el => el.dataset.dp, keys => {
       const g = body.querySelector(`.dc-dgroup .dc-drow[data-dp="${keys[0]}"]`)?.dataset.g;
       if (!g) return;
-      const D = desig();
+      const D = rawDesig();
       gmSave(dkey, { ...D, at: Date.now(), order: { ...D.order, [g]: keys } });
       DC.dmenu = null;
       drawDesig();
     }, (a, b) => a.dataset.g === b.dataset.g, { vertical: true });
     // Cut List order: saved as D.cut itself.
     dragSort($('#dc-cut', body), '.dc-cutlist .dc-drow', el => el.dataset.dp, keys => {
-      const D = desig();
+      const D = rawDesig();
       gmSave(dkey, { ...D, at: Date.now(), cut: [...keys, ...D.cut.filter(pid => !keys.includes(pid))] });
       DC.dmenu = null;
       drawCut();
@@ -4358,10 +4405,15 @@ async function renderDepth(body, params) {
     const v = e.target.closest('[data-view]');
     if (v) { location.hash = `#/commish?${new URLSearchParams({ tab: 'depth', view: v.dataset.view, ...(v.dataset.view === 'fantasy' ? { team: me } : { nba }) })}`; return; }
     if (e.target.closest('.dc-auto')) {
-      if (gmLoad(key, null) && !confirm(`Replace your custom order for ${teamName(me, cur.season)} with the automatic one?`)) return;
+      // Resets this team's depth chart order AND designations to automatic (owner, Oct 30 2026); the Cut List stays.
+      const R = rawDesig();
+      if ((gmLoad(key, null) || dcCustom(R)) && !confirm(`Replace your depth chart order and designations for ${teamName(me, cur.season)} with the automatic ones? (Your Cut List stays.)`)) return;
       gmSave(key, null);
+      gmSave(dkey, { ...R, at: Date.now(), d: {}, order: {}, custom: false });
+      delete DESIG_CACHE[me];
       DC.menu = null;
-      draw();
+      DC.dmenu = null;
+      renderDepth(body, params).catch(() => {}); // the automatic chart follows the automatic Starting 9
       return;
     }
     const go = e.target.closest('[data-goto]');
@@ -4383,7 +4435,7 @@ async function renderDepth(body, params) {
     const cs = e.target.closest('[data-cutsort]');
     if (cs) {
       const by = CUT_SORTS.find(([id]) => id === cs.dataset.cutsort)[2];
-      const D = desig();
+      const D = rawDesig();
       const kept = D.cut.filter(pid => byId[pid]).sort((a, b) => by(byId[a]) - by(byId[b]));
       gmSave(dkey, { ...D, at: Date.now(), cut: kept });
       drawCut();
@@ -5101,6 +5153,12 @@ async function renderCoach(body, params) {
     </div>`);
   const riskBtns = GM_MODES.map(([k, label]) => `<a href="#" data-risk="${k}" class="${k === w.mode ? 'on' : ''}">${label}</a>`).join('');
   const opp = coach.opp;
+  // Depth Chart designations as a colored strip on each player's outer edge (owner, Oct 30 2026; was an outline): each side in its own team's
+  // designations (yours or automatic, teamDesigs); a failure just leaves the strip off.
+  const [dgMe, dgOpp] = await Promise.all([teamDesigs(w.me).catch(() => ({})), opp ? teamDesigs(opp).catch(() => ({})) : {}]);
+  const dgc = (side, pid) => { const k = (side === 'l' ? dgMe : dgOpp)?.[pid]; return k ? ` mb-dg dg-${k}` : ''; };
+  // The strip itself: a thick bar on the board's OUTER edge (first child; .mb-r is row-reverse, so it lands on the right).
+  const dgBar = (side, pid) => { const k = (side === 'l' ? dgMe : dgOpp)?.[pid]; return k ? `<span class="mb-dgbar dg-${k}" title="Depth Chart: ${DESIG.find(([x]) => x === k)[1]}">${DESIG_SHORT[k]}</span>` : ''; };
   // The opponent's lineup as the coach assumes it: their best healthy players (fromBench = moved in).
   const oppRow = r => {
     if (r.empty) return `<li><span>Empty spot<small>${esc(r.slot)} · nobody healthy with games left to fill it</small></span><b class="gm-badge-s gm-none">0</b></li>`;
@@ -5174,8 +5232,8 @@ async function renderCoach(body, params) {
     const isLock = r.call === 'lock' && !r.whatIf;
     const nextUp = ['wait', 'plan', 'live'].includes(r.call) && !r.whatIf ? nextTip(r.sched.find(g => !g.done && !g.playing)) : '';
     const meta = [r.team || 'FA', r.call === 'none' ? 'No games' : r.call === 'plan' ? `${r.sched.length} game${r.sched.length === 1 ? '' : 's'}` : isLock ? lockBy() : label(r), nextUp].filter(Boolean).join(' · ');
-    return `<div class="mb-p mb-${side} mb-${r.whatIf ? 'wi' : r.call}${todayGame(r) ? ' mb-on' : ''}" ${tapAttrs(`${side}-${r.pid}`)}>
-      <span class="mb-name">${nameHtml(r)}<span class="mb-tags">${tags(r)}</span><small${isLock ? ' class="mb-lockby"' : nextUp ? ' class="mb-wrap"' : ''}>${esc(meta)}</small></span>
+    return `<div class="mb-p mb-${side} mb-${r.whatIf ? 'wi' : r.call}${todayGame(r) ? ' mb-on' : ''}${dgc(side, r.pid)}" ${tapAttrs(`${side}-${r.pid}`)}>
+      ${dgBar(side, r.pid)}<span class="mb-name">${nameHtml(r)}<span class="mb-tags">${tags(r)}</span><small${isLock ? ' class="mb-lockby"' : nextUp ? ' class="mb-wrap"' : ''}>${esc(meta)}</small></span>
       ${scoreBox(r)}</div>`;
   };
   // Bench and IR players: no score (bench points never count); red + struck out with no games left.
@@ -5184,8 +5242,8 @@ async function renderCoach(body, params) {
     const left = gamesLeft(p);
     const nextUp = left ? nextTip((w.slate[p.team] ?? []).find(g => g.status !== 'complete' && (g.date > today || (g.date === today && g.status === 'pre_game')))) : '';
     const meta = [p.team || 'FA', left ? `${left} game${left === 1 ? '' : 's'} left` : 'No games left', nextUp].filter(Boolean).join(' · ');
-    return `<div class="mb-p mb-${side} mb-res${left ? '' : ' mb-gone'}${todayGame(p) ? ' mb-on' : ''}" ${tapAttrs(`${side}-${where}-${p.pid}`)}>
-      <span class="mb-name">${nameHtml(p)}<span class="mb-tags">${tags(p)}</span><small${nextUp ? ' class="mb-wrap"' : ''}>${esc(meta)}</small></span></div>`;
+    return `<div class="mb-p mb-${side} mb-res${left ? '' : ' mb-gone'}${todayGame(p) ? ' mb-on' : ''}${dgc(side, p.pid)}" ${tapAttrs(`${side}-${where}-${p.pid}`)}>
+      ${dgBar(side, p.pid)}<span class="mb-name">${nameHtml(p)}<span class="mb-tags">${tags(p)}</span><small${nextUp ? ' class="mb-wrap"' : ''}>${esc(meta)}</small></span></div>`;
   };
   // The card a tapped bench/IR player opens: his week's games and what he could still add.
   const reserveCard = (p, where, mine) => {
@@ -5242,6 +5300,7 @@ async function renderCoach(body, params) {
   const board = `
     <div class="mb-head">${side(w.me, tMe)}<span class="mb-mid">${gap()}<span class="mb-vs">vs</span></span>${side(opp, tOpp)}</div>
     <p class="mb-key">Locked points <span>(starters left to lock)</span><br>Small number: if every unlocked score were locked now · tap a player for his card</p>
+    <p class="mb-dgkey">Edge strip = <a href="#/commish?tab=depth&amp;team=${esc(w.me)}">Depth Chart</a> designation: ${DESIG.map(([k, label]) => `<b class="dc-dg dg-${k}">${DESIG_SHORT[k]} ${label}</b>`).join(' ')}</p>
     <div class="mb-rows">${coach.rows.map((r, i) => {
       const o = oppRows[i];
       return `<div class="mb-row">${who(r, 'l')}<span class="mb-slot">${esc(r.slot)}</span>${who(o, 'r')}</div>
