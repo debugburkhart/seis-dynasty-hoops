@@ -64,6 +64,8 @@ const gameDay = (t = Date.now()) => ctDate(t - 5 * 3600_000);
 const dayBefore = d => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() - 1); return x.toISOString().slice(0, 10); };
 // The newest game day whose nightly update is due (its 2:00 AM Central has passed).
 const dueDay = (t = Date.now()) => dayBefore(ctDate(t - 2 * 3600_000));
+// Saturday / Sunday: early tip-offs (noon-ish CT), while GitHub's morning schedule can start ~6 hours late.
+const isWeekend = d => [0, 6].includes(new Date(`${d}T12:00:00Z`).getUTCDay());
 const ctHour = t => Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', hourCycle: 'h23' }).format(new Date(t)));
 // 2:00 AM Central on the morning after game day d (07:00 UTC in daylight time, 08:00 in standard time).
 function twoAm(d) {
@@ -157,7 +159,17 @@ async function main() {
   const state = await getJson('https://api.sleeper.app/v1/state/nba');
   if (!state || state.season_type !== 'regular') { log('Not the NBA regular season; nothing to watch.'); return; }
   const season = String(state.season);
-  const day = gameDay();
+  let day = gameDay();
+  // WEEKEND OVERNIGHT HANDOFF (owner, Oct 30 2026: weekend-only, not around the clock): a run starting between 2 and
+  // 5 AM after the night's update is the replacement a Friday / Saturday watcher started on purpose; it waits for
+  // that day's early games instead of GitHub's late morning schedule. Any other day it just stops (no idle runs).
+  const hr = ctHour(Date.now());
+  if (hr >= 2 && hr < 5 && ((await readNightly()).day ?? '') >= day) {
+    const today = ctDate(Date.now());
+    if (!isWeekend(today)) { log('Night is done; the morning schedule starts the next watcher.'); return; }
+    day = today;
+    log(`Weekend: waiting here for ${day}'s games.`);
+  }
   let games = await todaysGames(day);
   if (!games.length) { log(`No NBA games on ${day}.`); return; }
 
@@ -221,7 +233,13 @@ async function main() {
     await sundaySnaps(db, day);
     if (done) {
       // After the last game: wait for 2:00 AM Central, start the nightly update, stop for the day.
-      if (Date.now() >= twoAm(day)) { await ensureNightly(day); return; }
+      if (Date.now() >= twoAm(day)) {
+        await ensureNightly(day);
+        // Friday and Saturday nights only: hand off to a watcher that waits for the weekend day's early games.
+        const next = ctDate(twoAm(day));
+        if (isWeekend(next)) { log(`Next up is ${next}: starting the weekend watcher now.`); await dispatch('lgs.yml'); }
+        return;
+      }
       await sleep(Math.min(IDLE, Math.max(10_000, twoAm(day) - Date.now())));
       continue;
     }

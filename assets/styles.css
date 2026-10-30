@@ -3259,6 +3259,10 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 /* 2K breakdown opened from the Injury Report: back link on top (owner, Oct 26 2026). */
 .bk-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 99px; background: var(--navy-900); color: #fff; font: 800 12.5px/1.2 var(--font); text-decoration: none; }
 .bk-back:hover { background: var(--navy-700); }
+/* Card arrows: View on NBA team / View in League (dark 2K card, gold outline). */
+.bk-views { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+.bk-view { display: inline-flex; align-items: center; padding: 5px 11px; border-radius: 99px; border: 1px solid rgba(232, 184, 74, .55); color: #e8b84a; font: 800 11.5px/1.2 var(--font); text-decoration: none; }
+.bk-view:hover { background: rgba(232, 184, 74, .14); }
 /* Free agents' past Sleeper nicknames: each followed by the manager who gave it. */
 .bk-nick-past { font-size: 12px; line-height: 1.45; }
 .bk-nick-past span { font-style: normal; font-weight: 600; font-size: 11px; color: #9fb0cc; }

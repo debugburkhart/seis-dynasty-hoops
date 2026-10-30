@@ -999,7 +999,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   st" for any team; on a fantasy chart, if he also scored for another team, "Locked {this team} · {all} all teams",
   or "(other teams)"; grey "Locked 0" = none; checked: all 43 Parma rows = league.json after week 1),
   LGS (this team's on a fantasy chart, any team on an NBA chart; "—" until data/lgs.json exists), dynasty score +
-  tierTag, injury pill + ESPN estimate; name = link to the 2K card. Columns PG / SG / SF / PF / C (Sleeper's main
+  tierTag, injury pill + ESPN estimate; name = link to the 2K card (with ?back=/backl=Depth Chart: the card shows
+  "← Back to Depth Chart", same scroll spot via sessionStorage dc-scroll). Columns PG / SG / SF / PF / C (Sleeper's main
   `position` is always one of these). FANTASY: "Auto-generate best depth chart" button = dcAuto by role: Sleeper
   starters, healthy bench by FP/G, no games yet (by dynasty), IR / Out (injBad), taxi last; an EMPTY column borrows
   the best non-taxi player whose fantasy_positions include it from a column with 2+ players (gold "from PF" tag).
@@ -1160,7 +1161,18 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   late 2 AM cron when day = Chicago(now - 12 h), and a late Sunday cron when sunday = Chicago(now - 6 h). Days with
   no games / out of season: the morning run only does the catch-up, so the update then runs when that run starts.
   The live update.yml on GitHub was still the pre-Oct-27 version on Oct 28 (no Sunday crons, v4 actions): the owner
-  pastes the whole local file.
+  pastes the whole local file (done Oct 29: GitHub = local).
+  FIRST NIGHT (Oct 29 2026, checked Oct 30): the 13:00 UTC morning cron started at 18:55 UTC (~6 h late); 3 games
+  (CLE@ATL, SAC@NOP, MEM@POR), 57 player-games: 30 LGS, 6 bench, 20 taxi/IR, 1 'u' (Peyton Watson, moved at tip);
+  budget handoff at 00:35 UTC = new run 2 s later; saves every 20 min; catch-up saw the Oct 28 update had run. The
+  other morning tries show as "cancelled" in Actions (replaced while queued) = normal.
+  WEEKEND OVERNIGHT HANDOFF (owner, Oct 30 2026; chose weekend-only over around-the-clock: GitHub's terms discourage
+  Actions as an always-on server, and a 24/7 chain is ~14 idle hours a day): after starting the 2 AM update, a
+  Friday- or Saturday-night watcher dispatches lgs.yml if the new day (ctDate(twoAm(day))) is Sat / Sun (isWeekend);
+  a run starting between 2 and 5 AM CT whose night is done (nightly.json day >= gameDay) watches TODAY (the weekend
+  day) and waits for its early tips, or exits on a weekday (so no idle runs). ~20 idle hours a week. Weekdays rely on
+  the morning crons (6 h late still beats a 6 PM tip). Checked in the browser: Thu/Sun nights stop, Fri/Sat hand off,
+  DST end Nov 1 (2 AM = 08:00 UTC) right.
   NBA GAMES STARTED (GS; owner, Oct 28 2026; Sleeper's box rows have no gs): ESPN game summaries
   site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=ID (boxscore.players[].statistics[].athletes[]
   .starter; ~0.5 MB a game; scoreboard?dates= gives the day's event ids). updateNbaStarts() in breakdown.js, run by
@@ -1184,6 +1196,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Compare "Usage" row, card line "Role <b>Co-Star / Lead Scorer</b> (28.1% usage[, N games when < 5])" (.bk-role)
   from the owner's table USG_ROLES / usgRole in app.js: < 20 Role Player / Connector, < 24 Average Starter, < 30
   Co-Star / Lead Scorer, < 35 Primary Creator / Superstar, else Ultra-High Usage (rounded to 0.1 first).
+  BACK LINKS + VIEW ARROWS (owner, Oct 30 2026): generic ?back=<hash>&backl=<name> on the 2K page = a "← Back to
+  {backl}" pill (.bk-back; replaces the from=inj one when present), kept in link() while browsing. Card arrows under
+  the NBA team line (viewArrows, .bk-views/.bk-view): "View on NBA team (ORL) →" (list=nba, hidden on that team's list
+  or with no NBA team) and "View in League →" (list=league, hidden on League; a free agent adds ?fa=1 = include the
+  waiver wire for that visit; unticking the checkbox drops fa from the hash); both carry back = this list + player and
+  backl = "Team / Waiver Wire / League / NBA team view" (VIEW_NAME), so chains work (Depth Chart -> Team -> League ->
+  back -> back). Tested Oct 30 2026 at 402 px.
   CARD TOP (owner, Oct 26 2026): .bk-top = .bk-id (headshot, FP/G ring right under it) beside .bk-head (#number +
   positions, first/LAST name, HT/WT/AGE, league rank, Sleeper %); the rest (.bk-info) below. One column up to
   1199px; from 1200px the top sits left (max 440px) and .bk-info right. Long last names shrink (h3.bk-l1 10-12

@@ -2850,13 +2850,30 @@ async function renderBreakdown(body, params) {
   const nbaTeam = NBA_TEAM_CODES.includes(params.get('nba')) ? params.get('nba') : gmLoad('gm-bk-nba', 'ATL');
   if (list === 'nba') gmSave('gm-bk-nba', nbaTeam);
   const fromInj = params.get('from') === 'inj';
-  const link = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...(fromInj ? { from: 'inj' } : {}), ...(list === 'team' ? { team: me } : {}), ...(list !== 'team' ? { list } : {}), ...(list === 'nba' ? { nba: nbaTeam } : {}), ...(season !== cur.season ? { season } : {}), ...q })}`;
+  // Back link (owner, Oct 30 2026): ?back = the page to return to, ?backl = its name ("Depth Chart", "League view"...).
+  // Kept in this page's own links while browsing; the Injury Report's older ?from=inj still works.
+  const back = params.get('back')?.startsWith('#/') ? { back: params.get('back'), backl: params.get('backl') || 'previous page' } : null;
+  const link = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...(fromInj ? { from: 'inj' } : {}), ...(back ?? {}), ...(list === 'team' ? { team: me } : {}), ...(list !== 'team' ? { list } : {}), ...(list === 'nba' ? { nba: nbaTeam } : {}), ...(season !== cur.season ? { season } : {}), ...(list === 'league' && params.get('fa') === '1' ? { fa: '1' } : {}), ...q })}`;
+  // Card arrows (owner, Oct 30 2026): "View on NBA team" / "View in League" open the same player in that list; the new
+  // page gets a "Back to {this list} view" link (back = this page, with its own back link kept inside it).
+  const VIEW_NAME = { team: 'Team', fa: 'Waiver Wire', league: 'League', nba: 'NBA team' };
+  const viewArrows = p => {
+    const here = { back: link({ p: p.pid }), backl: `${VIEW_NAME[list]} view` };
+    const keep = season !== cur.season ? { season } : {};
+    const to = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...q, ...keep, p: p.pid, ...here })}`;
+    const arrows = [
+      NBA_TEAM_CODES.includes(p.team) && !(list === 'nba' && nbaTeam === p.team) ? `<a class="bk-view" href="${to({ list: 'nba', nba: p.team })}">View on NBA team (${esc(p.team)}) →</a>` : '',
+      list !== 'league' ? `<a class="bk-view" href="${to({ list: 'league', ...(p.owner ? {} : { fa: '1' }) })}">View in League →</a>` : ''
+    ].filter(Boolean);
+    return arrows.length ? `<div class="bk-views">${arrows.join('')}</div>` : '';
+  };
   if (BK.list !== list) { BK.list = list; BK.q = ''; BK.limit = BK_PAGE; }
   // Came from the Injury Report (?from=inj): a back link on top; kept in every link while browsing here.
   body.innerHTML = `<div class="loading">Pulling ${list === 'team' ? 'the roster' : list === 'fa' ? 'the waiver wire' : 'every roster'} and stats from Sleeper…</div>`;
   // Dynasty scores (gmDynasty, same values and injury setting as the Dynasty tab); a failure just hides them.
   // League list "Include waiver wire" (owner, Oct 26 2026): rostered players + every free agent, saved in gm-bk-lgfa.
-  const lgFa = list === 'league' && gmLoad('gm-bk-lgfa', false);
+  // ?fa=1 = include free agents for this visit (the card's "View in League" arrow on a free agent).
+  const lgFa = list === 'league' && (params.get('fa') === '1' || gmLoad('gm-bk-lgfa', false));
   const [bk, dyn, rings, , , espnOut, , , lgsData] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, nbaTeam, withFa: lgFa, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft(), get('/v1/players/nba', {}).then(espnInjuries).catch(() => null), autoTagData(), loadTaxiWeeks(), loadLgs().catch(() => null)]);
   BK.espn = espnOut ?? {}; // ESPN injury estimates (return date, out for season) by pid
   await autoDynasty(dyn?.v ?? null); // taxi / contract / riser-faller / Top 100 prospect auto tags
@@ -2896,7 +2913,7 @@ async function renderBreakdown(body, params) {
       <select class="bk-nba" aria-label="NBA team">${[...NBA_TEAM_CODES].sort((a, b) => nbaTeamName(a).localeCompare(nbaTeamName(b))).map(t => `<option value="${t}"${t === nbaTeam ? ' selected' : ''}>${esc(nbaTeamName(t))}</option>`).join('')}</select></span></label>`;
 
   body.innerHTML = `<div class="gm-page bk-page">
-    ${fromInj ? '<a class="bk-back" href="#/commish?tab=injuries">← Back to Injury Report</a>' : ''}
+    ${back ? `<a class="bk-back" href="${esc(back.back)}">← Back to ${esc(back.backl)}</a>` : fromInj ? '<a class="bk-back" href="#/commish?tab=injuries">← Back to Injury Report</a>' : ''}
     ${listTabs}
     <div class="cm-pickers">
       ${list === 'team' ? gmTeamPick(me, cur.season, 'breakdown') : list === 'nba' ? nbaPick : ''}
@@ -3045,6 +3062,7 @@ async function renderBreakdown(body, params) {
       + (p.injury || espnInj ? estChip(espnInj) : '');
     return `
       <div class="bk-team">${logo ? `<img src="${logo}" alt="" onerror="this.remove()">` : ''}<span>${esc(nbaTeamName(p.team) || 'No NBA team')}</span>${cmpBtn(p.pid, true)}</div>
+      ${viewArrows(p)}
       <div class="bk-top">
         <!-- Headshot on top next to number + positions, FP/G ring right under it (owner, Oct 26 2026). -->
         <div class="bk-id">
@@ -3388,7 +3406,9 @@ async function renderBreakdown(body, params) {
   $('.bk-lgfa', body)?.addEventListener('change', e => {
     gmSave('gm-bk-lgfa', e.target.checked);
     BK.limit = BK_PAGE;
-    renderBreakdown(body, new URLSearchParams(location.hash.split('?')[1] ?? '')).catch(() => {});
+    const ps = new URLSearchParams(location.hash.split('?')[1] ?? '');
+    if (ps.has('fa')) { ps.delete('fa'); history.replaceState(null, '', `#/commish?${ps}`); }
+    renderBreakdown(body, ps).catch(() => {});
   });
   const heroEl = $('#bk-hero', body);
   // Drag his own tags on the card into any order (auto tags stay first): saved as that player's tag order.
@@ -4083,7 +4103,9 @@ async function renderDepth(body, params) {
   };
   const key = `gm-dc-chart-${me}`;
   const auto = dcAuto(players, dynOf);
-  const cardLink = p => `#/commish?${new URLSearchParams(fantasyView ? { tab: 'breakdown', team: me, p: p.pid } : { tab: 'breakdown', list: 'nba', nba, p: p.pid })}`;
+  // A name opens his 2K card with a "Back to Depth Chart" link (back / backl, owner Oct 30 2026) to this same view.
+  const dcBack = { back: `#/commish?${new URLSearchParams(fantasyView ? { tab: 'depth', view: 'fantasy', team: me } : { tab: 'depth', view: 'nba', nba })}`, backl: 'Depth Chart' };
+  const cardLink = p => `#/commish?${new URLSearchParams(fantasyView ? { tab: 'breakdown', team: me, p: p.pid, ...dcBack } : { tab: 'breakdown', list: 'nba', nba, p: p.pid, ...dcBack })}`;
 
   const row = (p, i, pos, o = {}) => {
     const e = espn?.[p.pid];
@@ -4298,6 +4320,15 @@ async function renderDepth(body, params) {
 
   body.innerHTML = '<div class="gm-page dc-page"><div id="dc-top"></div><div id="dc-chart"></div><div id="dc-desig"></div><div id="dc-cut"></div></div>';
   draw();
+  // A name opens the 2K card; "Back to Depth Chart" returns to the same scroll spot (like the Injury Report).
+  try {
+    const y = Number(sessionStorage.getItem('dc-scroll'));
+    sessionStorage.removeItem('dc-scroll');
+    if (y) requestAnimationFrame(() => window.scrollTo(0, y));
+  } catch { /* no sessionStorage */ }
+  $('.dc-page', body).addEventListener('click', e => {
+    if (e.target.closest('a[href*="backl=Depth"]')) { try { sessionStorage.setItem('dc-scroll', String(window.scrollY)); } catch { /* blocked */ } }
+  });
   if (fantasyView) {
     dragSort($('#dc-chart', body), '.dc-row, .dc-end', el => el.dataset.dc, () => { DC.menu = null; save(domCols()); draw(); }, () => true, { vertical: true, fixed: '.dc-end' });
     // Designation groups: a drag stays inside its group and only saves that group's order.
