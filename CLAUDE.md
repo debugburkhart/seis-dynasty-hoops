@@ -912,6 +912,14 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Monday solve pins them. gmWeek returns the merged marks (picks over local marks) so undo works on a dashboard pick.
   Rules published + files uploaded by the owner Nov 1 2026 (REST read of locks = 200). Firestore write from the coach
   not tested here (needs the owner's sign-in).
+  TRADED MID-WEEK (owner, Nov 1 2026; week 2: bigtrey5456 -> simeoncampbell7 Oct 28 sent George, Durant, Garland; Parma <->
+  BenDover Oct 30): a starter traded AFTER his lock stays in his old team's MATCHUP lineup and his points count there
+  (matchups: bigtrey still starts George 35 + Durant 40), but the old roster's `starters` shows '0' = an empty slot; an
+  unlocked one moves to the new team's lineup (Garland on simeon). commish.js teamRoster fills an empty slot from the live
+  matchup's starters[i] (traded: true; livePts falls back to starters_points); coach board tag "Traded · counts here"
+  (.mb-traded). coachPick saves the pick for the team whose MATCHUP lineup has him (not his new roster), like the
+  dashboard; picks are per player, so the coach shows them in that slot. Checked on bigtrey: George + Durant back in
+  SF / FLEX, locked 35 / 40.
 - `assets/corrections.js`: manual fixes, win over weekfix.js (team scores, player locked points = pinned in its solver, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has
   wrong; Sleeper's LeBron James photo (id 1362) is Bronny). All player photos go through

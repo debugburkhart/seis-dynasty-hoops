@@ -2647,12 +2647,17 @@ async function savePick(season, week, pid, o, k, d, p, { quiet = false } = {}) {
 }
 // COACH -> DASHBOARD (owner, Nov 1 2026): a lock mark set on the Assistant Coach is saved as a Dev Dashboard pick too
 // (word of law; the Monday solve pins it). mark = { date } -> locked on that game, { none } -> not locked (last game
-// counts), null -> cleared. Owner = the team that has him now. Only when this browser is signed in (quiet otherwise).
+// counts), null -> cleared. Owner = the team whose matchup lineup has him this week (a starter traded away after his
+// lock still counts for his old team), else the team that has him now. Only when this browser is signed in.
 async function coachPick(season, week, pid, mark, boxes) {
   if (!localStorage.getItem('sync-uid')) return false;
   const cur = DATA.seasons.at(-1);
-  const rosters = await sleeper(`/league/${cur.leagueId}/rosters`).catch(() => []);
-  const o = rosters.find(r => (r.players ?? []).includes(pid))?.owner_id;
+  const [rows, rosters] = await Promise.all([
+    sleeper(`/league/${cur.leagueId}/matchups/${week}`).catch(() => []),
+    sleeper(`/league/${cur.leagueId}/rosters`).catch(() => []),
+  ]);
+  const ownerOf = Object.fromEntries(rosters.map(r => [r.roster_id, r.owner_id]));
+  const o = ownerOf[rows.find(m => (m.starters ?? []).includes(pid))?.roster_id] ?? rosters.find(r => (r.players ?? []).includes(pid))?.owner_id;
   if (!o) return false;
   const k = mark == null ? 'clear' : mark.date ? 'lock' : 'last';
   const p = mark?.date ? (boxes?.[pid] ?? []).find(b => b.date === mark.date)?.pts ?? 0 : 0;
@@ -5608,7 +5613,7 @@ async function renderCoach(body, params) {
   // Tags line under a name: dynasty tier, injury, plays today.
   const tags = p => {
     const g = todayGame(p);
-    return `${tier(p)}${p.injury ? injuryTag(p) : ''}${g ? `<span class="mb-today">${['in_progress', 'in_game'].includes(g.status) ? 'Live' : 'Today'} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${!['complete', 'in_progress', 'in_game'].includes(g.status) && tipShort(g) ? ` · <span class="mb-tip">${tipShort(g)}</span>` : ''}</span>` : ''}`;
+    return `${p.traded ? '<span class="mb-traded" title="Traded away mid-week after his lock: Sleeper keeps him in this lineup and his points count for this team">Traded · counts here</span>' : ''}${tier(p)}${p.injury ? injuryTag(p) : ''}${g ? `<span class="mb-today">${['in_progress', 'in_game'].includes(g.status) ? 'Live' : 'Today'} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${!['complete', 'in_progress', 'in_game'].includes(g.status) && tipShort(g) ? ` · <span class="mb-tip">${tipShort(g)}</span>` : ''}</span>` : ''}`;
   };
   const nameHtml = p => `<b><span class="mb-full">${esc(p.name)}</span><span class="mb-short">${esc(short(p.name))}</span></b>`;
   // A tappable player: key = side + pid, opens his card (data-for) below the row.

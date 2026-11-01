@@ -111,7 +111,7 @@ export function teamRoster(DATA, ctx, owner) {
     const pr = ctx.projBy[pid];
     const games = g.length;
     const left = g.filter(x => !x.done).length;
-    const livePts = live?.players_points?.[pid] ?? null;
+    const livePts = live?.players_points?.[pid] ?? live?.starters_points?.[(live?.starters ?? []).indexOf(pid)] ?? null;
     const perGame = pr?.perGame ?? 0;
     // Projected locked points: one game, boosted by how many chances he gets. Once the
     // week is under way, his current points count if no games are left, or if they
@@ -131,7 +131,14 @@ export function teamRoster(DATA, ctx, owner) {
       livePts,
     };
   };
-  const starters = (roster.starters ?? []).map((pid, i) => ({ slot: ctx.slots[i] ?? 'UTIL', empty: !pid || pid === '0', ...(pid && pid !== '0' ? player(pid) : {}) }));
+  // TRADED MID-WEEK (owner, Nov 1 2026): a starter traded away after his lock leaves an EMPTY slot on the roster, but
+  // Sleeper's matchup still has him in that slot and his points still count for this team (week 2 2026: George and
+  // Durant for bigtrey5456 after the Oct 28 trade). Such slots are filled from the matchup, marked traded.
+  const starters = (roster.starters ?? []).map((pid, i) => {
+    const away = (!pid || pid === '0') && ctx.live ? live?.starters?.[i] : null;
+    const id = away && away !== '0' ? away : pid;
+    return { slot: ctx.slots[i] ?? 'UTIL', empty: !id || id === '0', ...(id && id !== '0' ? player(id) : {}), ...(id === away && away ? { traded: true } : {}) };
+  });
   const startIds = new Set(roster.starters ?? []);
   const reserve = new Set(roster.reserve ?? []);
   const taxi = new Set(roster.taxi ?? []);
