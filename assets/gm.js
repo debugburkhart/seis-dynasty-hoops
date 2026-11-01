@@ -125,7 +125,9 @@ export async function loadSlate(season, week) {
 // Sleeper's matchup score counts every starter's latest game, locked or not. A starter is
 // locked here by the coach's rule (counted score = an earlier game than his latest), when
 // he's done for the week (no games left: that score is final), or marked "I locked him".
-export async function lockedPoints(season, week, leagueId, rows) {
+// law = lock-record marks (assets/locks.js lawMarks): the commish's Dev Dashboard picks and saved sightings. They beat this
+// browser's own marks and Sleeper's reading, so a lock once recorded never flips back (owner, Nov 1 2026).
+export async function lockedPoints(season, week, leagueId, rows, law = {}) {
   const [league, stats, slate] = await Promise.all([
     get(`/v1/league/${leagueId}`, {}),
     get(`/stats/nba/${season}/${week}?season_type=regular`, []),
@@ -143,6 +145,7 @@ export async function lockedPoints(season, week, leagueId, rows) {
   for (const list of Object.values(boxes)) list.sort((a, b) => (a.date < b.date ? -1 : 1));
   let marks = {};
   try { marks = JSON.parse(localStorage.getItem(`gm-locks-${season}-${week}`) ?? '{}') ?? {}; } catch { /* none */ }
+  marks = { ...marks, ...law };
   const out = {};
   for (const m of rows ?? []) {
     let sum = 0;
@@ -156,6 +159,7 @@ export async function lockedPoints(season, week, leagueId, rows) {
       const earlier = latest && latest.date < today && Math.abs(latest.pts - counted) >= 0.05 && played.slice(0, -1).some(b => Math.abs(b.pts - counted) < 0.05);
       // A mark on a given game counts that game's score (the manager says it was locked then).
       const mk = marks[pid];
+      if (mk?.zero) continue; // Dev Dashboard: benched before his last game = 0
       const markedGame = mk && typeof mk === 'object' && !mk.none ? played.find(b => b.date === mk.date) : null;
       if (markedGame) sum += markedGame.pts;
       else if (mk && typeof mk === 'object' && mk.none) { if (!left) sum += counted; } // marked "not locked"

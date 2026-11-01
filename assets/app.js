@@ -21,6 +21,7 @@ import { paintSync, syncInit, syncSave } from './sync.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 import { taxiAppearances } from './taxiweek.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
+import { benchDates, chicagoDate, hintsFor, lawFor, lawMarks, lawPoints, lineupGames, loadLockDocs, lockDocId, weekBoxes } from './locks.js';
 import { betaCard, isTestTab, testTabs } from './test-features.js';
 import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
 
@@ -1252,7 +1253,9 @@ async function lockedFor(season, week, rows) {
   const s = DATA.seasons.find(x => x.season === season);
   const ownerOf = Object.fromEntries(s.teams.map(t => [t.rosterId, t.owner]));
   try {
-    const byRoster = await withTimeout(lockedPoints(season, week, s.leagueId, rows), 8000);
+    // Lock records (Dev Dashboard picks + sightings) beat Sleeper's reading, so the commish's locked points never flip.
+    const src = await withTimeout(loadLawSrc(), 6000).catch(() => null);
+    const byRoster = await withTimeout(lockedPoints(season, week, s.leagueId, rows, src ? lawMarks(lawFor(season, week, src)) : {}), 8000);
     return Object.fromEntries(Object.entries(byRoster).map(([r, v]) => [ownerOf[r], v]));
   } catch { return null; }
 }
@@ -2392,7 +2395,7 @@ function renderCommish(main, params) {
     </div>`;
   const body = $('#cm-body', main);
   paintSync(main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth, devdash: renderDevDash }[tab];
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
@@ -2400,6 +2403,227 @@ function renderCommish(main, params) {
 }
 
 // ---------- Test features (commish office, Beta) ----------
+
+// DEV DASHBOARD (owner, Nov 1 2026; logic in locks.js): which game every starter's week counted. Owner's rules: every
+// uncertainty lands here ("Needs you"), every matchup shows each starter's lock situation + team totals, and a tap on any
+// starter lets the commish pick his lock (a game, "not locked: last game counts", or "benched before his last game: 0").
+// HIS PICK IS LAW: saved in Firestore locks/{season_week_pid} (src 'you'); the nightly solver (weekfix.js), the coach
+// and the commish's locked points use it, and nothing read from Sleeper ever changes it. Everyone else: finished weeks
+// = the nightly solver (official score + games he played IN THE LINEUP); the live week = his last lineup game so far.
+// Sleeper's feed readings are HINTS only (tallied by the watcher in data/locks.json + this visit's reads): the owner
+// found false ones (Bane, Peyton Watson), so they never mark a lock.
+const LD = { open: null };
+const LD_READS = 8; // feed reads per visit to a live week (Sleeper's copies disagree)
+const LD_RAW = path => `https://raw.githubusercontent.com/debugburkhart/seis-dynasty-hoops/main/${path}`;
+let LAW_SRC = null;
+// A fresh copy of a data file the watcher / nightly job writes (GitHub's raw copy first: watcher pushes don't redeploy).
+async function freshData(path) {
+  for (const url of [LD_RAW(path), path]) {
+    try { const r = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' }); if (r.ok) return await r.json(); } catch { /* next */ }
+  }
+  return null;
+}
+// The commish's picks (Firestore) + whether the read worked. Cached a minute; lawFor(season, week, src) gives one week.
+async function loadLawSrc(fresh = false) {
+  if (LAW_SRC && !fresh && Date.now() - LAW_SRC.at < 60_000) return LAW_SRC;
+  let docs = [];
+  let error = null;
+  await loadLockDocs().then(d => { docs = d; }).catch(e => { error = e.message; });
+  return (LAW_SRC = { at: Date.now(), docs, error });
+}
+
+async function renderDevDash(body, params) {
+  const cur = DATA.seasons.at(-1);
+  const season = cur.season;
+  if (!body.querySelector('.ld-page')) body.innerHTML = '<section class="card"><p class="empty">Reading Sleeper…</p></section>';
+  const state = await sleeper('/state/nba').catch(() => null);
+  const liveWeekNo = state?.season_type === 'regular' ? Number(state.week) || 1 : null;
+  const lastWeek = Math.min(liveWeekNo ?? cur.weeksPlayed ?? 1, (cur.playoffStart ?? 99) - 1);
+  const week = Math.min(Math.max(1, Number(params.get('week')) || lastWeek), lastWeek);
+  const live = week === liveWeekNo && !(Number(state?.last_scored_leg) >= week);
+  const ownerOf = Object.fromEntries(cur.teams.map(t => [t.rosterId, t.owner]));
+  const [league, official, lawRes, hintFile, lgs] = await Promise.all([
+    sleeper(`/league/${cur.leagueId}`).catch(() => null),
+    freshData('data/official-weeks.json'),
+    loadLawSrc(true),
+    freshData('data/locks.json'),
+    freshData('data/lgs.json'),
+  ]);
+  const box = await weekBoxes(season, week, league?.scoring_settings ?? {});
+  // Feed reads: several for a live week (hints), one for a finished week (its lineups).
+  const reads = [];
+  for (let i = 0; i < (live ? LD_READS : 1); i++) {
+    const rows = await sleeper(`/league/${cur.leagueId}/matchups/${week}`).catch(() => null);
+    if (Array.isArray(rows)) reads.push(rows);
+  }
+  if (!reads.length || !box) { body.innerHTML = '<section class="card"><p class="empty">Sleeper didn’t answer. Try again in a minute.</p></section>'; return; }
+  const law = lawFor(season, week, lawRes);
+  const answers = official?.seasons?.[season]?.weeks?.[week] ?? {};
+  const scored = official?.seasons?.[season]?.legs?.[week] ? answers : {};
+  // Hints: the watcher's tallies for the week + this visit's reads.
+  const hints = {};
+  const addHint = (o, pid, v, n) => { const k = `${o}|${pid}`; (hints[k] ??= {})[v] = (hints[k][v] ?? 0) + n; };
+  for (const [pid, x] of Object.entries(hintsFor(hintFile, season, week))) for (const [v, t] of Object.entries(x.v)) addHint(x.o, pid, num(Number(v)), t[0]);
+  const visit = {};
+  if (live) for (const rows of reads) for (const m of rows) (m.starters ?? []).forEach((pid, i) => {
+    if (!pid || pid === '0') return;
+    const v = num(m.starters_points?.[i] ?? 0);
+    addHint(ownerOf[m.roster_id], pid, v, 1);
+    (visit[`${ownerOf[m.roster_id]}|${pid}`] ??= new Set()).add(v);
+  });
+
+  const today = chicagoDate(Date.now());
+  const pname = pid => DATA.players?.[pid]?.n ?? box.names[pid] ?? `Player ${pid}`;
+  const teams = {};
+  for (const m of reads.at(-1)) {
+    const o = ownerOf[m.roster_id];
+    const ans = scored[o];
+    const solved = Object.fromEntries(ans?.players ?? []);
+    const unsure = new Set((ans?.unsure ?? []).map(u => u.pid));
+    // Finished weeks: the lineup the nightly solver used (Sleeper's old weeks lose traded players from their lineups).
+    const solvedLineup = ans?.starters ?? (ans?.games && !ans.otherLineup ? Object.keys(ans.games) : null);
+    const rows = (solvedLineup ?? (m.starters ?? []).filter(pid => pid && pid !== '0')).map(pid => {
+      const all = box.games[pid] ?? [];
+      const bench = benchDates(lgs, season, pid, o, week);
+      const games = all.map(g => ({ ...g, bench: bench.has(g.date) }));
+      const inLineup = lineupGames(all, lgs, season, pid, o, week);
+      const played = inLineup.filter(g => g.done);
+      const team = all[0]?.team ?? DATA.players?.[pid]?.t;
+      const left = (box.sched[team] ?? []).some(g => !g.done && g.date >= today);
+      const entry = law[pid];
+      let value, tag, how;
+      if (entry) {
+        value = lawPoints(entry, inLineup) ?? 0;
+        tag = 'you';
+        how = entry.k === 'lock' ? `Locked ${dayLabel(entry.d)}` : entry.k === 'last' ? 'Not locked: last game' : 'Benched: 0';
+      } else if (ans?.players) {
+        value = solved[pid] ?? 0;
+        tag = unsure.has(pid) || ans.how === 'nofit' ? 'unsure' : 'solved';
+        how = tag === 'unsure' ? 'Unsure' : 'Solved';
+      } else if (!played.length) {
+        value = 0; tag = 'live'; how = left ? 'No lineup game yet' : 'No lineup games';
+      } else {
+        value = played.at(-1).p; tag = 'live'; how = left ? 'Counting latest (if not locked)' : 'Last game (if not locked)';
+      }
+      const lockDate = entry?.k === 'lock' ? entry.d : tag === 'solved' || tag === 'unsure' ? [...played].reverse().find(g => Math.abs(g.p - value) < 0.05)?.date : null;
+      return { pid, o, name: pname(pid), games, played, left, entry, value, tag, how, lockDate, hint: hints[`${o}|${pid}`] ?? {}, split: (visit[`${o}|${pid}`]?.size ?? 0) > 1, options: (ans?.unsure ?? []).find(u => u.pid === pid)?.options };
+    });
+    const total = rows.reduce((s, r) => s + r.value, 0);
+    teams[o] = { o, mid: m.matchup_id, rows, total, feedTotal: m.custom_points ?? m.points ?? 0, official: ans?.score ?? null };
+  }
+
+  // "Needs you": every uncertainty, newest week first (finished weeks from the nightly solver; this week's feed splits).
+  const needs = [];
+  for (let w = lastWeek; w >= 1; w--) {
+    const A = official?.seasons?.[season]?.weeks?.[w] ?? {};
+    const L = lawFor(season, w, lawRes);
+    for (const [o, a] of Object.entries(A)) {
+      if (!official?.seasons?.[season]?.legs?.[w]) continue;
+      const open = (a.unsure ?? []).filter(u => !L[u.pid]);
+      if (a.how === 'nofit' && !(a.players ?? []).every(([pid]) => L[pid])) needs.push({ w, o, text: `Nothing adds up to the official ${num(a.score)}. Pick this team’s locks.`, pids: (a.players ?? []).map(([pid]) => pid) });
+      else if (open.length) needs.push({ w, o, text: `${open.length} player${open.length > 1 ? 's' : ''} could go more than one way (official ${num(a.score)}).`, pids: open.map(u => u.pid), opts: Object.fromEntries(open.map(u => [u.pid, u.options])) });
+    }
+  }
+  for (const t of Object.values(teams)) {
+    if (t.official != null && t.rows.some(r => r.tag === 'you') && t.rows.every(r => r.tag !== 'unsure') && Math.abs(t.total - t.official) >= 0.05) {
+      needs.unshift({ w: week, o: t.o, text: `These players add up to ${num(t.total)}, but Sleeper’s official score is ${num(t.official)}.`, pids: t.rows.filter(r => r.tag === 'you').map(r => r.pid) });
+    }
+    if (!live) continue;
+    for (const r of t.rows) {
+      if (r.split && !r.entry) needs.push({ w: week, o: t.o, text: `Sleeper’s copies disagree on ${r.name} (${Object.entries(r.hint).map(([v, n]) => `${v} ×${n}`).join(', ')}). Pick him if you know his lock.`, pids: [r.pid], soft: true });
+    }
+  }
+
+  const pairs = Object.values(Object.values(teams).reduce((m, t) => { if (t.mid != null) (m[t.mid] ??= []).push(t); return m; }, {})).filter(p => p.length === 2);
+  const weekChips = Array.from({ length: lastWeek }, (_, i) => i + 1).map(w => `<a class="ld-wk${w === week ? ' on' : ''}" href="#/commish?tab=devdash&week=${w}">Week ${w}${w === liveWeekNo && live ? ' · live' : ''}</a>`).join('');
+  const nameLine = pid => esc(pname(pid));
+  const needRow = n => `<li class="ld-need${n.soft ? ' soft' : ''}"><a href="#/commish?tab=devdash&week=${n.w}&p=${n.pids[0] ?? ''}&o=${encodeURIComponent(n.o)}"><b>Week ${n.w} · ${esc(teamName(n.o, season))}</b> <small>${esc(name(n.o))}</small></a>
+      <span>${esc(n.text)}</span>${n.pids.length ? `<span class="ld-need-p">${n.pids.map(pid => `${nameLine(pid)}${n.opts?.[pid] ? ` (${n.opts[pid].map(num).join(' or ')})` : ''}`).join(' · ')}</span>` : ''}</li>`;
+  const TAG = { you: 'Your pick', solved: 'Solved', unsure: 'Unsure', live: 'Live' };
+  const gameChip = (r, g) => `<span class="ld-g${g.date === r.lockDate ? ' on' : ''}${g.done ? '' : ' wait'}${g.bench ? ' bench' : ''}" title="${g.bench ? 'Played from the bench: doesn’t count' : ''}">${esc(dayLabel(g.date))} ${g.done ? num(g.p) : 'live'}${g.bench ? ' · bench' : ''}</span>`;
+  const hintLine = r => {
+    const list = Object.entries(r.hint).sort((a, b) => b[1] - a[1]);
+    return list.length > 1 ? `<span class="ld-hint${r.split ? ' split' : ''}" title="What Sleeper’s feed showed over all reads: a hint, never a lock">feed ${list.map(([v, n]) => `${v}×${n}`).join(' / ')}</span>` : '';
+  };
+  const row = r => {
+    const key = `${r.o}:${r.pid}`;
+    const solvedHow = (r.tag === 'solved' || r.tag === 'unsure') && r.lockDate ? `Counted ${dayLabel(r.lockDate)}` : r.how;
+    const how = solvedHow === TAG[r.tag] ? TAG[r.tag] : `${solvedHow} · ${TAG[r.tag]}`;
+    return `<li class="ld-p ld-${r.tag}${LD.open === key ? ' open' : ''}">
+      <button type="button" class="ld-pbtn" data-ld="${esc(key)}">
+        <span class="ld-nm"><b>${esc(r.name)}</b><span class="ld-gs">${r.games.map(g => gameChip(r, g)).join('') || '<span class="ld-g none">no games</span>'}${r.left ? '<span class="ld-g wait">more to play</span>' : ''}</span>
+          <span class="ld-tag">${esc(how)}</span>${hintLine(r)}</span>
+        <span class="ld-val"><b>${num(r.value)}</b></span>
+      </button>
+      ${LD.open === key ? picker(r) : ''}
+    </li>`;
+  };
+  const picker = r => `<div class="ld-pick">
+      <p class="ld-pick-h">Which game counted for ${esc(r.name)} in week ${week}? Your pick is final: nothing from Sleeper changes it.</p>
+      <div class="ld-opts">
+        ${r.played.map(g => `<button type="button" class="ld-opt${r.entry?.k === 'lock' && r.entry.d === g.date ? ' on' : ''}" data-set="lock" data-d="${g.date}" data-p="${g.p}">Locked ${esc(dayLabel(g.date))} vs ${esc(g.opp)} · <b>${num(g.p)}</b></button>`).join('')}
+        <button type="button" class="ld-opt${r.entry?.k === 'last' ? ' on' : ''}" data-set="last" data-p="${r.played.at(-1)?.p ?? 0}">Not locked: last game counts${r.left ? ' (once it’s played)' : ` · <b>${num(r.played.at(-1)?.p ?? 0)}</b>`}</button>
+        <button type="button" class="ld-opt${r.entry?.k === 'zero' ? ' on' : ''}" data-set="zero" data-p="0">Benched before his last game · <b>0</b></button>
+        ${r.entry ? '<button type="button" class="ld-opt ld-clear" data-set="clear">Clear my pick (back to automatic)</button>' : ''}
+      </div>
+      ${r.games.some(g => g.bench) ? '<p class="ld-note">Games marked “bench” were played from the bench (the game-day watcher saw it), so they can’t count.</p>' : ''}
+      ${r.options ? `<p class="ld-note">The official score fits with ${r.options.map(num).join(' or ')}.</p>` : ''}
+    </div>`;
+  const teamCol = t => `<div class="ld-team">
+      <div class="ld-th"><span><b>${esc(teamName(t.o, season))}</b><small>${esc(name(t.o))}</small></span>
+        <span class="ld-tot"><b>${num(t.total)}</b><small>${t.official != null ? `Official ${num(t.official)}` : `Sleeper feed ${num(t.feedTotal)}`}</small></span></div>
+      <ol class="ld-list">${t.rows.map(row).join('')}</ol>
+    </div>`;
+  const softCount = needs.filter(n => n.soft).length;
+  body.innerHTML = `
+    <div class="gm-page ld-page">
+      ${betaCard('Dev Dashboard', `
+        <p class="cm-rule">Every starter’s lock, every matchup. Tap a player to pick the game that counted: <b>your pick is final</b> (the nightly scores, the coach and the Record Book use it; nothing read from Sleeper changes it). Everyone else comes from Sleeper’s official score after the week, using only games played in the lineup.</p>
+        <div class="ld-wks">${weekChips}</div>
+        <p class="ld-legend"><span class="ld-k you">Your pick</span><span class="ld-k solved">Solved from the official score</span><span class="ld-k unsure">Unsure</span><span class="ld-k live">Live (week still going)</span><span class="ld-k hint">feed 36×5 / 37×3 = what Sleeper’s feed showed: a hint, never a lock</span></p>
+        ${lawRes.error ? `<p class="ld-warn">Your saved picks couldn’t be read (${esc(lawRes.error)}). Publish the new rules: League office → Props → Copy rules → Open Firebase rules → paste → Publish.</p>` : ''}
+        ${live ? `<p class="cm-rule">Week ${week} is live. Totals count each starter’s latest lineup game unless you picked otherwise; the official score settles it once the week is over.</p>` : ''}`, { cls: 'ld-head' })}
+      ${betaCard(`Needs you <small>${needs.length - softCount}</small>`, `${needs.length - softCount ? `<ul class="ld-needs">${needs.filter(n => !n.soft).map(needRow).join('')}</ul>` : '<p class="empty">Nothing needs you. Every finished week adds up.</p>'}
+        ${softCount ? `<details class="ld-watch"${LD.watch ? ' open' : ''}><summary>To watch this week: Sleeper’s copies disagree on ${softCount} player${softCount > 1 ? 's' : ''}</summary><ul class="ld-needs">${needs.filter(n => n.soft).map(needRow).join('')}</ul></details>` : ''}`, { id: 'ld-needs' })}
+      ${pairs.map(([a, b]) => betaCard(`${esc(teamName(a.o, season))} vs ${esc(teamName(b.o, season))}`, `<div class="ld-match">${teamCol(a)}${teamCol(b)}</div>`, { cls: 'ld-card' })).join('')}
+    </div>`;
+
+  // Open a player from a "Needs you" link (?p=&o=), once per link.
+  const wantP = params.get('p'), wantO = params.get('o');
+  const wantKey = wantP ? `${wantO}:${wantP}` : null;
+  if (wantKey && LD.jumped !== `${week}|${wantKey}`) {
+    LD.jumped = `${week}|${wantKey}`;
+    LD.open = wantKey;
+    return renderDevDash(body, params).then(() => $(`[data-ld="${CSS.escape(wantKey)}"]`, body)?.scrollIntoView({ block: 'center' }));
+  }
+  $('.ld-watch', body)?.addEventListener('toggle', e => { LD.watch = e.target.open; });
+  body.querySelectorAll('.ld-pbtn').forEach(b => b.addEventListener('click', () => {
+    LD.open = LD.open === b.dataset.ld ? null : b.dataset.ld;
+    renderDevDash(body, params);
+  }));
+  body.querySelectorAll('.ld-opt').forEach(b => b.addEventListener('click', async () => {
+    const [o, pid] = LD.open.split(':');
+    b.disabled = true;
+    const ok = await savePick(season, week, pid, o, b.dataset.set, b.dataset.d ?? '', Number(b.dataset.p) || 0);
+    if (ok) { LAW_SRC = null; renderDevDash(body, params); } else b.disabled = false;
+  }));
+}
+const dayLabel = d => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: 'UTC' }) : '');
+// The commish's pick (or "clear"): Firestore locks/{season_week_pid}, src 'you'. Needs sign-in as the commish.
+async function savePick(season, week, pid, o, k, d, p) {
+  try {
+    const { firebase } = await import('./sync.js');
+    const fb = await firebase();
+    if (!fb.auth.currentUser) { alert('Sign in with Google first (the box at the top of the office).'); return false; }
+    const ref = fb.doc(fb.db, 'locks', lockDocId(season, week, pid));
+    if (k === 'clear') await fb.deleteDoc(ref);
+    else await fb.setDoc(ref, { s: String(season), w: Number(week), pid, o, k, d, p, src: 'you', t: fb.serverTimestamp() });
+    return true;
+  } catch (e) {
+    alert(`Not saved: ${e.code === 'permission-denied' ? 'Firestore said no. Publish the new rules (League office → Props → Copy rules).' : e.code ?? e.message}`);
+    return false;
+  }
+}
 
 // 2K-style team breakdown (owner's NBA 2K roster screenshot, Oct 2026; logic in breakdown.js):
 // player card on top (photo, FP/G ring, bio, dynasty + total FP badges, contract), player table
@@ -4854,7 +5078,10 @@ async function gmWeek(params) {
   const whatKey = `gm-whatif-${at.season}-${at.week}`;
   const whatifs = gmLoad(whatKey, {});
   const medianOn = Boolean(DATA.seasons.find(s => s.season === at.season)?.medianGame);
-  const coach = gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode, marks: gmLoad(marksKey, {}), whatifs, medianOn });
+  // Lock records (Dev Dashboard picks + saved sightings, locks.js) beat this browser's marks: a recorded lock never flips.
+  const lawSrc = await withTimeout(loadLawSrc(), 6000).catch(() => null);
+  const marks = { ...gmLoad(marksKey, {}), ...(lawSrc ? lawMarks(lawFor(at.season, at.week, lawSrc)) : {}) };
+  const coach = gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode, marks, whatifs, medianOn });
   return { ...at, me, ctx, boxes, slate, pairs, mode, marksKey, whatKey, whatifs, medianOn, coach };
 }
 // Banner while what-if locks are on: they change the coach's math on this device only.

@@ -13,6 +13,8 @@ export const TEST_FEATURES = [
   { id: 'reports', label: 'Reports', since: '2026-10-28' },
   // Depth Chart (owner, Oct 29 2026): fantasy rosters by position (auto + drag order) and ESPN's NBA depth charts.
   { id: 'depth', label: 'Depth Chart', since: '2026-10-29' },
+  // Dev Dashboard (owner, Nov 1 2026): every starter's lock per matchup, every uncertainty, the commish's picks = law.
+  { id: 'devdash', label: 'Dev Dashboard', since: '2026-11-01' },
 ];
 
 export const BETA = '<span class="gm-beta">Beta</span>';

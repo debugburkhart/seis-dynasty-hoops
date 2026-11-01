@@ -13,6 +13,7 @@ rules_version = '2';
 //   picks/{uid}            { owner, picks: { propId: { o, l } }, t }: hidden from others until lockAt
 //   status/{uid}           { owner, n, t }: how many picks, for "who has picked" before the lock
 // court/{season}/votes/{caseKey}_{uid}  { k, owner, w, m, t }: Trade Court votes (anyone may read)
+// locks/{season_week_pid}  { s, w, pid, o, k, d, p, src, t }: the commish's Dev Dashboard lock picks (anyone may read)
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -95,6 +96,20 @@ service cloud.firestore {
         && request.resource.data.m in ['h', 's', '']
         && request.resource.data.t == request.time;
       allow delete: if isMember() && id == resource.data.k + '_' + request.auth.uid;
+    }
+
+    // Dev Dashboard lock records (owner, Nov 1 2026; assets/locks.js): one doc per season_week_pid. Public read (the
+    // nightly job reads them); only the commish writes. src 'you' = his pick (final).
+    match /locks/{id} {
+      allow read: if true;
+      allow create, update: if isCommish()
+        && request.resource.data.keys().hasOnly(['s', 'w', 'pid', 'o', 'k', 'd', 'p', 'src', 't'])
+        && id == request.resource.data.s + '_' + string(request.resource.data.w) + '_' + request.resource.data.pid
+        && request.resource.data.k in ['lock', 'last', 'zero']
+        && request.resource.data.src == 'you'
+        && request.resource.data.p is number
+        && request.resource.data.t == request.time;
+      allow delete: if isCommish();
     }
 
     match /{document=**} {

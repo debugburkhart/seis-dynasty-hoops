@@ -7,6 +7,7 @@ import { ALL_STARS_FROM, AWARD_SCORING } from './config.js';
 import { draftedPlayers, seasonPoints } from './draft.js';
 import { bestLineup, calibrate } from './power.js';
 import { finishedGames, recordLive, recordOfficial, settleWeeks } from './weekfix.js';
+import { benchDates, lawFor } from './locks.js';
 
 const API = 'https://api.sleeper.com/v1';
 
@@ -270,6 +271,10 @@ export async function buildLeagueData(leagueId, fetchImpl = globalThis.fetch.bin
         fixScore: (w, o) => fixFor(w)?.scores?.[nameOf(o)],
         fixPlayers: (w, o) => fixFor(w)?.players?.[nameOf(o)] ?? {},
         name: fullName, label: nameOf,
+        // The commish's Dev Dashboard picks (assets/locks.js; weekFix.law = { docs }) and the game-day watcher's lineup
+        // records (weekFix.lgs = data/lgs.json): games a starter played from the bench never count.
+        law: w => lawFor(season, w, weekFix.law ?? {}),
+        bench: (w, o, pid) => benchDates(weekFix.lgs, season, pid, o, w),
       });
       settled = out.settled;
       weekFix.notes.push(...out.notes);

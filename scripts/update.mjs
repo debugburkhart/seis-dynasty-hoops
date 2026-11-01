@@ -5,6 +5,7 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { FREEZE_SEED, LEAGUE_ID } from '../assets/config.js';
 import { buildLeagueData } from '../assets/build-data.js';
+import { loadLockDocs } from '../assets/locks.js';
 import { recordHistory } from '../assets/records.js';
 import { frontOffice } from '../assets/frontoffice.js';
 import { extractSeason, guardSeason, sameSeason, verifySeason } from '../assets/freeze.js';
@@ -44,6 +45,11 @@ const weekFix = {
   live: (await readJson('data/live-weeks.json')) ?? { seasons: {} },
   notes: [],
 };
+// The commish's Dev Dashboard lock picks (assets/locks.js, owner Nov 1 2026; Firestore, public read) and the game-day
+// watcher's lineup records (bench games never count). A failed read = a Scoring check note; the rest still runs.
+weekFix.law = { docs: [] };
+weekFix.lgs = await readJson('data/lgs.json');
+try { weekFix.law.docs = await loadLockDocs(); } catch (e) { weekFix.notes.push(`Dev Dashboard lock picks couldn't be read (${e.message}); finished weeks were solved without them tonight.`); }
 
 // All-Stars (they need every box score up to the break) and each season's rookies
 // are worked out once, then carried forward from last night's data.
@@ -507,7 +513,7 @@ if (guard.alerts.length) {
   sections.push(`Weeks Sleeper changed that the site held back, then accepted:\n\n${guard.alerts.join('\n\n')}`);
 }
 if (weekFix.notes.length) {
-  sections.push(`Finished weeks the site couldn't settle for sure from Sleeper's official standings:\n\n${weekFix.notes.join('\n\n')}\n\nIn the Sleeper app, open that week's matchup and read the players' points. Add them under "players" in assets/corrections.js (the team score is already right).`);
+  sections.push(`Finished weeks the site couldn't settle for sure from Sleeper's official standings:\n\n${weekFix.notes.join('\n\n')}\n\nPick those players on the Dev Dashboard (Commish office, Test features, Dev Dashboard): your pick is final and the next run uses it. (assets/corrections.js "players" still works too.)`);
 }
 if (problems.length) {
   sections.push(`Sleeper's weekly scores don't match its official standings:\n\n${problems.join('\n\n')}\n\nLook these up in the Sleeper app and add the right team scores to assets/corrections.js.`);

@@ -5,7 +5,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 
 - Live site: https://debugburkhart.github.io/seis-dynasty-hoops/
 - Repo: https://github.com/debugburkhart/seis-dynasty-hoops (public)
-- Owner is not a developer: explain in plain language, give exact upload steps.
+- Owner says he IS a developer (Nov 1 2026): technical detail is fine; still give exact upload steps (no git/Node
+  locally). He does NOT want a Sleeper login/dummy account for the site (Nov 1 2026): public API only.
 
 ## How the owner deploys (important)
 - No git/Node locally. The owner uploads files through GitHub's web UI:
@@ -314,7 +315,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (default team bigdaddyburk = Parma John Wall; any team selectable) uses live Sleeper data
   in the browser: rosters, /schedule/nba/regular/{season}, per-game projections
   /projections/nba/{season}/{week}, season stats, matchups. LEAGUE IS LOCK-IN SCORING: each
-  starter counts ONE game per week (locked by the manager, else his last game), verified
+  starter counts ONE game per week (locked by the manager, else his LAST GAME OF THE WEEK only: owner's
+  wording Oct 31 2026; a locked player stays in his starting slot, can't be benched or moved; an unlocked
+  starter benched before his last game of the week gets 0 for the week, owner Nov 1 2026: his earlier games
+  never count; so a 0 for a starter with games played is a real result, not only a feed error), verified
   against box scores. Projection = per-game proj x lock factor (1g 1.00, 2g 1.11, 3g 1.23,
   4+ 1.25) x 1.08 calibration; backtest 2024-25: ~27 pt avg miss, picks winner 72%.
   Playoff picture tab: playoffPicture() clinch/elimination math (6 teams, top 2 byes,
@@ -515,6 +519,24 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   league.json games (ap/bp) and locked points from playerWeeks (bt useFrozen). Box scores and weekly
   projections are fine. The Oct 20 backtest numbers (managers 167, Balanced 185, Play to win 176,
   "opponents +22/week", "managers lock worse") used the broken feed and are WRONG.
+  THE MATCHUPS FEED DISAGREES WITH ITSELF (found Oct 31 2026 11:58 PM CT, week 2, every game final): 40 reads
+  seconds apart (api.sleeper.app + api.sleeper.com, cache-busted) gave DIFFERENT starters_points for 8 starters,
+  team `points` always = the sum of that read (so each read is one consistent server copy). Two kinds: (1) lock vs
+  latest, ~50/50: Pritchard 36 (Mon, first game) x21 / 37 (Fri, latest) x19, LaVine 34 (Thu) / 10 (Sat, latest),
+  Peterson 27 (Mon) / 25 (Sat); (2) real score vs 0, mostly real: Toppin 24/0, Garland 28/0, D. White 18/0,
+  Podziemski 37/0, Queta 22/0 (4-9 of 40 reads = 0). Team totals jumped e.g. simeon 222 / 246 / 250 / 274 within 10 s.
+  So ONE read (recordLive snapshots, the coach, lgs.mjs) is a coin flip for some players. Also VanVleet (Parma) = 0
+  on every read with 3 finished games (36 seen Oct 30, 29 Oct 31 2 AM): the OWNER LOCKED HIM ON FRIDAY'S 29, so the
+  feed DROPPED A REAL LOCK to 0 while the week was still live (Saturday night) on every server copy.
+  ANSWERED Nov 1 2026: the owner locked Pritchard on Monday's 36, so the earlier-game reads were the truth and the
+  "latest game" reads were copies that LOST the lock. Every error seen so far loses information (lock -> latest
+  game, or -> 0). LATER DISPROVED the same day (Bane, Peyton Watson: false earlier-game reads): feed readings are
+  hints only, see `assets/locks.js` + DEV DASHBOARD.
+  The real-vs-0 players (Garland, Toppin, D. White, Podziemski, Queta) ALL still had a Sunday game; LaVine,
+  Peterson, VanVleet didn't. Fits the owner's rule: an unlocked starter's score isn't settled until his last
+  game of the week, so some server copies may show 0 for him meanwhile (not every unlocked Sunday player
+  flickered in 40 reads: Bane, Wagner, Kessler... stayed put). Side note: /schedule/nba/regular/{s} rows carry
+  home/away .starters = NBA starting five (a free source for GS; not used yet).
   RECALIBRATION (Oct 21 2026, fit 2024-25, test 2025-26, frozen scores, harness deleted): one game =
   0.975 x proj for every active-roster player (2025-26: 0.981; old 1.082 came from hindsight lineups)
   -> SCORE_CAL 0.975 (your team's draws); simulated opponents matched their real finals at ~1.0 x ->
@@ -846,6 +868,41 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   contractsCard() in the Dynasty side column: share of roster dynasty score in a contract year (+ options
   after this season), league average/rank, groups, every-team table; contractsHealthCard() on Health.
   Next: step 4 Playoff odds (after 3-4 weeks of games).
+- `assets/locks.js` + DEV DASHBOARD (owner, Nov 1 2026): which game each starter's week counted, without flip-flopping.
+  (1) The commish's PICK on the Dev Dashboard = WORD OF LAW: Firestore locks/{season}_{week}_{pid} { s, w, pid, o, k, d,
+  p, src 'you', t }, k = lock (+ d = game date) / last (not locked: his last LINEUP game of the week) / zero (benched before
+  his last game). Beats corrections.js and everything read from Sleeper; only he changes it ("Clear my pick"). Used by
+  weekfix (pins), gm.js lockedPoints(..., law) + gmWeek marks (lawMarks: { date } / { none } / { none, zero }).
+  (2) BENCH GAMES NEVER COUNT: benchDates(lgs, season, pid, owner, week) / lineupGames() = the game-day watcher's lineup
+  records (data/lgs.json v 0 for that owner, that week). (3) Everyone else: weekfix solves from the official score.
+  (4) FEED HINTS ONLY: scripts/lgs.mjs lockSweep (start of every run + every LOCK_EVERY 30 min, LOCK_READS 12 reads of the
+  live week, skipped once state.week moves on) tallies every value each starter showed -> data/locks.json (version 2: {
+  seasons: { s: { w: { pid: { o, v: { points: [reads, firstAt, lastAt] } } } } } }, only ever added to). Shown on the
+  dashboard ("feed 36×5 / 37×3"), NEVER treated as a lock: the owner checked in the app (Nov 1 2026, week 2) and
+  earlier-game readings were real for Pritchard (Mon 36), Porter Jr. (Tue 43), VanVleet (Fri 29, later read 0 / 36),
+  but FALSE for Bane (Wed 28 on 1 of 8 reads; started Fri, not locked) and Peyton Watson (Mon 36 = his best game on 8
+  of 24 reads; not locked); Podziemski's "Mon 32" was because his Fri 37 was played from the BENCH. Copies often show a
+  player's best game (usually the locked one, not always); per player, not whole stale reads.
+  weekfix changes: settleWeeks({ law, bench }); snapshots never decide a value (settleTeam always non-strict: they
+  only order candidates); pins = corrections + picks. WEEKFIX_VERSION stays 1 ON PURPOSE: a bump re-solved week 1 from
+  Sleeper's CURRENT week-1 feed, which lost bigtrey5456's traded starters (Garland, Isaiah Stewart) -> "nofit". Answers
+  are redone only when their key changes (old key format kept when there are no picks / bench records); a re-solve
+  tries the saved answer's own lineup (answer.starters, saved from now on; older answers: Object.keys(games)) and also
+  offers each player's previously solved points, because Sleeper CORRECTS BOX SCORES later (Isaiah Stewart Oct 25:
+  26 -> 24, updated Oct 30) while the official score keeps the old number. Tested on live data: plain re-solve of week 1
+  = league.json playerWeeks exactly; a matching pick (George Tue 53) -> same unique answer; a wrong pick (George 27) ->
+  "nofit" in Needs you. update.mjs: weekFix.law = { docs } (loadLockDocs; failure = Scoring check note), weekFix.lgs.
+  firestore.rules: locks/{id} public read, commish-only write, src must be 'you' -> the owner must re-publish the rules
+  (League office -> Props -> Copy rules) before picks save.
+  Dev Dashboard (Test features tab=devdash, renderDevDash in app.js, .ld-* in styles.css): week chips; legend; "Needs
+  you" = finished-week ties ("could go more than one way" + options), nofits, picks that don't add up to the official
+  score; a "To watch this week" fold (LD.watch) for live players whose reads disagree this visit (LD_READS 8). One card
+  per matchup: team total of the values shown + "Official N" (scored weeks, lineup = the solver's) or "Sleeper feed N";
+  per starter: games chips (counted game navy, bench games struck "· bench"), tag ("Counted Fri · Solved", "Locked Tue
+  · Your pick", "Counting latest (if not locked) · Live"), feed hint line, value; tap = picker (each LINEUP game / not
+  locked / benched 0 / clear). Live week value = his latest lineup game (unknown locks aren't guessed). ?week=&p=&o=
+  opens a player. Tested Nov 1 2026: weeks 1 + 2 live (72 starters, week 1 totals = official for all 8), 402 px +
+  desktop, no overflow. NOT tested: Firestore writes (rules not published), the watcher's sweeps in Actions.
 - `assets/corrections.js`: manual fixes, win over weekfix.js (team scores, player locked points = pinned in its solver, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has
   wrong; Sleeper's LeBron James photo (id 1362) is Bronny). All player photos go through
@@ -886,7 +943,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   claims, saving picks (live rules block them until the owner publishes the new rules).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json, taxi-week.json, lgs.json (written by scripts/lgs.mjs via lgs.yml, not the nightly job),
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json, taxi-week.json, lgs.json + locks.json (written by scripts/lgs.mjs via lgs.yml, not the nightly job),
   dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 
@@ -999,6 +1056,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (a public page in NAV/READY, or a My GM / League office tab), remove its TEST_FEATURES entry, swap
   betaCard for plain cards (no Beta tags), and note the date + new place here.
 - Current test features:
+  DEV DASHBOARD (tab=devdash; owner, Nov 1 2026): see `assets/locks.js` + DEV DASHBOARD under Architecture.
   DEPTH CHART (tab=depth; owner, Oct 29 2026; renderDepth / dcAuto / dcChart in app.js, .dc-* in styles.css). Owner's
   answers: BOTH views with a switch (?view=fantasy|nba, gm-dc-view), a dropdown per view (?team= fantasy team, default
   COMMISH; ?nba= NBA team, gm-dc-nba, default ATL); rows show FP/G + min, NBA GS/GP (only when nba-starts is full),

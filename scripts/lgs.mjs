@@ -21,7 +21,13 @@
 // that started him; Team list counts that team's only).
 //
 // Saves (git commit + push, retried with a rebase) after each finished game and at least every 20 minutes, so
-// the owner can upload changes while it runs: it only ever writes data/lgs.json and data/nightly.json.
+// the owner can upload changes while it runs: it only ever writes data/lgs.json, data/nightly.json and data/locks.json.
+//
+// FEED HINTS (owner, Nov 1 2026; assets/locks.js): Sleeper's matchups feed gives different answers on different reads
+// (a lock on some, the latest or best game or 0 on others). Every LOCK_EVERY (and at the start of every run, games or
+// not) the watcher reads the live week LOCK_READS times and tallies every value each starter showed in data/locks.json
+// (only ever added to). The Dev Dashboard shows them as hints; they are NOT locks (owner found false ones: Bane, Watson).
+// The lineup records in data/lgs.json (bench games never count) + the official score + the commish's picks decide.
 //
 // ON TIME, NOT ON GITHUB'S SCHEDULE (owner, Oct 28 2026: the "2 AM" nightly update started 6:00-8:40 AM every day:
 // GitHub runs scheduled jobs hours late). Runs started with workflow_dispatch start within about a minute, so:
@@ -34,9 +40,13 @@
 // Needs GITHUB_TOKEN with actions: write (lgs.yml); GitHub lets workflow_dispatch from it start new runs.
 import { readFile, writeFile } from 'node:fs/promises';
 import { execSync } from 'node:child_process';
+import { LOCKS_VERSION, recordHints } from '../assets/locks.js';
 
 const FILE = 'data/lgs.json';
 const NIGHTLY = 'data/nightly.json';
+const LOCKS = 'data/locks.json'; // feed hints (assets/locks.js): every value the feed showed, tallied
+const LOCK_EVERY = 30 * 60_000; // feed hints every 30 minutes while running
+const LOCK_READS = 12; // reads per sweep (Sleeper's copies disagree)
 const START = Date.now();
 const BUDGET = Number(process.env.LGS_MINUTES || 340) * 60_000; // stay under GitHub's 6-hour job limit
 const TICK = 60_000;
@@ -88,7 +98,8 @@ function save(db) {
 function push(msg) {
   try {
     execSync('git config user.name "github-actions[bot]" && git config user.email "41898282+github-actions[bot]@users.noreply.github.com"');
-    execSync(`git add ${FILE} ${NIGHTLY} 2>/dev/null || git add ${FILE}`);
+    execSync(`git add ${FILE}`);
+    for (const f of [NIGHTLY, LOCKS]) { try { execSync(`git add ${f}`, { stdio: 'pipe' }); } catch { /* not there yet */ } }
     try { execSync('git diff --cached --quiet'); return; } catch { /* something to commit */ }
     execSync(`git commit -m "${msg}"`);
     for (let i = 0; i < 4; i++) {
@@ -99,6 +110,32 @@ function push(msg) {
     }
     log('push failed (will retry at the next save)');
   } catch (e) { log('save skipped:', e.message); }
+}
+
+// ---------- Lock sweeps (assets/locks.js) ----------
+async function loadLocks() {
+  try { const j = JSON.parse(await readFile(LOCKS, 'utf8')); if (j?.version === LOCKS_VERSION) return j; } catch { /* new file */ }
+  return { version: LOCKS_VERSION, at: null, seasons: {} };
+}
+// Reads the LIVE week LOCK_READS times (a few seconds apart) and adds every value each starter showed to the hint
+// tallies. Only while Sleeper says the week is under way (once a week ends its feed goes wrong). Returns the reads made.
+async function lockSweep(leagueId) {
+  const state = await getJson('https://api.sleeper.app/v1/state/nba');
+  if (state?.season_type !== 'regular') return 0;
+  const season = String(state.season), week = Number(state.week) || 1;
+  const rosters = await getJson(`https://api.sleeper.app/v1/league/${leagueId}/rosters`);
+  if (!Array.isArray(rosters)) { log('feed hints: no answer from Sleeper'); return 0; }
+  const ownerOf = Object.fromEntries(rosters.map(r => [r.roster_id, r.owner_id]));
+  const file = await loadLocks();
+  let reads = 0;
+  for (let i = 0; i < LOCK_READS; i++) {
+    const rows = await getJson(`https://api.sleeper.app/v1/league/${leagueId}/matchups/${week}`);
+    if (Array.isArray(rows)) { reads++; recordHints(file, season, week, rows, ownerOf, new Date().toISOString()); }
+    await sleep(2500);
+  }
+  log(`feed hints week ${week}: ${reads} reads`);
+  if (reads) { file.at = new Date().toISOString(); await writeFile(LOCKS, JSON.stringify(file)); push(`Feed hints: week ${week}`); }
+  return reads;
 }
 
 // Start a workflow now (workflow_dispatch). file = 'update.yml' (nightly update) or 'lgs.yml' (this watcher).
@@ -257,6 +294,8 @@ async function main() {
   const state = await getJson('https://api.sleeper.app/v1/state/nba');
   if (!state || state.season_type !== 'regular') { log('Not the NBA regular season; nothing to watch.'); return; }
   const season = String(state.season);
+  await lockSweep(leagueId);
+  let lastSweep = Date.now();
   let day = gameDay();
   // WEEKEND OVERNIGHT HANDOFF (owner, Oct 30 2026: weekend-only, not around the clock): a run starting between 2 and
   // 5 AM after the night's update is the replacement a Friday / Saturday watcher started on purpose; it waits for
@@ -328,6 +367,7 @@ async function main() {
   log(`Watching ${games.length} games on ${day} (week ${week}).`);
   let done = false; // every game final
   while (Date.now() - START < BUDGET) {
+    if (Date.now() - lastSweep >= LOCK_EVERY) { await lockSweep(leagueId); lastSweep = Date.now(); }
     await sundaySnaps(db, day);
     if (done) {
       // After the last game: wait for 2:00 AM Central, start the nightly update, stop for the day.

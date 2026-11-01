@@ -12,6 +12,9 @@
 // answers = the most likely one is used and the players are listed in the Scoring check.
 // assets/corrections.js still wins over all of it. No DOM / Node APIs (runs in the job and a browser).
 
+// Stays 1 (Nov 1 2026): a version bump re-solves every finished week from Sleeper's CURRENT matchup feed, whose old
+// weeks' starter lists go wrong (week 1 bigtrey5456 turned into "nofit"). Answers are redone only when their key
+// changes (score, corrections, the commish's picks, bench records), using the saved answer's own starters first.
 export const WEEKFIX_VERSION = 1;
 const LIVE_WEEKS_KEPT = 4;
 
@@ -129,6 +132,10 @@ export async function finishedGames(season, week, fetchImpl = globalThis.fetch.b
 
 // ---------- Locked points ----------
 
+// A lock record's points (same rules as assets/locks.js lawPoints; no imports here): lock = that game, last = his last
+// game of the week, zero = benched before it.
+const lawValue = (x, list) => (x.k === 'zero' ? 0 : x.k === 'last' ? (list?.at(-1)?.p ?? 0) : (list?.find(g => g.date === x.d)?.p ?? (Number.isFinite(x.p) ? x.p : null)));
+
 // Per-game box scores for one week: pid -> [{ date, p }] (games he played, oldest first).
 export async function weekGames(season, week, scoring, fetchImpl = globalThis.fetch.bind(globalThis)) {
   let res;
@@ -218,26 +225,23 @@ function fitLineup(starters, games, snap, target, pins, strict) {
 // snapshot's, then the feed's). pins: { pid: corrections.js points }. Returns { score, players:
 // [[pid, p]], how, fits, unsure, games }: how = 'unique' (exactly one combination adds up), 'tie'
 // (several do: the most likely one is used and the players listed for the owner), 'nofit'
-// (nothing adds up). relaxed = the snapshot's values had to be loosened to fit (also listed).
+// (nothing adds up). games = each starter's games IN THE LINEUP (bench games already left out).
+// pins = { pid: points } that must hold: corrections.js and the commish's Dev Dashboard picks. Mid-week snapshots
+// only order each player's games (most likely first); they never decide a value on their own (owner, Nov 1 2026:
+// the feed showed false "locks" for Bane and Peyton Watson, even on many reads).
 export function settleTeam({ lineups, games, snap, target, pins = {} }) {
   const tried = [];
   for (const starters of lineups) {
     if (!starters?.length || tried.some(t => t.key === [...starters].sort().join())) continue;
     const key = [...starters].sort().join();
-    let fit = fitLineup(starters, games, snap, target, pins, true);
-    let relaxed = false;
-    if (!fit.fits && snap) {
-      const loose = fitLineup(starters, games, snap, target, pins, false);
-      if (loose.fits) { fit = loose; relaxed = true; }
-    }
-    tried.push({ key, starters, fit, relaxed });
+    tried.push({ key, starters, fit: fitLineup(starters, games, snap, target, pins, false) });
   }
   const fitting = tried.filter(t => t.fit.fits);
   const gamesOf = pids => Object.fromEntries(pids.map(pid => [pid, (games[pid] ?? []).map(g => [g.date, g.p])]));
   if (!fitting.length) {
     const t = tried[0];
     return {
-      score: target, how: 'nofit', fits: 0, unsure: [],
+      score: target, how: 'nofit', fits: 0, unsure: [], starters: t?.starters ?? [],
       players: (t?.fit.opts ?? []).map(o => [o.pid, o.values[0] / 10]).filter(([, p]) => p),
       games: gamesOf(t?.starters ?? []),
     };
@@ -245,10 +249,9 @@ export function settleTeam({ lineups, games, snap, target, pins = {} }) {
   const t = fitting[0];
   // Another lineup that also adds up (a lineup change after the last snapshot?): say so.
   const other = fitting.slice(1).find(x => x.key !== t.key);
-  const how = t.fit.fits === 1 && !other && !t.relaxed ? 'unique' : 'tie';
+  const how = t.fit.fits === 1 && !other ? 'unique' : 'tie';
   return {
-    score: target, how, fits: t.fit.fits, unsure: t.fit.unsure,
-    ...(t.relaxed ? { relaxed: true } : {}),
+    score: target, how, fits: t.fit.fits, unsure: t.fit.unsure, starters: t.starters,
     ...(other ? { otherLineup: other.starters } : {}),
     players: t.fit.players.filter(([, p]) => p),
     games: gamesOf([...t.starters, ...(other?.starters ?? [])]),
@@ -274,7 +277,7 @@ export function lastSnap(live, season, week, owner, lastDay) {
 // players } } }, notes } (notes = Scoring check lines). weekly[i] = the matchup feed of week i + 1.
 // fixScore(w, owner) = a corrections.js team score; fixPlayers(w, owner) = its { player name: points }
 // for that team (pinned: the rest is solved around them). name(pid) = player name.
-export async function settleWeeks({ official, live, season, weekly, ownerOf, lastWeek, playoffStart, median, scoring, fetchImpl, fixScore, fixPlayers, name, label }) {
+export async function settleWeeks({ official, live, season, weekly, ownerOf, lastWeek, playoffStart, median, scoring, fetchImpl, fixScore, fixPlayers, name, label, law = () => ({}), bench = () => new Set() }) {
   const settled = {};
   const notes = [];
   const S = official.seasons[season];
@@ -299,8 +302,15 @@ export async function settleWeeks({ official, live, season, weekly, ownerOf, las
       const target = fixScore(w, o) ?? scores[o];
       const feedStarters = (m.starters ?? []).filter(pid => pid && pid !== '0');
       const fixes = Object.entries(fixPlayers(w, o) ?? {});
-      const key = JSON.stringify([target, fixes]);
+      // The commish's Dev Dashboard picks for this team (assets/locks.js lawFor) are pins and beat corrections.js.
+      // bench(w, o, pid) = dates he played from this team's bench (game-day watcher): those games never count.
+      const lw = Object.entries(law(w) ?? {}).filter(([, x]) => x.o === o).sort(([a], [b]) => (a < b ? -1 : 1));
+      const benchKey = feedStarters.map(pid => [pid, [...bench(w, o, pid)].sort()]).filter(([, d]) => d.length);
+      // Old answers keep their key (no picks, no bench records = the key they were saved with).
+      const key = JSON.stringify(lw.length || benchKey.length ? [target, fixes, lw.map(([pid, x]) => [pid, x.k, x.d, x.p]), benchKey] : [target, fixes]);
       let r = saved[o];
+      // The lineup that answer used (saved since Nov 1 2026; older answers: their games list = that lineup, unless another lineup was listed too).
+      const prevStarters = r?.starters ?? (r?.games && !r.otherLineup ? Object.keys(r.games) : null);
       if (!r || r.v !== WEEKFIX_VERSION || r.key !== key) {
         if (boxes === undefined) {
           boxes = await weekGames(season, w, scoring, fetchImpl);
@@ -310,13 +320,23 @@ export async function settleWeeks({ official, live, season, weekly, ownerOf, las
         else {
           const lastDay = Object.values(boxes).flat().reduce((d, g) => (g.date > d ? g.date : d), '');
           const snap = lastSnap(live, season, w, o, lastDay);
-          const pool = [...new Set([...(snap?.s ?? []), ...feedStarters, ...(m.players ?? [])])];
+          const pool = [...new Set([...(snap?.s ?? []), ...(prevStarters ?? []), ...feedStarters, ...(m.players ?? [])])];
           const pins = {};
           for (const [wanted, p] of fixes) {
             const pid = pool.find(x => plain(name(x)) === plain(wanted));
             if (pid) pins[pid] = p;
           }
-          r = saved[o] = { v: WEEKFIX_VERSION, key, at, snap: snap?.at ?? null, ...settleTeam({ lineups: [snap?.s, feedStarters], games: boxes, snap, target, pins }) };
+          const games = Object.fromEntries(pool.map(pid => [pid, (boxes[pid] ?? []).filter(g => !bench(w, o, pid).has(g.date))]));
+          // Sleeper corrects box scores days later (Isaiah Stewart's Oct 25 2026 game: 26 -> 24 on Oct 30) while the
+          // official score keeps the old number, so a re-solve also offers each player's previously solved points.
+          for (const [pid, p] of r?.players ?? []) {
+            if (games[pid] && !games[pid].some(g => Math.abs(g.p - p) < 0.05)) games[pid] = [{ date: 'saved', p }, ...games[pid]];
+          }
+          for (const [pid, x] of lw) {
+            const v = lawValue(x, games[pid]);
+            if (v != null) pins[pid] = v;
+          }
+          r = saved[o] = { v: WEEKFIX_VERSION, key, at, snap: snap?.at ?? null, ...settleTeam({ lineups: [snap?.s, prevStarters, feedStarters], games, snap, target, pins }) };
         }
       }
       (settled[w] ??= {})[m.roster_id] = { score: r.score, players: r.players };
@@ -325,10 +345,9 @@ export async function settleWeeks({ official, live, season, weekly, ownerOf, las
       const gamesText = pid => (r.games?.[pid] ?? []).map(([d, p]) => `${d.slice(5)} ${p}`).join(', ') || 'no games';
       const used = Object.fromEntries(r.players);
       const lines = [r.how === 'nofit'
-        ? `${season} week ${w} ${label(o)} (official score ${r.score}): no combination of the starters' games adds up to the official score. Read every starter's points in the Sleeper app.`
-        : `${season} week ${w} ${label(o)} (official score ${r.score}): the starters' games add up to ${r.score} in ${r.fits > 1 ? `${r.fits} different ways` : 'a way the last snapshot didn\'t expect'}. The site used the most likely one; read these players' points in the Sleeper app.`];
+        ? `${season} week ${w} ${label(o)} (official score ${r.score}): no combination of the starters' games adds up to the official score. Pick this team's locks on the Dev Dashboard (Commish, Test features).`
+        : `${season} week ${w} ${label(o)} (official score ${r.score}): the starters' games add up to ${r.score} in ${r.fits > 1 ? `${r.fits} different ways` : 'a way the last snapshot didn\'t expect'}. The site used the most likely one; pick these players on the Dev Dashboard (Commish, Test features).`];
       for (const u of r.unsure) lines.push(`   ${name(u.pid)}: ${used[u.pid] ?? 0} used, could be ${u.options.filter(p => p !== (used[u.pid] ?? 0)).join(' or ')} (games: ${gamesText(u.pid)})`);
-      if (r.relaxed) lines.push('   (The players\' points seen mid-week didn\'t fit the official score: check this team\'s whole lineup.)');
       if (r.otherLineup) lines.push(`   The lineup may have changed after the last snapshot: this lineup also adds up: ${r.otherLineup.map(name).join(', ')}.`);
       if (r.how === 'nofit') for (const [pid, p] of r.players) lines.push(`   ${name(pid)}: ${p} for now (games: ${gamesText(pid)})`);
       notes.push(lines.join('\n'));
