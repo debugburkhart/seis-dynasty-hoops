@@ -3270,7 +3270,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-back { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 99px; background: var(--navy-900); color: #fff; font: 800 12.5px/1.2 var(--font); text-decoration: none; }
 .bk-back:hover { background: var(--navy-700); }
 /* Card arrows: View on NBA team / View in League (dark 2K card, gold outline). */
-.bk-goto { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
+.bk-goto { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; } /* full width: the hero is a 2-column grid from 1200px */
 .bk-gotoa { display: inline-flex; align-items: center; padding: 5px 11px; border-radius: 99px; border: 1px solid rgba(232, 184, 74, .55); color: #e8b84a; font: 800 11.5px/1.2 var(--font); text-decoration: none; }
 .bk-gotoa:hover { background: rgba(232, 184, 74, .14); }
 /* Free agents' past Sleeper nicknames: each followed by the manager who gave it. */
@@ -3768,3 +3768,8 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-tagscopes:empty { display: none; }
 .bk-tagscope b { color: #d6deec; font-weight: 700; }
 .bk-tagscope button { margin-left: 4px; padding: 0; border: 0; background: none; color: #e8b84a; font: 700 11.5px/1.3 var(--font); text-decoration: underline; cursor: pointer; }
+
+/* "Clear my tags ..." as a quiet link in the fine print under the 2K table (owner, Oct 31 2026). */
+.bk-foot.bk-clear { padding-top: 0; }
+.bk-clear button { padding: 0; border: 0; background: none; color: #9fb0cc; font: inherit; text-decoration: underline; cursor: pointer; }
+.bk-clear button:hover { color: #ffb3b3; }

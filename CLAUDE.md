@@ -1217,8 +1217,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   the seasons lgs.json covers (lkTracked + lgsFinished/doneWeek = max playerWeeks week), "—" until a finished week has
   LGS; bio line "League Games Started N of M · Locked K weeks · P% lock per start"; Season by season: Wks Lk + Lk%
   (lgsIn returns { n, d }). TAGS (same day): "In this view" (default) / "Show all" per group under the Tags row
-  (gm-bk-tagscope { auto, mine }, synced via gm-bk-; view = tags someone in bk.players has); "Clear my tags in this view
-  (N players)" (data-cleartags, confirm) removes custom tags from rowsNow() players only (list + filters), auto tags stay.
+  (gm-bk-tagscope { auto, mine }, synced via gm-bk-; view = tags someone in bk.players has); "Clear my tags from the N
+  players in this view" (data-cleartags, confirm; a quiet underlined link in the fine print under the table, #bk-clear
+  filled by drawTable; owner moved it there from the Tags row Oct 31 2026) removes custom tags from rowsNow() players
+  only (list + filters), auto tags stay.
   NBA GAMES STARTED (GS; owner, Oct 28 2026; Sleeper's box rows have no gs): ESPN game summaries
   site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=ID (boxscore.players[].statistics[].athletes[]
   .starter; ~0.5 MB a game; scoreboard?dates= gives the day's event ids). updateNbaStarts() in breakdown.js, run by

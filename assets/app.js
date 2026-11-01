@@ -2952,7 +2952,7 @@ async function renderBreakdown(body, params) {
       <div id="bk-tagbar"></div>
       <div class="bk-scroll"><table class="bk-table" id="bk-table"></table></div>
       <div class="bk-pager" id="bk-pager"></div>
-      <p class="bk-foot">Tap a player for his card · tap a column to sort · ${esc(period)}${season === 'career' && list === 'team' ? ' (only games from weeks he was on this team)' : ' regular season'}${bk.through ? `, games through ${esc(shortMd(bk.through))}` : ''}; fantasy points under each season’s league scoring; Locked = his starters’ points that counted${list === 'team' ? ' for this team' : ''}${season === 'career' ? '' : ' that season'} (finished weeks); Dyn = dynasty score today.</p>${fpNote('game')}`, { cls: 'bk', sub: `${esc(period)} · ${bk.players.length} ${what}` })}
+      <p class="bk-foot">Tap a player for his card · tap a column to sort · ${esc(period)}${season === 'career' && list === 'team' ? ' (only games from weeks he was on this team)' : ' regular season'}${bk.through ? `, games through ${esc(shortMd(bk.through))}` : ''}; fantasy points under each season’s league scoring; Locked = his starters’ points that counted${list === 'team' ? ' for this team' : ''}${season === 'career' ? '' : ' that season'} (finished weeks); Dyn = dynasty score today.</p><p class="bk-foot bk-clear" id="bk-clear" hidden></p>${fpNote('game')}`, { cls: 'bk', sub: `${esc(period)} · ${bk.players.length} ${what}` })}
     ${betaCard('Season by season', '<div id="bk-years"><p class="empty">Loading…</p></div>', { id: 'bk-years-card', sub: 'Regular season · NBA or by league team' })}
     ${betaCard('Game log', '<div id="bk-log"><p class="empty">Loading…</p></div>', { id: 'bk-log-card', sub: bkSeason(logSeason) })}
     ${betaCard('Transactions', '<div id="bk-tx"><p class="empty">Loading…</p></div>', { id: 'bk-tx-card', sub: 'Every league move he was part of, newest first' })}
@@ -3051,8 +3051,6 @@ async function renderBreakdown(body, params) {
     const autos = show.auto ? autoOrder().filter(t => inView('auto', t)) : [];
     const mine = show.mine ? allTags().filter(t => inView('mine', t)) : [];
     const scopeLink = (k, label) => `<span class="bk-tagscope">${label}: <b>${scope[k] === 'all' ? 'all' : 'in this view'}</b> <button type="button" data-tagscope="${k}">${scope[k] === 'all' ? 'Only this view' : 'Show all'}</button></span>`;
-    // Clear your own tags from every player in this view (the rows shown now: list + filters), never other lists.
-    const viewTagged = rowsNow().filter(p => tagsOf(p.pid).length).length;
     if (BK.tag && !autos.includes(BK.tag) && !mine.includes(BK.tag)) BK.tag = null;
     const sw = (k, label) => `<button type="button" class="bk-tagsw${show[k] ? ' on' : ''}" data-tagshow="${k}" aria-pressed="${show[k]}" title="${show[k] ? 'Hide' : 'Show'} ${k === 'auto' ? 'auto tags' : 'your tags'} in this row">${show[k] ? '✓ ' : ''}${label}</button>`;
     const chips = [
@@ -3063,7 +3061,6 @@ async function renderBreakdown(body, params) {
       ${chips.length ? `<div class="bk-views bk-tagfilter" role="tablist"><button type="button" data-tagf="" class="${BK.tag ? '' : 'on'}">All</button>${chips.join('')}</div>` : ''}
       <div class="bk-tagscopes">${show.auto ? scopeLink('auto', 'Auto tags') : ''}${show.mine ? scopeLink('mine', 'Your tags') : ''}</div>
       ${BK.tag && allTags().includes(BK.tag) ? `<button type="button" class="bk-tagdel" data-deltag="${esc(BK.tag)}">Delete the tag "${esc(BK.tag)}"</button>` : ''}
-      ${viewTagged ? `<button type="button" class="bk-tagdel" data-cleartags>Clear my tags in this view (${viewTagged} player${viewTagged === 1 ? '' : 's'})</button>` : ''}
       ${chips.length > 1 ? '<small class="bk-draghint">Drag tags to reorder (on a phone: press and hold, then drag)</small>' : ''}</div>`;
   };
   const addTag = (p, raw) => {
@@ -3398,6 +3395,11 @@ async function renderBreakdown(body, params) {
     const rows = rowsNow();
     $('#bk-table', body).innerHTML = table(rows.slice(0, BK.limit));
     const left = rows.length - BK.limit;
+    // Clear your own tags from every player in this view (owner, Oct 31 2026: in the fine print under the table, not the Tags row).
+    const tagged = rows.filter(p => tagsOf(p.pid).length).length;
+    const clr = $('#bk-clear', body);
+    clr.hidden = !tagged;
+    clr.innerHTML = tagged ? `<button type="button" data-cleartags>Clear my tags from the ${tagged} player${tagged === 1 ? '' : 's'} in this view</button>` : '';
     $('#bk-pager', body).innerHTML = left > 0 ? `<button type="button" class="bk-page-more">Show ${Math.min(BK_PAGE, left)} more <small>(${left} left)</small></button>` : '';
   };
   const draw = () => {
@@ -3547,6 +3549,16 @@ async function renderBreakdown(body, params) {
     $('#bk-tagbar', body).innerHTML = tagBar();
     drawTable();
   }, (a, b) => a.classList.contains('bk-autof') === b.classList.contains('bk-autof'));
+  // "Clear my tags from the N players in this view" (fine print under the table; drawTable fills it).
+  $('#bk-clear', body).addEventListener('click', e => {
+    if (!e.target.closest('[data-cleartags]')) return;
+    const pids = new Set(rowsNow().filter(p => tagsOf(p.pid).length).map(p => p.pid));
+    if (!pids.size || !confirm(`Remove your tags from the ${pids.size} player${pids.size === 1 ? '' : 's'} in this view? Auto tags stay, and players in other lists keep theirs.`)) return;
+    gmSave('gm-tags', Object.fromEntries(Object.entries(bkTags()).filter(([pid]) => !pids.has(pid))));
+    if (BK.tag && !allTags().includes(BK.tag) && !AUTO_TAGS.includes(BK.tag)) BK.tag = null;
+    BK.limit = BK_PAGE;
+    draw();
+  });
   $('#bk-tagbar', body).addEventListener('click', e => {
     const sw = e.target.closest('[data-tagshow]');
     if (sw) {
@@ -3564,15 +3576,6 @@ async function renderBreakdown(body, params) {
       scope[sc.dataset.tagscope] = scope[sc.dataset.tagscope] === 'all' ? 'view' : 'all';
       gmSave('gm-bk-tagscope', scope);
       $('#bk-tagbar', body).innerHTML = tagBar();
-      return;
-    }
-    if (e.target.closest('[data-cleartags]')) {
-      const pids = new Set(rowsNow().filter(p => tagsOf(p.pid).length).map(p => p.pid));
-      if (!pids.size || !confirm(`Remove your tags from the ${pids.size} player${pids.size === 1 ? '' : 's'} in this view? Auto tags stay, and players in other lists keep theirs.`)) return;
-      gmSave('gm-tags', Object.fromEntries(Object.entries(bkTags()).filter(([pid]) => !pids.has(pid))));
-      if (BK.tag && !allTags().includes(BK.tag) && !AUTO_TAGS.includes(BK.tag)) BK.tag = null;
-      BK.limit = BK_PAGE;
-      draw();
       return;
     }
     const b = e.target.closest('[data-tagf]');
