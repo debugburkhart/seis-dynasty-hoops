@@ -1,5 +1,0 @@
-Finished weeks the site couldn't settle for sure from Sleeper's official standings:
-
-Dev Dashboard lock picks couldn't be read (the lock rules aren’t published yet); finished weeks were solved without them tonight.
-
-Pick those players on the Dev Dashboard (Commish office, Test features, Dev Dashboard): your pick is final and the next run uses it. (assets/corrections.js "players" still works too.)
