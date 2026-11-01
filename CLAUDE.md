@@ -812,6 +812,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   box scores /stats/nba/{season}/{w} for weeks 1..current -> { pid: [fp, games] }; update.mjs saves it as
   dynasty-proj.json `actual` { season, at, games }; pages pass it to loadDynasty (DYN_ACTUAL), and build it
   themselves only when no saved copy exists.
+  OUT-OF-CHARACTER RULE (owner, Oct 31 2026, after Kyle Filipowski (3rd year, 4 games of 6-9 min) kept score 16 on
+  his preseason projection): seasonActuals() now = finished games only (schedule complete, no All-Star rows); ROOKIES
+  (years_exp 0) keep the 10+ minute rule (DNPs never count); everyone else: a short game counts unless his usual
+  minutes (median of games played) are USUAL_MINUTES 15+ (then it's an injury exit / blowout, skipped), and a HEALTHY
+  DNP (Sleeper per-game projection > 0 for that date) counts as a 0-point game; projected-0 DNPs (injured / out) never
+  count. Checked Oct 31 2026 vs the old rule on the same games: only Filipowski 16 -> 3, Taylor Hendricks 4 -> 1, Ben
+  Saraf 4 -> 2, Naji Marshall 6 -> 4 (healthy DNP) moved 2+; Zubac / Markkanen / Jaren Jackson / Missi protected.
   NBA CONTRACTS (owner, Oct 22 2026; information only, never in scores/grades): `assets/contracts.js`
   (no DOM/Node APIs). Source = Basketball-Reference /contracts/players.html (Spotrac 403s and HoopsHype 402s
   bots: never use or work around them). update.mjs reads that ONE page weekly like Draft Scout (Sunday, a
@@ -1195,6 +1202,23 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   day) and waits for its early tips, or exits on a weekday (so no idle runs). ~20 idle hours a week. Weekdays rely on
   the morning crons (6 h late still beats a 6 PM tip). Checked in the browser: Thu/Sun nights stop, Fri/Sat hand off,
   DST end Nov 1 (2 AM = 08:00 UTC) right.
+  WEEK 1 FILL-IN (owner, Oct 31 2026): lgs.mjs fillIns() (FILL_INS [[2026, 1]], once: db.filled["2026-1"]) at the start
+  of the next watcher run: lgsFromLocks() over data/official-weeks.json week 1 answers = each starter's locked game
+  (the game whose fp = his locked points; a tie = the LATER game) ONLY (owner changed his mind Oct 31: no later games) -> [1, owner, 'b'],
+  game keys/tips from the ESPN scoreboard per date, team from Sleeper box rows; earlier games get no record; never
+  overwrites a watched game; since moves to 2026-10-20. Checked in the browser Oct 31 2026: all 72 starters matched,
+  72 LGS (one per starter); ties Derik Queen 27 (Thu/Fri -> Fri), Austin Reaves 37 (Thu/Sun -> Sun).
+  LGS RULE CHANGE (owner, Oct 31 2026): a locked player's games AFTER his lock that week are NOT LGS. lgs.mjs
+  markAfterLock() (every run, idempotent) flags those records 'k' once official-weeks.json has the settled week (lock
+  date = lockDates(): the game whose fp = locked points, tie = later); lgsCounts, lgsIn and lgsFinished skip 'k' (not a
+  start, not a game seen). Live week: counted until it settles. Tested with a made-up week 2 (Harden: 10-31 flagged).
+  WEEKS LOCKED + LOCK PER START (owner, Oct 31 2026): column BK_STARTS renamed "Wks Lk" (weeks his score counted) and
+  shown left of LGS in Averages + Totals; BK_LKPCT "Lk%" right of LGS = weeks locked / LGS, both over FINISHED weeks of
+  the seasons lgs.json covers (lkTracked + lgsFinished/doneWeek = max playerWeeks week), "—" until a finished week has
+  LGS; bio line "League Games Started N of M · Locked K weeks · P% lock per start"; Season by season: Wks Lk + Lk%
+  (lgsIn returns { n, d }). TAGS (same day): "In this view" (default) / "Show all" per group under the Tags row
+  (gm-bk-tagscope { auto, mine }, synced via gm-bk-; view = tags someone in bk.players has); "Clear my tags in this view
+  (N players)" (data-cleartags, confirm) removes custom tags from rowsNow() players only (list + filters), auto tags stay.
   NBA GAMES STARTED (GS; owner, Oct 28 2026; Sleeper's box rows have no gs): ESPN game summaries
   site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=ID (boxscore.players[].statistics[].athletes[]
   .starter; ~0.5 MB a game; scoreboard?dates= gives the day's event ids). updateNbaStarts() in breakdown.js, run by
@@ -1229,6 +1253,18 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (Team / Waiver wire / League / NBA team, Averages / Totals / Shooting) starts each name cell with .bk-rk = place in
   the current sort + filters (1..N over all rows, not just the 50 shown); it sits in the sticky .bk-nm cell, so it
   stays put when the stats scroll sideways. Header "# Name". Season by season / Game log have no rank.
+  TRANSACTIONS CARD (owner, Oct 31 2026): last card on the 2K page (#bk-tx, txs() in renderBreakdown -> playerMoves(p,
+  pname) next to tradeReturn): every DATA.transactions entry with him in adds or drops + his league draft pick
+  (leagueDraftOf + that draft ts), newest first. Labels Trade / 3-team trade / Waiver claim (+ FAAB when t.bid) / Free
+  agent / Dropped / Commissioner / Drafted (.bk-tx-*); team names = that season's name + (manager); trades: "X got
+  him from Y", "Y got back: ..." (tradeReturn), links Trade Court case + Full trade (Rivalry); adds/drops name the
+  player dropped to make room / added. Summary line: trades, pickups, drops, teams, "Now on X" / free agent. Checked
+  Oct 31 2026: Banchero = startup 2.08 + Trade Court cases 003 and 014; Schroder 9 pickups + 9 drops (most moved).
+  FLOATING BACK BUTTON (owner, Oct 31 2026): the Transactions card's Trade Court / Full trade links carry
+  ?ret=<2K hash>&retl="Back to {Team / Waiver Wire / League / NBA team} view" (playerMoves ret arg); render() calls
+  backFloat(params) = a fixed navy pill at the bottom (#back-float, .back-float) on ANY page with ret, removed on the
+  next render; leaving the commish keeps it unlocked when ret points back into it; the 2K page saves scrollY in
+  sessionStorage bk-scroll on those taps and txs() restores it. Tested Oct 31 2026: Rivalry trade + Trade Court case.
   CARD TOP (owner, Oct 26 2026): .bk-top = .bk-id (headshot, FP/G ring right under it) beside .bk-head (#number +
   positions, first/LAST name, HT/WT/AGE, league rank, Sleeper %); the rest (.bk-info) below. One column up to
   1199px; from 1200px the top sits left (max 440px) and .bk-info right. Long last names shrink (h3.bk-l1 10-12

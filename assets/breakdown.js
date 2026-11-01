@@ -664,6 +664,7 @@ export function lgsCounts(lgs, season, owner = null) {
     for (const [pid, games] of Object.entries(S.p ?? {})) {
       for (const [v, o, flags = ''] of Object.values(games)) {
         if (owner && o !== owner) continue;
+        if (flags.includes('k')) continue; // after his lock that week: not a start, not a game seen (owner, Oct 31 2026)
         if (flags.includes('r') && v !== 1) continue; // on taxi / IR: couldn't start
         const c = (out[pid] ??= { n: 0, seen: 0, u: 0 });
         if (v === 'u') c.u++; else { c.seen++; if (v === 1) c.n++; }

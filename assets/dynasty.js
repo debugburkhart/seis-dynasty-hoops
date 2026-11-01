@@ -141,21 +141,46 @@ export async function loadDynasty(DATA, { projStates = null, preseason = null, a
   return { season, week: wk, league, rosters, proj, weekProj, now, actual, last, prior: [last, prev2, prev3], traded, birth, projStates, preseason, scout };
 }
 
-// This season's real games for the blend, from per-game box scores: only games of MIN_GAME_MINUTES+
-// (owner, Oct 2026: a garbage-time cameo shouldn't count against a prospect). { pid: [fantasy pts, games] }.
-// Built by the nightly job (one request per week so far) and saved in dynasty-proj.json `actual`.
+// This season's real games for the blend, from per-game box scores (finished games only). { pid: [fantasy pts, games] }.
+// Built by the nightly job (one request per week so far) and saved in dynasty-proj.json `actual`. Which games count:
+//  - ROOKIES (Sleeper years_exp 0): only games of MIN_GAME_MINUTES+ (owner, Oct 2026: a garbage-time cameo
+//    shouldn't count against a prospect); games he didn't play never count.
+//  - EVERYONE ELSE (owner, Oct 31 2026, after Kyle Filipowski kept his preseason value through 4 games of 6-9
+//    minutes): "out of character" rule. Short games count, unless his usual minutes (median of the games he
+//    played) are USUAL_MINUTES+, which makes a short game an injury exit / blowout (Zubac, Markkanen) and it is
+//    skipped. A HEALTHY DNP counts as a 0-point game: he didn't play although Sleeper projected him to (a per-game
+//    projection > 0 for that date = he was expected to be available); injured / out-listed DNPs (projected 0) never count.
 export const MIN_GAME_MINUTES = 10;
+export const USUAL_MINUTES = 15;
 export async function seasonActuals(season, week, scoring) {
-  const out = {};
+  const [all, sched] = await Promise.all([get('/v1/players/nba', {}), get(`/schedule/nba/regular/${season}`, [])]);
+  const done = new Set((sched ?? []).filter(g => g.status === 'complete').map(g => String(g.game_id)));
+  const per = {}; // pid -> [{ min, fp, played, proj }]
   for (let w = 1; w <= week; w++) {
-    const rows = await get(`/stats/nba/${season}/${w}?season_type=regular`, []);
+    const [rows, proj] = await Promise.all([get(`/stats/nba/${season}/${w}?season_type=regular`, []), get(`/projections/nba/${season}/${w}?season_type=regular`, [])]);
+    const projOf = {};
+    for (const p of proj ?? []) if (p?.player_id && p.date) projOf[`${p.player_id}|${p.date}`] = fantasy(p.stats ?? {}, scoring);
     for (const g of rows ?? []) {
+      if (!/^\d+$/.test(g.player_id) || exhibitionRow(g) || !done.has(String(g.game_id))) continue;
       // Minutes: `min`, or seconds played / 60 (older rows have only `sp`: Sleeper drops zero/absent fields).
-      if (!/^\d+$/.test(g.player_id) || !(g.stats?.gp || g.stats?.sp) || !((g.stats.min ?? (g.stats.sp ?? 0) / 60) >= MIN_GAME_MINUTES)) continue;
-      const s = (out[g.player_id] ??= [0, 0]);
-      s[0] = Math.round((s[0] + fantasy(g.stats, scoring)) * 10) / 10;
-      s[1]++;
+      const min = g.stats?.min ?? (g.stats?.sp ?? 0) / 60;
+      const played = !!(g.stats?.gp || g.stats?.sp) && min > 0;
+      (per[g.player_id] ??= []).push({ min, fp: played ? fantasy(g.stats, scoring) : 0, played, proj: projOf[`${g.player_id}|${g.date}`] ?? 0 });
     }
+  }
+  const median = a => { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return !s.length ? 0 : s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const out = {};
+  for (const [pid, games] of Object.entries(per)) {
+    const rookie = (all?.[pid]?.years_exp ?? 1) === 0;
+    const usual = median(games.filter(g => g.played).map(g => g.min));
+    let fp = 0, n = 0;
+    for (const g of games) {
+      const keep = g.played ? g.min >= MIN_GAME_MINUTES || (!rookie && usual < USUAL_MINUTES) : !rookie && g.proj > 0;
+      if (!keep) continue;
+      fp += g.fp;
+      n++;
+    }
+    if (n) out[pid] = [Math.round(fp * 10) / 10, n];
   }
   return out;
 }

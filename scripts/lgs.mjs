@@ -11,11 +11,13 @@
 //   both say "bench" -> 0
 //   they disagree (moved in or out around tip-off) -> 'u' (unsure; not counted)
 //   no pre-tip snapshot (the job started after tip): the first live snapshot decides, flagged late
-// A locked player can't be moved, so his later games that week count through the same rule.
+// A locked player stays in the lineup, but his games AFTER the lock that week don't count (owner, Oct 31 2026):
+// markAfterLock() flags them 'k' once the week is settled.
 //
 // data/lgs.json { version, at, since, seasons: { s: { games: { key: { d, w, tip, a, h } },
 //   p: { pid: { key: [v, owner, flags] } }, open: { key: { pid: { o, pre, inn, late } } } } } }
-// v = 1 | 0 | 'u'; flags: 'l' = decided from a late first look, 'r' = on taxi / IR (can't start). Pages count v === 1 per player (owner = the team
+// v = 1 | 0 | 'u'; flags: 'l' = decided from a late first look, 'r' = on taxi / IR (can't start), 'k' = after his lock
+// that week (skipped), 'b' = week 1 filled in from locks. Pages count v === 1 per player (owner = the team
 // that started him; Team list counts that team's only).
 //
 // Saves (git commit + push, retried with a rebase) after each finished game and at least every 20 minutes, so
@@ -151,9 +153,105 @@ async function todaysGames(day) {
   }).filter(g => NBA.has(g.a) && NBA.has(g.h)); // drops the All-Star Game and other exhibitions
 }
 
+// WEEK 1 FILL-IN (owner, Oct 31 2026; the watcher started in week 2): each week-1 starter earns an LGS for the game
+// his score was locked on (owner changed his mind the same day: NOT his later games that week; see markAfterLock). Locked game = the game in data/official-weeks.json (weekfix's settled answer: players [[pid, locked]],
+// games { pid: [[date, fp]] }) whose points equal his locked points; if two games tie, the LATER one (fewer LGS,
+// never more than he earned). Other games aren't known, so they get no record. Flag 'b' = filled in afterwards.
+// Pure: answers = weeks[w], teamOf(pid, date) = his NBA team that day, gamesOn(date) = [{ key, a, h, tip }].
+function lgsFromLocks(answers, teamOf, gamesOn) {
+  const out = []; // [pid, key, owner, game]
+  for (const [owner, ans] of Object.entries(answers ?? {})) {
+    for (const [pid, locked] of ans.players ?? []) {
+      const games = [...(ans.games?.[pid] ?? [])].sort((x, y) => x[0].localeCompare(y[0]));
+      let at = -1;
+      games.forEach(([, fp], i) => { if (Math.abs(fp - locked) < 0.01) at = i; });
+      if (at < 0) continue; // no game matches (didn't play): no lock to award
+      for (const [date] of games.slice(at, at + 1)) {
+        const team = teamOf(pid, date);
+        const g = (gamesOn(date) ?? []).find(x => x.a === team || x.h === team);
+        if (g) out.push([pid, g.key, owner, g]);
+      }
+    }
+  }
+  return out;
+}
+const FILL_INS = [['2026', 1]];
+async function fillIns(db) {
+  const todo = FILL_INS.filter(([s, w]) => !db.filled?.[`${s}-${w}`]);
+  if (!todo.length) return false;
+  let ow;
+  try { ow = JSON.parse(await readFile('data/official-weeks.json', 'utf8')); } catch { return false; }
+  for (const [s, w] of todo) {
+    const answers = ow.seasons?.[s]?.weeks?.[w];
+    if (!answers) continue;
+    const box = await getJson(`https://api.sleeper.com/stats/nba/${s}/${w}?season_type=regular`);
+    if (!Array.isArray(box)) continue;
+    const team = {};
+    for (const r of box) if (r.player_id && r.date) team[`${r.player_id}|${r.date}`] = r.team;
+    const dates = [...new Set(Object.values(answers).flatMap(a => Object.values(a.games ?? {}).flat().map(g => g[0])))];
+    const byDate = {};
+    for (const d of dates) byDate[d] = await todaysGames(d);
+    if (dates.some(d => !byDate[d].length)) { log(`fill-in ${s} week ${w}: ESPN missing a day, trying next run`); continue; }
+    const S = (db.seasons[s] ??= { games: {}, p: {}, open: {} });
+    let n = 0;
+    for (const [pid, key, owner, g] of lgsFromLocks(answers, (pid, d) => team[`${pid}|${d}`], d => byDate[d])) {
+      S.games[key] ??= { d: key.slice(0, 10), w, tip: new Date(g.tip).toISOString(), a: g.a, h: g.h };
+      const rec = (S.p[pid] ??= {});
+      if (rec[key]) continue; // never overwrite a watched game
+      rec[key] = [1, owner, 'b'];
+      n++;
+    }
+    (db.filled ??= {})[`${s}-${w}`] = new Date().toISOString();
+    if (db.since > dates.sort()[0]) db.since = dates[0];
+    log(`fill-in ${s} week ${w}: ${n} LGS from locked games`);
+  }
+  return true;
+}
+
+// AFTER THE LOCK (owner, Oct 31 2026): a locked player stays in the lineup, but his games after the lock that week
+// are NOT League Games Started. Once a regular week is settled (data/official-weeks.json, written by the nightly
+// update: each starter's locked points + his games), every record of that team's starter for a game after his locked
+// game that week gets flag 'k' (pages skip it: not a start, not a game seen). Locked game = the game whose points
+// equal his locked points (a tie = the later one). Redone every run, so a corrected week fixes itself.
+function lockDates(answers) {
+  const out = {}; // owner|pid -> locked date
+  for (const [owner, ans] of Object.entries(answers ?? {})) {
+    for (const [pid, locked] of ans.players ?? []) {
+      let d = null;
+      for (const [date, fp] of ans.games?.[pid] ?? []) if (Math.abs(fp - locked) < 0.01 && (!d || date > d)) d = date;
+      if (d) out[`${owner}|${pid}`] = d;
+    }
+  }
+  return out;
+}
+async function markAfterLock(db) {
+  let ow;
+  try { ow = JSON.parse(await readFile('data/official-weeks.json', 'utf8')); } catch { return 0; }
+  let changed = 0;
+  for (const [s, S] of Object.entries(db.seasons ?? {})) {
+    const weeks = ow.seasons?.[s]?.weeks ?? {};
+    const locks = Object.fromEntries(Object.entries(weeks).map(([w, a]) => [w, lockDates(a)]));
+    for (const [pid, games] of Object.entries(S.p ?? {})) {
+      for (const [key, rec] of Object.entries(games)) {
+        const g = S.games?.[key];
+        const lk = g && locks[g.w]?.[`${rec[1]}|${pid}`];
+        const after = !!lk && key.slice(0, 10) > lk;
+        const flags = (rec[2] ?? '').replace('k', '') + (after ? 'k' : '');
+        if (flags === (rec[2] ?? '')) continue;
+        games[key] = flags ? [rec[0], rec[1], flags] : [rec[0], rec[1]];
+        changed++;
+      }
+    }
+  }
+  return changed;
+}
+
 async function main() {
   // Last night's update: start it now if it's due and hasn't run (a morning run after a broken chain).
   await ensureNightly(dueDay());
+  // One-time week fill-ins (week 1 2026), saved before anything else.
+  // Then games after a lock in settled weeks are taken out (flag 'k').
+  { const db0 = await loadFile(); const filled = await fillIns(db0); const k = await markAfterLock(db0); if (k) log(`after-lock marks changed: ${k}`); if (filled || k) { await save(db0); push('League games started: locks'); } }
   const league = JSON.parse(await readFile('data/league.json', 'utf8'));
   const leagueId = league.seasons.at(-1).leagueId;
   const state = await getJson('https://api.sleeper.app/v1/state/nba');
