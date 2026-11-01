@@ -903,6 +903,15 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   locked / benched 0 / clear). Live week value = his latest lineup game (unknown locks aren't guessed). ?week=&p=&o=
   opens a player. Tested Nov 1 2026: weeks 1 + 2 live (72 starters, week 1 totals = official for all 8), 402 px +
   desktop, no overflow. NOT tested: Firestore writes (rules not published), the watcher's sweeps in Actions.
+  LIKELY LOCKS (owner, Nov 1 2026): live-week rows without a pick show a dashed gold "Likely locked Tue · 43? (feed n of
+  m)" + dashed chip (likelyLock() in app.js: a hint value = an earlier lineup game, not his latest, with a later lineup
+  game finished on an earlier day; most-read value wins). A GUESS: never in totals, the solver or the coach.
+  COACH -> DASHBOARD (owner, Nov 1 2026): every Assistant Coach lock mark (setMark: game chip, "I locked him", "Not
+  locked", undo) also saves a Dev Dashboard pick via coachPick() (lock + date / last / clear; owner = the roster that
+  has him now; points from w.boxes), quietly, only when this browser is signed in; so coach marks are law and the
+  Monday solve pins them. gmWeek returns the merged marks (picks over local marks) so undo works on a dashboard pick.
+  Rules published + files uploaded by the owner Nov 1 2026 (REST read of locks = 200). Firestore write from the coach
+  not tested here (needs the owner's sign-in).
 - `assets/corrections.js`: manual fixes, win over weekfix.js (team scores, player locked points = pinned in its solver, draft picks,
   All-Star positions, PHOTO_CORRECTIONS: name -> NBA.com ID for headshots Sleeper has
   wrong; Sleeper's LeBron James photo (id 1362) is Bronny). All player photos go through

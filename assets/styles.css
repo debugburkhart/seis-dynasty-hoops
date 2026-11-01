@@ -3832,3 +3832,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .ld-watch { margin-top: 10px; }
 .ld-watch summary { cursor: pointer; color: var(--navy-700); font-size: 14px; font-weight: 600; padding: 6px 0; }
 .ld-watch .ld-needs { margin-top: 6px; }
+/* Likely locks (guesses from the feed hints, never counted). */
+.ld-likely { justify-self: start; padding: 1px 7px; border: 1px dashed var(--brass); border-radius: 999px; color: var(--gold-ink); font-size: 11px; font-weight: 600; background: #fffaf0; white-space: normal; }
+.ld-k.likely { border: 1px dashed var(--brass); color: var(--gold-ink); background: #fffaf0; }
+.ld-g.maybe { outline: 1.5px dashed var(--brass); outline-offset: -1px; }
