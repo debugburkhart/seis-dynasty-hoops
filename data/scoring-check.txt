@@ -1,0 +1,46 @@
+Finished weeks the site couldn't settle for sure from Sleeper's official standings:
+
+2026 week 2 tzola13 (official score 362): the starters' games add up to 362 in 8 different ways. The site used the most likely one; pick these players on the Dev Dashboard (Commish, Test features).
+   Desmond Bane: 25 used, could be 32 or 28 (games: 10-28 28, 10-30 32, 11-01 25)
+   Shai Gilgeous-Alexander: 33 used, could be 30 or 32 (games: 10-26 32, 10-28 30, 10-31 33)
+   Scottie Barnes: 46 used, could be 37 or 53 (games: 10-28 46, 10-30 53, 11-01 37)
+   Jaden McDaniels: 38 used, could be 27 or 28 or 22 (games: 10-26 22, 10-28 28, 10-30 38, 10-31 27)
+   Yaxel Lendeborg: 47 used, could be 49 or 33 (games: 10-26 49, 10-28 33, 10-30 2, 11-01 47)
+
+2026 week 2 bigtrey5456 (official score 285): the starters' games add up to 285 in 11 different ways. The site used the most likely one; pick these players on the Dev Dashboard (Commish, Test features).
+   LaMelo Ball: 37 used, could be 23 (games: 10-26 12, 10-28 15, 10-30 37, 10-31 23)
+   Anfernee Simons: 27 used, could be 23 (games: 10-28 26, 10-30 23, 10-31 27)
+   Evan Mobley: 37 used, could be 23 or 36 (games: 10-26 35, 10-28 36, 10-29 23, 10-31 37)
+   Isaiah Hartenstein: 21 used, could be 26 or 31 (games: 10-26 31, 10-28 26, 10-31 21)
+   De'Anthony Melton: 32 used, could be 27 or 17 (games: 10-26 10, 10-28 17, 10-30 27, 11-01 32)
+   Trayce Jackson-Davis: 14 used, could be 23 (games: 10-28 23, 10-30 0, 11-01 14)
+
+2026 week 2 simeoncampbell7 (official score 311): the starters' games add up to 311 in 4 different ways. The site used the most likely one; pick these players on the Dev Dashboard (Commish, Test features).
+   Darius Garland: 21 used, could be 28 or 17 (games: 10-28 17, 10-30 28, 11-01 21)
+   Caleb Wilson: 37 used, could be 26 (games: 10-26 26, 10-28 35, 10-30 37)
+   Ace Bailey: 36 used, could be 24 (games: 10-26 36, 10-28 24, 10-31 24)
+   Nikola Jokić: 37 used, could be 45 or 42 (games: 10-26 45, 10-28 42, 10-30 37)
+   Derrick Jones Jr.: 15 used, could be 30 (games: 10-28 30, 11-01 15)
+
+2026 week 2 jimmycooks2 (official score 409): the starters' games add up to 409 in 15 different ways. The site used the most likely one; pick these players on the Dev Dashboard (Commish, Test features).
+   Stephen Curry: 62 used, could be 43 (games: 10-26 31, 10-28 62, 10-30 43)
+   Kyrie Irving: 46 used, could be 28 or 32 (games: 10-26 32, 10-28 28, 10-30 46)
+   Zion Williamson: 37 used, could be 39 or 28 (games: 10-28 37, 10-29 39, 10-31 28)
+   Anthony Davis: 42 used, could be 43 or 32 (games: 10-26 42, 10-28 32, 10-30 43)
+   Karl-Anthony Towns: 46 used, could be 38 or 36 (games: 10-27 46, 10-28 36, 10-30 38)
+   Victor Wembanyama: 56 used, could be 66 or 67 (games: 10-27 56, 10-28 66, 10-31 67)
+   Damian Lillard: 32 used, could be 28 (games: 10-27 28, 10-29 12, 10-31 32)
+   Andrew Nembhard: 27 used, could be 32 (games: 10-28 32, 11-01 27)
+
+2026 week 2 BenDoverPlz123 (official score 282): the starters' games add up to 282 in 99 different ways. The site used the most likely one; pick these players on the Dev Dashboard (Commish, Test features).
+   Trae Young: 37 used, could be 38 or 23 (games: 10-26 37, 10-28 23, 10-30 38)
+   Quentin Grimes: 7 used, could be 36 or 5 (games: 10-27 5, 10-28 36, 11-01 7)
+   Davion Mitchell: 32 used, could be 24 or 25 (games: 10-26 25, 10-28 24, 10-30 32)
+   RJ Barrett: 42 used, could be 35 or 12 (games: 10-28 42, 10-30 12, 11-01 35)
+   LeBron James: 35 used, could be 39 (games: 10-28 35, 10-30 39)
+   Cameron Boozer: 43 used, could be 25 or 34 (games: 10-26 25, 10-29 43, 10-31 34)
+   Jarrett Allen: 41 used, could be 26 or 30 or 27 (games: 10-26 27, 10-28 30, 10-29 26, 10-31 41)
+   Sandro Mamukelashvili: 13 used, could be 24 or 28 (games: 10-27 24, 10-28 28, 11-01 13)
+   Brandin Podziemski: 32 used, could be 17 (games: 10-26 32, 10-28 17, 11-01 32)
+
+Pick those players on the Dev Dashboard (Commish office, Test features, Dev Dashboard): your pick is final and the next run uses it. (assets/corrections.js "players" still works too.)
