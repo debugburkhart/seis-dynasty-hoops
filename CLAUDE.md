@@ -1100,8 +1100,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   navy labels), columns 1st, 2nd, ... ; chip .dc-chip = "D. Murray" + FP/G + "L {locked points}" + injury line; gold =
   1st, taxi muted, Out/IR red; tap = scroll to that player's row in that column + gold flash (.flash). The table
   scrolls sideways inside .dc-glance-wrap (page never does); checked 320 / 402 / 1440. DESIGNATIONS (owner, Oct 29
-  2026; fantasy view only): DESIG = Starting 9 (blue, max DESIG_MAX 9: its button is disabled at 9/9), Rotation
-  (yellow), Development (purple), Stream (green), Hold (orange .dg-hold, owner added Oct 29 2026; placed before IR so
+  2026; fantasy view only): DESIG = Starting 9 (blue, max DESIG_MAX 9: its button is disabled at 9/9), Rotation (yellow),
+  Stream (green), Development (purple) (owner moved Stream ABOVE Development Nov 2 2026, everywhere: groups, buttons,
+  coach key + bench), Hold (orange .dg-hold, owner added Oct 29 2026; placed before IR so
   IR stays last), IR (red, owner added) in that order (desktop from 1400px: 2 rows of 3 groups); per team gm-dc-desig-{owner} =
   { at, d: { pid: key }, order: { key: [pid] } } (gmSave, synced via 'gm-dc-'); set in a player's ⋮ menu (chart rows
   and the list below; tap the current one again = clear; setDesig). Tints (.dg-* classes set --dg-bg / --dg-c) on chart
@@ -1144,7 +1145,11 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   .mb-dgbar writing-mode vertical-rl + text-orientation upright, 17px wide, 13px at <= 360px; .mb-p.mb-dg drops the
   outer padding so it sits flush). teamDesigs(owner) = saved custom set or autoDesigs from loadBreakdown + fpgRanks,
   cached 5 min in DESIG_CACHE; key line .mb-dgkey ("Edge strip = Depth Chart designation", S9 Starting 9 ...).
-  Checked 320 / 402. TODAY CHIP FIX (owner, Oct 30 2026): at <= 430 px the green "Today vs X · time" chip (.mb-today)
+  Checked 320 / 402. BENCH ORDER (owner, Nov 2 2026): the board's Bench section (both sides) is sorted by designation
+  (DESIG order S9, ROT, STR, DEV, HOLD, IR, none last), then the player's place in that group's Designations-card drag order (gm-dc-desig-{owner}
+  .order), then league FP/G rank (fpgRanks; unranked last) = benchSort() in renderCoach. IR section unchanged. Checked
+  Nov 2 2026: Parma S9 Murray / Booker / Adebayo / VanVleet, ROT, DEV, STR, HOLD; a saved Rotation order (Pritchard
+  before Risacher) wins over rank. TODAY CHIP FIX (owner, Oct 30 2026): at <= 430 px the green "Today vs X · time" chip (.mb-today)
   flows like text (inline-block, wraps between words, dot inline) and .mb-tags/.mb-today cap at the name column's
   width, so it no longer runs under the score box (was ~8 rows at 320 px, before the strips too). Checked 0 overlaps
   at 320 / 375 / 402 / 430 / 1440, both sides. NBA: ESPN's OFFICIAL depth chart, live, read-only: espnDepthChart(code,
@@ -1337,6 +1342,17 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   him from Y", "Y got back: ..." (tradeReturn), links Trade Court case + Full trade (Rivalry); adds/drops name the
   player dropped to make room / added. Summary line: trades, pickups, drops, teams, "Now on X" / free agent. Checked
   Oct 31 2026: Banchero = startup 2.08 + Trade Court cases 003 and 014; Schroder 9 pickups + 9 drops (most moved).
+  GAME LOG COLORS (owner, Nov 2 2026): navy row + lock icon by FP (.bk-lockrow, .bk-lockic) = the game his fantasy
+  week counted: for every FINISHED week in DATA.playerWeeks (log season, any team), the Dev Dashboard pick when there is
+  one (lawFor via loadLawSrc: lock -> that date, last -> his last lineup game, zero -> none), else the game whose FP =
+  his locked points (tie: one he started per lgs.json, then the later one). Yellow (.bk-lgsrow) = an LGS game (v 1, no
+  'k') that isn't the lock; games after the lock in the same week are never yellow (dropped in the page too, before
+  lgs.mjs marks them). Key line .bk-logkey under the table. Checked Nov 2 2026: Sengun Oct 23 42 + Oct 26 55, VanVleet
+  Oct 30 29 (owner's lock), Curry Oct 28 62 (Oct 30 start after it = plain), Lillard Oct 31 32 + Oct 29 yellow.
+  GAME LOG WEEKS (owner, Nov 2 2026): rows grouped by fantasy week (gameLog g.week), newest first: weekRows() adds a
+  VERTICAL "WK N" cell on the far left of each week's first row (rowspan = its rows shown; owner asked for it on the
+  side instead of a header row), navy with gold text, tooltip = the week's dates; table .bk-wklog: week column sticky
+  left 0 (24px), date column sticky left 24px. Works with Show all / last 10.
   FLOATING BACK BUTTON (owner, Oct 31 2026): the Transactions card's Trade Court / Full trade links carry
   ?ret=<2K hash>&retl="Back to {Team / Waiver Wire / League / NBA team} view" (playerMoves ret arg); render() calls
   backFloat(params) = a fixed navy pill at the bottom (#back-float, .back-float) on ANY page with ret, removed on the

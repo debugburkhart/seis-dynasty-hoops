@@ -3838,3 +3838,27 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .ld-g.maybe { outline: 1.5px dashed var(--brass); outline-offset: -1px; }
 /* Assistant Coach: a starter traded away mid-week who still counts for this lineup (teamRoster traded). */
 .mb-traded { display: inline-block; padding: 0 6px; border-radius: 999px; background: #fde3e3; color: #8a1c1c; font-size: 11px; font-weight: 600; }
+
+/* 2K Game log colors (owner, Nov 2 2026): navy = the game his fantasy week counted (lock icon by FP),
+   yellow = a league game start that wasn't his lock. Sticky date cell and the gold FP column follow the tint. */
+.bk-table tr.bk-lockrow td, .bk-table tr.bk-lockrow td.srt, .bk-table tr.bk-lockrow .bk-nm { background: var(--navy-800); color: #fff; }
+.bk-table tr.bk-lockrow td.srt { color: #ffd978; font-weight: 800; }
+.bk-table tr.bk-lgsrow td, .bk-table tr.bk-lgsrow .bk-nm { background: #fbefc4; }
+.bk-table tr.bk-lgsrow td.srt { background: #f6e3ae; }
+.bk-lockic { display: inline-flex; vertical-align: -2px; margin-right: 3px; }
+.bk-lockic .ic { width: 13px; height: 13px; stroke: currentColor; }
+.bk-logkey { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; font-size: 11.5px; color: var(--muted); }
+.bk-logkey > span { display: inline-flex; align-items: center; gap: 5px; }
+.bk-logkey .ic { width: 12px; height: 12px; }
+.bk-key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.bk-key-lock { background: var(--navy-800); }
+.bk-key-lgs { background: #fbefc4; border: 1px solid #e7cf7d; }
+
+
+/* Game log weeks (owner, Nov 2 2026): vertical "WK N" column on the far left spanning each week's rows; it and the
+   date column stay put when the table scrolls sideways. */
+.bk-wklog .bk-wkh, .bk-wklog .bk-wkcell { position: sticky; left: 0; z-index: 2; width: 24px; min-width: 24px; max-width: 24px; padding: 0; }
+.bk-wklog .bk-wkh { background: var(--paper); }
+.bk-table.bk-wklog tr td.bk-wkcell { background: var(--navy-800); border-bottom: 2px solid var(--paper); vertical-align: middle; text-align: center; }
+.bk-wklog .bk-wkcell span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); font: 800 10.5px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #ffd978; white-space: nowrap; padding: 6px 0; }
+.bk-wklog .bk-nm { left: 24px; }

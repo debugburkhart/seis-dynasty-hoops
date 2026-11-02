@@ -3530,15 +3530,59 @@ async function renderBreakdown(body, params) {
     const games = await gameLog(DATA, p.pid, logSeason);
     if (BK.pid !== p.pid || !box.isConnected) return;
     if (!games.length) { box.innerHTML = `<p class="empty">No games for ${esc(p.name)} in ${bkSeason(logSeason)}.</p>`; return; }
+    // Lock / League Games Started colors (owner, Nov 2 2026). starts: date -> owner for his LGS games (data/lgs.json,
+    // after-lock games left out). locks: date -> owner for the game each FINISHED week counted (DATA.playerWeeks): the
+    // commish's Dev Dashboard pick when there is one (word of law), else the game whose points = his locked points (a
+    // tie: the one he started at tip-off, then the later one). A week still being played has no lock yet.
+    const lawSrc = await loadLawSrc().catch(() => null);
+    if (BK.pid !== p.pid || !box.isConnected) return;
+    const starts = {};
+    for (const [key, [v, o, fl = '']] of Object.entries(lgsData?.seasons?.[logSeason]?.p?.[p.pid] ?? {})) if (v === 1 && !fl.includes('k')) starts[key.slice(0, 10)] = o;
+    const locks = {};
+    for (const x of (DATA.playerWeeks ?? []).filter(y => y.s === logSeason && y.pid === p.pid)) {
+      const wk = games.filter(g => !g.dnp && g.week === x.w).sort((a, b) => (a.date < b.date ? -1 : 1));
+      const law = lawSrc ? lawFor(logSeason, x.w, lawSrc)[p.pid] : null;
+      let g = null;
+      if (law?.k === 'lock') g = wk.find(y => y.date === law.d);
+      else if (law?.k === 'last') g = wk.filter(y => starts[y.date] || !Object.keys(starts).length).at(-1) ?? wk.at(-1);
+      else if (!law) {
+        const fits = wk.filter(y => Math.abs(y.line.fp - x.p) < 0.06);
+        g = fits.filter(y => starts[y.date]).at(-1) ?? fits.at(-1);
+      }
+      if (g) {
+        locks[g.date] = x.o;
+        // His games after the lock that week aren't league game starts (owner, Oct 31 2026), even before the
+        // watcher's nightly 'k' marks reach data/lgs.json.
+        for (const y of wk) if (y.date > g.date && starts[y.date] === x.o) delete starts[y.date];
+      }
+    }
+    const tint = g => (locks[g.date] ? ` class="bk-lockrow" title="Locked: his week counted this game for ${esc(teamName(locks[g.date], logSeason))}"` : starts[g.date] ? ` class="bk-lgsrow" title="League game start for ${esc(teamName(starts[g.date], logSeason))} (in the starting lineup at tip-off, not his lock)"` : '');
     const shown = BK.logAll ? games : games.slice(0, 10);
     const row = g => (g.dnp
       ? `<tr class="bk-dnp"><td class="bk-nm">${esc(shortMd(g.date))}</td><td>${g.away ? '@' : 'vs'} ${esc(g.opp)}</td><td colspan="13">Did not play</td></tr>`
-      : `<tr><td class="bk-nm">${esc(shortMd(g.date))}</td><td>${g.away ? '@' : 'vs'} ${esc(g.opp)}</td><td class="bk-gs">${g.gs === 1 ? '✓' : g.gs === 0 ? '' : '—'}</td><td>${Math.round(g.line.min)}</td><td>${g.line.pts}</td><td>${g.line.reb}</td><td>${g.line.ast}</td><td>${g.line.stl}</td><td>${g.line.blk}</td><td>${g.line.to}</td><td>${bkMa(g.line.fgm, g.line.fga)}</td><td>${bkMa(g.line.tpm, g.line.tpa)}</td><td>${bkMa(g.line.ftm, g.line.fta)}</td><td>${g.line.pm > 0 ? '+' : ''}${g.line.pm}</td><td class="srt">${num(g.line.fp)}</td></tr>`);
+      : `<tr${tint(g)}><td class="bk-nm">${esc(shortMd(g.date))}</td><td>${g.away ? '@' : 'vs'} ${esc(g.opp)}</td><td class="bk-gs">${g.gs === 1 ? '✓' : g.gs === 0 ? '' : '—'}</td><td>${Math.round(g.line.min)}</td><td>${g.line.pts}</td><td>${g.line.reb}</td><td>${g.line.ast}</td><td>${g.line.stl}</td><td>${g.line.blk}</td><td>${g.line.to}</td><td>${bkMa(g.line.fgm, g.line.fga)}</td><td>${bkMa(g.line.tpm, g.line.tpa)}</td><td>${bkMa(g.line.ftm, g.line.fta)}</td><td>${g.line.pm > 0 ? '+' : ''}${g.line.pm}</td><td class="srt">${locks[g.date] ? `<span class="bk-lockic">${icon('lock')}</span>` : ''}${num(g.line.fp)}</td></tr>`);
+    // Grouped by fantasy week (owner, Nov 2 2026): a vertical "WK N" cell on the far left spans each week's games
+    // (rowspan, sticky with the date column); tooltip = the week's dates (his games that week in the log).
+    const weekRows = list => {
+      const span = {};
+      for (const g of games) { const s = (span[g.week] ??= [g.date, g.date]); if (g.date < s[0]) s[0] = g.date; if (g.date > s[1]) s[1] = g.date; }
+      const count = {};
+      for (const g of list) count[g.week] = (count[g.week] ?? 0) + 1;
+      let last;
+      return list.map((g, i) => {
+        const first = i === 0 || g.week !== last;
+        last = g.week;
+        const dates = g.week != null ? `${shortMd(span[g.week][0])}${span[g.week][1] !== span[g.week][0] ? `–${shortMd(span[g.week][1])}` : ''}` : '';
+        const cell = first ? `<td class="bk-wkcell" rowspan="${count[g.week]}" title="${g.week != null ? `Week ${g.week} · ${esc(dates)}` : ''}"><span>${g.week != null ? `Wk ${g.week}` : ''}</span></td>` : '';
+        return row(g).replace(/^(<tr[^>]*>)/, `$1${cell}`);
+      }).join('');
+    };
     const playedGames = games.filter(g => !g.dnp);
     const best = playedGames.reduce((b, g) => (!b || g.line.fp > b.line.fp ? g : b), null);
     box.innerHTML = `<p class="bk-logsum">${playedGames.length} game${playedGames.length === 1 ? '' : 's'} played${games.length > playedGames.length ? `, ${games.length - playedGames.length} missed` : ''}${best ? ` · best: <b>${num(best.line.fp)} FP</b> ${best.away ? '@' : 'vs'} ${esc(best.opp)} on ${esc(shortMd(best.date))}` : ''}</p>
-      <div class="bk-scroll"><table class="bk-table bk-plain"><thead><tr><th class="bk-nm">Date</th><th>Opp</th><th title="Started the game (NBA)">GS</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>Stl</th><th>Blk</th><th>TO</th><th>FG</th><th>3P</th><th>FT</th><th>+/-</th><th class="srt">FP</th></tr></thead><tbody>${shown.map(row).join('')}</tbody></table></div>
-      ${games.length > 10 ? `<button type="button" class="bk-more">${BK.logAll ? 'Show the last 10' : `Show all ${games.length} games`}</button>` : ''}`;
+      <div class="bk-scroll"><table class="bk-table bk-plain bk-wklog"><thead><tr><th class="bk-wkh" aria-label="Week"></th><th class="bk-nm">Date</th><th>Opp</th><th title="Started the game (NBA)">GS</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>Stl</th><th>Blk</th><th>TO</th><th>FG</th><th>3P</th><th>FT</th><th>+/-</th><th class="srt">FP</th></tr></thead><tbody>${weekRows(shown)}</tbody></table></div>
+      ${games.length > 10 ? `<button type="button" class="bk-more">${BK.logAll ? 'Show the last 10' : `Show all ${games.length} games`}</button>` : ''}
+      ${Object.keys(locks).length || Object.keys(starts).length ? `<p class="bk-logkey"><span><i class="bk-key bk-key-lock"></i>${icon('lock')} Locked: the game his fantasy week counted</span><span><i class="bk-key bk-key-lgs"></i>League game start that wasn't his lock</span></p>` : ''}`;
     $('.bk-more', box)?.addEventListener('click', () => { BK.logAll = !BK.logAll; log(p); });
   };
 
@@ -4407,12 +4451,12 @@ const DC_WORD = { PG: 'Point guard', SG: 'Shooting guard', SF: 'Small forward', 
 const DC = { menu: null, dmenu: null, undes: false, cols: null };
 const hideTaxi = () => gmLoad('gm-dc-hidetaxi', false);
 // Designations (owner, Oct 29 2026): the manager's own label per player and team: Starting 9 (blue, at most 9),
-// Rotation (yellow), Development (purple), Stream (green), Hold (orange, added Oct 29 2026), IR (red), in this order
-// (phones list them top to bottom; IR stays last).
+// Rotation (yellow), Stream (green), Development (purple), Hold (orange, added Oct 29 2026), IR (red), in this order
+// (phones list them top to bottom; IR stays last; Stream moved above Development, owner Nov 2 2026).
 // gm-dc-desig-{owner} = { at, d: { pid: key }, order: { key: [pid] } } (gmSave, synced via 'gm-dc-'). Tints the chart
 // rows and the at-a-glance chips; the Designations card under the chart lists each group, and dragging there only
 // changes the order inside that group (order[key]), never the depth chart above.
-const DESIG = [['start', 'Starting 9'], ['rot', 'Rotation'], ['dev', 'Development'], ['stream', 'Stream'], ['hold', 'Hold'], ['ir', 'IR']];
+const DESIG = [['start', 'Starting 9'], ['rot', 'Rotation'], ['stream', 'Stream'], ['dev', 'Development'], ['hold', 'Hold'], ['ir', 'IR']];
 const DESIG_MAX = 9; // Starting 9
 // Short labels for the Assistant Coach edge strip (owner, Oct 30 2026), read top to bottom.
 const DESIG_SHORT = { start: 'S9', rot: 'ROT', dev: 'DEV', stream: 'STR', hold: 'HOLD', ir: 'IR' };
@@ -4731,7 +4775,7 @@ async function renderDepth(body, params) {
     const none = players.filter(p => !D.d[p.pid] && !(hideTaxi() && p.slot === 'TX')).sort((a, b) => at(a.pid) - at(b.pid));
     box.innerHTML = betaCard('Designations', `
       <p class="dc-status">${dcCustom(rawDesig()) ? "<b>Your designations</b> (you changed one, so this team keeps yours; Auto-generate at the top resets them)." : `<b>Automatic designations</b> (they update with stats and injuries until you change one): Starting 9 = best healthy lineup by FP/G; IR = Sleeper IR; then by league rank in FP/G: Rotation = top ${DESIG_ROT}, Development = ${DESIG_YOUNG} or younger outside it, Hold = older than ${DESIG_YOUNG} and ranked ${DESIG_HOLD}+ (or not ranked yet), Stream = the rest.`}</p>
-      <p class="dc-help">Labels: <b class="dc-dg dg-start">Starting 9</b> (up to ${DESIG_MAX}) <b class="dc-dg dg-rot">Rotation</b> <b class="dc-dg dg-dev">Development</b> <b class="dc-dg dg-stream">Stream</b> <b class="dc-dg dg-hold">Hold</b> <b class="dc-dg dg-ir">IR</b>. Set one with ⋮ on any player (here or in the chart above); tap it again to clear it. Drag players to order each group (phones: press and hold, then drag); that order stays in its group and doesn’t change the depth chart.</p>
+      <p class="dc-help">Labels: <b class="dc-dg dg-start">Starting 9</b> (up to ${DESIG_MAX}) <b class="dc-dg dg-rot">Rotation</b> <b class="dc-dg dg-stream">Stream</b> <b class="dc-dg dg-dev">Development</b> <b class="dc-dg dg-hold">Hold</b> <b class="dc-dg dg-ir">IR</b>. Set one with ⋮ on any player (here or in the chart above); tap it again to clear it. Drag players to order each group (phones: press and hold, then drag); that order stays in its group and doesn’t change the depth chart.</p>
       <div class="dc-dgrid">${groups.join('')}</div>
       ${none.length ? `<details class="dc-undes"${DC.undes ? ' open' : ''}><summary>Not designated <small>${none.length}</small></summary><div class="dc-dlist">${none.map(p => drow(p, 0, null)).join('')}</div></details>` : ''}`,
     { cls: 'dc-dcard', sub: `${Object.keys(D.d).filter(pid => byId[pid]).length} of ${players.length} designated` });
@@ -5564,6 +5608,18 @@ async function renderCoach(body, params) {
   // designations (yours or automatic, teamDesigs); a failure just leaves the strip off.
   const [dgMe, dgOpp] = await Promise.all([teamDesigs(w.me).catch(() => ({})), opp ? teamDesigs(opp).catch(() => ({})) : {}]);
   const dgc = (side, pid) => { const k = (side === 'l' ? dgMe : dgOpp)?.[pid]; return k ? ` mb-dg dg-${k}` : ''; };
+  // Bench order (owner, Nov 2 2026): by designation in DESIG order (none last), then his rank inside that group on the
+  // Depth Chart's Designations card (that team's drag order), then league rank in FP/G (fpgRanks), so groups nobody
+  // has ordered still read best first.
+  const dgRanks = await fpgRanks(DATA, w.season).catch(() => ({}));
+  const benchSort = (list, side) => {
+    const d = (side === 'l' ? dgMe : dgOpp) ?? {};
+    const order = gmLoad(`gm-dc-desig-${side === 'l' ? w.me : opp}`, null)?.order ?? {};
+    const group = pid => { const i = DESIG.findIndex(([k]) => k === d[pid]); return i < 0 ? DESIG.length : i; };
+    const inGroup = pid => { const i = (order[d[pid]] ?? []).indexOf(pid); return i < 0 ? 1e6 : i; };
+    const rank = pid => dgRanks?.[pid] ?? 1e6;
+    return [...list].sort((a, b) => group(a.pid) - group(b.pid) || inGroup(a.pid) - inGroup(b.pid) || rank(a.pid) - rank(b.pid));
+  };
   // The strip itself: a thick bar on the board's OUTER edge (first child; .mb-r is row-reverse, so it lands on the right).
   const dgBar = (side, pid) => { const k = (side === 'l' ? dgMe : dgOpp)?.[pid]; return k ? `<span class="mb-dgbar dg-${k}" title="Depth Chart: ${DESIG.find(([x]) => x === k)[1]}">${DESIG_SHORT[k]}</span>` : ''; };
   // The opponent's lineup as the coach assumes it: their best healthy players (fromBench = moved in).
@@ -5713,7 +5769,7 @@ async function renderCoach(body, params) {
       return `<div class="mb-row">${who(r, 'l')}<span class="mb-slot">${esc(r.slot)}</span>${who(o, 'r')}</div>
         ${r.empty ? '' : detail(`l-${r.pid}`, card(r, true, i))}${o && !o.empty ? detail(`r-${o.pid}`, card(o, false, i)) : ''}`;
     }).join('')}</div>
-    ${section('Bench', coach.team.bench ?? [], oppTeam?.bench ?? [], 'bn')}
+    ${section('Bench', benchSort(coach.team.bench ?? [], 'l'), benchSort(oppTeam?.bench ?? [], 'r'), 'bn')}
     ${section('IR', coach.team.ir ?? [], oppTeam?.ir ?? [], 'ir')}`;
 
   body.innerHTML = `<div class="gm-page">
