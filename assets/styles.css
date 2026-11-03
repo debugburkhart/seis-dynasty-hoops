@@ -3228,6 +3228,22 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .inj-side small { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .inj-pill { padding: 2px 8px; border-radius: 99px; background: #fdf0d2; color: #8a5a00; font: 800 11px/1.3 var(--font); }
 .inj-pill.bad { background: #fde3e1; color: #b3261e; }
+.inj-pill.ok { background: #e2f4e6; color: #1e7a34; }
+/* Recent changes (owner, Nov 2 2026) */
+.inj-rchips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.inj-rgroup { margin-top: 10px; }
+.inj-rhead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: 6px; background: var(--navy-800); color: #fff; font: 800 12px/1.3 var(--display); letter-spacing: .04em; }
+.inj-rhead small { color: #c9d3e6; font-weight: 600; letter-spacing: 0; }
+.inj-rhead span { color: var(--gold); }
+.inj-k { margin-left: 4px; padding: 0 6px; border-radius: 99px; font: 800 9.5px/1.5 var(--display); font-style: normal; letter-spacing: .05em; text-transform: uppercase; vertical-align: 1px; }
+.inj-k.k-new { background: #fde3e1; color: #b3261e; }
+.inj-k.k-upd { background: #fdf0d2; color: #8a5a00; }
+.inj-k.k-off { background: #e2f4e6; color: #1e7a34; }
+.inj-ch { margin: 4px 0 2px; padding-left: 16px; font-size: 12px; line-height: 1.45; color: var(--ink); }
+.inj-ch b { font-weight: 700; }
+.inj-bad { color: #b3261e; }
+.inj-good { color: #1e7a34; }
+.inj-rmore { margin: 10px auto 0; display: block; padding: 6px 14px; border: 1px solid var(--navy-800); border-radius: 99px; background: #fff; color: var(--navy-800); font: 700 12px/1 var(--font); cursor: pointer; }
 @media (max-width: 420px) {
   .inj-photo { width: 36px; height: 27px; }
   .inj-side small { white-space: normal; max-width: 90px; }

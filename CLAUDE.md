@@ -960,7 +960,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   claims, saving picks (live rules block them until the owner publishes the new rules).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json, taxi-week.json, lgs.json + locks.json (written by scripts/lgs.mjs via lgs.yml, not the nightly job),
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json, taxi-week.json, injury-log.json, lgs.json + locks.json (written by scripts/lgs.mjs via lgs.yml, not the nightly job),
   dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 
@@ -1581,6 +1581,21 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Sus / out for season or have a weeks/months estimate (day-to-day ignored), longest absence first, top 3,
   INCLUDING your own injured players. Your injured players in the list get a gold "Yours" tag (.inj-yours).
   Checked: ORL = Banchero (IR), da Silva "Opening: Banchero ~4 wks, Penda ~3 wks, Nelson ~3 wks", Penda (taxi).
+  RECENT CHANGES (owner, Nov 2 2026: "recently added names and updates to current injuries"): card between the Injury
+  Report card and the list (recentCard / recentHtml / evRow in renderInjuries). No source keeps injury history, so
+  update.mjs -> updateInjuryLog() in breakdown.js saves data/injury-log.json { version INJ_LOG_VERSION, at, since, last:
+  { pid: state }, events: [{ at, pid, k new|upd|off, ch: [[field, from, to]], st }] } (INJ_LOG_DAYS 30 kept; first run
+  = snapshot only; a failed ESPN read keeps last night's ESPN fields via injuryNow, so a blip logs nothing). state =
+  injuryState(): nm, t, s (Sleeper status), b, n (Sleeper body part / note), e / r / o / c / d (ESPN status, est.
+  return, out for season, news note, date), nu; events on INJ_FIELDS s e o r b n c. The page adds LIVE events =
+  injuryDiff(log.last, injuryNow(today's feeds)) = "Since the last check"; players who came off the report are loaded
+  too (offPids) for their stats / owner. Rows: New (red) / Update (gold) / Back (green) tag, change lines (status a -> b,
+  ruled out for the season, est. return a -> b "(2 weeks later / 5 days sooner)", injury / note changes, "New ESPN
+  report"), then today's body part, estimate chip and ESPN note; pill = today's status or Healthy; FP/G + Dyn; tap =
+  his 2K card. Grouped under "Since the last check" + each nightly check's day; chips 24 hours / 3 / 7 / 30 days
+  (gm-bk-injdays, default 3) and All / New / Updates / Back with counts (gm-bk-injkind); 25 shown + "Show all";
+  follows the mode (Whole league = everyone, else subscribed fantasy + NBA teams). Chip taps redraw only this card.
+  Tested Nov 2 2026 with a made-up older snapshot (fetch stub): 3 new, 3 updates, 2 back, older day group; 402 px.
   MY SCHEDULE mode (owner, Oct 26 2026): third tab after My subscriptions / Whole league; mode saved in
   gm-bk-injmode ('subs' | 'all' | 'sched'; old gm-bk-injall still read as the default). Matchups = DATA.schedule
   (saved nightly from Sleeper; regular weeks) for you (?team or COMMISH) from Sleeper's state week on, skipping

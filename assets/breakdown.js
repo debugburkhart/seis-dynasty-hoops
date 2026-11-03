@@ -338,6 +338,70 @@ export function returnEstimate(e, today = new Date()) {
   return { text: `Est. return ${when} (${span})`, tone: days < 14 ? 'days' : days < 60 ? 'weeks' : 'months' };
 }
 
+// ---------- Injury changes (owner, Nov 2 2026: "recently added names and updates to current injuries") ----------
+// Neither Sleeper nor ESPN keeps an injury history, so the nightly job saves a snapshot of every injured player and
+// logs what changed since the last one -> data/injury-log.json { version, at, since, last: { pid: state }, events:
+// [{ at, pid, k: 'new' | 'upd' | 'off', ch: [[field, from, to]], st: state }] } (oldest first, INJ_LOG_DAYS kept).
+// state = { nm, t, s (Sleeper status), b (body part), n (Sleeper note), e (ESPN status), r (ESPN est. return), o (1 =
+// out for season), c (ESPN news note), d (ESPN date), nu (Sleeper news_updated ms) }. The page adds a live
+// comparison of today's feeds with the newest snapshot, so changes since the last run show right away.
+export const INJ_LOG_VERSION = 1;
+export const INJ_LOG_DAYS = 30;
+// Fields that make an event (the rest ride along for display).
+export const INJ_FIELDS = ['s', 'e', 'o', 'r', 'b', 'n', 'c'];
+export function injuryState(all, espn) {
+  const out = {};
+  for (const [pid, p] of Object.entries(all ?? {})) {
+    if (!/^\d+$/.test(pid) || !p?.team || p.active === false) continue;
+    const e = espn?.[pid];
+    if (!p.injury_status && !e) continue;
+    out[pid] = {
+      nm: p.full_name ?? `${p.first_name} ${p.last_name}`, t: p.team,
+      s: p.injury_status ?? null, b: p.injury_body_part ?? null, n: p.injury_notes ?? null,
+      e: e?.status ?? null, r: e?.ret ?? null, o: e?.ofs ? 1 : 0, c: e?.note || null, d: e?.since ?? null,
+      nu: p.news_updated ?? null,
+    };
+  }
+  return out;
+}
+// Today's state; when ESPN couldn't be read (espnMap null / empty) its fields are kept from `last`.
+export function injuryNow(all, espnMap, last = {}) {
+  const fresh = espnMap && Object.keys(espnMap).length;
+  const cur = injuryState(all, fresh ? espnMap : {});
+  if (fresh) return cur;
+  for (const [pid, was] of Object.entries(last)) {
+    if (cur[pid]) cur[pid] = { ...cur[pid], e: was.e, r: was.r, o: was.o, c: was.c, d: was.d };
+    else if (was.e && all?.[pid]?.team && all[pid].active !== false) cur[pid] = { ...was, s: all[pid].injury_status ?? null, t: all[pid].team };
+  }
+  return cur;
+}
+// What changed between two snapshots: new on the report, updated (any INJ_FIELDS value), off the report.
+export function injuryDiff(prev, cur, at) {
+  const events = [];
+  for (const [pid, st] of Object.entries(cur)) {
+    const was = prev[pid];
+    if (!was) { events.push({ at, pid, k: 'new', ch: [], st }); continue; }
+    const ch = INJ_FIELDS.filter(f => (was[f] ?? null) !== (st[f] ?? null)).map(f => [f, was[f] ?? null, st[f] ?? null]);
+    if (ch.length) events.push({ at, pid, k: 'upd', ch, st });
+  }
+  for (const [pid, was] of Object.entries(prev)) if (!cur[pid]) events.push({ at, pid, k: 'off', ch: [], st: was });
+  return events;
+}
+// Nightly: snapshot + log. The first run only saves the snapshot (no flood of "new" for everyone already hurt).
+// A failed ESPN read keeps last night's ESPN fields, so a blip never logs every estimate as removed.
+export async function updateInjuryLog(prev, all, { log = () => {} } = {}) {
+  const espnMap = await espnInjuries(all).catch(() => null);
+  const at = new Date().toISOString();
+  const ok = prev?.version === INJ_LOG_VERSION;
+  const last = ok ? prev.last : {};
+  const cur = injuryNow(all, espnMap, last);
+  const events = ok ? injuryDiff(last, cur, at) : [];
+  const cut = new Date(Date.now() - INJ_LOG_DAYS * 864e5).toISOString();
+  const kept = [...(ok ? prev.events ?? [] : []), ...events].filter(x => x.at >= cut);
+  log(`Injury log: ${Object.keys(cur).length} on the report, ${events.length} changes (${events.filter(x => x.k === 'new').length} new, ${events.filter(x => x.k === 'upd').length} updated, ${events.filter(x => x.k === 'off').length} off)${espnMap ? '' : ' · ESPN unavailable, kept last ESPN fields'}`);
+  return { version: INJ_LOG_VERSION, at, since: ok ? prev.since : at, last: cur, events: kept };
+}
+
 // ---------- Player news + trade talk (owner, Oct 26 2026) ----------
 // Sleeper's per-player news feed /players/nba/{pid}/news (what the Sleeper app shows on a player page: FantasyPros /
 // RotoWire blurbs; Sleeper keeps only the latest few per player): [{ published (ms), source, metadata: { title,

@@ -424,6 +424,16 @@ try {
   console.log(`Trade talk skipped: ${e.message}`);
 }
 
+// Injury changes (Injury Report "Recent changes"; owner, Nov 2 2026): snapshot of every injured player (Sleeper +
+// ESPN) and what changed since the last run -> data/injury-log.json (assets/breakdown.js). Never stops the update.
+try {
+  const { updateInjuryLog } = await import('../assets/breakdown.js');
+  const all = await getSleeperPlayers();
+  if (all) await writeFile('data/injury-log.json', JSON.stringify(await updateInjuryLog(await readJson('data/injury-log.json'), all, { log: m => console.log(m) })));
+} catch (e) {
+  console.log(`Injury log skipped: ${e.message}`);
+}
+
 // Taxi players of the week (Home; owner, Oct 27 2026): top 5 single games by taxi players in the last
 // finished week, built once per week -> data/taxi-week.json (assets/taxiweek.js). Never stops the update.
 try {

@@ -23,7 +23,7 @@ import { taxiAppearances } from './taxiweek.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 import { benchDates, chicagoDate, hintsFor, lawFor, lawMarks, lawPoints, lineupGames, loadLockDocs, lockDocId, weekBoxes } from './locks.js';
 import { betaCard, isTestTab, testTabs } from './test-features.js';
-import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
+import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, injuryNow, injuryDiff, INJ_LOG_VERSION, INJ_LOG_DAYS, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -4265,17 +4265,31 @@ async function renderInjuries(body, params, me) {
   const espn = (await espnInjuries(all).catch(() => null)) ?? {};
   BK.espn = espn;
   const pids = Object.keys(all ?? {}).filter(pid => /^\d+$/.test(pid) && all[pid]?.team && all[pid].active !== false && (all[pid].injury_status || espn[pid]));
+  // Recent changes (owner, Nov 2 2026): the nightly injury log (data/injury-log.json) + a live comparison of today's
+  // feeds with its newest snapshot (injuryNow / injuryDiff in breakdown.js), so a change shows before the next run.
+  let injLog = null;
+  try {
+    const res = await fetch(`data/injury-log.json?t=${Date.now()}`, { cache: 'no-store' });
+    const f = res.ok ? await res.json() : null;
+    if (f?.version === INJ_LOG_VERSION) injLog = f;
+  } catch { /* no log yet */ }
+  const liveEvents = injLog ? injuryDiff(injLog.last, injuryNow(all, espn, injLog.last), new Date().toISOString()).map(x => ({ ...x, live: true })) : [];
+  const injEvents = [...(injLog?.events ?? []), ...liveEvents];
+  // Players who just came OFF the report still get their stats / owner / slot for the Recent changes rows.
+  const offPids = [...new Set(injEvents.map(x => x.pid))].filter(pid => all[pid]?.team && !pids.includes(pid));
   // Same player builder as the lists (stats, owner, slot, roster %), this season; dynasty scores like the Dynasty tab.
   // Plus your own roster (owner, Oct 26 2026: "see if one of my players benefits from a teammate's injury").
   const [bk, dyn, mine, nbaState, nbaGames] = await Promise.all([
-    loadBreakdown(DATA, { list: 'pick', pids, season: cur.season, owner: me }),
+    loadBreakdown(DATA, { list: 'pick', pids: [...pids, ...offPids], season: cur.season, owner: me }),
     gmDynasty(params).catch(() => null),
     loadBreakdown(DATA, { list: 'team', owner: me, season: cur.season }).catch(() => null),
     get('/v1/state/nba', {}),
     get(`/schedule/nba/regular/${cur.season}`, []), // game dates per fantasy week, for My schedule
   ]);
   const ESPN_STATUS = { 'Day-To-Day': 'DTD', Out: 'Out' };
-  const players = bk.players.map(p => {
+  const onReport = new Set(pids);
+  const anyById = Object.fromEntries(bk.players.map(p => [p.pid, p]));
+  const players = bk.players.filter(p => onReport.has(p.pid)).map(p => {
     const e = espn[p.pid];
     const r = returnEstimate(e);
     // Sort key: out for season, then the furthest estimated return first.
@@ -4388,6 +4402,102 @@ async function renderInjuries(body, params, me) {
   };
   const modeNow = () => gmLoad('gm-bk-injmode', showAll() ? 'all' : 'subs');
 
+  // ---- Recent changes (owner, Nov 2 2026): who joined the report, whose injury changed (status, out for season,
+  // return estimate, body part / note, a new ESPN report) and who came off it, newest first, grouped by the check that
+  // saw it. Follows the mode: Whole league = everyone; otherwise your subscribed fantasy + NBA teams. Period and kind
+  // chips saved in gm-bk-injdays / gm-bk-injkind (synced via 'gm-bk-').
+  const R_DAYS = [[1, '24 hours'], [3, '3 days'], [7, '7 days'], [30, '30 days']];
+  const R_KINDS = [['all', 'All'], ['new', 'New'], ['upd', 'Updates'], ['off', 'Back']];
+  const R_SHOW = 25;
+  let rMore = false;
+  const ctDay = iso => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  const ctTime = iso => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
+  const dayWord = d => {
+    const y = new Date(Date.now() - 864e5).toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    return d === today ? 'Today' : d === y ? 'Yesterday' : new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+  const statusOf = st => st?.s ?? (st?.e ? ESPN_STATUS[st.e] ?? st.e : null);
+  const changeLine = ([f, a, b]) => {
+    const v = x => esc(x ?? 'none');
+    if (f === 's') return `Sleeper status <b>${v(a)} → ${v(b)}</b>`;
+    if (f === 'e') return `ESPN status <b>${v(a)} → ${v(b)}</b>`;
+    if (f === 'o') return b ? '<b class="inj-bad">Ruled out for the season</b>' : '<b>No longer listed out for the season</b>';
+    if (f === 'r') {
+      if (!a) return `Return estimate added: <b>${esc(shortMd(b))}</b>`;
+      if (!b) return `Return estimate removed (was ${esc(shortMd(a))})`;
+      const days = Math.round((Date.parse(`${b}T12:00:00`) - Date.parse(`${a}T12:00:00`)) / 864e5);
+      const span = Math.abs(days) < 14 ? `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'}` : `${Math.round(Math.abs(days) / 7)} weeks`;
+      return `Est. return <b>${esc(shortMd(a))} → ${esc(shortMd(b))}</b> <span class="${days > 0 ? 'inj-bad' : 'inj-good'}">(${span} ${days > 0 ? 'later' : 'sooner'})</span>`;
+    }
+    if (f === 'b') return `Injury <b>${v(a)} → ${v(b)}</b>`;
+    if (f === 'n') return `Sleeper note <b>${v(a)} → ${v(b)}</b>`;
+    if (f === 'c') return 'New ESPN report';
+    return '';
+  };
+  const evRow = ev => {
+    const st = ev.st;
+    const p = anyById[ev.pid];
+    const now = players.find(x => x.pid === ev.pid);
+    const e = now?.espn;
+    const lines = ev.k === 'new'
+      ? [`Added to the report: <b>${esc([st.s && `Sleeper ${st.s}`, st.e && `ESPN ${st.e}`].filter(Boolean).join(' · ') || 'listed')}</b>`, st.o ? '<b class="inj-bad">Out for the season</b>' : '']
+      : ev.k === 'off'
+        ? [`Off the injury report <span class="inj-good">(was ${esc([statusOf(st), st.b].filter(Boolean).join(' · ') || 'listed')})</span>`]
+        : ev.ch.map(changeLine);
+    const what = [st.b || st.n].filter(Boolean).join(' · ');
+    const pos = p?.pos?.join('/') ?? '';
+    const owner = p?.owner ?? null;
+    const team = p?.team ?? st.t;
+    return `<a class="inj-row inj-ev" href="${cardLink({ pid: ev.pid, team })}" title="Open his player card">
+      <img class="inj-photo" src="${playerPhoto(DATA, ev.pid)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+      <span class="inj-main"><b>${esc(p?.name ?? st.nm)} <i class="inj-k k-${ev.k}">${ev.k === 'new' ? 'New' : ev.k === 'off' ? 'Back' : 'Update'}</i>${owner === me ? ' <i class="inj-yours">Yours</i>' : ''}</b>
+        <small>${esc([pos, team].filter(Boolean).join(' · '))} · ${owner ? `${esc(teamName(owner, cur.season))}${p.slot ? ` (${esc(SLOT_WORD[p.slot] ?? p.slot)})` : ''}` : 'Free agent'}</small>
+        <ul class="inj-ch">${lines.filter(Boolean).map(l => `<li>${l}</li>`).join('')}</ul>
+        ${ev.k !== 'off' && what ? `<small class="inj-what">${esc(what)}</small>` : ''}
+        ${ev.k !== 'off' ? estChip(e ?? (st.r || st.o ? { ret: st.r, ofs: st.o, note: st.c } : null), 'inj-est') : ''}
+        ${ev.k !== 'off' && (e?.note || st.c) ? `<small class="inj-note">${esc(e?.note || st.c)}</small>` : ''}</span>
+      <span class="inj-side"><span class="inj-pill${ev.k === 'off' && !now ? ' ok' : injBad(now?.injury ?? statusOf(st)) || st.o ? ' bad' : ''}">${esc(now ? now.injury : ev.k === 'off' ? 'Healthy' : statusOf(st) ?? '—')}</span>
+        <small>${p?.tot?.gp ? `${bkF1(p.avg.fp)} FP/G` : 'No games yet'}${dynOf(ev.pid) != null ? ` · Dyn ${dynOf(ev.pid)}` : ''}</small></span>
+    </a>`;
+  };
+  const recentHtml = (mode, s) => {
+    if (!injLog) return '<p class="empty">Tracking starts with the next nightly update: it saves today’s injury report, and every change after that shows up here.</p>';
+    const days = gmLoad('gm-bk-injdays', 3);
+    const kind = gmLoad('gm-bk-injkind', 'all');
+    const from = new Date(Date.now() - days * 864e5).toISOString();
+    const inScope = ev => {
+      if (mode === 'all') return true;
+      const p = anyById[ev.pid];
+      return (p?.owner && s.f.includes(p.owner)) || s.n.includes(p?.team ?? ev.st.t);
+    };
+    const pool = injEvents.filter(ev => (ev.live || ev.at >= from) && inScope(ev));
+    const counts = { all: pool.length, new: 0, upd: 0, off: 0 };
+    for (const ev of pool) counts[ev.k]++;
+    const list = pool.filter(ev => kind === 'all' || ev.k === kind)
+      .sort((a, b) => (b.live ? 1 : 0) - (a.live ? 1 : 0) || b.at.localeCompare(a.at) || (anyById[b.pid]?.owner === me ? 1 : 0) - (anyById[a.pid]?.owner === me ? 1 : 0));
+    const shown = rMore ? list : list.slice(0, R_SHOW);
+    const groups = [];
+    for (const ev of shown) {
+      const key = ev.live ? 'live' : ctDay(ev.at);
+      let g = groups.at(-1);
+      if (!g || g.key !== key) groups.push(g = { key, at: ev.at, items: [] });
+      g.items.push(ev);
+    }
+    const head = g => (g.key === 'live'
+      ? `Since the last check <small>(${esc(ctTime(injLog.at))} → now)</small>`
+      : `${esc(dayWord(g.key))} <small>· nightly check ${esc(ctTime(g.at))}</small>`);
+    const chips = (items, cur, attr, n) => `<div class="inj-rchips">${items.map(([id, label]) => `<button type="button" data-${attr}="${id}" class="inj-sub${cur === id ? ' on' : ''}" aria-pressed="${cur === id}">${esc(label)}${n ? ` <small>${n[id] ?? 0}</small>` : ''}</button>`).join('')}</div>`;
+    return `${chips(R_DAYS, days, 'rdays')}${chips(R_KINDS, kind, 'rkind', counts)}
+      ${groups.length ? groups.map(g => `<div class="inj-rgroup"><div class="inj-rhead">${head(g)}<span>${g.items.length}</span></div>${g.items.map(evRow).join('')}</div>`).join('')
+    : `<p class="inj-none">No ${kind === 'all' ? '' : `${R_KINDS.find(k => k[0] === kind)[1].toLowerCase()} `}changes in the last ${esc(R_DAYS.find(d => d[0] === days)?.[1] ?? `${days} days`)}${mode === 'all' ? '' : ' for your subscriptions'}.</p>`}
+      ${list.length > shown.length ? `<button type="button" class="inj-rmore" data-rmore>Show all ${list.length}</button>` : ''}
+      <p class="inj-src">The nightly update saves the injury report (Sleeper status + ESPN estimates and notes) and logs what changed since the run before, so a change shows under the check that first saw it (it happened between checks). “Since the last check” compares the live feeds with that newest snapshot. Tracking since ${esc(ctTime(injLog.since))}; changes kept ${INJ_LOG_DAYS} days.</p>`;
+  };
+  const recentCard = (mode, s) => betaCard('Recent changes', recentHtml(mode, s), {
+    id: 'inj-recent', cls: 'inj-list inj-recent',
+    sub: mode === 'all' ? 'Whole league' : 'Your subscriptions',
+  });
+
   const draw = () => {
     const s = subs();
     const mode = modeNow();
@@ -4409,6 +4519,7 @@ async function renderInjuries(body, params, me) {
           <div class="inj-subgroup"><span class="bk-bar-label">Fantasy teams</span><div>${teams.map(o => chip(`f:${o}`, teamName(o, cur.season), players.filter(p => p.owner === o).length, s.f.includes(o))).join('')}</div></div>
           <div class="inj-subgroup"><span class="bk-bar-label">NBA teams</span><div>${[...NBA_TEAM_CODES].sort((a, b) => nbaTeamName(a).localeCompare(nbaTeamName(b))).map(t => chip(`n:${t}`, nbaTeamName(t), players.filter(p => p.team === t).length, s.n.includes(t))).join('')}</div></div>
         </details>`, { cls: 'inj-card', sub: 'Sleeper, live' })}
+      ${recentCard(mode, s)}
       ${mode === 'sched'
     ? betaCard(`My schedule · ${esc(teamName(me, cur.season))}`, scheduleHtml(), { cls: 'inj-list', sub: `${myGames.length} matchups left · opponents' players projected to miss each week` })
     : betaCard(everything ? 'Whole league' : 'Your teams', sections.length ? sections.join('') : '<p class="empty">No subscriptions yet: open Subscriptions above and tap a team.</p>', { cls: 'inj-list', sub: everything ? `${nba.length} NBA teams with injuries` : `${sections.length} subscribed` })}`;
@@ -4436,6 +4547,13 @@ async function renderInjuries(body, params, me) {
     } else if (mode) {
       gmSave('gm-bk-injmode', mode.dataset.mode);
       draw();
+    } else if (e.target.closest('[data-rdays], [data-rkind], [data-rmore]')) {
+      const b = e.target.closest('[data-rdays], [data-rkind], [data-rmore]');
+      if (b.dataset.rdays) gmSave('gm-bk-injdays', Number(b.dataset.rdays));
+      if (b.dataset.rkind) gmSave('gm-bk-injkind', b.dataset.rkind);
+      rMore = 'rmore' in b.dataset;
+      // Only the Recent changes card is redrawn, so the page doesn't jump.
+      $('#inj-recent', body).outerHTML = recentCard(modeNow(), subs());
     }
   });
 }
