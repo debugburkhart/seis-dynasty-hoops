@@ -21,6 +21,8 @@ export const TEST_FEATURES = [
   { id: 'lockcard', label: 'Lock Report Card', since: '2026-11-02' },
   // Trade Trees (owner, Nov 2 2026): a trade's every branch (what each team got, then what that became), by locked points.
   { id: 'tradetree', label: 'Trade Trees', since: '2026-11-02' },
+  // Advanced Stats (owner, Nov 4 2026): charts comparing players and NBA / fantasy teams in depth (advstats.js + advstats-ui.js).
+  { id: 'advanced', label: 'Advanced Stats', since: '2026-11-04' },
 ];
 
 export const BETA = '<span class="gm-beta">Beta</span>';

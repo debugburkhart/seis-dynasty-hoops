@@ -5,7 +5,8 @@ import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from '.
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, isRivalry, moments, seasonSeries, seasonWeeks, seriesBefore, standingsBefore, trophyHistory, trophyImg, trophyOf, weekPairs } from './hype.js';
 import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, get, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
-import { LOCK_CAL, bestFit, fits as slotFits, bestLineup, gameCoach, injuryNews, loadBoxes, loadSlate, lockCoach, lockedPoints, startingPipeline, tipTime, valueNow } from './gm.js';
+import { LOCK_CAL, bestFit, fits as slotFits, bestLineup, gameCoach, gameFactor, injuryNews, loadBoxes, loadSlate, lockCoach, lockedPoints, setMatchups, startingPipeline, tipTime, valueNow } from './gm.js';
+import { loadMatchups } from './matchup.js';
 import { PROSPECT_LIST, PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, prospectRanking, taxiLeft } from './dynasty.js';
 import { CENTERPIECE, evaluateTrade, moveImpacts, offersFor, offersForNeed, offersToSell, packageValue, positionStrength, teamAssets, teamSnapshot, tradeContext, unpackTeam } from './tradefinder.js';
 import { KINDS, ledgerTotals, matchesKind, transactionLog } from './transactions.js';
@@ -25,6 +26,7 @@ import { playerTrades, tradeTree } from './tradetree.js';
 import { benchDates, chicagoDate, hintsFor, lawFor, lawMarks, lawPoints, lineupGames, loadLockDocs, lockDocId, weekBoxes } from './locks.js';
 import { betaCard, isTestTab, testTabs } from './test-features.js';
 import { dvpChips, renderDefense } from './defense-ui.js';
+import { renderAdvanced } from './advstats-ui.js';
 import { DAYS, MIN_LOCKS, managerCards, seasonStarts } from './lockcard.js';
 import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, injuryNow, injuryDiff, INJ_LOG_VERSION, INJ_LOG_DAYS, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
 
@@ -2399,7 +2401,7 @@ function renderCommish(main, params) {
     </div>`;
   const body = $('#cm-body', main);
   paintSync(main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth, devdash: renderDevDash, defense: renderDefensePage,tradetree: renderTradeTree, lockcard: renderLockCard }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth, devdash: renderDevDash, defense: renderDefensePage,tradetree: renderTradeTree, lockcard: renderLockCard, advanced: renderAdvancedPage }[tab];
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
@@ -2589,6 +2591,8 @@ async function loadLawSrc(fresh = false) {
 
 // Defense vs Position (Test features, owner Nov 2 2026): the page lives in assets/defense-ui.js.
 const renderDefensePage = (body, params) => renderDefense(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName });
+// Advanced Stats (Test features, owner Nov 4 2026): page in advstats-ui.js, logic in advstats.js.
+const renderAdvancedPage = (body, params) => renderAdvanced(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName });
 
 async function renderDevDash(body, params) {
   const cur = DATA.seasons.at(-1);
@@ -3406,7 +3410,8 @@ async function renderBreakdown(body, params) {
     const to = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...q, ...keep, p: p.pid, ...here })}`;
     const arrows = [
       NBA_TEAM_CODES.includes(p.team) && !(list === 'nba' && nbaTeam === p.team) ? `<a class="bk-gotoa" href="${to({ list: 'nba', nba: p.team })}">View on NBA team (${esc(p.team)}) →</a>` : '',
-      list !== 'league' ? `<a class="bk-gotoa" href="${to({ list: 'league', ...(p.owner ? {} : { fa: '1' }) })}">View in League →</a>` : ''
+      list !== 'league' ? `<a class="bk-gotoa" href="${to({ list: 'league', ...(p.owner ? {} : { fa: '1' }) })}">View in League →</a>` : '',
+      `<a class="bk-gotoa" href="#/commish?${new URLSearchParams({ tab: 'advanced', p: p.pid, ...here })}">Advanced stats →</a>`
     ].filter(Boolean);
     return arrows.length ? `<div class="bk-goto">${arrows.join('')}</div>` : '';
   };
@@ -3948,7 +3953,7 @@ async function renderBreakdown(body, params) {
           <small>${esc([p.team || 'FA', p.pos.join('/')].join(' · '))}</small>
           <span class="bk-cmph-acts">${byPid[p.pid] ? `<button type="button" data-cmpopen="${p.pid}">Card</button>` : ''}<button type="button" data-cmp="${p.pid}">Remove</button></span></div></th>`).join('')}</tr></thead>
         <tbody>${rows}</tbody></table></div>
-      <p class="bk-foot">Gold = best of the group in that row (lower is better for age, ranks and turnovers). Stats: ${esc(period)}${season === 'career' ? ' (every league season, any team)' : ''}; Locked = starters’ points that counted for any team. “Card” opens his player card when he’s in the list below.</p>${fpNote('game')}`,
+      <p class="bk-foot">Gold = best of the group in that row (lower is better for age, ranks and turnovers). Stats: ${esc(period)}${season === 'career' ? ' (every league season, any team)' : ''}; Locked = starters’ points that counted for any team. “Card” opens his player card when he’s in the list below.</p><a class="bk-gotoa bk-cmpadv" href="#/commish?${new URLSearchParams({ tab: 'advanced', ...(season === 'career' ? { season } : season !== cur.season ? { season } : {}), back: link({}), backl: 'Compare' })}">Chart these players in Advanced Stats →</a>${fpNote('game')}`,
       { cls: 'bk-cmpcard', sub: `${ps.length} players · ${esc(period)}` });
   };
   const afterCmp = msg => { draw(); drawTray(msg); renderCompare(); };
@@ -5118,6 +5123,7 @@ async function renderDepth(body, params) {
             <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>${pick}</span></label>
         ${fantasyView ? `<button type="button" class="btn dc-auto">Auto-generate best depth chart</button>
           <label class="dc-check"><input type="checkbox" data-hidetaxi${hideTaxi() ? ' checked' : ''}> Hide taxi <small>(${players.filter(p => p.slot === 'TX').length})</small></label>` : ''}
+        <a class="bk-gotoa dc-adv" href="#/commish?${new URLSearchParams({ tab: 'advanced', view: 'teams', ...(fantasyView ? { kind: 'fantasy', ...(me === COMMISH ? {} : { team: me }) } : { kind: 'nba', nba }), back: `#/commish?tab=depth&view=${view}${fantasyView ? (me === COMMISH ? '' : `&team=${me}`) : `&nba=${nba}`}`, backl: 'Depth Chart' })}">${fantasyView ? 'Who carried the team' : 'Usage tree'} in Advanced Stats →</a>
       </div>
       ${fantasyView
     ? `<p class="dc-status">${chart.saved ? `<b>Your custom order</b> · saved ${esc(savedAt)} (follows you to your other devices when signed in)` :'<b>Automatic order</b> (by role)'}. Drag a player to reorder or move him to another position (phones: press and hold, then drag), or tap ⋮.</p>
@@ -5557,6 +5563,8 @@ async function gmWeek(params) {
   // Lock records (Dev Dashboard picks + saved sightings, locks.js) beat this browser's marks: a recorded lock never flips.
   const lawSrc = await withTimeout(loadLawSrc(), 6000).catch(() => null);
   const marks = { ...gmLoad(marksKey, {}), ...(lawSrc ? lawMarks(lawFor(at.season, at.week, lawSrc)) : {}) };
+  // Matchup factors per game (data/matchup.json, owner Nov 4 2026); none yet = no adjustment.
+  setMatchups(await loadMatchups().catch(() => null));
   const coach = gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode, marks, whatifs, medianOn });
   return { ...at, me, ctx, boxes, slate, pairs, mode, marksKey, marks, whatKey, whatifs, medianOn, coach };
 }
@@ -5960,11 +5968,28 @@ async function renderCoach(body, params) {
   }
   const count = c => coach.rows.filter(r => r.call === c).length;
   const summary = [[count('lock'), 'to lock'], [count('live'), 'playing now'], [count('wait'), 'waiting'], [count('locked'), 'locked'], [count('final'), 'done'], [count('plan'), 'not started']].filter(([n]) => n);
-  const game = (r, g, pid = r.pid) => {
+  // Matchup factor chip on upcoming games (owner, Nov 4 2026; assets/matchup.js): only when it moves his expected score 1.5%+.
+  const muOf = (pos, opp) => (pos && opp ? gameFactor(pos, opp) : { f: 1 });
+  const muPct = m => { const d = Math.round((m.f - 1) * 100); return `${d > 0 ? '+' : '−'}${Math.abs(d)}%`; };
+  const muChip = (pos, opp) => {
+    const m = muOf(pos, opp);
+    return Math.abs(m.f - 1) >= 0.015 ? `<i class="mb-mu ${m.f > 1 ? 'up' : 'down'}" title="Matchup: expected score ${muPct(m)}">${muPct(m)}</i>` : '';
+  };
+  // One plain line under a card: why his upcoming games are worth more or less (no stat dump).
+  const muLine = (pos, sched) => {
+    const items = (sched ?? []).filter(g => !g.done && !g.playing).map(g => ({ g, m: muOf(pos, g.opp) })).filter(x => Math.abs(x.m.f - 1) >= 0.015);
+    if (!items.length) return '';
+    const grp = { G: 'guards', F: 'forwards', C: 'centers' }[items[0].m.group] ?? 'players at his position';
+    const ups = items.some(x => x.m.f > 1), downs = items.some(x => x.m.f < 1);
+    const why = ups && downs ? `+ / − = ${grp} have kept beating / falling short of their projections against that defense this season`
+      : ups ? `+ = ${grp} have kept beating their projections against that defense this season` : `− = ${grp} have kept falling short of their projections against that defense this season`;
+    return `<p class="gm-mu">Matchups: ${items.map(({ g, m }) => `${esc(shortDay(g.date))} ${g.home ? 'vs' : '@'} ${esc(g.opp)} <b class="${m.f > 1 ? 'up' : 'down'}">${muPct(m)}</b>`).join(' · ')}. ${why}. Already in his expected score.</p>`;
+  };
+  const game = (r, g, pid = r.pid, pos = r.pos) => {
     const isLocked = r.call === 'locked' && !r.whatIf && g.pts != null && (r.lockDate ? r.lockDate === g.date : Math.abs(g.pts - r.score) < 0.05);
     const cls = g.playing ? 'playing' : g.done ? (g.pts == null ? 'dnp' : 'done') : 'next';
     // Upcoming games carry the Defense vs Position grade (Test features, owner Nov 2 2026).
-    const inner = `<small>${shortDay(g.date)}${!g.done && !g.playing && tipShort(g) ? ` <span class="mb-tip">${tipShort(g)}</span>` : ''}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${!g.done && !g.playing ? dvp(pid, g.opp) : ''}</span><b>${g.pts != null ? num(g.pts) : g.done ? 'DNP' : g.playing ? 'Live' : '–'}</b>`;
+    const inner = `<small>${shortDay(g.date)}${!g.done && !g.playing && tipShort(g) ? ` <span class="mb-tip">${tipShort(g)}</span>` : ''}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${!g.done && !g.playing ? dvp(pid, g.opp) + (["locked", "final"].includes(r.call) ? "" : muChip(pos, g.opp)) : ''}</span><b>${g.pts != null ? num(g.pts) : g.done ? 'DNP' : g.playing ? 'Live' : '–'}</b>`;
     // A starter's played game is a button: tap = "he was locked on this game" (tap again to undo).
     if (r.pid && g.done && g.pts != null) {
       const on = r.marked && isLocked;
@@ -5993,6 +6018,7 @@ async function renderCoach(body, params) {
       ${r.sched.length ? `<div class="gm-games">${r.sched.map(g => game(r, g)).join('')}</div>` : ''}
       ${r.sched.some(g => g.done && g.pts != null) ? `<p class="gm-hint">Tap the game ${mine ? 'you' : 'they'} locked to mark it${r.marked ? ', or the marked one again to undo' : ''}.</p>` : ''}
       <p class="gm-text">${esc(r.text)}</p>
+      ${["locked", "final"].includes(r.call) ? "" : muLine(r.pos, r.sched)}
       ${r.notLocked ? `<p class="gm-hint">Marked as not locked on this device: the coach ignores Sleeper's reading for him.</p>` : ''}
       <div class="gm-btns">${markable(r) ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-act="${r.marked ? 'clear' : 'latest'}" data-date="${esc(r.sched.filter(g => g.done && g.pts != null).at(-1)?.date ?? '')}">${r.marked ? 'Undo this mark' : mine ? 'I locked him' : 'They locked him'}</button>` : ''}${r.call === 'locked' && !r.whatIf ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-act="none">${mine ? 'He’s not locked' : 'Not locked'}</button>` : ''}${r.notLocked ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-act="clear">Undo “not locked”</button>` : ''}${whatIfBtn(r, i, mine)}</div>
     </div>`);
@@ -6114,8 +6140,9 @@ async function renderCoach(body, params) {
         <div class="gm-who"><b>${esc(p.name)}</b> ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No team', p.perGame ? `about ${num(p.perGame * LOCK_CAL)} a game` : ''].filter(Boolean).join(' · '))}</small></div>
         <span class="gm-badge">${left ? `${left} left` : 'No games'}</span>
       </div>
-      ${sched.length ? `<div class="gm-games">${sched.map(g => game({}, g, p.pid)).join('')}</div>` : ''}
+      ${sched.length ? `<div class="gm-games">${sched.map(g => game({}, g, p.pid, p.pos)).join('')}</div>` : ''}
       <p class="gm-text">${esc(text)}</p>
+      ${left ? muLine(p.pos, sched) : ''}
     </div>`;
   };
   const detail = (key, html) => `<div class="mb-detail mb-d${key[0]}" data-for="${esc(key)}"${MB_OPEN.has(key) ? '' : ' hidden'}><p class="mb-whose">${esc(key[0] === 'l' ? teamName(w.me, w.season) : teamName(opp, w.season))}</p>${html}</div>`;

@@ -3,6 +3,7 @@
 
 import { get, teamRoster } from './commish.js';
 import { exhibitionRow } from './config.js';
+import { matchupFactor } from './matchup.js';
 
 const r1 = n => Math.round(n * 10) / 10;
 const fantasy = (stats, scoring) => Object.entries(scoring).reduce((sum, [k, v]) => sum + (Number(stats?.[k]) || 0) * v, 0);
@@ -32,6 +33,27 @@ export const TUNE = { score: SCORE_CAL, lock: LOCK_CAL, opp: OPP_CAL };
 export const RISK = { safe: -0.25, balanced: 0, bold: 0.25 };
 // Injury tags that mean he won't play his next games.
 const OUT = /^(out|ir|suspension|inactive)$/i;
+
+// SIMULATION SPREAD + MATCHUPS (owner, Nov 4 2026; backtest in CLAUDE.md, "MATCHUP / SPREAD BACKTEST"). How far a real
+// game lands from Sleeper's projection depends on how big the projection is (2024-25 and 2025-26 alike): a 20-point
+// projection swings ~45%, a 40-point one ~27%. The simulator (win / median odds, expected finals) draws with that
+// spread; the flat 30% made a team's final look too sure (80% ranges held 75-80% of real finals, now 76-81%). LOCK BARS
+// keep the flat LOCK_SPREAD: on 5,000+ player-weeks a season the level spread locked slightly fewer points.
+// Matchups: assets/matchup.js factor per game (defenses players keep beating / missing their projection against).
+// MODEL.spread 'level' | 'flat', MODEL.matchups = matchupTable or null. Weekly Props turn both off (weekTotals).
+const SPREAD_BY_PROJ = [[10, 0.65], [17.5, 0.49], [22.5, 0.42], [27.5, 0.37], [32.5, 0.33], [37.5, 0.29], [45, 0.27]];
+export const MODEL = { spread: 'level', matchups: null };
+export function setMatchups(table) { MODEL.matchups = table ?? null; }
+export function simSpread(pg) {
+  if (MODEL.spread !== 'level') return LOCK_SPREAD;
+  const P = SPREAD_BY_PROJ;
+  if (pg <= P[0][0]) return P[0][1];
+  for (let i = 1; i < P.length; i++) if (pg <= P[i][0]) { const [a, x] = P[i - 1], [b, y] = P[i]; return x + ((y - x) * (pg - a)) / (b - a); }
+  return P.at(-1)[1];
+}
+// A game's matchup factor for a player (pos = Sleeper main position) vs `opp`; { f: 1 } with no table.
+export const gameFactor = (pos, opp) => (MODEL.matchups ? matchupFactor(MODEL.matchups, opp, pos) : { f: 1, edge: 0, games: 0 });
+const avgFactor = list => (list.length ? list.reduce((s, x) => s + x, 0) / list.length : 1);
 
 const phi = z => 0.3989423 * Math.exp(-z * z / 2);
 function Phi(z) {
@@ -182,17 +204,20 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked, whatif) {
     const box = (boxes[p.pid] ?? []).find(b => b.date === g.date);
     const done = g.status === 'complete' || g.date < today;
     const playing = !done && g.date === today && (['in_progress', 'in_game'].includes(g.status) || Boolean(box));
-    return { ...g, pts: box?.pts ?? null, done, playing };
+    return { ...g, pts: box?.pts ?? null, done, playing, mf: gameFactor(p.pos, g.opp) };
   });
   const played = sched.filter(g => g.done && g.pts != null);
   const latest = played.at(-1);
   const upcoming = sched.filter(g => !g.done && !g.playing);
   const playingNow = sched.find(g => g.playing);
-  const perGame = p.perPlay || p.perGame || p.fpg || p.fpgLast || 0;
+  const pgRaw = p.perPlay || p.perGame || p.fpg || p.fpgLast || 0;
+  // Matchups (assets/matchup.js): his games still to come, on average (1 = no adjustment).
+  const mfAvg = avgFactor(upcoming.map(g => g.mf.f));
+  const perGame = pgRaw * mfAvg;
   const day = date => (date === today ? 'tonight' : dayName(date));
   const counted = live?.players_points?.[p.pid] ?? null;
   const out = OUT.test(p.injury ?? '');
-  const base = { sched, perGame, counted, out };
+  const base = { sched, perGame, pgRaw, mfAvg, counted, out };
 
   if (!sched.length) return { ...base, call: 'none', text: 'No games this week. A bench player with games would score more.' };
   // { none: true } = the manager says he is NOT locked: skip the marks and Sleeper's reading.
@@ -263,7 +288,7 @@ export function lockCoach(DATA, ctx, boxes, slate, owner, risk = 'balanced', mar
 // One game for the simulator: draws around the average game (SCORE_CAL); lock bars and
 // player values use the decision setting (LOCK_CAL), like the coach's own calls.
 const gameDist = pg => ({
-  mu: pg * TUNE.score, sd: Math.max(1, pg * TUNE.score * LOCK_SPREAD),
+  mu: pg * TUNE.score, sd: Math.max(1, pg * TUNE.score * simSpread(pg)),
   barMu: pg * TUNE.lock, barSd: Math.max(1, pg * TUNE.lock * LOCK_SPREAD),
 });
 export function simState(r) {
@@ -348,7 +373,10 @@ function worthTable(mu, sd, n) {
 // start = his lineup slot (-1 = bench).
 export function makePiece(o) {
   const piece = { start: -1, fixed: null, cur: null, floor: null, ...o, ...gameDist(o.pg || 0), games: o.games ?? [] };
-  piece.W = worthTable(piece.barMu, piece.barSd, piece.games.length + 1);
+  // fac = each game's matchup factor (same order as games); bars and worth use their average.
+  piece.fac = o.fac?.length === piece.games.length ? o.fac : piece.games.map(() => 1);
+  const fa = avgFactor(piece.fac);
+  piece.W = worthTable(piece.barMu * fa, piece.barSd * fa, piece.games.length + 1);
   return piece;
 }
 const gamesAfter = (q, d) => { let n = 0; for (const x of q.games) if (x > d) n++; return n; };
@@ -538,7 +566,7 @@ export function simTeam(plan, runs = 3000, seed = 7, { noBench = false, skill = 
         const j = gameOn[i][d];
         if (j < 0 || !inL[i] || lk[i] || P[i].fixed != null) continue;
         const p = P[i];
-        let g = (p.mu + p.sd * z[i * MAX_GAMES + Math.min(j, MAX_GAMES - 1)]) * scale;
+        let g = (p.mu + p.sd * z[i * MAX_GAMES + Math.min(j, MAX_GAMES - 1)]) * (p.fac[j] ?? 1) * scale;
         if (g < 0) g = 0;
         if (d === 0 && p.floor != null && g < p.floor) g = p.floor;
         cur[i] = g;
@@ -597,14 +625,16 @@ export function teamPlan(c, slate, today, boxes = {}, sits = OUT, risk = 'balanc
   c.rows.forEach((r, i) => {
     if (r.empty) return;
     if (r.call === 'locked') { base += r.score ?? 0; return; }
-    const o = { pid: r.pid, name: r.name, elig: r.elig, pg: r.perGame || 0, start: i, row: r };
+    const o = { pid: r.pid, name: r.name, elig: r.elig, pg: r.pgRaw ?? r.perGame ?? 0, start: i, row: r };
     if (r.call === 'none') o.fixed = 0;
     else if (r.call === 'final') o.fixed = r.score ?? 0;
     else if (sits.test(r.injury ?? '') && r.call !== 'live') o.fixed = r.score ?? 0;
     else {
       // Games Sleeper projects at 0 (he'll likely miss them) don't count as chances.
       const miss = new Set(r.missDates ?? []);
-      o.games = r.sched.filter(g => g.playing || (!g.done && !miss.has(g.date))).map(g => di(g.date)).filter(x => x >= 0);
+      const left = r.sched.filter(g => (g.playing || (!g.done && !miss.has(g.date))) && di(g.date) >= 0);
+      o.games = left.map(g => di(g.date));
+      o.fac = left.map(g => g.mf?.f ?? 1);
       if (r.call === 'live') o.floor = r.score ?? 0;
       if (['lock', 'wait'].includes(r.call)) o.cur = r.score ?? null;
       if (!o.games.length) { o.fixed = o.cur ?? 0; o.sitsOut = true; }
@@ -618,7 +648,9 @@ export function teamPlan(c, slate, today, boxes = {}, sits = OUT, risk = 'balanc
     const sched = (slate[b.team] ?? []).filter(g => !miss.has(g.date) && (g.date > today
       || (g.date === today && !['complete', 'in_progress', 'in_game'].includes(g.status) && !(boxes[b.pid] ?? []).some(x => x.date === today))));
     if (!pg || !sched.length) continue;
-    pieces.push(makePiece({ pid: b.pid, name: b.name, elig: b.elig, pg, games: sched.map(g => di(g.date)), row: { ...b, call: 'plan', sched: slate[b.team] ?? [] } }));
+    const bs = sched.filter(g => di(g.date) >= 0);
+    pieces.push(makePiece({ pid: b.pid, name: b.name, elig: b.elig, pg, games: bs.map(g => di(g.date)), fac: bs.map(g => gameFactor(b.pos, g.opp).f),
+      row: { ...b, call: 'plan', sched: (slate[b.team] ?? []).map(g => ({ ...g, mf: gameFactor(b.pos, g.opp) })) } }));
   }
   // A what-if lock in the slot the coach suggested (not where he sits now): that slot closes and
   // the player sitting there now takes his old one.
@@ -791,7 +823,8 @@ export function startingPipeline(c, slate, date, today, boxes = {}) {
   if (dd < 0) return null;
   const P = plan.pieces, { slots, openIdx } = plan;
   const nO = openIdx.length;
-  const muOf = (q, d) => { const x = q.row?.dayProj?.[plan.days[d]]; return x > 0 ? x : q.pg; };
+  // That game's projection x its matchup factor (assets/matchup.js).
+  const muOf = (q, d) => { const x = q.row?.dayProj?.[plan.days[d]]; const k = q.games.indexOf(d); return (x > 0 ? x : q.pg) * (k >= 0 ? q.fac?.[k] ?? 1 : 1); };
   const live = s => ['in_game', 'in_progress'].includes(s);
   const info = P.map((q, qi) => {
     const g = (slate[q.row?.team] ?? []).find(x => x.date === date) ?? null;
@@ -990,6 +1023,12 @@ export function gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode = 'win', ma
 // planned like an opponent (best healthy lineup, Balanced bars, bench moves) and scored at
 // OPP_CAL, which matched real finals. { totals: { owner: Float64Array }, plans: { owner } }.
 export function weekTotals(DATA, ctx, boxes, slate, runs = 4000) {
+  // Props lines stay on the model they were built with (owner: lines never move): flat spread, no matchups.
+  const was = { ...MODEL };
+  MODEL.spread = 'flat'; MODEL.matchups = null;
+  try { return weekTotalsRun(DATA, ctx, boxes, slate, runs); } finally { Object.assign(MODEL, was); }
+}
+function weekTotalsRun(DATA, ctx, boxes, slate, runs) {
   const totals = {}, plans = {};
   (ctx.rosters ?? []).map(r => r.owner_id).filter(Boolean).forEach((o, i) => {
     const c = lockCoach(DATA, ctx, boxes, slate, o, 'balanced');

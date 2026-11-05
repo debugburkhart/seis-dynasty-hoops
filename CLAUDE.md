@@ -537,6 +537,42 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   game of the week, so some server copies may show 0 for him meanwhile (not every unlocked Sunday player
   flickered in 40 reads: Bane, Wagner, Kessler... stayed put). Side note: /schedule/nba/regular/{s} rows carry
   home/away .starters = NBA starting five (a free source for GS; not used yet).
+  MATCHUP / SPREAD BACKTEST (owner asked, Nov 4 2026: should boom/bust, splits and vs-defense feed the coach? harness
+  deleted, NOTHING CHANGED IN THE COACH YET): every played game with a Sleeper per-game projection >= 15 FP, 2024-25 (14,864)
+  and 2025-26 (15,443), league scoring; defense numbers from earlier games only (8+). Projections look pre-game (957 DNPs
+  in 2025-26 still had a projection > 0). Fit 2024-25, test 2025-26: (1) SPREAD is the big one: actual / projection sd by
+  projection level 15-20 0.49, 20-25 0.42, 25-30 0.37, 30-35 0.33, 35-40 0.29, 40+ 0.27 (same both seasons); the coach's flat
+  LOCK_SPREAD 0.30 puts only 67% of games inside its 80% range (level-based: 81%), log-lik -2.831 -> -2.698 per game. A
+  player's OWN spread (boom/bust) adds nothing beyond his projection level (shrunk personal sd scored worse). (2) Defense:
+  raw "FP allowed vs average" is already in Sleeper's projections (t 0.3 next to the other term); "players beat their
+  projection vs this D at this position" carries over: coef ~0.30-0.40 (t 3-5), typical +-1.5%, extremes +-3-4%, MSE -0.3%.
+  (3) Back-to-back -2.5% (t -3.4 in 2024-25, -1.6 in 2025-26) but ~0 out-of-sample gain. (4) Home +1%, nothing out of
+  sample. (5) Player-specific splits (his own B2B / home / soft-D edge) don't repeat half to half (corr -0.02..0.11): noise.
+  Side finding: calibration by projection level (15-30 projected score ~92-94% of projection, 35+ ~97-100%) vs one SCORE_CAL.
+  LOCK + ODDS BACKTESTS (same day, owner said build it): lock policy on 5,154 / 5,379 player-weeks (2+ games, 15+ proj)
+  of 2024-25 / 2025-26, every variant (flat / level spread, +defense, +calibration by level) within ~0.1% of the others at
+  its best LOCK_CAL (153.2-153.5k / 156.2-156.5k locked pts; last game 124.7k / 126.5k, hindsight 164.3k / 167.9k): locks
+  don't care. Level spread was ~0.1-0.2% worse for locks at the same cal -> BARS KEEP flat LOCK_SPREAD. Lower LOCK_CAL (0.96)
+  scored a bit more in this points-only test but the Oct 21 wins/slot-aware test said keep 1.04: NOT changed. Team-week
+  odds (167 / 162 real team-weeks, playerWeeks starters, coach lock policy simulated): predicted final sd flat 26 / 25 vs
+  real 29 / 27; level 27 / 27 (z sd 1.15 -> 1.10, 1.08 -> 1.03; 80% range holds 75 -> 76%, 80 -> 81%).
+  BUILT (Nov 4 2026): `assets/matchup.js` (no DOM): data/matchup.json { version, at, season, sk, weeks: { w: { 'DEF|G':
+  [actual, projected, dates] } } } (nightly updateMatchups, current season, finished weeks kept, current week re-read;
+  ~15 KB at week 3); matchupTable() -> per DEF|G ratio vs the league ratio (edge), games; matchupFactor(table, opp, pos)
+  = 1 + COEF 0.33 x edge clipped +-CLIP 0.12 (max +-4%), only with MIN_GAMES 8+ (same group rule as defense.js pos5).
+  gm.js MODEL { spread: 'level', matchups }: simSpread(pg) (SPREAD_BY_PROJ, interpolated) for gameDist's simulation sd
+  only; setMatchups(table) (app.js gmWeek loads it before gameCoach; update.mjs sets it before the coach track record);
+  coachCall puts mf (factor) on every sched game, perGame = projection x average factor of games left (pgRaw = without),
+  bars from it; teamPlan pieces get fac per game (starters from sched mf, bench from gameFactor), simTeam multiplies each
+  drawn game by its factor, W table by the average; pipeline seqWorth per date. weekTotals (Weekly Props) runs with
+  spread 'flat' + no matchups and restores MODEL (owner: lines never move; lockedDraws already flat). UI (renderCoach):
+  .mb-mu chip ("+4%" green / "−3%" red) on upcoming game chips when the factor moves 1.5%+, and a .gm-mu line on lock and
+  bench cards ("Matchups: Fri @ NOP +4% · Sun vs UTA +3%. + = guards have kept beating their projections against that
+  defense this season. Already in his expected score."); hidden for locked / final players. B2B, home, personal splits
+  and personal spreads NOT used (backtest). Checked Nov 4 2026, week 3: MIL vs centers edge +28.2% / 8 games by hand from
+  raw box scores + projections (clipped -> +4%); 78 of 90 DEF|G ready; Parma (median only) 32% -> 35% (spread) -> 34%
+  (+matchups), expected 332 -> 339; no page overflow at 402; no console errors on Briefing / coach. The coach track
+  record (coach-log.json) logs with the new model from the first night after upload.
   RECALIBRATION (Oct 21 2026, fit 2024-25, test 2025-26, frozen scores, harness deleted): one game =
   0.975 x proj for every active-roster player (2025-26: 0.981; old 1.082 came from hindsight lineups)
   -> SCORE_CAL 0.975 (your team's draws); simulated opponents matched their real finals at ~1.0 x ->
@@ -961,7 +997,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   claims, saving picks (live rules block them until the owner publishes the new rules).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json, taxi-week.json, injury-log.json, defense.json, lgs.json + locks.json (written by scripts/lgs.mjs via lgs.yml, not the nightly job),
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json, taxi-week.json, injury-log.json, defense.json, adv-stats.json, matchup.json, lgs.json + locks.json (written by scripts/lgs.mjs via lgs.yml, not the nightly job),
   dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 
@@ -1099,6 +1135,47 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   SG 307 / 7 = 43.9, BOS vs PG 209 / 7 = 29.9 (= page); all switches; 320 / 402 / desktop no page overflow (the chart scrolls
   inside its box at 320). Seen while testing, NOT from this: the Briefing's Lock calls card is 428 px wide at 402.
   DEV DASHBOARD (tab=devdash; owner, Nov 1 2026): see `assets/locks.js` + DEV DASHBOARD under Architecture.
+  ADVANCED STATS (tab=advanced; owner, Nov 4 2026: "plot graphs and charts with stats ... compare players and NBA teams ...
+  in depth"): logic `assets/advstats.js` (no DOM), page `assets/advstats-ui.js` (renderAdvanced(body, params, h), h = {
+  DATA, esc, gmLoad, gmSave, COMMISH, teamName } from app.js renderAdvancedPage), .as-* at the end of styles.css, hand-written
+  SVG drawn to the card's width (redrawn on a 30px+ resize), tap any mark = its numbers in the card's navy .as-tip line.
+  Owner's answers: all 4 chart types (game-by-game trends, percentile profile, scatter, consistency + FP mix) + all 4 "only
+  here" views (role shift, rest / home / starter / opponent splits, team usage tree); players = the 2K Compare tray
+  (gm-bk-cmp, up to 4, shared both ways; search box adds); teams = NBA + fantasy; pool switch His position (G/F/C) / Whole
+  NBA / Rostered here; windows Season + Last 5 / 10 / 20 games, season chips 2023-24.. + Career; links from the 2K card
+  ("Advanced stats →" in viewArrows, ?p= adds him, then dropped from the URL), the 2K Compare card ("Chart these players in
+  Advanced Stats →", .bk-cmpadv) and the Depth Chart (.dc-adv: fantasy = Who carried the team, NBA = that team's usage tree);
+  all carry back/backl (.bk-back pill). Saved view: gm-adv-opts { view, win, pool, trend, scatter, tree, teams, treeTeam,
+  role, kind, ftree } ('gm-adv-' in SYNCED). Params ?view=players|teams, ?kind=nba|fantasy, ?nba=CODE, ?team=owner, ?season=.
+  DATA: player games = breakdown.js gameLog per season (cached by get()), joined by enrichGames() with TEAM-GAME totals from
+  data/adv-stats.json (nightly update.mjs -> updateAdvStats; ADV_VERSION 1): { seasons: { s: { sk (scoring key), weeks,
+  through, complete, tg: { 'date|TEAM': TG [opp, home, fp, pts, reb, ast, stl, blk, to, fga, fta, oreb, min, tpm, fgm, ftm,
+  PG..C fp] }, pt: { 'pid|TEAM': PT [gp, min, fp, pts, reb, ast, stl, blk, to, fga, fta, tpm, fgm, ftm, gs] }, pos } } }.
+  Past seasons built once (maxPast 2 a night: first nights 2025 + 2024, then 2023; ~250 KB a season; no GS for past
+  seasons; home flags from the schedule); the current season saves FINISHED weeks only (complete schedule games; gs = Sleeper
+  schedule starting fives) and pages add later weeks live (loadAdv, cached 2 min). No file yet = current season built in the
+  browser from week 1; past seasons say "arrive with the next nightly update" (usage / shares / rest / team views need them).
+  A week of Sleeper box scores is ~1.7 MB, so pages never read a past season's weeks. Player cards: Game by game (dots +
+  5-game rolling line, 3 for Last 5/10; FP / Minutes / Usage % / FP/36 / Points; x = date for one season, game number for
+  Career / Last N), Percentile profile (radar of 8 + table of 11 stats; pool = SEASON averages of players with POOL_MIN 10+
+  min/g and 40% of the most games; TO flipped), Scatter (Usage vs TS%, Minutes vs FP/G, Usage vs FP/G, Minutes vs FP/36;
+  grey pool, darker = rostered here, dashed averages), Consistency (dots per game, 10th-90th band, median; boom/bust = 25%
+  above/below his own window average, BOOM), Where the points come from (fpMix: per category under each game's season
+  scoring; Bonuses = remainder: dd, td, 40/50-pt, 15-ast, 20-reb, flagrants), Role shift (one player, bars per fantasy week:
+  minutes, usage, share of team shots, share of team FP, started %, FP/G; ▲▼ = minutes +-25% and 5+ vs the 3 weeks before;
+  always the whole season, not the window), Splits (rest 0 / 1 / 2+ days since his TEAM's last game, home / away, started /
+  bench, opponent soft / average / tough = that season's FP allowed to his position group vs average, +-5%, hindsight).
+  Team cards (NBA): team chips (up to 4, select to add), Team profile (FP scored / allowed per game, pace = possessions
+  FGA + .44 FTA + TO - OREB averaged with the opponent, FP per 100 possessions scored / allowed, league ranks; stacked FP by
+  position and by category), Usage tree (squarified treemap of pt rows for that team: FP / Minutes / Shots / Plays used; grey =
+  no longer on the team; top-3 share), Team map (30 teams, FP scored vs allowed, quadrants). The window applies to teams'
+  last N games, not the usage tree. Fantasy: Who carried the team (treemap of DATA.playerWeeks locked points or starts by
+  player, grey = not on the roster today) + Star power vs depth (all 8: locked, per start, players used, top-3 share).
+  Checked Nov 4 2026 (live, weeks 1-3): Giannis 7 games 47.43 FP/G = raw box scores; Oct 21 usage 41.1% = by hand from MIA's
+  team totals (Sleeper's TEAM_MIA row excluded, as the code does); Parma locked 716, Sengun 97 = league.json; browser run of
+  updateAdvStats for 2025 + 2026: 2,462 team-games (1,231 x 2), 661 player-teams, 297 KB, 20 s; 2025-26 page from it (Giannis
+  splits 36 games = home 19 + away 17); 320 / 402 / desktop no page overflow (wide tables scroll in .as-scroll). NOT checked:
+  the first nightly run in Actions (look for "Advanced stats" lines in the log + data/adv-stats.json).
   TRADE TREES (tab=tradetree; owner, Nov 2 2026; logic `assets/tradetree.js`, no DOM; renderTradeTree in app.js, .tt-* in
   styles.css). Owner's answers: a tree starts from a TRADE (both sides), goes ALL THE WAY down (levels 0-1 open, deeper
   folded <details>; nodes on the way to ?p= stay open), each node = locked points + how it ended, Test features ONLY (no

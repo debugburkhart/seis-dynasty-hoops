@@ -380,6 +380,20 @@ try {
   console.log(`Taxi log skipped: ${e.message}`);
 }
 
+// Matchup adjustment for the Assistant Coach (owner, Nov 4 2026): per NBA defense and position group, how players beat
+// or missed their Sleeper projection against it this season -> data/matchup.json (assets/matchup.js). Loaded into the
+// coach model (gm.js setMatchups) for the track record below, so the logged odds use the same model as the coach page.
+// Weekly Props never use it (gm.js weekTotals turns it off). Never stops the update.
+try {
+  const { updateMatchups, matchupTable } = await import('../assets/matchup.js');
+  const { setMatchups } = await import('../assets/gm.js');
+  const mu = await updateMatchups(data, await readJson('data/matchup.json'), { log: m => console.log(m) });
+  await writeFile('data/matchup.json', JSON.stringify(mu));
+  setMatchups(matchupTable(mu));
+} catch (e) {
+  console.log(`Matchups skipped: ${e.message}`);
+}
+
 // Coach track record (owner, Oct 2026): the Lock-in coach's odds for every team each morning,
 // before that day's games (missing mornings of the week are rebuilt), plus how its lock calls
 // turned out -> data/coach-log.json (assets/coachlog.js). Shown on the Lock-in coach page.
@@ -412,6 +426,17 @@ try {
   await writeFile('data/defense.json', JSON.stringify(dvp));
 } catch (e) {
   console.log(`Defense vs position skipped: ${e.message}`);
+}
+
+// Advanced Stats (Test features, owner Nov 4 2026): every NBA team-game's totals + every player's totals per NBA team,
+// per league season -> data/adv-stats.json (assets/advstats.js). Past seasons built once (2 a night until done); the
+// season in progress adds its finished weeks. Never stops the update.
+try {
+  const { updateAdvStats } = await import('../assets/advstats.js');
+  const adv = await updateAdvStats(data, await readJson('data/adv-stats.json'), { log: m => console.log(m) });
+  await writeFile('data/adv-stats.json', JSON.stringify(adv));
+} catch (e) {
+  console.log(`Advanced stats skipped: ${e.message}`);
 }
 
 // NBA games started (2K breakdown GS, owner Oct 28 2026): ESPN game summaries say who started; this season every
