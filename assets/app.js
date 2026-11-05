@@ -21,8 +21,11 @@ import { paintSync, syncInit, syncSave } from './sync.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 import { taxiAppearances } from './taxiweek.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
+import { playerTrades, tradeTree } from './tradetree.js';
 import { benchDates, chicagoDate, hintsFor, lawFor, lawMarks, lawPoints, lineupGames, loadLockDocs, lockDocId, weekBoxes } from './locks.js';
 import { betaCard, isTestTab, testTabs } from './test-features.js';
+import { dvpChips, renderDefense } from './defense-ui.js';
+import { DAYS, MIN_LOCKS, managerCards, seasonStarts } from './lockcard.js';
 import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, injuryNow, injuryDiff, INJ_LOG_VERSION, INJ_LOG_DAYS, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
 
 // ---------- Navigation ----------
@@ -66,6 +69,7 @@ const ICONS = {
   back: '<path d="M16 10H4M9 5l-5 5 5 5"/>',
   down: '<path d="M10 3v9M6 8.5l4 4 4-4M4 16.5h12"/>',
   lock: '<rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>',
+  tree: '<path d="M10 3v14M10 8 5.5 5M10 12l4.5-3M5.5 5v4M14.5 9v4"/>',
   toilet: '<path d="M4.5 3h4v6h-4zM3 9h14c0 3-2.4 5.2-5.5 5.7L12 17H7l.6-2.4C5 13.8 3 11.7 3 9z"/>',
 };
 const icon = name => `<svg class="ic" viewBox="0 0 20 20" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -2395,7 +2399,7 @@ function renderCommish(main, params) {
     </div>`;
   const body = $('#cm-body', main);
   paintSync(main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth, devdash: renderDevDash }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth, devdash: renderDevDash, defense: renderDefensePage,tradetree: renderTradeTree, lockcard: renderLockCard }[tab];
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
@@ -2403,6 +2407,157 @@ function renderCommish(main, params) {
 }
 
 // ---------- Test features (commish office, Beta) ----------
+
+// TRADE TREES (owner, Nov 2 2026; logic in tradetree.js): pick a trade (Trade Court case, or any player's trades) and
+// follow what each team got through every move after it. Owner's choices: both sides of the trade, all the way down
+// (first 2 levels open, deeper ones folded), every node = locked points that team got from it + how it ended; Test
+// features only for now (the 2K card's Transactions card links here; no links from public pages yet).
+// ?case=N (or ?tx=index) = the tree, ?p=pid = a player's trades + his nodes highlighted and unfolded, ?season= = case
+// list season, ?back/backl = a back pill (like the 2K page).
+async function renderTradeTree(body, params) {
+  const fo = ledger();
+  const cases = courtCases();
+  const cur = DATA.seasons.at(-1);
+  const self = location.hash;
+  const here = q => `#/commish?${new URLSearchParams({ tab: 'tradetree', ...q })}`;
+  const back = params.get('back')?.startsWith('#/') ? { back: params.get('back'), backl: params.get('backl') || 'previous page' } : null;
+  const keep = back ?? {};
+  const c = params.get('case') ? cases.find(x => String(x.no) === params.get('case'))
+    : params.get('tx') ? cases.find(x => String(x.tx) === params.get('tx')) : null;
+  const pid = DATA.players?.[params.get('p')] ? params.get('p') : null;
+  const seasons = [...new Set(cases.map(x => x.s))].sort().reverse();
+  const season = c?.s ?? (seasons.includes(params.get('season')) ? params.get('season') : seasons[0]);
+  body.innerHTML = '<div class="loading">Reading today’s rosters from Sleeper…</div>';
+  const rosters = await get(`/v1/league/${cur.leagueId}/rosters`, null);
+  const onRoster = {};
+  for (const r of rosters ?? []) for (const x of [...(r.players ?? []), ...(r.taxi ?? []), ...(r.reserve ?? [])]) onRoster[x] = r.owner_id;
+  const fmt = ts => (ts ? new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' }) : '');
+  const pn = x => DATA.players?.[x]?.n ?? `Player ${x}`;
+  const ord = r => ['1st', '2nd', '3rd'][r - 1] ?? `${r}th`;
+  const caseOf = tx => cases.find(x => x.tx === tx);
+  const courtLink = cs => `#/trade-court?${new URLSearchParams({ case: cs.no, ret: self, retl: 'Back to Trade Tree' })}`;
+  const cardHref = x => (onRoster[x] || DATA.players?.[x]?.t
+    ? `#/commish?${new URLSearchParams({ tab: 'breakdown', list: 'league', p: x, ...(onRoster[x] ? {} : { fa: '1' }), back: self, backl: 'Trade Tree' })}` : null);
+  const pLink = x => { const h = cardHref(x); return h ? `<a href="${esc(h)}">${esc(pn(x))}</a>` : esc(pn(x)); };
+  const pickName = (p, s) => {
+    const orig = pickOwner(p.season, p.orig, s);
+    return `${p.season} ${ord(p.round)}${orig ? ` (${esc(name(orig))}’s)` : ''}`;
+  };
+  const sides = cs => cs.sides.map(sd => esc(name(sd.o))).join(' <i class="tt-swap">⇄</i> ');
+  const caseRow = (cs, extra = '') => `<a class="tt-case${c?.no === cs.no ? ' on' : ''}" href="${esc(here({ case: cs.no, ...(pid ? { p: pid } : {}), ...keep }))}">
+      <b>Case ${caseNo(cs.no)}</b><span>${sides(cs)}</span><small>${esc(fmt(cs.ts))} · Week ${cs.w}${cs.owners.length > 2 ? ' · 3-team' : ''}${extra}</small></a>`;
+
+  // Finder: player search (anyone ever in a trade, or a pick that became him), his trades, every case by season.
+  const traded = new Set();
+  for (const x of DATA.transactions) if (x.type === 'trade') for (const id of [...Object.keys(x.adds ?? {}), ...Object.keys(x.drops ?? {})]) traded.add(id);
+  for (const u of Object.values(fo.pickUse ?? {})) if (u.pid && cases.some(cs => cs.sides.some(sd => sd.picks.some(p => fo.pickUse[`${p.season}|${p.round}|${p.orig}`] === u)))) traded.add(u.pid);
+  const pool = [...traded].map(x => [x, pn(x), bkFold(pn(x))]).sort((a, b) => a[1].localeCompare(b[1]));
+  const mine = pid ? playerTrades(DATA, fo, pid) : [];
+  const finder = betaCard('Find a trade', `
+    <div class="tt-find">
+      <input type="search" class="tt-q" placeholder="Search a player…" aria-label="Search a player" autocomplete="off">
+      <div class="tt-hits" hidden></div>
+    </div>
+    ${pid ? `<h3 class="tt-h">${esc(pn(pid))}’s trades (${mine.length})</h3>
+      <div class="tt-cases">${mine.map(m => { const cs = caseOf(m.tx); return cs ? caseRow(cs, ` · ${m.pick ? `as the ${pickName(m.pick, m.s)} pick, to ` : 'to '}${esc(name(m.to))}`) : ''; }).join('') || '<p class="empty">Never traded.</p>'}</div>` : ''}
+    <h3 class="tt-h">Every trade · ${seasonSpan(season)}</h3>
+    <nav class="st-tabs tt-seasons">${seasons.map(s => `<a class="${s === season ? 'on' : ''}" href="${esc(here({ season: s, ...(pid ? { p: pid } : {}), ...keep }))}">${seasonSpan(s)}</a>`).join('')}</nav>
+    <div class="tt-cases">${cases.filter(cs => cs.s === season).reverse().map(cs => caseRow(cs)).join('')}</div>`, { id: 'tt-finder' });
+
+  let treeCard = '';
+  if (c) {
+    const tree = tradeTree(DATA, fo, c.tx, rosters);
+    // Nodes on the way to the highlighted player stay open.
+    const path = new Set();
+    const mark = n => { let hit = n.kind === 'player' && n.pid === pid; for (const k of n.children) if (mark(k)) hit = true; if (hit) path.add(n); return hit; };
+    if (pid) for (const sd of tree.sides) sd.got.forEach(mark);
+    const draftSlot = e => {
+      const d = DATA.drafts.find(x => x.s === e.s && x.kind === e.draft);
+      const per = d ? d.picks.length / Math.max(...d.picks.map(x => x.round)) : 0;
+      return per ? `${e.round}.${String(Math.round(e.no - (e.round - 1) * per)).padStart(2, '0')} (No. ${e.no})` : `No. ${e.no}`;
+    };
+    const exitText = n => {
+      const e = n.exit;
+      const cs = e.tx != null ? caseOf(e.tx) : null;
+      const caseA = cs ? ` · <a href="${esc(courtLink(cs))}">Case ${caseNo(cs.no)}</a>` : '';
+      switch (e.kind) {
+        case 'traded': {
+          if (e.with) {
+            const w = e.with.kind === 'player' ? esc(pn(e.with.pid)) : pickName(e.with, c.s);
+            return ['trade', `Traded to ${esc(name(e.to))} with ${w}${caseAt(cs)}: the return is listed under ${w}`];
+          }
+          const also = (e.alsoSent ?? []).map(a => (a.pid ? esc(pn(a.pid)) : pickName(a.pick, e.s)));
+          return ['trade', `Traded to ${esc(name(e.to))}${e.three ? ' (3-team deal)' : ''} ${esc(fmt(e.ts))}${caseA}${cs ? ` · <a href="${esc(here({ case: cs.no, ...keep }))}">its own tree</a>` : ''}${also.length ? `<br><span class="tt-also">Also sent: ${also.join(', ')}</span>` : ''}<br><span class="tt-got">${n.children.length ? 'Got back ↓' : 'Got back nothing'}</span>`];
+        }
+        case 'dropped': return ['drop', `Dropped ${esc(fmt(e.ts))}`];
+        case 'commish': return ['drop', `Removed by the commissioner ${esc(fmt(e.ts))}`];
+        case 'left': return ['drop', 'Left the roster (no recorded move)'];
+        case 'held':
+          if (e.today === false) return ['drop', `Gone from the roster today${e.nowWith ? ` (now ${esc(name(e.nowWith))})` : ''}: since last night’s update`];
+          return ['held', 'On the roster today'];
+        case 'drafted': return ['draft', `Used in the ${e.s} ${e.draft === 'startup' ? 'startup' : 'rookie'} draft ${e.during ? `(started ${esc(fmt(e.started))}; this pick changed hands during it)` : esc(fmt(e.ts))}: pick ${draftSlot(e)}${e.pending ? ' · his first season hasn’t started' : ''}`];
+        case 'unused': return ['held', `Not used yet: ${esc(name(n.o))} still has it`];
+        case 'missing': return ['drop', 'Not in that draft’s picks (Sleeper’s pick list is missing it)'];
+        case 'elsewhere': return ['drop', `Drafted by ${esc(name(e.by))}${e.pid ? ` (${esc(pn(e.pid))})` : ''}: the trade data doesn’t show how it got there`];
+        default: return ['drop', 'No record of his time there'];
+      }
+    };
+    function caseAt(cs) { return cs ? ` in <a href="${esc(courtLink(cs))}">Case ${caseNo(cs.no)}</a>` : ''; }
+    const nodeHtml = n => {
+      const [cls, text] = exitText(n);
+      const isP = n.kind === 'player';
+      const p = isP ? DATA.players?.[n.pid] : null;
+      const until = n.exit.during ? 'the draft' : n.exit.ts ? esc(fmt(n.exit.ts)) : ['held', 'unused'].includes(n.exit.kind) ? 'today' : '?';
+      const held = isP ? `With ${esc(teamName(n.o, n.start ? String(Math.floor(n.start / 100)) : c.s))} ${esc(fmt(n.ts))} – ${until} · ${n.weeks} start${n.weeks === 1 ? '' : 's'}`
+        : `Held ${esc(fmt(n.ts))} – ${until}`;
+      const row = `<div class="tt-row${isP && n.pid === pid ? ' tt-me' : ''}">
+        ${isP ? `<img class="tt-photo" src="${esc(playerPhoto(DATA, n.pid))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<span class="tt-pick">R${n.round}</span>`}
+        <div class="tt-main">
+          <div class="tt-name">${isP ? `${pLink(n.pid)}<small>${esc([p?.pos, p?.t].filter(Boolean).join(' · '))}</small>${n.again ? '<em class="tt-again">Back again</em>' : ''}` : `<b>${n.season} ${ord(n.round)}-round pick</b>${(o => (o ? `<small>Originally ${esc(name(o))}’s</small>` : ''))(pickOwner(n.season, n.orig, c.s))}`}</div>
+          <div class="tt-line">${held}</div>
+          <div class="tt-exit tt-x-${cls}">${text}</div>
+        </div>
+        <div class="tt-pts">${isP ? `<b>${num(n.value)}</b><small>locked</small>` : '<small>pick</small>'}${n.children.length ? `<em title="This node + everything below it">Branch ${num(n.total)}</em>` : ''}</div>
+      </div>`;
+      if (!n.children.length) return `<li class="tt-node">${row}</li>`;
+      return `<li class="tt-node"><details${n.depth < 2 || path.has(n) ? ' open' : ''}><summary>${row}</summary><ul class="tt-kids">${n.children.map(nodeHtml).join('')}</ul></details></li>`;
+    };
+    const top = Math.max(...tree.sides.map(sd => sd.total));
+    const ranked = [...tree.sides].sort((a, b) => b.total - a.total);
+    const lead = ranked[0].total === ranked[1].total ? 'Dead even so far'
+      : `${esc(name(ranked[0].o))} leads by ${num(ranked[0].total - ranked[1].total)}${tree.sides.length > 2 ? ` over ${esc(name(ranked[1].o))}` : ''} so far`;
+    treeCard = betaCard(`Case ${caseNo(c.no)} trade tree`, `
+      <p class="tt-sub">${esc(fmt(c.ts))} · ${seasonSpan(c.s)} week ${c.w}${c.owners.length > 2 ? ' · 3-team trade' : ''} ·
+        <a href="${esc(courtLink(c))}">${icon('scale')} Trade Court</a> · <a href="${esc(`#/rivalry?${new URLSearchParams({ a: c.owners[0], b: c.owners[1], trade: c.tx, ret: self, retl: 'Back to Trade Tree' })}`)}">${icon('swap')} Full trade</a></p>
+      <div class="tt-score tt-n${tree.sides.length}">${tree.sides.map(sd => `
+        <div class="tt-team${sd.total === top && ranked[0].total !== ranked[1].total ? ' lead' : ''}">
+          <small>${esc(teamName(sd.o, c.s))}</small><b>${esc(name(sd.o))}</b>
+          <strong>${num(sd.total)}</strong><span>locked points from the tree${sd.live ? ' · still growing' : ''}</span>
+        </div>`).join('')}</div>
+      <p class="tt-lead">${lead}.</p>
+      ${tree.sides.map(sd => `
+        <section class="tt-side">
+          <h3><span>${esc(name(sd.o))} got</span><small>${esc(teamName(sd.o, c.s))} · ${num(sd.total)}</small></h3>
+          <ul class="tt-tree">${sd.got.map(nodeHtml).join('') || '<li class="tt-node"><p class="empty">Nothing.</p></li>'}</ul>
+        </section>`).join('')}
+      <p class="cm-rule">Each branch stays with that team: what it got, then what it got back when it traded that away, and so on. Locked = Front Office locked points while that team had him (finished weeks; a pick = the player it became). Branch = that node plus everything below it. Two players sent in the same later deal share its return (listed under the first). Leaves: dropped, on the roster today (live Sleeper rosters) or a pick not used yet.</p>`, { id: 'tt-tree' });
+  }
+
+  body.innerHTML = `<div class="gm-page tt">
+    ${back ? `<a class="bk-back" href="${esc(back.back)}">← Back to ${esc(back.backl)}</a>` : ''}
+    ${treeCard}${finder}</div>`;
+  if (!rosters) $('#tt-tree .tt-sub', body)?.insertAdjacentHTML('afterend', '<p class="cm-rule">Couldn’t read today’s rosters from Sleeper: “on the roster” uses last night’s data.</p>');
+  // Search: filter as you type, no re-render.
+  const q = $('.tt-q', body), hits = $('.tt-hits', body);
+  q.addEventListener('input', () => {
+    const s = bkFold(q.value.trim());
+    const list = s.length < 2 ? [] : pool.filter(([, , f]) => f.includes(s)).slice(0, 12);
+    hits.hidden = !list.length && s.length < 2;
+    hits.innerHTML = list.map(([x, n]) => `<a href="${esc(here({ p: x, ...keep }))}">${esc(n)}<small>${esc(DATA.players?.[x]?.t || (onRoster[x] ? '' : 'No NBA team'))}${onRoster[x] ? ` · ${esc(name(onRoster[x]))}` : ''}</small></a>`).join('') || (s.length >= 2 ? '<p class="empty">No traded player by that name.</p>' : '');
+  });
+  if (pid && !c) $('#tt-finder', body)?.scrollIntoView?.({ block: 'start' });
+  if (pid && c) $('.tt-me', body)?.scrollIntoView?.({ block: 'center' });
+}
 
 // DEV DASHBOARD (owner, Nov 1 2026; logic in locks.js): which game every starter's week counted. Owner's rules: every
 // uncertainty lands here ("Needs you"), every matchup shows each starter's lock situation + team totals, and a tap on any
@@ -2431,6 +2586,9 @@ async function loadLawSrc(fresh = false) {
   await loadLockDocs().then(d => { docs = d; }).catch(e => { error = e.message; });
   return (LAW_SRC = { at: Date.now(), docs, error });
 }
+
+// Defense vs Position (Test features, owner Nov 2 2026): the page lives in assets/defense-ui.js.
+const renderDefensePage = (body, params) => renderDefense(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName });
 
 async function renderDevDash(body, params) {
   const cur = DATA.seasons.at(-1);
@@ -2611,6 +2769,123 @@ async function renderDevDash(body, params) {
   }));
 }
 const dayLabel = d => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric', timeZone: 'UTC' }) : '');
+
+// LOCK REPORT CARD (owner, Nov 2 2026; logic in lockcard.js): how each manager locks, finished regular weeks of this
+// season only. ?week=N = one week (else the season), ?m=owner = that manager's drill-down (default COMMISH).
+const LC_BOX = {}; // `${season}-${week}` -> weekBoxes (finished weeks don't change during a visit)
+async function renderLockCard(body, params) {
+  const cur = DATA.seasons.at(-1);
+  const season = cur.season;
+  if (!body.querySelector('.lc-page')) body.innerHTML = '<section class="card"><p class="empty">Reading box scores…</p></section>';
+  const weeks = [...new Set((DATA.playerWeeks ?? []).filter(x => x.s === season && x.t === 'R').map(x => x.w))].sort((a, b) => a - b);
+  if (!weeks.length) { body.innerHTML = betaCard('Lock Report Card', '<p class="empty">No finished weeks yet this season.</p>'); return; }
+  const [league, official, lawSrc, lgs] = await Promise.all([
+    sleeper(`/league/${cur.leagueId}`).catch(() => null),
+    freshData('data/official-weeks.json'),
+    loadLawSrc().catch(() => ({ docs: [], error: 'not read' })),
+    freshData('data/lgs.json'),
+  ]);
+  const scoring = league?.scoring_settings;
+  if (!scoring) { body.innerHTML = '<section class="card"><p class="empty">Sleeper didn’t answer. Try again in a minute.</p></section>'; return; }
+  const boxes = {};
+  await Promise.all(weeks.map(async w => { boxes[w] = LC_BOX[`${season}-${w}`] ??= await weekBoxes(season, w, scoring); if (!boxes[w]) delete LC_BOX[`${season}-${w}`]; }));
+  const all = seasonStarts(DATA, season, { boxes, lgs, lawOf: w => lawFor(season, w, lawSrc), official });
+  const week = weeks.includes(Number(params.get('week'))) ? Number(params.get('week')) : null;
+  const starts = week ? all.filter(x => x.w === week) : all;
+  const cards = managerCards(starts);
+  const me = cards.some(c => c.o === params.get('m')) ? params.get('m') : cards.some(c => c.o === COMMISH) ? COMMISH : cards[0]?.o;
+
+  const sgn = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${num(Math.abs(n))}`;
+  const tone = n => (n > 0 ? 'up' : n < 0 ? 'down' : 'even');
+  const pname = pid => DATA.players?.[pid]?.n ?? Object.values(boxes).find(b => b?.names[pid])?.names[pid] ?? `Player ${pid}`;
+  const here = `#/commish?${new URLSearchParams({ tab: 'lockcard', ...(week ? { week } : {}), m: me })}`;
+  const card2k = pid => `#/commish?${new URLSearchParams({ tab: 'breakdown', list: 'league', p: pid, back: here, backl: 'Lock Report Card' })}`;
+  // q.week null = the season view.
+  const link = (q = {}) => { const o = { tab: 'lockcard', week, m: me, ...q }; if (!o.week) delete o.week; return `#/commish?${new URLSearchParams(o)}`; };
+  const chips = `<a class="ld-wk${week ? '' : ' on'}" href="${link({ week: null })}">Season</a>${weeks.map(w => `<a class="ld-wk${w === week ? ' on' : ''}" href="${link({ week: w })}">Week ${w}</a>`).join('')}`;
+  const lockLine = x => (x ? `<a href="${card2k(x.pid)}">${esc(pname(x.pid))}</a> <small>Wk ${x.w} · ${esc(x.day)} ${num(x.p)} vs last ${num(x.base)}</small> <b class="lc-d ${tone(x.delta)}">${sgn(x.delta)}</b>` : '<small>none</small>');
+
+  const row = c => `<li class="lc-row${c.o === me ? ' on' : ''}"><a href="${link({ m: c.o })}">
+      <span class="lc-rk">${c.rank ?? '–'}</span>
+      <span class="lc-grade g-${c.grade[0]}">${c.grade}</span>
+      <span class="lc-who"><b>${esc(teamName(c.o, season))}</b><small>${esc(name(c.o))}</small></span>
+      <span class="lc-avg"><b class="${tone(c.avg)}">${c.locks.length ? sgn(c.avg) : '—'}</b><small>per lock${c.locks.length ? ` · ${sgn(c.vsAvg)} vs avg` : ''}</small></span>
+      <span class="lc-stats">
+        <span><b>${c.locks.length}</b> lock${c.locks.length === 1 ? '' : 's'} <small>(${c.paid} paid · ${c.early} early${c.push ? ` · ${c.push} even` : ''})</small></span>
+        <span>Net vs last game <b class="${tone(c.net)}">${sgn(c.net)}</b></span>
+        <span>Left early <b class="down">${c.leftEarly ? `−${num(c.leftEarly)}` : '0'}</b></span>
+        <span>Saved <b class="up">${c.saved ? `+${num(c.saved)}` : '0'}</b></span>
+        ${c.zeros.length ? `<span>Benched to 0 <b class="down">${sgn(c.zeroCost)}</b></span>` : ''}
+        <span title="Weeks with 2+ lineup games: how close the counted game was to his best (100%) vs his worst (0%)">Hindsight ${c.eff == null ? '—' : `${c.eff}%`}</span>
+      </span></a></li>`;
+
+  const locksAll = starts.filter(x => x.kind === 'lock');
+  const bestL = [...locksAll].sort((a, b) => b.delta - a.delta)[0];
+  const worstL = [...locksAll].sort((a, b) => a.delta - b.delta)[0];
+  const dayAll = DAYS.map(d => [d, locksAll.filter(x => x.day === d).length]);
+  const topDay = [...dayAll].sort((a, b) => b[1] - a[1])[0];
+  const unknown = starts.filter(x => x.kind === 'unknown');
+
+  // Drill-down for one manager: his decisions by week (locks, rides, zeros; one-game weeks folded).
+  const m = cards.find(c => c.o === me);
+  const gameChip = (x, g) => `<span class="ld-g${g === x.counted ? ' on' : ''}${g.bench ? ' bench' : ''}${x.bestGame && g.date === x.bestGame.date && g !== x.counted ? ' lc-best' : ''}" title="${g.bench ? 'Played from the bench: never counts' : g === x.counted ? 'The game his week counted' : x.bestGame && g.date === x.bestGame.date ? 'His best lineup game' : ''}">${esc(dayLabel(g.date))} ${g.opp ? `vs ${esc(g.opp)} ` : ''}<b>${num(g.p)}</b>${g.bench ? ' · bench' : ''}</span>`;
+  const KIND = {
+    lock: x => `Locked ${esc(x.day)} (game ${x.n} of ${x.of}) · <b class="${tone(x.delta)}">${x.delta > 0 ? `paid off ${sgn(x.delta)}` : x.delta < 0 ? `too early ${sgn(x.delta)}` : 'even'}</b> vs last game ${num(x.base)}`,
+    ride: x => `${x.pick === 'lock' ? 'Locked his last game' : 'Rode to his last game'}${x.left ? ` · <b class="down">left ${num(x.left)}</b> vs his best` : ' · <b class="up">his best game</b>'}`,
+    zero: x => `Benched before his last game · <b class="down">0</b>${x.base ? ` (last game ${num(x.base)})` : ''}`,
+    single: () => 'One lineup game',
+    unknown: x => `No game matches his ${num(x.p)} locked points`,
+    none: () => 'No games',
+  };
+  const SRC = { you: 'Your pick', tie: 'Tie: later game used', solver: 'From the nightly solver' };
+  const dRow = x => `<li class="lc-dec lc-${x.kind}">
+      <div class="lc-dh"><a href="${card2k(x.pid)}"><b>${esc(pname(x.pid))}</b></a><span class="lc-pts">${num(x.p)}</span></div>
+      <div class="lc-dk">${KIND[x.kind](x)}${SRC[x.src] ? ` <span class="lc-src">${SRC[x.src]}</span>` : ''}</div>
+      <div class="ld-gs">${x.games.map(g => gameChip(x, g)).join('') || '<span class="ld-g none">no games</span>'}</div>
+    </li>`;
+  const mine = starts.filter(x => x.o === me);
+  const byWeek = [...new Set(mine.map(x => x.w))].sort((a, b) => b - a).map(w => {
+    const list = mine.filter(x => x.w === w);
+    const main = list.filter(x => ['lock', 'zero', 'ride', 'unknown'].includes(x.kind)).sort((a, b) => ['lock', 'zero', 'unknown', 'ride'].indexOf(a.kind) - ['lock', 'zero', 'unknown', 'ride'].indexOf(b.kind) || (b.delta ?? 0) - (a.delta ?? 0));
+    const rest = list.filter(x => !main.includes(x));
+    return `<h3 class="lc-wk">Week ${w} <small>${list.filter(x => x.kind === 'lock').length} locks · net ${sgn(list.filter(x => x.kind === 'lock' || x.kind === 'zero').reduce((s, x) => s + x.delta, 0))}</small></h3>
+      <ul class="lc-decs">${main.map(dRow).join('')}</ul>
+      ${rest.length ? `<details class="lc-more"><summary>${rest.length} more: one lineup game or none</summary><ul class="lc-decs">${rest.map(dRow).join('')}</ul></details>` : ''}`;
+  }).join('');
+  const maxDay = Math.max(1, ...DAYS.map(d => m?.days[d] ?? 0));
+  const timing = m ? `<div class="lc-days">${DAYS.map(d => `<span class="lc-day"><i style="height:${Math.round((100 * m.days[d]) / maxDay)}%"></i><b>${m.days[d] || ''}</b><small>${d}</small></span>`).join('')}</div>
+      <p class="cm-rule">${m.locks.length ? `On average he locks game ${num(m.locks.reduce((s, x) => s + x.n, 0) / m.locks.length)} of ${num(m.locks.reduce((s, x) => s + x.of, 0) / m.locks.length)} lineup games.` : 'No locks yet.'}</p>` : '';
+
+  body.innerHTML = `
+    <div class="gm-page lc-page">
+      ${betaCard('Lock Report Card', `
+        <p class="cm-rule">Graded per lock, on a curve: what each lock gained or lost against <b>never locking</b> (his last lineup game counts). A lock “paid off” when his later lineup games scored less, “too early” when a later one scored more. Benched-to-0 weeks count in the net, not the grade. Hindsight = how close the counted games were to each week’s best lineup game. Bench games never count. ${season}-${String(Number(season) + 1).slice(2)} only: the first season with lineup records.</p>
+        <div class="ld-wks">${chips}</div>
+        ${lawSrc.error ? `<p class="ld-warn">Your Dev Dashboard picks couldn’t be read (${esc(lawSrc.error)}), so every lock comes from the locked points alone.</p>` : ''}
+        ${unknown.length ? `<p class="cm-rule">${unknown.length} start${unknown.length === 1 ? '' : 's'} had no game matching the locked points (left out): ${unknown.map(x => `${esc(pname(x.pid))} wk ${x.w}`).join(', ')}. Pick them on the Dev Dashboard.</p>` : ''}`, { cls: 'ld-head' })}
+      ${betaCard(week ? `Week ${week} grades` : 'Season grades', `<ol class="lc-board">${cards.map(row).join('')}</ol>
+        <p class="cm-rule">Graded on a curve: points per lock vs the league average (${sgn(cards.leagueAvg)} per lock${week ? ` in week ${week}` : ' this season'}). A+ +6 · A +4 · A− +2.5 · B+ +1 · B within 1 · B− −2.5 · C+ −4 · C −6 · C− −8 · D −11 · F below. Fewer than ${MIN_LOCKS} locks = INC.</p>`, { sub: `${locksAll.length} locks · ${starts.length} starts` })}
+      ${betaCard('League highlights', `<ul class="lc-hl">
+          <li><span>Best lock</span>${bestL && bestL.delta > 0 ? `${lockLine(bestL)} <small>${esc(teamName(bestL.o, season))}</small>` : '<small>none yet</small>'}</li>
+          <li><span>Worst lock</span>${worstL && worstL.delta < 0 ? `${lockLine(worstL)} <small>${esc(teamName(worstL.o, season))}</small>` : '<small>none yet</small>'}</li>
+          <li><span>Favorite lock day</span>${topDay?.[1] ? `<b>${topDay[0]}</b> <small>${topDay[1]} of ${locksAll.length} locks · ${dayAll.filter(d => d[1]).map(d => `${d[0]} ${d[1]}`).join(' · ')}</small>` : '<small>none yet</small>'}</li>
+        </ul>`)}
+      ${m ? betaCard(`${esc(teamName(m.o, season))} <small>${esc(name(m.o))}</small>`, `
+        <div class="lc-sum">
+          <span><small>Grade</small><b class="lc-grade g-${m.grade[0]}">${m.grade}</b></span>
+          <span><small>Per lock</small><b class="${tone(m.avg)}">${m.locks.length ? sgn(m.avg) : '—'}</b></span>
+          <span><small>Net</small><b class="${tone(m.net)}">${sgn(m.net)}</b></span>
+          <span><small>Rides left</small><b>${num(m.leftRides)}</b></span>
+        </div>
+        <ul class="lc-hl">
+          <li><span>Best lock</span>${lockLine(m.bestLock)}</li>
+          <li><span>Worst lock</span>${lockLine(m.worstLock)}</li>
+        </ul>
+        <h3 class="lc-wk">Lock timing</h3>${timing}
+        ${byWeek}`, { id: 'lc-me', sub: 'Tap a player for his 2K card' }) : ''}
+    </div>`;
+  if (params.get('m') && body.dataset.lcJump !== `${week}|${me}`) { body.dataset.lcJump = `${week}|${me}`; $('#lc-me', body)?.scrollIntoView({ block: 'start' }); }
+}
 // LIKELY LOCK (owner, Nov 1 2026: "show likely locks"): a GUESS from the feed hints, shown on live-week rows only and
 // never counted anywhere (totals, solver, coach). hint = { points: reads }; played = his finished LINEUP games. A value
 // that matches an earlier lineup game (not his latest) while a later lineup game finished on an earlier day (the
@@ -4114,7 +4389,7 @@ function playerMoves(p, pname, ret = null) {
       // What the team that gave him up received (in a 3-team deal that can come from either other team).
       e.more = [`${esc(teamName(from, t.s))} ${tradeReturn(t, from, pname).replace(/^Got back/, 'got back')}`];
       const [a, b] = [to, from];
-      e.links = `${c ? `<a href="#/trade-court?case=${c.no}${rq}">${icon('scale')} Trade Court · Case ${caseNo(c.no)}</a>` : ''}<a href="#/rivalry?a=${a}&b=${b}&trade=${tx}${rq}">${icon('swap')} Full trade</a>`;
+      e.links = `${c ? `<a href="#/trade-court?case=${c.no}${rq}">${icon('scale')} Trade Court · Case ${caseNo(c.no)}</a>` : ''}<a href="#/rivalry?a=${a}&b=${b}&trade=${tx}${rq}">${icon('swap')} Full trade</a>${c ? `<a href="#/commish?${esc(new URLSearchParams({ tab: 'tradetree', case: c.no, p: pid, ...(ret ? { back: ret.ret, backl: String(ret.retl ?? '').replace(/^Back to /, '') || '2K breakdown' } : {}) }))}">${icon('tree')} Trade tree</a>` : ''}`;
     } else if (to) {
       e.kind = t.type === 'waiver' ? 'waiver' : t.type === 'commissioner' ? 'commish' : 'add';
       e.label = t.type === 'waiver' ? 'Waiver claim' : t.type === 'commissioner' ? 'Commissioner' : 'Free agent';
@@ -5671,7 +5946,7 @@ async function fillTrack(body, w) {
 }
 
 async function renderCoach(body, params) {
-  const [w, dyn] = await Promise.all([gmWeek(params), coachDynasty()]);
+  const [w, dyn, dvp] = await Promise.all([gmWeek(params), coachDynasty(), dvpChips(DATA, gmLoad, esc)]);
   if (!w) {
     body.innerHTML = '<section class="card soon-card"><p>The season is over. The Assistant Coach returns when next season’s schedule is set.</p></section>';
     return;
@@ -5685,10 +5960,11 @@ async function renderCoach(body, params) {
   }
   const count = c => coach.rows.filter(r => r.call === c).length;
   const summary = [[count('lock'), 'to lock'], [count('live'), 'playing now'], [count('wait'), 'waiting'], [count('locked'), 'locked'], [count('final'), 'done'], [count('plan'), 'not started']].filter(([n]) => n);
-  const game = (r, g) => {
+  const game = (r, g, pid = r.pid) => {
     const isLocked = r.call === 'locked' && !r.whatIf && g.pts != null && (r.lockDate ? r.lockDate === g.date : Math.abs(g.pts - r.score) < 0.05);
     const cls = g.playing ? 'playing' : g.done ? (g.pts == null ? 'dnp' : 'done') : 'next';
-    const inner = `<small>${shortDay(g.date)}${!g.done && !g.playing && tipShort(g) ? ` <span class="mb-tip">${tipShort(g)}</span>` : ''}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</span><b>${g.pts != null ? num(g.pts) : g.done ? 'DNP' : g.playing ? 'Live' : '–'}</b>`;
+    // Upcoming games carry the Defense vs Position grade (Test features, owner Nov 2 2026).
+    const inner = `<small>${shortDay(g.date)}${!g.done && !g.playing && tipShort(g) ? ` <span class="mb-tip">${tipShort(g)}</span>` : ''}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${!g.done && !g.playing ? dvp(pid, g.opp) : ''}</span><b>${g.pts != null ? num(g.pts) : g.done ? 'DNP' : g.playing ? 'Live' : '–'}</b>`;
     // A starter's played game is a button: tap = "he was locked on this game" (tap again to undo).
     if (r.pid && g.done && g.pts != null) {
       const on = r.marked && isLocked;
@@ -5838,7 +6114,7 @@ async function renderCoach(body, params) {
         <div class="gm-who"><b>${esc(p.name)}</b> ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No team', p.perGame ? `about ${num(p.perGame * LOCK_CAL)} a game` : ''].filter(Boolean).join(' · '))}</small></div>
         <span class="gm-badge">${left ? `${left} left` : 'No games'}</span>
       </div>
-      ${sched.length ? `<div class="gm-games">${sched.map(g => game({}, g)).join('')}</div>` : ''}
+      ${sched.length ? `<div class="gm-games">${sched.map(g => game({}, g, p.pid)).join('')}</div>` : ''}
       <p class="gm-text">${esc(text)}</p>
     </div>`;
   };
@@ -5977,7 +6253,7 @@ async function renderCoach(body, params) {
 }
 
 async function renderBriefing(body, params) {
-  const w = await gmWeek(params);
+  const [w, dvp] = await Promise.all([gmWeek(params), dvpChips(DATA, gmLoad, esc)]);
   if (!w) {
     body.innerHTML = '<section class="card soon-card"><p>The season is over. The daily briefing returns when next season’s schedule is set.</p></section>';
     return;
@@ -6019,7 +6295,7 @@ async function renderBriefing(body, params) {
         const bx = boxOn(p.pid, d);
         const live = ['in_progress', 'in_game'].includes(g.status);
         const right = bx && !live ? num(bx.pts) : live ? `Live${bx ? ` ${num(bx.pts)}` : ''}` : g.status === 'complete' || d < ctx.today ? 'DNP' : tipShort(g) || '–';
-        return `<li><span>${esc(p.name)} ${injuryTag(p)}<small>${p.starter ? esc(p.slot) : 'Bench'} · ${esc(p.team)} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${tipTime(g) && right !== tipShort(g) ? ` · ${esc(tipTime(g))}` : ''}</small></span><b>${right}</b></li>`;
+        return `<li><span>${esc(p.name)} ${injuryTag(p)}<small>${p.starter ? esc(p.slot) : 'Bench'} · ${esc(p.team)} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${g.status === 'pre_game' ? ` ${dvp(p.pid, g.opp)}` : ''}${tipTime(g) && right !== tipShort(g) ? ` · ${esc(tipTime(g))}` : ''}</small></span><b>${right}</b></li>`;
       }).join('')}</ol>` : ''}
     </div>`;
   };

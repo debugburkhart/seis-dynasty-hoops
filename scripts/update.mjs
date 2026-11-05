@@ -404,6 +404,16 @@ try {
   console.log(`Season stats skipped: ${e.message}`);
 }
 
+// Defense vs Position (Test features, owner Nov 2 2026): fantasy points each NBA team allows per position, every
+// finished game this season -> data/defense.json (assets/defense.js). Never stops the update.
+try {
+  const { updateDefense } = await import('../assets/defense.js');
+  const dvp = await updateDefense(data, await readJson('data/defense.json'), { log: m => console.log(m) });
+  await writeFile('data/defense.json', JSON.stringify(dvp));
+} catch (e) {
+  console.log(`Defense vs position skipped: ${e.message}`);
+}
+
 // NBA games started (2K breakdown GS, owner Oct 28 2026): ESPN game summaries say who started; this season every
 // night, past seasons up to `budget` games a night until complete -> data/nba-starts.json. Never stops the update.
 try {

@@ -868,6 +868,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   contractsCard() in the Dynasty side column: share of roster dynasty score in a contract year (+ options
   after this season), league average/rank, groups, every-team table; contractsHealthCard() on Health.
   Next: step 4 Playoff odds (after 3-4 weeks of games).
+- `assets/lockcard.js`: Lock Report Card (Test features, see there).
 - `assets/locks.js` + DEV DASHBOARD (owner, Nov 1 2026): which game each starter's week counted, without flip-flopping.
   (1) The commish's PICK on the Dev Dashboard = WORD OF LAW: Firestore locks/{season}_{week}_{pid} { s, w, pid, o, k, d,
   p, src 'you', t }, k = lock (+ d = game date) / last (not locked: his last LINEUP game of the week) / zero (benched before
@@ -960,7 +961,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   claims, saving picks (live rules block them until the owner publishes the new rules).
 - `scripts/update.mjs`: nightly job (Node 22 in Actions): build, guard, freeze, record
   history, snapshots, and checks that fail the run (= email) on any mismatch.
-- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json, taxi-week.json, injury-log.json, lgs.json + locks.json (written by scripts/lgs.mjs via lgs.yml, not the nightly job),
+- `data/` is written only by the Action (league.json, frozen/, snapshots/, week-guard.json, official-weeks.json, live-weeks.json, taxi-log.json, coach-log.json, props.json, season-stats.json, trade-talk.json, taxi-week.json, injury-log.json, defense.json, lgs.json + locks.json (written by scripts/lgs.mjs via lgs.yml, not the nightly job),
   dynasty files, draft-scout.json + scout-pool.json + contracts.json weekly).
   Never have the owner upload a `data` folder.
 
@@ -1073,7 +1074,82 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (a public page in NAV/READY, or a My GM / League office tab), remove its TEST_FEATURES entry, swap
   betaCard for plain cards (no Beta tags), and note the date + new place here.
 - Current test features:
+  DEFENSE VS POSITION (tab=defense; owner, Nov 2 2026): `assets/defense.js` (logic, no DOM) + `assets/defense-ui.js` (the
+  page: renderDefense(body, params, h), h = { DATA, esc, gmLoad, gmSave, COMMISH, teamName } passed by app.js
+  renderDefensePage; kept out of app.js on purpose), .dvp-* at the end of styles.css. Owner's answers: BOTH splits with a
+  switch (PG / SG / SF / PF / C by Sleeper's main `position` from each box row's player (today's), or G / F / C = PG+SG,
+  SF+PF), whole season or each defense's last 5 / 10 / 15 games, THIS SEASON ONLY (no blend; GP column + * under
+  MIN_GAMES 3), placements: chart + this week's grades + chips on Coach / Briefing (streaming targets NOT wanted). Data:
+  every finished game (schedule status complete) of the current season from /stats/nba/{s}/{w} (exhibitionRow skipped,
+  played = gp or sp or min), each player's FP (fantasy(), that league's scoring_settings) added to the team he played
+  AGAINST; per team-game row [date, game_id, def, off, then per PG..C: fp, min, starters' fp, starters' min]; starters =
+  Sleeper schedule home/away .starters (NBA starting five; "Starters only" switch). Nightly update.mjs -> updateDefense ->
+  data/defense.json { version DEFENSE_VERSION, at, seasons: { s: { weeks (finished weeks), through, sk (scoring key; a
+  change rebuilds), rows } } } (current week re-read each night); pages: loadDefense() = saved file + weeks after it live
+  (finished games, keyed game|def so no doubles), cached 2 min; no file = built from week 1. defenseTable(def, { split,
+  window, who, metric: game | 36 (FP per 36 min at that position) }) -> per team per column v, rank (1 = allows the MOST =
+  softest), diff vs the league average (average of the 30 teams). Grade (GRADE_CUTS on the rounded percent): A +12%+, B
+  +5%+, C within 5%, D -5% to -12%, F under -12%. Page cards: chart (4 switch rows, gm-dvp-opts; sortable headers
+  gm-dvp-sort, numbers sort softest first; heat green/red full at ±25%; Avg row; team column sticky, logos hidden <= 360px),
+  "This week's matchups" (fantasy team select gm-dvp-team, default COMMISH; Sleeper state week's games per active player,
+  taxi + IR left out, grade per game, finished games faded, player chip = average of games left, team line good A/B vs tough
+  D/F), How it works. dvpChips(DATA, gmLoad, esc) -> (pid, opp) => chip in the page's saved view: Assistant Coach game chips
+  (upcoming games, starters + bench/IR cards; game(r, g, pid)) and Briefing "Games by day" (pre_game). 'gm-dvp-' in SYNCED.
+  Checked Nov 2 2026 (live, weeks 1-3, no saved file) vs raw box scores in PowerShell: ATL vs C 8 games 405 FP = 50.6, BOS vs
+  SG 307 / 7 = 43.9, BOS vs PG 209 / 7 = 29.9 (= page); all switches; 320 / 402 / desktop no page overflow (the chart scrolls
+  inside its box at 320). Seen while testing, NOT from this: the Briefing's Lock calls card is 428 px wide at 402.
   DEV DASHBOARD (tab=devdash; owner, Nov 1 2026): see `assets/locks.js` + DEV DASHBOARD under Architecture.
+  TRADE TREES (tab=tradetree; owner, Nov 2 2026; logic `assets/tradetree.js`, no DOM; renderTradeTree in app.js, .tt-* in
+  styles.css). Owner's answers: a tree starts from a TRADE (both sides), goes ALL THE WAY down (levels 0-1 open, deeper
+  folded <details>; nodes on the way to ?p= stay open), each node = locked points + how it ended, Test features ONLY (no
+  links from Trade Court / Rivalry until it graduates; the 2K Transactions card has a "Trade tree" link, with back/backl).
+  tradeTree(DATA, fo, tx, rosters): a branch stays with ONE team: what it got -> when it traded that away, what it got
+  back there hangs under it -> ... Side total = every locked point that team got from the whole tree (who won over
+  time); node "Branch" = itself + below. Player node = his Front Office stint from that trade (frontOffice stints now
+  also export src / tx / ts / pick / endSrc / endTx / value / weeks / active, + pickUse); exits: traded (endTx), dropped,
+  commish, held (checked against LIVE Sleeper rosters: "Gone from the roster today" if moved since the nightly), left. A
+  re-add with no drop in between = the same stay (Ron Holland 2024: the commissioner add after the DUPLICATE pick).
+  Pick node: its next trade away from that team (earliest later trade with that key + from), else drafted (pickUse,
+  incl. the 2023 STARTUP: case 001 traded startup picks before the Dec 12 2023 draft) -> the drafted player's draft
+  stint, else unused (still held). Draft ts = Sleeper start_time, slow drafts run days: a pick traded after it
+  (2026 started Sep 7, case 072 Sep 10) shows "changed hands during it", dates clamped. Several assets leaving in the
+  SAME later trade share its return: listed under the first (tree order), others say "the return is listed under X"
+  (expanded map by tx|owner, so every trade expands once = no loops); a player back on a team he left earlier on the
+  same branch gets "Back again". Page: finder card (accent-insensitive search over everyone ever in a trade or a pick
+  that became him -> his trades; every case by season) + tree card (score per side, leader, per-side tree; Trade Court
+  case links carry ret/retl = floating back button; "its own tree" re-roots). Params ?case= | ?tx=, ?p=, ?season=,
+  ?back/backl. Tested Nov 2 2026 on league.json: all 78 trades (25 ms, max 68 nodes, depth 8, no unknown/missing
+  leaves); case 063 (Jokic) by hand: Avdija 7 st / 291, Sarr 3 / 128, Morant 0, Jokic 10 / 536 for simeon, jimmycooks2's
+  2026 2nd jimmy -> simeon -> bigtrey -> BenDover (case 066) -> Garland 111 -> case 076 return; 3-team 523 / 746 / 1282;
+  loop: Morant back to bigtrey in case 007's tree; 320 / 402 / 1440 no overflow.
+  LOCK REPORT CARD (tab=lockcard; owner, Nov 2 2026; logic `assets/lockcard.js`, no DOM; renderLockCard in app.js, .lc-*
+  in styles.css). Owner's answers: grade PER LOCK DECISION; baseline = never lock (his last LINEUP game counts); show the
+  hindsight ceiling (best lineup game); NO Assistant Coach comparison yet (past mornings' projections aren't saved; could
+  come from coach-log.json later); 2026-27 ONLY (first season with lgs.json lineup records + Dev Dashboard picks; older
+  seasons' matchup feed is broken). Data: DATA.playerWeeks (t 'R', finished weeks), locks.js weekBoxes per week (league
+  scoring_settings from Sleeper, All-Star rows skipped, cached per visit in LC_BOX), data/lgs.json (bench dates removed
+  from his lineup games; v 1 without 'k' = started, used for ties), Dev Dashboard picks (loadLawSrc / lawFor), data/
+  official-weeks.json answers' games (fallback when Sleeper corrected a box score after the solve: LaVine 45 -> 44,
+  Isaiah Stewart 26 -> 24 in week 1). judgeStart() per starter-week: counted game = pick (lock date / last lineup game /
+  zero), else the lineup game whose FP = locked points (tie: one he started, else the later one; src 'tie'), else the
+  solver's date; kind lock (later lineup games came after it) / ride (2+ lineup games, the last counted; a pick on his
+  last game says "Locked his last game") / single / zero (benched before his last game: baseline = his last game played)
+  / none / unknown (listed on the page, "pick them on the Dev Dashboard"). delta = locked points - last lineup game;
+  left = best lineup game - locked. managerCards(): locks (paid / early / even), avg per lock, net vs last game (locks +
+  zeros), left early, saved, rides left (best - counted on rides), Hindsight % = sum(counted - worst) / sum(best - worst)
+  over 2+ game weeks, lock days Mon..Sun, best / worst lock. GRADE ON A CURVE (added after seeing the data: locks are made
+  on big games, so every manager gained +7.5 to +19.5 per lock in weeks 1-2 and all graded A+ on a fixed scale): vsAvg =
+  avg per lock - league average per lock in the same view (season or week); GRADE_STEPS A+ +6 ... B within 1 ... F below
+  -11; MIN_LOCKS 3 (fewer = INC, ranked last); constants at the top of lockcard.js, owner may tune. Page: header (rules,
+  Season / Week N chips ?week=), grades board (rank, grade, team, per lock + vs avg, stats line; tap = ?m=owner), League
+  highlights (best / worst lock, favorite lock day), manager drill-down (default COMMISH: grade, per lock, net, rides left,
+  best / worst lock, lock-timing bars, "locks game X of Y" average, decisions by week: locks, zeros, rides, one-game weeks
+  folded; game chips = counted navy, best game gold outline, bench struck; player name = 2K card with back = this page).
+  Checked Nov 2 2026 (weeks 1-2): 144 starts = 72 locks, 69 rides, 3 single, 0 zero, 0 unknown; sources 112 points match,
+  27 picks, 3 ties, 2 solver; every lock delta recomputed from raw box scores; league avg +13.3 per lock (season); Parma
+  B (+13.3, 10 locks), simeoncampbell7 A+ (+19.5, 4 locks), BenDoverPlz123 C (+7.5); layouts 320 / 402 / desktop, no
+  overflow; 2K link + back pill work. CAVEAT: week 1 had no bench records (the watcher started Oct 29), so every week-1
+  game counts as a lineup game.
   DEPTH CHART (tab=depth; owner, Oct 29 2026; renderDepth / dcAuto / dcChart in app.js, .dc-* in styles.css). Owner's
   answers: BOTH views with a switch (?view=fantasy|nba, gm-dc-view), a dropdown per view (?team= fantasy team, default
   COMMISH; ?nba= NBA team, gm-dc-nba, default ATL); rows show FP/G + min, NBA GS/GP (only when nba-starts is full),

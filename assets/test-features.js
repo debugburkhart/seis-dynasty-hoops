@@ -15,6 +15,12 @@ export const TEST_FEATURES = [
   { id: 'depth', label: 'Depth Chart', since: '2026-10-29' },
   // Dev Dashboard (owner, Nov 1 2026): every starter's lock per matchup, every uncertainty, the commish's picks = law.
   { id: 'devdash', label: 'Dev Dashboard', since: '2026-11-01' },
+  // Defense vs Position (owner, Nov 2 2026): FP each NBA team allows per position, this week's matchup grades.
+  { id: 'defense', label: 'Defense vs Position', since: '2026-11-02' },
+  // Lock Report Card (owner, Nov 2 2026): each manager's locks graded vs "never lock, last lineup game counts".
+  { id: 'lockcard', label: 'Lock Report Card', since: '2026-11-02' },
+  // Trade Trees (owner, Nov 2 2026): a trade's every branch (what each team got, then what that became), by locked points.
+  { id: 'tradetree', label: 'Trade Trees', since: '2026-11-02' },
 ];
 
 export const BETA = '<span class="gm-beta">Beta</span>';

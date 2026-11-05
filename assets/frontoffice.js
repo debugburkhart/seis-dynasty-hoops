@@ -84,6 +84,7 @@ export function frontOffice(DATA, season = 'all') {
       } else if (open[e.o]) {
         open[e.o].end = e.k;
         open[e.o].endSrc = e.src;
+        open[e.o].endTx = e.tx;
         delete open[e.o];
       }
     }
@@ -222,6 +223,13 @@ export function frontOffice(DATA, season = 'all') {
     unusedDuplicates,
     // Every player's time on each team, for "who had him when" ({ pid, o, start, end }:
     // season*100+week keys, end null while he's still there).
-    stints: [...stintOf.values()].map(st => ({ pid: st.pid, o: st.o, start: st.start, end: st.end })),
+    // Trade trees also read how it began and ended: src / tx / ts = the "in" event (tx = DATA.transactions
+    // index; pick = the draft pick), endSrc / endTx = the move that ended it (unset when he was re-added
+    // without a recorded drop), value / weeks / active = its locked points, like a trade side's asset.
+    stints: [...stintOf.values()].map(st => ({ pid: st.pid, o: st.o, start: st.start, end: st.end,
+      src: st.event.src, tx: st.event.tx, ts: st.event.ts, pick: st.event.ref, endSrc: st.endSrc, endTx: st.endTx,
+      value: st.value, weeks: st.weeks.length, active: st.active })),
+    // Pick key "season|round|original roster id" -> the pick used with it (unset until drafted).
+    pickUse,
   };
 }
