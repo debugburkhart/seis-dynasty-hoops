@@ -143,12 +143,25 @@ export async function loadSlate(season, week) {
   return out;
 }
 
-// Locked points per team for a live week (Home, Hype page, Wager tracker): { roster_id: pts }.
-// Sleeper's matchup score counts every starter's latest game, locked or not. A starter is
-// locked here by the coach's rule (counted score = an earlier game than his latest), when
-// he's done for the week (no games left: that score is final), or marked "I locked him".
-// law = lock-record marks (assets/locks.js lawMarks): the commish's Dev Dashboard picks and saved sightings. They beat this
-// browser's own marks and Sleeper's reading, so a lock once recorded never flips back (owner, Nov 1 2026).
+// This device's lock marks + the commish's Dev Dashboard picks (lawMarks, with `at`), per player: the NEWER one wins
+// (owner, Nov 6 2026: a lock he sets must stay what he set). Local marks carry t (set time); a mark taken back is kept
+// as { cleared, t } so an older pick can't come back. Marks without t (older saves) lose to a pick, as before.
+export function mergeMarks(local = {}, law = {}) {
+  const out = {};
+  for (const pid of new Set([...Object.keys(local ?? {}), ...Object.keys(law ?? {})])) {
+    const L = local?.[pid];
+    const P = law?.[pid];
+    const lt = L && typeof L === 'object' ? Number(L.t) || 0 : 0;
+    const v = P && !(lt && lt > (Number(P.at) || 0)) ? P : L;
+    if (v != null && !(typeof v === 'object' && v.cleared)) out[pid] = v;
+  }
+  return out;
+}
+
+// Locked points per team for a live week (commish office): { roster_id: pts }. A starter counts when the manager marked
+// or picked his locked game, or once the NBA week is over (every game final: his last game counts). Nothing is read
+// from Sleeper's counted score (owner, Nov 6 2026). law = the Dev Dashboard picks (lawMarks); the newer of a pick and
+// this browser's mark wins (mergeMarks).
 export async function lockedPoints(season, week, leagueId, rows, law = {}) {
   const [league, stats, slate] = await Promise.all([
     get(`/v1/league/${leagueId}`, {}),
@@ -165,9 +178,11 @@ export async function lockedPoints(season, week, leagueId, rows, law = {}) {
     if (g.stats && (g.stats.gp || g.stats.sp)) (boxes[g.player_id] ??= []).push({ date: g.date, pts: r1(fantasy(g.stats, scoring)) });
   }
   for (const list of Object.values(boxes)) list.sort((a, b) => (a.date < b.date ? -1 : 1));
-  let marks = {};
-  try { marks = JSON.parse(localStorage.getItem(`gm-locks-${season}-${week}`) ?? '{}') ?? {}; } catch { /* none */ }
-  marks = { ...marks, ...law };
+  let local = {};
+  try { local = JSON.parse(localStorage.getItem(`gm-locks-${season}-${week}`) ?? '{}') ?? {}; } catch { /* none */ }
+  const marks = mergeMarks(local, law);
+  const weekGames = Object.values(slate ?? {}).flat();
+  const weekDone = weekGames.length > 0 && weekGames.every(g => g.status === 'complete');
   const out = {};
   for (const m of rows ?? []) {
     let sum = 0;
@@ -177,15 +192,14 @@ export async function lockedPoints(season, week, leagueId, rows, law = {}) {
       if (counted == null) continue;
       const played = boxes[pid] ?? [];
       const latest = played.at(-1);
-      const left = (slate[team[pid]] ?? []).some(g => g.status !== 'complete' && g.date >= today);
-      const earlier = latest && latest.date < today && Math.abs(latest.pts - counted) >= 0.05 && played.slice(0, -1).some(b => Math.abs(b.pts - counted) < 0.05);
-      // A mark on a given game counts that game's score (the manager says it was locked then).
+      // Only the manager's marks lock (owner, Nov 6 2026: nothing is read from Sleeper's counted score). A marked game
+      // counts that game's box score (a stat correction shows); with no games left his last game counts.
       const mk = marks[pid];
       if (mk?.zero) continue; // Dev Dashboard: benched before his last game = 0
-      const markedGame = mk && typeof mk === 'object' && !mk.none ? played.find(b => b.date === mk.date) : null;
+      const markedGame = mk && typeof mk === 'object' && mk.date ? played.find(b => b.date === mk.date) : null;
       if (markedGame) sum += markedGame.pts;
-      else if (mk && typeof mk === 'object' && mk.none) { if (!left) sum += counted; } // marked "not locked"
-      else if (earlier || !left || (mk != null && played.length)) sum += counted;
+      else if (typeof mk === 'number' && played.length) sum += counted; // old-style mark = the score counting then
+      else if (weekDone && latest) sum += latest.pts; // settled only once every NBA game of the week is final
     }
     out[m.roster_id] = r1(sum);
   }
@@ -194,10 +208,10 @@ export async function lockedPoints(season, week, leagueId, rows, law = {}) {
 
 // ---------- Lock-in coach ----------
 
-// One starter's lock call. Sleeper's public data doesn't say whether a game was locked:
-// players_points is the score that counts right now (his locked game, or else his
-// latest game). If that differs from his latest game, he must be locked on an earlier
-// one. Otherwise the manager can mark "I locked him" (saved in this browser).
+// One starter's lock call. Sleeper's public data doesn't say whether a game was locked, and its counted score
+// (players_points) can't be trusted for it, so locks come only from the manager's marks ("I locked him", a tapped
+// game chip, a Dev Dashboard pick). A marked game keeps its lock all week; its score follows Sleeper's box score for
+// that game, so a stat correction shows up.
 function coachCall(p, ctx, boxes, slate, live, risk, marked, whatif) {
   const today = ctx.today;
   const sched = (slate[p.team] ?? []).map(g => {
@@ -218,9 +232,14 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked, whatif) {
   const counted = live?.players_points?.[p.pid] ?? null;
   const out = OUT.test(p.injury ?? '');
   const base = { sched, perGame, pgRaw, mfAvg, counted, out };
+  // The NBA week is over only when every game on the week's slate is final; then a player still in the lineup is settled.
+  const allGames = Object.values(slate).flat();
+  const weekOver = allGames.length > 0 && allGames.every(g => g.status === 'complete');
+  const lastDay = dayName(allGames.map(g => g.date).sort().at(-1) ?? today);
 
   if (!sched.length) return { ...base, call: 'none', text: 'No games this week. A bench player with games would score more.' };
-  // { none: true } = the manager says he is NOT locked: skip the marks and Sleeper's reading.
+  if (marked && typeof marked === 'object' && marked.cleared) marked = null; // a mark the manager took back
+  // { none: true } = the manager says he is NOT locked (his last game counts).
   const notLocked = Boolean(marked && typeof marked === 'object' && marked.none);
   if (notLocked) { base.notLocked = true; marked = null; }
   // Marked by the manager (this device): { date } = locked on that game (any game he played, so
@@ -230,16 +249,11 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked, whatif) {
     const g = typeof marked === 'object' ? played.find(x => x.date === marked.date) : null;
     const score = g ? g.pts : counted ?? marked;
     return { ...base, call: 'locked', score, lockDate: g?.date ?? null,
-      text: `Locked at ${score}${g ? ` (${dayName(g.date)}'s game)` : ''}, marked on this device. Tap another game above if it was a different one.`, marked: true };
+      text: `Locked at ${score}${g ? ` (${dayName(g.date)}'s game)` : ''}, ${marked.law ? 'your Dev Dashboard pick' : 'marked by you'}. It stays locked on that game all week (the score follows Sleeper’s box score for it). Tap another game above if it was a different one.`, marked: true };
   }
-  // Locked? Inferred from Sleeper's counted score: it still counts an earlier game after a later one.
-  // Not from a game played today: right after a game Sleeper's counted score can lag the box score
-  // (Oct 22 2026: Holmgren read as locked on Tuesday's 30 after Thursday's 39 went final; Sleeper
-  // counted 39 by morning). Same-day locks: the manager can mark them.
-  const earlier = played.slice(0, -1).find(g => counted != null && Math.abs(g.pts - counted) < 0.05);
-  if (!notLocked && latest && latest.date < today && counted != null && Math.abs(latest.pts - counted) >= 0.05 && earlier) {
-    return { ...base, call: 'locked', score: earlier.pts, lockDate: earlier.date, text: `Locked at ${earlier.pts} (from ${dayName(earlier.date)}).`, inferred: true };
-  }
+  // NO LOCK IS EVER READ FROM SLEEPER'S FEED (owner, Nov 6 2026): its counted score disagrees with itself from read to
+  // read, so a guessed lock kept switching games. A player is locked only when the manager marked him (this device or
+  // a Dev Dashboard pick); otherwise his last game of the week counts once he has no games left ('final' below).
   // What-if lock (coach's page only): counts in the coach's math, never in the live scores
   // on Home or the Hype page. Only valid until his next game (a new game would replace it).
   if (whatif && latest && whatif.date === latest.date) {
@@ -250,17 +264,23 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked, whatif) {
     const bars = lockBars(perGame, upcoming.length, risk);
     const bar = upcoming.length ? bars[upcoming.length] : null;
     return { ...base, call: 'live', bar, score: playingNow.pts,
-      text: upcoming.length ? `Playing now${playingNow.pts != null ? `: ${playingNow.pts} so far` : ''}. Lock it if he finishes at ${bar}+.` : `Playing his last game of the week now${playingNow.pts != null ? `: ${playingNow.pts} so far` : ''}. It counts either way.` };
+      text: upcoming.length ? `Playing now${playingNow.pts != null ? `: ${playingNow.pts} so far` : ''}. Lock it if he finishes at ${bar}+.` : `Playing his last game of the week now${playingNow.pts != null ? `: ${playingNow.pts} so far` : ''}. It counts if he’s still in your lineup when the week ends.` };
   }
   if (!latest) {
-    if (!upcoming.length) return { ...base, call: 'final', score: 0, text: 'Didn’t play this week.' };
+    if (!upcoming.length) return weekOver ? { ...base, call: 'final', score: 0, text: 'Didn’t play this week.' }
+      : { ...base, call: 'held', score: 0, text: `No games left and none played: 0. He can be swapped out for a player who still plays before ${lastDay}.` };
     if (upcoming.length === 1) return { ...base, call: 'plan', text: `One game (${day(upcoming[0].date)}): it counts no matter what.` };
     const bars = lockBars(perGame, upcoming.length - 1, risk);
     return { ...base, call: 'plan', bar: bars[upcoming.length - 1], bars,
       text: `${upcoming.length} games. Lock his first one (${day(upcoming[0].date)}) if he scores ${bars[upcoming.length - 1]}+.` };
   }
   const x = latest.pts;
-  if (!upcoming.length) return { ...base, call: 'final', score: x, text: `Done for the week: his last game (${x}) counts.` };
+  if (!upcoming.length) {
+    if (weekOver) return { ...base, call: 'final', score: x, text: `Week over: his last game (${x}) counts.` };
+    // Done playing, week not over (owner, Nov 6 2026): nothing is settled until every NBA game of the week is final. His
+    // score counts only if he's still in the lineup then; he can still be benched (score gone) for a later player.
+    return { ...base, call: 'held', score: x, text: `Done playing this week: his ${x} counts only if he’s still in your lineup when the week ends (after ${lastDay}’s games). Benching him before then loses it.` };
+  }
   if (out) return { ...base, call: 'lock', score: x, text: `Listed ${p.injury}: lock the ${x} so a missed game can’t cost you.` };
   const bars = lockBars(perGame, upcoming.length, risk);
   const bar = bars[upcoming.length];
@@ -293,7 +313,7 @@ const gameDist = pg => ({
 });
 export function simState(r) {
   if (r.empty || r.call === 'none') return { fixed: 0 };
-  if (r.call === 'locked' || r.call === 'final' || r.out) return { fixed: r.score ?? 0 };
+  if (r.call === 'locked' || r.call === 'final' || r.call === 'held' || r.out) return { fixed: r.score ?? 0 };
   const up = r.sched.filter(g => !g.done && !g.playing).length;
   const s = gameDist(r.perGame || 0);
   if (r.call === 'live') return { ...s, cur: null, k: up + 1, floor: r.score ?? 0 };
@@ -627,7 +647,7 @@ export function teamPlan(c, slate, today, boxes = {}, sits = OUT, risk = 'balanc
     if (r.call === 'locked') { base += r.score ?? 0; return; }
     const o = { pid: r.pid, name: r.name, elig: r.elig, pg: r.pgRaw ?? r.perGame ?? 0, start: i, row: r };
     if (r.call === 'none') o.fixed = 0;
-    else if (r.call === 'final') o.fixed = r.score ?? 0;
+    else if (r.call === 'final' || r.call === 'held') o.fixed = r.score ?? 0; // held = done playing, can still be benched
     else if (sits.test(r.injury ?? '') && r.call !== 'live') o.fixed = r.score ?? 0;
     else {
       // Games Sleeper projects at 0 (he'll likely miss them) don't count as chances.
@@ -675,7 +695,7 @@ function lineupOf(c, plan) {
     const i = plan.openIdx[s];
     const r = p.row;
     const state = p.fixed != null ? { fixed: p.fixed } : p.start >= 0 ? r.state : { ...gameDist(p.pg), cur: null, k: p.games.length };
-    lineup[i] = { ...r, slot: c.rows[i].slot, state, fromBench: p.start < 0, sitting: p.start >= 0 && p.fixed != null && r.call !== 'final' && r.call !== 'none' };
+    lineup[i] = { ...r, slot: c.rows[i].slot, state, fromBench: p.start < 0, sitting: p.start >= 0 && p.fixed != null && r.call !== 'final' && r.call !== 'held' && r.call !== 'none' };
   });
   const out = lineup.map((p, i) => p ?? { slot: c.rows[i].slot, empty: true, state: { fixed: 0 } });
   const inLineup = new Set(out.filter(p => !p.empty).map(p => p.pid));

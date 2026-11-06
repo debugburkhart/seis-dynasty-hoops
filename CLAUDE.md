@@ -399,6 +399,21 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   owner couldn't undo it. Fixed: no lock is inferred from a game played TODAY (coachCall + lockedPoints: latest.date <
   today), and a "Not locked" button on every locked card sets the mark { none: true } (ignore marks + Sleeper's
   reading; lockedPoints counts him only with no games left; "Undo 'not locked'" clears it; data-act on .gm-mark).
+  NO AUTO LOCKS (owner, Nov 6 2026: "when I lock a score it'll show a different game as locked later"): coachCall and
+  lockedPoints NO LONGER infer a lock from Sleeper's counted score (players_points flips between games read to read, see
+  THE MATCHUPS FEED DISAGREES WITH ITSELF). Locked = a mark only (local gm-locks or a Dev Dashboard pick); a marked game
+  keeps its lock all week and its points = that game's CURRENT box score (a Sleeper stat correction shows); no mark =
+  unlocked until he has no games left, then his last game counts ('final'). Local marks now carry t; undo saves
+  { cleared, t }; gm.js mergeMarks(local, lawMarks) = the NEWER of a coach mark and a pick wins per player (lawMarks now
+  carries at = the pick's save time; marks without t lose to a pick, as before). Used by gmWeek and lockedPoints. The Dev
+  Dashboard (solver, Needs you, feed hints, Likely locked) is unchanged, and coach marks still save as picks (coachPick).
+  Opponents' unmarked locks are now unknown to the sim (treated as unlocked smart players).
+  HELD, NOT DONE (owner, Nov 6 2026: "the ONLY time a player should be auto locked is if they are still in the lineup at
+  the end of the NBA week when all games have completed"): a starter whose own games are over while the NBA week isn't
+  (any game on the week's slate not 'complete') is call 'held' (label Held, outlined score box, gold card like Wait), NOT
+  'final': not in locked points / the board's locked tally (counted in "left" and the small "if locked now" line),
+  planner piece fixed + benchable (the best fit can sub him out for a later player), lockedPoints counts an unmarked
+  starter's last game only when weekDone (every game final). 'final' ("Week over: his last game counts") only then.
   Still to check: whether a DNP replaces the counted score (Oct 23 9 am: no week-1 starter had played, then sat a later team game; only 4 starters had 2 games, all played both; re-check after Fri/Sat/Sun games).
   Modes (localStorage gm-mode, was gm-risk): "Play to win" (Beta; was the default until Oct 20, 2026, see SLOT PLANNER),
   plus Safe/Balanced/Bold points modes. gameCoach(): builds every team's lockCoach rows -> sim

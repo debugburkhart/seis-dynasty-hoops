@@ -135,5 +135,6 @@ export function lawPoints(entry, list) {
 
 // Lock-in coach marks (gm.js) from a week's picks: lock -> { date }, not locked -> { none }, benched -> { none, zero }.
 export function lawMarks(law) {
-  return Object.fromEntries(Object.entries(law ?? {}).map(([pid, x]) => [pid, x.k === 'lock' ? { date: x.d, law: x.src } : { none: true, ...(x.k === 'zero' ? { zero: true } : {}), law: x.src }]));
+  // at = when the pick was saved, so gm.js mergeMarks can let a newer coach mark on this device win.
+  return Object.fromEntries(Object.entries(law ?? {}).map(([pid, x]) => [pid, x.k === 'lock' ? { date: x.d, law: x.src, at: x.at } : { none: true, ...(x.k === 'zero' ? { zero: true } : {}), law: x.src, at: x.at }]));
 }

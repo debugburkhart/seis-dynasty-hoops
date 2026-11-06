@@ -1958,7 +1958,7 @@ a.tl-event:hover { background: #fbf6e6; }
 .gm-calls { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
 .gm-call { padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 10px; background: var(--paper); min-width: 0; }
 .gm-call.gm-lock { border-left-color: #2f8a5b; background: #f3faf6; }
-.gm-call.gm-wait { border-left-color: var(--brass); }
+.gm-call.gm-wait, .gm-call.gm-held { border-left-color: var(--brass); }
 .gm-call.gm-live { border-left-color: #c2410c; }
 .gm-call.gm-locked, .gm-call.gm-final { border-left-color: var(--navy-700); }
 .gm-call.gm-none { border-left-color: #a03a2d; }
@@ -1968,7 +1968,7 @@ a.tl-event:hover { background: #fbf6e6; }
 .gm-who small { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
 .gm-badge, .gm-badge-s { flex: none; padding: 4px 9px; border-radius: 99px; background: #efece3; color: var(--muted); font: 800 9.5px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 .gm-lock .gm-badge, .gm-badge-s.gm-lock { background: #2f8a5b; color: #fff; }
-.gm-wait .gm-badge, .gm-badge-s.gm-wait { background: #f3e6c4; color: var(--gold-ink); }
+.gm-wait .gm-badge, .gm-badge-s.gm-wait, .gm-held .gm-badge, .gm-badge-s.gm-held { background: #f3e6c4; color: var(--gold-ink); }
 .gm-live .gm-badge, .gm-badge-s.gm-live { background: #fde3d3; color: #c2410c; }
 .gm-locked .gm-badge, .gm-final .gm-badge { background: var(--navy-800); color: var(--gold); }
 .gm-none .gm-badge, .gm-badge-s.gm-none { background: #fbe6e1; color: #a03a2d; }
