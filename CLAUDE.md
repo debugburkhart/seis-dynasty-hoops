@@ -1336,6 +1336,20 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   2028-29 ... not this coming summer"), Upcoming FAs "summer 2028 (before 2028-29)"; taxi rows "Can stay on taxi through X
   (his 3rd NBA season)" / "Taxi time is up after X (his 3rd NBA season): call him up for Y or he's released"; grid tag "last
   taxi season (3rd NBA season)"; warning "finished their 3rd NBA season, so taxi time is up for 2028-29". Rule unchanged.
+  FOUR SUMMERS (owner, Nov 8 2026: "year selections for the next 4 years so I can see how each year looks with accurate
+  data"): planner chips Summer 2028 / 2029 / 2030 / 2031 (SUMMERS; gm-ct-summer). Plans per summer: gm-ct-plan-{owner} =
+  { at, y: { year: { re, cut, up, adds } } } (an older one-summer save = summer 2028). leaguecontracts.js rollPlans(team,
+  plans, { cap, cur, upTo, priceAt, mkRow }) chains planSummer: each P returns `next` (rows going into that season:
+  carried with len = left, re-signed { signedIn, signLen, new price locked }, called-up taxi { calledUpIn, signLen }, taxi
+  still eligible, adds via mkRow) + `deadNext` (dead money still owed: { name, amt, left }), which feed the next summer;
+  planSummer adds incoming `dead` to money. Undecided expiring players in an earlier summer = released. Prices for later
+  summers = each player's real contract for that season (grown cutoffs); made-up adds keep their price (r.fake). Rows show
+  their origin ("Day one: 4 seasons · 2027-28 – 2030-31" from len0, "Re-signed summer 2028: 2 seasons · through 2029-30",
+  "Added summer 2028 ...", "Called up summer 2028 ..."); top card: "Built on your summer 2028 + 2029 plans: ..." line and
+  "Dead money from earlier cuts". Upcoming FAs per summer use every other team's own chain. "Reset this plan" clears only
+  the shown summer. Checked Nov 8 2026: Parma 2028 re-sign Ingram 2 / cut Sengun ($20 x 4 left -> $10 dead) / call up
+  Raynaud / add Doncic 1 -> 2029: Ingram + Raynaud carried, Doncic expiring, Sengun $10 x 2 dead; 2030: Ingram expiring;
+  320 px no overflow.
   TRADE TREES (tab=tradetree; owner, Nov 2 2026; logic `assets/tradetree.js`, no DOM; renderTradeTree in app.js, .tt-* in
   styles.css). Owner's answers: a tree starts from a TRADE (both sides), goes ALL THE WAY down (levels 0-1 open, deeper
   folded <details>; nodes on the way to ?p= stay open), each node = locked points + how it ended, Test features ONLY (no

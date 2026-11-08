@@ -16,7 +16,7 @@ import { loadBreakdown } from './breakdown.js';
 import { money } from './contracts.js';
 import {
   CUT_SHARE, FOUR_YEAR_PER_SUMMER, FREE_CUT, GRID_SEASONS, LEAGUE_ROOKIE_YEARS, MAX_YEARS, NBA_TIERS, POOL, PRICE_STEPS, ROOKIE_TIER,
-  START_SEASON, SUGGEST_AGE, SUGGEST_MIN_FPG, SUGGEST_SPARE, buildLeague, lengthBlock, nbaEnd, planSummer, priceFor, rookiePicks, span, suggestLengths, whoCanAfford, CAP_GROWTH, tierScale, TAXI_YEARS, ROSTER_MAX, TAXI_MAX,
+  START_SEASON, SUGGEST_AGE, SUGGEST_MIN_FPG, SUGGEST_SPARE, buildLeague, lengthBlock, nbaEnd, planSummer, priceFor, rookiePicks, span, suggestLengths, whoCanAfford, rollPlans, CAP_GROWTH, tierScale, TAXI_YEARS, ROSTER_MAX, TAXI_MAX,
 } from './leaguecontracts.js';
 
 // Tab order (owner, Nov 7 2026): set day-one contracts first, then see where teams stand, trade, plan the summer, waivers.
@@ -220,8 +220,31 @@ export async function renderContracts(body, params, h) {
       + betaCard(`Other teams’ blocks: can ${esc(teamName(T.owner, cur.season))} afford them?`, otherRows ? `<div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Player</th><th class="n">Contract</th><th>Fits?</th></tr></thead><tbody>${otherRows}</tbody></table></div>` : '<p class="cm-rule">No other team has anyone on its block. Pick another team above to set up its block (sandbox).</p>', { sub: `${others.length} players` });
   }
 
-  const planOf = o => ({ re: {}, cut: [], up: [], adds: [], ...gmLoad(`gm-ct-plan-${o}`, {}) });
-  const savePlan = (o, p) => gmSave(`gm-ct-plan-${o}`, { ...p, at: Date.now() });
+  // Plans per summer (owner, Nov 8 2026: "year selections for the next 4 years"): gm-ct-plan-{owner} = { at, y: { year: { re, cut,
+  // up, adds } } }; an older one-summer save is read as summer START_SEASON + 1. Each summer is built on the ones before it.
+  const SUMMERS = Array.from({ length: GRID_SEASONS }, (_, i) => START_SEASON + 1 + i);
+  S.summer = Number(params.get('summer')) || gmLoad('gm-ct-summer', SUMMERS[0]);
+  if (!SUMMERS.includes(S.summer)) S.summer = SUMMERS[0];
+  const plansOf = o => {
+    const raw = gmLoad(`gm-ct-plan-${o}`, {}) ?? {};
+    if (raw.y) return raw.y;
+    const { at, ...p } = raw;
+    return Object.keys(p).length ? { [SUMMERS[0]]: p } : {};
+  };
+  const planOf = (o, y = S.summer) => ({ re: {}, cut: [], up: [], adds: [], ...(plansOf(o)[y] ?? {}) });
+  const savePlan = (o, p, y = S.summer) => gmSave(`gm-ct-plan-${o}`, { at: Date.now(), y: { ...plansOf(o), [y]: p } });
+  const priceAtFn = () => { const g = guesses(); return (r, s) => (r.fake ? { price: r.price, tier: r.tier, known: false, why: 'made-up player: same price' } : priceFor(r.c, s, r.exp, season, g[r.pid] ?? null)); };
+  // A roster row for a player added in a plan, so later summers can price and re-sign him.
+  const mkRow = a => {
+    const p = a.pid ? all?.[a.pid] ?? {} : {};
+    return {
+      pid: a.pid ?? `add-${a.id}`, name: a.name, c: a.pid ? file.players[a.pid] ?? null : null, exp: p.years_exp ?? null, kind: a.rookie ? 'rookie' : 'deal', slot: 'active',
+      len: a.len, price: a.price, tier: NBA_TIERS.find(t => t.price === a.price) ?? ROOKIE_TIER, known: true, fpg: info[a.pid]?.fpg ?? null, age: info[a.pid]?.age ?? null,
+      team: p.team ?? '', pos: p.position ?? '', fake: !a.pid, set: true, added: true,
+    };
+  };
+  // Every summer from the first through `upTo` for one team (rollPlans in leaguecontracts.js).
+  const chainFor = (L, team, upTo) => rollPlans(team, plansOf(team.owner), { cap: L.cap, cur: season, upTo, priceAt: priceAtFn(), mkRow });
   // Upcoming free agents (owner, Nov 7 2026): every OTHER team's players whose day-one deal ends before `summer` and that
   // its own plan doesn't re-sign (released, or not decided = released on the deadline), at their new tier price, with
   // whether the planned team could fit him (payroll after this plan + his price <= cap, pool + 1 season <= 50).
@@ -231,7 +254,7 @@ export async function renderContracts(body, params, h) {
     const priceAt = (r, s) => priceFor(r.c, s, r.exp, season, g[r.pid] ?? null);
     const inPlan = new Set(P.adds.map(a => a.pid).filter(Boolean));
     const list = L.teams.filter(t => t.owner !== T.owner).flatMap(t => {
-      const Q = planSummer(t, planOf(t.owner), { cap: L.cap, summer, priceAt, cur: season });
+      const Q = chainFor(L, t, summer).at(-1);
       return Q.expiring.filter(r => !(r.choice > 0)).map(r => ({ ...r, from: t.owner, released: r.choice === 0 }));
     }).sort((a, b) => (b.fpg ?? 0) - (a.fpg ?? 0) || b.next.price - a.next.price);
     const room = L.cap - P.money[0];
@@ -240,7 +263,7 @@ export async function renderContracts(body, params, h) {
     const spot = P.roster < ROSTER_MAX;
     const fits = spot ? list.filter(r => r.next.price <= room && free >= 1).length : 0;
     const noLens = L.teams.filter(t => t.owner !== T.owner && !t.rows.some(r => r.set)).map(t => esc(name(t.owner)));
-    return `<p class="cm-rule">${list.length} players on other teams are on 1-season day-one deals (or rookie deals ending) and aren’t re-signed in their team’s plan, so they’d hit free agency at their <b>${span(summer)}</b> tier. With this plan ${esc(teamName(T.owner, cur.season))} has <b>${room < 0 ? `no room (${$(-room)} over)` : `${$(room)} of cap room`}</b> and <b>${free}</b> pool years free: <b>${fits}</b> of them fit on a 1-season deal. “Add” puts him in this plan (1 season; change it below).${noLens.length ? ` <span class="rc-over">No day-one lengths set yet for ${noLens.join(", ")}: everyone on those teams counts as a 1-season deal, so their whole rosters show here.</span>` : ''}</p>
+    return `<p class="cm-rule">${list.length} players on other teams have contracts ending this summer (after their earlier summers' plans) and aren’t re-signed in their team’s plan, so they’d hit free agency at their <b>${span(summer)}</b> tier. With this plan ${esc(teamName(T.owner, cur.season))} has <b>${room < 0 ? `no room (${$(-room)} over)` : `${$(room)} of cap room`}</b> and <b>${free}</b> pool years free: <b>${fits}</b> of them fit on a 1-season deal. “Add” puts him in this plan (1 season; change it below).${noLens.length ? ` <span class="rc-over">No day-one lengths set yet for ${noLens.join(", ")}: everyone on those teams counts as a 1-season deal, so their whole rosters show here.</span>` : ''}</p>
       <div class="rc-scroll"><table class="rc-tbl cx-ufa"><thead><tr><th>Player</th><th class="n">FP/G</th><th class="n">Price ${span(summer)}</th><th class="n">Fits?</th><th></th></tr></thead><tbody>
         ${shown.map(r => {
           const ok = r.next.price <= room && free >= 1 && spot;
@@ -253,21 +276,25 @@ export async function renderContracts(body, params, h) {
   }
 
   function viewPlan(L, T) {
-    const summer = L.start + 1;
-    const g = guesses();
-    const plan = planOf(T.owner);
-    const P = planSummer(T, plan, { cap: L.cap, summer, priceAt: (r, s) => priceFor(r.c, s, r.exp, season, g[r.pid] ?? null), cur: season });
+    const summer = S.summer;
+    const chain = chainFor(L, T, summer);
+    const P = chain.at(-1);
+    const earlier = chain.slice(0, -1);
+    // Year chips + what the earlier summers did.
+    const chips = `<div class="dvp-seg cx-years" role="group">${SUMMERS.map(y => `<button type="button" class="ct-chip${y === summer ? ' on' : ''}" data-summer="${y}">Summer ${y}<small>before ${span(y)}</small></button>`).join('')}</div>`;
+    const builtOn = earlier.length ? `<p class="cx-d1line"><b>Built on your summer ${earlier.map(e => e.summer).join(' + ')} plan${earlier.length > 1 ? 's' : ''}:</b> ${earlier.map(e => `${e.summer}: ${e.expiring.filter(r => r.choice > 0).length} re-signed, ${e.expiring.filter(r => !(r.choice > 0)).length} released${e.undecided ? ` (${e.undecided} undecided = released)` : ''}, ${e.adds.length} added, ${e.taxi.filter(r => r.up).length} called up, ${e.carried.filter(r => r.cut).length} cut`).join(' · ')}. Change those on their own year tabs.</p>` : '';
+    const deadIn = P.deadIn.length ? `<p class="cm-rule">Dead money from earlier cuts: ${P.deadIn.map(d => `${esc(d.name)} ${$(d.amt)} × ${d.left}`).join(' · ')}.</p>` : '';
     const maxM = Math.max(L.cap, ...P.money) * 1.08;
     const sel = r => `<select data-re="${r.pid}"><option value=""${r.choice == null ? ' selected' : ''}>— decide —</option>${[1, 2, 3, 4].map(n => `<option value="${n}"${r.choice === n ? ' selected' : ''}>Re-sign ${n} season${n === 1 ? '' : 's'}</option>`).join('')}<option value="0"${r.choice === 0 ? ' selected' : ''}>Release</option></select>`;
     const nameCell = r => `${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small>`;
     // The day-one decision behind each row (owner, Nov 7 2026: "show the decisions of the initial contracts").
-    const dayOne = r => (r.kind === 'rookie'
-      ? `<span class="cx-d1">League rookie deal · ${r.len} season${r.len === 1 ? '' : 's'} left on day one · through ${span(L.start + r.len - 1)}</span>`
-      : `<span class="cx-d1${r.set ? '' : ' unset'}">Day one: <b>${r.len} season${r.len === 1 ? '' : 's'}</b> ${r.set ? '' : '(not set = 1) '}· ${span(L.start)}${r.len > 1 ? ` – ${span(L.start + r.len - 1)}` : ' only'}</span>`);
+    const dayOne = r => (r.added ? `<span class="cx-d1">Added summer ${r.signedIn}: ${r.signLen} season${r.signLen === 1 ? '' : 's'} · through ${span(r.signedIn + r.signLen - 1)}</span>` : r.signedIn ? `<span class="cx-d1">Re-signed summer ${r.signedIn}: ${r.signLen} season${r.signLen === 1 ? '' : 's'} · through ${span(r.signedIn + r.signLen - 1)} · price locked at ${$(r.price)}</span>` : r.calledUpIn ? `<span class="cx-d1">Called up summer ${r.calledUpIn}: ${r.kind === 'rookie' ? 'rookie deal' : 'deal'} through ${span(r.calledUpIn + r.signLen - 1)}</span>` : r.kind === 'rookie'
+      ? `<span class="cx-d1">League rookie deal · ${r.len0 ?? r.len} season${(r.len0 ?? r.len) === 1 ? '' : 's'} left on day one · through ${span(L.start + (r.len0 ?? r.len) - 1)}</span>`
+      : `<span class="cx-d1${r.set ? '' : ' unset'}">Day one: <b>${r.len0 ?? r.len} season${(r.len0 ?? r.len) === 1 ? '' : 's'}</b> ${r.set ? '' : '(not set = 1) '}· ${span(L.start)}${(r.len0 ?? r.len) > 1 ? ` – ${span(L.start + (r.len0 ?? r.len) - 1)}` : ' only'}</span>`);
     const deals = T.rows.filter(r => r.kind === 'deal');
     const byLen = [4, 3, 2, 1].map(n => [n, deals.filter(r => r.len === n).length]).filter(([, k]) => k);
     const unset = deals.filter(r => !r.set).length;
-    const d1Line = `<p class="cx-d1line">Day-one contracts (from <a href="${here().replace(/view=\w+/, 'view=init')}">Initial contracts</a>): ${byLen.map(([n, k]) => `<b>${k}</b> × ${n} season${n === 1 ? '' : 's'}`).join(' · ')}${unset ? ` · <span class="rc-over">${unset} not set (= 1 season, so they expire here)</span>` : ''}. Players signed for 2+ seasons are still under contract this summer and can’t be re-signed; only 1-season deals expire.</p>`;
+    const d1Line = earlier.length ? builtOn : `<p class="cx-d1line">Day-one contracts (from <a href="${here().replace(/view=\w+/, 'view=init')}">Initial contracts</a>): ${byLen.map(([n, k]) => `<b>${k}</b> × ${n} season${n === 1 ? '' : 's'}`).join(' · ')}${unset ? ` · <span class="rc-over">${unset} not set (= 1 season, so they expire here)</span>` : ''}. Players signed for 2+ seasons are still under contract this summer and can’t be re-signed; only 1-season deals expire.</p>`;
     const fa =Object.entries(info).filter(([pid]) => all?.[pid]?.team).map(([pid, p]) => `<option value="${esc(p.name)}">`).join('');
     const totals = `<div class="cx-sum cx-plansum">
         <div><b>${$(P.money[0])}</b> payroll ${span(summer)} · ${room(P.money[0], L.cap)}${bar(P.money[0], L.cap, maxM)}</div>
@@ -292,10 +319,11 @@ export async function renderContracts(body, params, h) {
         <button type="button" class="btn" data-addgo>Add</button>
       </div>`;
     return betaCard(`${tn(T.owner)} · summer ${summer}`, `
-      <p class="cx-when"><b>Which summer:</b> summer ${summer}, after the ${span(L.start)} season (day one) and before ${span(summer)}. That's one year after the day-one contracts start, not this coming summer (the day-one contracts themselves are set on Initial contracts).</p>
+      ${chips}
+      <p class="cx-when"><b>Which summer:</b> summer ${summer}, after the ${span(summer - 1)} season and before ${span(summer)}: ${summer - L.start === 1 ? 'one year' : `${summer - L.start} years`} after the day-one contracts start (${span(L.start)}), not this coming summer. Prices use each player's real NBA contract for that season (tier cutoffs grown ${Math.round(CAP_GROWTH * 100)}% a year); taxi clocks and contract lengths roll forward.</p>
       <p class="cm-rule">Every contract loses a season. Players at 0 are expiring: re-sign them at their <b>new tier</b> (his real ${span(summer)} salary) for 1-${MAX_YEARS} seasons, or release them to free agency. Contracts still running keep their locked price; cutting one costs ${Math.round(CUT_SHARE * 100)}% of his price for every season left (free at ${$(FREE_CUT)} or less) and his years stay used until next summer.</p>
-      ${d1Line}${totals}`, { sub: 'Saved on this account', cls: 'cx-plantop' })
-      + betaCard('Still under contract (day-one deals running)', car, { sub: `${P.carried.length} players` })
+      ${d1Line}${deadIn}${totals}`, { sub: 'Saved on this account', cls: 'cx-plantop' })
+      + betaCard(earlier.length ? 'Still under contract' : 'Still under contract (day-one deals running)', car, { sub: `${P.carried.length} players` })
       + betaCard('Expiring: re-sign or release', exp, { sub: `${P.expiring.length} players` })
       + betaCard('Taxi call-ups', tx)
       + betaCard(`Upcoming free agents · summer ${summer} (before ${span(summer)})`, upcomingFas(L, T, P, summer), { sub: 'Other teams’ expiring deals' })
@@ -349,6 +377,7 @@ export async function renderContracts(body, params, h) {
     const L = () => league();
     if (t.dataset.view) { S.view = t.dataset.view; draw(); window.scrollTo(0, 0); return; }
     if (t.dataset.goteam) { if (e.target.closest('a')) return; S.team = t.dataset.goteam; draw(); page.querySelectorAll('.tf-card')[2]?.scrollIntoView({ block: 'start' }); return; }
+    if (t.dataset.summer) { S.summer = Number(t.dataset.summer); gmSave('gm-ct-summer', S.summer); S.faAll = false; draw(); return; }
     if (t.dataset.faall != null) { S.faAll = !S.faAll; draw(); return; }
     if (t.dataset.faadd) { const p = planOf(S.team); const pid = t.dataset.faadd; p.adds = [...p.adds, { id: String(Date.now()), pid, name: info[pid]?.name ?? pid, price: Number(t.dataset.price), len: 1, rookie: false }]; savePlan(S.team, p); draw(); return; }
     if (t.dataset.block) { const b = blockOf(S.team); gmSave(`gm-ct-block-${S.team}`, b.includes(t.dataset.block) ? b.filter(x => x !== t.dataset.block) : [...b, t.dataset.block]); draw(); return; }
@@ -368,7 +397,7 @@ export async function renderContracts(body, params, h) {
     if (t.dataset.wwsort) { S.ww.sort = t.dataset.wwsort; S.ww.n = WW_PAGE; page.querySelectorAll('[data-wwsort]').forEach(b => b.classList.toggle('on', b === t)); const Ln = L(); drawWaivers(Ln, Ln.teams.find(x => x.owner === S.team)); return; }
     if (t.dataset.wwmore != null) { S.ww.n += WW_PAGE; const Ln = L(); drawWaivers(Ln, Ln.teams.find(x => x.owner === S.team)); return; }
     if (t.dataset.rmadd) { const p = planOf(S.team); p.adds = p.adds.filter(a => a.id !== t.dataset.rmadd); savePlan(S.team, p); draw(); return; }
-    if (t.dataset.planreset != null) { if (confirm('Clear this team’s offseason plan?')) { gmSave(`gm-ct-plan-${S.team}`, { at: Date.now(), re: {}, cut: [], up: [], adds: [] }); draw(); } return; }
+    if (t.dataset.planreset != null) { if (confirm(`Clear this team’s summer ${S.summer} plan? (Other summers stay.)`)) { savePlan(S.team, { re: {}, cut: [], up: [], adds: [] }); draw(); } return; }
     if (t.dataset.addgo != null) {
       const val = k => page.querySelector(`[data-add="${k}"]`);
       const nm = val('name').value.trim();
@@ -376,7 +405,7 @@ export async function renderContracts(body, params, h) {
       const rookie = val('rookie').checked;
       const pid = Object.keys(info).find(k => info[k].name.toLowerCase() === nm.toLowerCase()) ?? null;
       let price = Number(val('price').value) || null;
-      if (!price) price = pid ? priceFor(file.players[pid], L().start + 1, all?.[pid]?.years_exp ?? null, season, guesses()[pid] ?? null).price : 2;
+      if (!price) price = pid ? priceFor(file.players[pid], S.summer, all?.[pid]?.years_exp ?? null, season, guesses()[pid] ?? null).price : 2;
       const p = planOf(S.team);
       p.adds = [...p.adds, { id: String(Date.now()), pid, name: pid ? info[pid].name : nm, price: rookie ? ROOKIE_TIER.price : price, len: rookie ? LEAGUE_ROOKIE_YEARS : Number(val('len').value), rookie }];
       savePlan(S.team, p);
