@@ -16,6 +16,17 @@ export const START_SEASON = 2027; // first season of the day-one contracts (2027
 export const GRID_SEASONS = 4; // the outlook grid: START_SEASON + 3
 // Roster limit (owner, Nov 8 2026): 23 = Sleeper's 9 starters + 14 bench; IR counts (same choice as the Depth Chart's
 // ROSTER_LIMIT), taxi doesn't (its own limit, TAXI_MAX 15 = commish.js TAXI_SIZE).
+// CAP + FLOOR + FREE-AGENCY AUCTION (owner, Nov 8 2026: "increase salary cap to a clean $500 ... public bidding ... contract
+// price only, once the price is won the team decides how long ... actively winning a bid counts against your cap"): the cap
+// is FIXED at CAP 500 (no longer average payroll + 10%); FLOOR 300 checked at the season start (the gap becomes dead money
+// next season). Free agency = a public slow auction on price per season: opening bid >= OPEN_SHARE of his tier price, raises
+// of BID_STEP+, each player closes BID_HOURS after his last bid, leading bids hold cap room + a roster spot.
+export const CAP = 500;
+export const FLOOR = 300;
+export const OPEN_SHARE = 0.5;
+export const BID_STEP = 1;
+export const BID_HOURS = 24;
+export const openingBid = tierPrice => Math.max(1, Math.ceil((tierPrice || 1) * OPEN_SHARE));
 export const ROSTER_MAX = 23;
 export const TAXI_MAX = 15;
 // Suggest lengths (owner chose "Age + FP/G"): wanted length by age, only for players worth a long deal.
@@ -89,6 +100,13 @@ export const taxiOk = (exp, s, cur) => exp == null || exp + (Number(s) - cur) < 
 //   free-agency signing starts his clock over at 0.
 // - RE-SIGN LIMIT: at most RESIGN_MAX 6 re-signings a summer per team; players coming off the league rookie deal don't count.
 export const SERVICE_MAX = 8;
+// TWO CONTRACTS, THEN FREE AGENCY (owner, Nov 8 2026; REPLACES the 8-season clock): a player may be on CONTRACTS_MAX 2 contracts in
+// a row; when the 2nd ends he goes to free agency (no re-sign; any team, his old one too, can bid) and his next signing is
+// contract 1 again. Contracts = day-one deals, re-signings, free-agency signings and the $1 rookie deal (taxi and in-season
+// pickups are not contracts). OPTION B (retroactive): a player on league rosters (active / IR) EVERY season since the 2023
+// startup (serviceMap = 4 in 2026-27) has used one already, so his day-one deal is contract 2 of 2. A rookie: rookie deal
+// (call-up -> 4th NBA season) + 1 more = at most 8 years from his draft, taxi included. SERVICE_MAX is no longer used.
+export const CONTRACTS_MAX = 2;
 // His Nth NBA season in season s (exp = Sleeper years_exp in season cur), and the seasons he has done in the current
 // 8-season cycle before season s (0 = a fresh cycle: his 8th / 16th ... season just ended, or a rookie).
 export const nbaYear = (exp, s, cur) => (exp == null ? null : exp + (Number(s) - cur) + 1);
@@ -98,16 +116,26 @@ export const rookieThrough = (exp, cur) => (exp == null ? null : cur - exp + ROO
 export const rookieLen = (exp, cur, from) => (exp == null ? LEAGUE_ROOKIE_YEARS : Math.max(1, rookieThrough(exp, cur) - from + 1));
 // { pid: league seasons of service so far } from the roster history (season-end rosters, the season in progress = live);
 // skip = players who don't count in the season in progress (traded off a taxi squad, still taxi).
+// SERVICE CLOCK, FINAL VERSION (owner, Nov 8 2026: "everyone's FA eligibility start from the 2023 startup draft ... if a player
+// hits FA (not rostered by a team at the end of the season or not re-signed by a team) his 8 year clock resets and any team
+// can bid on him"; replaces the NBA-seasons cycle): { pid: league seasons in a row he has finished on an active roster or IR
+// (any team) since 2023 or since he was last a free agent }. Walks the season-end rosters oldest first: active / IR = +1,
+// taxi = no change (no contract), on no roster at a season's end = back to 0. The season in progress counts as live.
+// skip = players who count as taxi in the season in progress (traded off a taxi squad).
 export function serviceMap(history = {}, cur = null, skip = new Set()) {
   const out = {};
-  for (const [s, rosters] of Object.entries(history)) {
-    for (const r of rosters ?? []) {
-      const taxi = new Set(r.taxi ?? []);
-      for (const pid of r.players ?? []) {
-        if (taxi.has(pid) || (Number(s) === cur && skip.has(pid))) continue;
-        out[pid] = (out[pid] ?? 0) + 1;
-      }
+  const seasons = Object.keys(history).map(Number).sort((a, b) => a - b);
+  const seen = new Set();
+  for (const s of seasons) for (const r of history[s] ?? []) for (const pid of r.players ?? []) seen.add(pid);
+  for (const pid of seen) {
+    let run = 0;
+    for (const s of seasons) {
+      const r = (history[s] ?? []).find(x => (x.players ?? []).includes(pid));
+      if (!r) { run = 0; continue; } // a free agent at that season's end: the clock starts over
+      if ((r.taxi ?? []).includes(pid) || (s === cur && skip.has(pid))) continue;
+      run += 1;
     }
+    out[pid] = run;
   }
   return out;
 }
@@ -211,9 +239,10 @@ export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}
       const kind = slot === 'taxi' ? 'taxi' : pick?.left > 0 ? 'rookie' : 'deal';
       const pr = kind === 'rookie' ? { price: ROOKIE_TIER.price, tier: ROOKIE_TIER, known: true, salary: 0, why: 'league rookie deal' } : priceFor(c, start, exp, cur, guesses[pid] ?? null);
       // Service: seasons under league contract so far (league-wide); a deal can't run past his 8th.
-      const svc = cycleDone(exp, start, cur); // NBA seasons done in his current 8-season cycle
-      const svcLeft = Math.max(1, SERVICE_MAX - svc);
-      const L = kind === 'taxi' ? 0 : kind === 'rookie' ? pick.left : Math.min(MAX_YEARS, svcLeft, Math.max(1, Number(deals[pid]?.len) || 1));
+      const svc = service[pid] ?? 0; // league seasons in a row on rosters (serviceMap), as of day one
+      // Contract number of his day-one deal: 2 when he has been on rosters every season since the startup (option B).
+      const cn = slot === 'taxi' ? 0 : !(pick?.left > 0) && svc >= cur - 2023 + 1 ? 2 : 1;
+      const L = kind === 'taxi' ? 0 : kind === 'rookie' ? pick.left : Math.min(MAX_YEARS, Math.max(1, Number(deals[pid]?.len) || 1));
       const rosOk = false;
       const ros = false;
       const set = kind === 'deal' && (deals[pid]?.len != null || ros);
@@ -232,11 +261,11 @@ export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}
         if (s < start + L) return { k: kind, s, price: pr.price, est: !pr.known, tier: pr.tier };
         const re = priceFor(c, s, exp, cur, guesses[pid] ?? null);
         // svc: the season after his 8th / 16th ... NBA season = free agency (no re-sign).
-        return { k: 'fa', s, price: re.price, est: !re.known, tier: re.tier, why: re.why, svc: s === start + svcLeft, svcFirst: s === start + svcLeft, svcYear: nbaYear(exp, s - 1, cur) };
+        return { k: 'fa', s, price: re.price, est: !re.known, tier: re.tier, why: re.why, svc: cn >= CONTRACTS_MAX && s === start + L, svcFirst: cn >= CONTRACTS_MAX && s === start + L };
       });
       return {
         pid, name: info?.[pid]?.name ?? ([p.first_name, p.last_name].filter(Boolean).join(' ') || pid), team: p.team ?? '', pos: p.position ?? '',
-        age: info?.[pid]?.age ?? p.age ?? null, fpg: info?.[pid]?.fpg ?? null, exp, c, slot, kind, len: (ros ? 1 : L), len0: (ros ? 1 : L), svc, svcLeft, cur, rookieYear: exp == null ? null : cur - exp, svcEnd: start + svcLeft - 1, set, signer, ros, rosOk, pick: !!pick, tradedTaxi, callUp: pick?.callUp ?? null, taxiLast: exp == null ? null : cur + TAXI_YEARS - 1 - exp, traded: signer !== r.owner_id,
+        age: info?.[pid]?.age ?? p.age ?? null, fpg: info?.[pid]?.fpg ?? null, exp, c, slot, kind, len: (ros ? 1 : L), len0: (ros ? 1 : L), svc, cn, cur, svcEnd: cn >= CONTRACTS_MAX ? start + L - 1 : null, set, signer, ros, rosOk, pick: !!pick, tradedTaxi, callUp: pick?.callUp ?? null, taxiLast: exp == null ? null : cur + TAXI_YEARS - 1 - exp, traded: signer !== r.owner_id,
         price: kind === 'taxi' ? 0 : pr.price, known: pr.known, tier: pr.tier, why: pr.why, guessable: !pr.known,
         real: c?.seasons?.find(x => Number(x.season) === cur)?.salary ?? 0, nbaEnd: end, grid,
       };
@@ -244,8 +273,7 @@ export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}
     return teamTotals({ owner: r.owner_id, rows, seasons });
   });
   const avg = teams.length ? teams.reduce((t, x) => t + x.payroll, 0) / teams.length : 0;
-  const cap = Math.round((avg * (1 + CAP_CUSHION)) / CAP_ROUND) * CAP_ROUND;
-  return { teams, cap, avg, start, seasons };
+  return { teams, cap: CAP, floor: FLOOR, avg, start, seasons };
 }
 
 function teamTotals(t) {
@@ -267,7 +295,6 @@ function teamTotals(t) {
 // Can this length be given? Returns '' or the reason it can't. lenNow = the player's current length.
 export function lengthBlock(team, row, want) {
   if (row.kind !== 'deal') return 'Fixed (rookie deal or taxi)';
-  if (row.svcLeft != null && want > row.svcLeft) return `Service limit: ${span(row.svcEnd)} is his ${ordinal(nbaYear(row.exp, row.svcEnd, row.cur))} NBA season, so at most ${row.svcLeft} more before free agency.`;
   const pool = team.pool - row.len + want;
   if (pool > POOL) return `That would use ${pool} of ${POOL} contract-years.`;
   if (want === 4 && !(row.len === 4 && row.signer === team.owner) && team.fours >= FOUR_YEAR_PER_SUMMER) return `Only ${FOUR_YEAR_PER_SUMMER} four-season deals a summer.`;
@@ -289,7 +316,6 @@ export function suggestLengths(team) {
     if ((r.fpg ?? 0) < SUGGEST_MIN_FPG || r.age == null) continue;
     let want = SUGGEST_AGE.find(([a]) => r.age <= a)?.[1] ?? 1;
     if (want === 4 && fours >= FOUR_YEAR_PER_SUMMER) want = 3;
-    want = Math.min(want, r.svcLeft ?? MAX_YEARS);
     const base = 1;
     want = Math.min(want, base + Math.max(0, left));
     if (want <= 1) continue;
@@ -308,7 +334,7 @@ export function suggestLengths(team) {
 // into season `summer` (input for the next summer) and `deadNext`.
 // banned = { pid: last season of the old deal } for players THIS team cut earlier: it can't sign them again until that
 // season is over (owner, Nov 8 2026; other teams can sign them any time, the dead money stays with the cutting team).
-export function planSummer(team, plan, { cap, summer, priceAt, cur, dead = [], mkRow = (a, s) => a, banned = {} }) {
+export function planSummer(team, plan, { cap, floor = null, summer, priceAt, cur, dead = [], mkRow = (a, s) => a, banned = {} }) {
   const seasons = Array.from({ length: GRID_SEASONS }, (_, i) => summer + i);
   const cut = new Set(plan.cut ?? []);
   const up = new Set(plan.up ?? []);
@@ -326,15 +352,22 @@ export function planSummer(team, plan, { cap, summer, priceAt, cur, dead = [], m
       const free = r.price <= FREE_CUT;
       carried.push({ ...r, left, cut: cut.has(r.pid), dead: free ? 0 : half(CUT_SHARE * r.price), free });
     } else {
-      const np = priceAt(r, summer);
+      // Re-signing a player signed in free agency (a market price) costs the HIGHER of his current price and his tier (owner,
+      // Nov 8 2026): an auction overpay never gets cheaper by re-signing. Tier-priced deals re-sign at the tier as before.
+      const tierNext = priceAt(r, summer); // his plain tier (what a free agent costs other teams)
+      let np = tierNext;
+      if (r.market && r.price > np.price) np = { ...np, price: r.price, known: true, kept: true, why: 'his free-agency price: re-signing never lowers it' };
       // Service after the season just played; 8 = free agency, no re-sign. Re-sign length can't pass his 8th season.
       // NBA seasons done by this summer; a multiple of 8 (his 8th / 16th ... season just ended) = free agency.
-      const done = r.exp == null || cur == null ? null : r.exp + (summer - cur);
-      const svcNow = done == null ? 0 : done % SERVICE_MAX;
-      const svcOut = done != null && done > 0 && svcNow === 0;
-      const maxLen = Math.max(1, Math.min(MAX_YEARS, SERVICE_MAX - svcNow));
+      // League seasons in a row after the season just played; 8 = free agency.
+      // Two contracts, then free agency: a player finishing contract 2 can't be re-signed.
+      const cn = r.cn ?? 1;
+      const svcNow = cn;
+      const done = cn;
+      const svcOut = cn >= CONTRACTS_MAX;
+      const maxLen = MAX_YEARS;
       const want = plan.re?.[r.pid];
-      expiring.push({ ...r, next: np, svcNow, svcDone: done, svcOut, maxLen, choice: svcOut ? 0 : want > 0 ? Math.min(want, maxLen) : want });
+      expiring.push({ ...r, next: np, tierNext, svcNow, svcDone: done, svcOut, maxLen, choice: svcOut ? 0 : want > 0 ? Math.min(want, maxLen) : want });
     }
   }
   const adds = (plan.adds ?? []).map(a => ({ ...a, len: a.rookie ? ROOKIE_SEASONS : Math.min(MAX_YEARS, Math.max(1, Number(a.len) || 1)), price: a.rookie ? ROOKIE_TIER.price : Number(a.price) || 1 }));
@@ -366,6 +399,7 @@ export function planSummer(team, plan, { cap, summer, priceAt, cur, dead = [], m
   const forcedOut = taxi.filter(r => r.forced && !r.up);
   const warn = [];
   if (money[0] > cap) warn.push(`Over the ${'$'}${cap} cap by ${'$'}${money[0] - cap} in ${span(summer)}.`);
+  if (floor != null && money[0] < floor) warn.push(`Under the ${'$'}${floor} floor by ${'$'}${floor - money[0]} in ${span(summer)} (checked at the season start; the gap becomes dead money the season after).`);
   if (pool > POOL) warn.push(`${pool} contract-years out: ${pool - POOL} over the ${POOL}-year pool.`);
   if (fours > FOUR_YEAR_PER_SUMMER) warn.push(`${fours} new four-season deals: only ${FOUR_YEAR_PER_SUMMER} a summer.`);
   if (resigns > RESIGN_MAX) warn.push(`${resigns} re-signings: only ${RESIGN_MAX} a summer (players coming off a rookie deal don't count).`);
@@ -377,11 +411,11 @@ export function planSummer(team, plan, { cap, summer, priceAt, cur, dead = [], m
   if (undecided) warn.push(`${undecided} expiring player${undecided === 1 ? '' : 's'} not decided yet (released on the deadline if not re-signed).`);
   // The roster going into season `summer` (contracts as of that season), for the next summer's plan.
   const next = [
-    ...carried.filter(r => !r.cut).map(r => ({ ...r, len: r.left })),
-    ...expiring.filter(r => r.choice > 0).map(r => ({ ...r, signedIn: summer, signLen: r.choice, kind: 'deal', len: r.choice, price: r.next.price, tier: r.next.tier, known: r.next.known, why: r.next.why, ros: false, set: true, signer: team.owner, traded: false })),
-    ...taxi.filter(r => r.up).map(r => ({ ...r, calledUpIn: summer, signLen: r.upLen, kind: r.pick ? 'rookie' : 'deal', slot: 'active', len: r.upLen, price: r.upPrice, tradedTaxi: false })),
+    ...carried.filter(r => !r.cut).map(r => ({ ...r, len: r.left, svc: (r.svc ?? 0) + 1 })),
+    ...expiring.filter(r => r.choice > 0).map(r => ({ ...r, cn: (r.cn ?? 1) + 1, signedIn: summer, signLen: r.choice, kind: 'deal', len: r.choice, price: r.next.price, tier: r.next.tier, known: r.next.known, why: r.next.why, ros: false, set: true, signer: team.owner, traded: false })),
+    ...taxi.filter(r => r.up).map(r => ({ ...r, cn: 1, calledUpIn: summer, signLen: r.upLen, kind: r.pick ? 'rookie' : 'deal', slot: 'active', len: r.upLen, price: r.upPrice, tradedTaxi: false })),
     ...taxi.filter(r => !r.up && !r.forced),
-    ...addsOk.map(a => ({ ...mkRow(a, summer), signedIn: summer, signLen: a.len })),
+    ...addsOk.map(a => ({ ...mkRow(a, summer), signedIn: summer, signLen: a.len, cn: 1, market: !a.rookie })), // a free-agency signing = contract 1 again
   ];
   const deadNext = [
     ...dead.filter(d => d.left > 1).map(d => ({ ...d, left: d.left - 1 })),
@@ -394,13 +428,13 @@ export function planSummer(team, plan, { cap, summer, priceAt, cur, dead = [], m
 
 // Every summer from the first after day one through `upTo`, each built on the summers before it (plans = { year: plan };
 // an expiring player not re-signed in an earlier summer was released). Returns [P per summer].
-export function rollPlans(team, plans, { cap, cur, start = START_SEASON, upTo, priceAt, mkRow }) {
+export function rollPlans(team, plans, { cap, floor = null, cur, start = START_SEASON, upTo, priceAt, mkRow }) {
   const out = [];
   let rows = team.rows;
   let dead = [];
   let banned = {};
   for (let summer = start + 1; summer <= upTo; summer++) {
-    const P = planSummer({ ...team, rows }, plans[summer] ?? {}, { cap, summer, priceAt, cur, dead, mkRow, banned });
+    const P = planSummer({ ...team, rows }, plans[summer] ?? {}, { cap, floor, summer, priceAt, cur, dead, mkRow, banned });
     out.push(P);
     rows = P.next;
     dead = P.deadNext;

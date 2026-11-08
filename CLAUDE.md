@@ -1412,6 +1412,65 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   player with 3 left -> $10 x 3; free <= $3; a cut ends his contract; no return until the old deal ends), trades + taxi
   (contract travels, must fit cap / pool / roster, taxi trades keep the rookie path, sent back down, drops reset), all the
   numbers. Checked Nov 8 2026: desktop, 402, 320 (no overflow), dark mode.
+  FIXED CAP + FLOOR + FREE-AGENCY AUCTION (owner, Nov 8 2026: "increase salary cap to a clean $500 ... public bidding ...
+  contract price only, once the price is won, the team then decides how long. If you're actively winning a bid it should
+  count against your cap, if you're outbid, it comes back ... a section that shows every team's active salary cap"):
+  leaguecontracts.js CAP 500 (fixed; buildLeague no longer uses average + 10%), FLOOR 300 (re-introduced: planSummer
+  warning "Under the $300 floor ... the gap becomes dead money the season after"; rollPlans / chainFor pass L.floor),
+  OPEN_SHARE 0.5 (opening bid >= half his tier price, openingBid()), BID_STEP $1, BID_HOURS 24 (soft close per player).
+  New tab "Free agency auction" (?view=fa, after the planner; year chips = the planner's summers) = `assets/contracts-fa.js`
+  (faView / faEvent / capBoard; helpers via faCtx in contracts-ui.js; .fa-* in styles.css; in the import map). PRACTICE MODE:
+  "Bid as" any team, "Close" by hand (no server); gm-ct-auc { y: { summer: { bids: { pid: [{ o, p, t }] }, closed: { pid:
+  { o, p, t } } } } } (synced via gm-ct-). Cards: CAP BOARD (every team: signed = that summer's plan money incl. dead money
+  + players won, leading bids + count, room = 500 - signed - leading, roster incl. leading bids, pool free, 4-yr left,
+  re-signed N / 6, "Under the $300 floor" note); FREE AGENTS = every team's chain that summer: expiring not re-signed
+  (released / not re-signed / NBA yr N service FA) + its cuts (+ checkbox "Include every unsigned NBA player"), sorted by high
+  bid then FP/G, 40 at a time, search (applies on Enter / blur); row = tier, opening bid, high bid + leader + "closes in ~Nh",
+  bid input (min = high + $1 or the opening bid; refused over room; blocked: you lead / roster full / you cut him (ban) / not
+  enough room), Close, bid history + "Undo last bid"; SIGNED IN FREE AGENCY = closed players with a 1-4 length select ->
+  winner's plan add { id auc-{pid}, auction: true } (so cap / pool / roster everywhere include him), Reopen = undo. How it
+  works: Limits pillar (fixed cap + floor), step 4 = the auction, step 6 floor check, new card "8. Free agency: the public
+  auction" (example: A $15 and B $18 outbid, C $20 leads, 24 h -> C wins, picks 1-4), numbers card + floor + opening bid.
+  Checked Nov 8 2026: Parma room $138 -> $113 leading Doncic at $25, logan $24 refused (min $26), $31 -> Parma room back,
+  close -> logan's 2028 plan add, 3 seasons -> signed $34 / pool 44 free; 320 px no overflow (fa, how, plan). A REAL mode
+  (managers bid from their own sign-in, Firestore like Props, clocks by timestamp, commish confirms results) is NOT built.
+  SERVICE CLOCK, FINAL (owner, Nov 8 2026, REPLACES "SERVICE = NBA SEASONS" above: "everyone's FA eligibility start from the
+  2023 startup draft ... if a player hits FA (not rostered by a team at the end of the season or not re-signed by a team)
+  his 8 year clock resets and any team can bid on him"): leaguecontracts.js serviceMap(history, cur, skip) = league seasons IN
+  A ROW he finished on any team's active roster or IR, walking season-end rosters from 2023 (season in progress = live):
+  active / IR +1, taxi no change (clock off), on no roster at a season's end = 0. buildLeague({ service }) row svc / svcLeft
+  (8 - svc) / svcEnd; planner svcNow = svc + 1 per season under contract (carried / re-signed rows carry svc), 8 = svcOut (free
+  agency, no re-sign slot), re-sign lengths capped at 8 - svcNow; every free-agency signing (plan adds incl. auction wins) =
+  svc 0; a player not re-signed is a free agent (any team, old one included, can bid). nbaYear / cycleDone stay exported but
+  unused; the "NBA yr N now" tag and NBA rookie-year line are gone. Page: "League service: 4 seasons in a row on league
+  rosters (2023-24 to 2026-27, since the startup) · 8 = free agency · can be signed through 2030-31 at most"; grid "FA · 8
+  seasons"; planner / Upcoming FAs / auction "8 league seasons in a row: ..."; How it works "A player's life" = 3 taxi boxes
+  (clock off) + 8 seasons (season 1 rookie $1, gold edge after 8) + clock bullets. Checked Nov 8 2026: Parma startup players
+  4 (through 2030-31), Robinson 1 (FA at the end of 2025-26), Coulibaly 3 (2024-25 on), Nurkic 2; Booker 4-season deal ->
+  summer 2031 service free agent. The summer 2031 wave is back (startup class), as the owner chose.
+  TWO CONTRACTS, OPTION B (owner, Nov 8 2026; REPLACES the 8-season service clock above): a player may be on CONTRACTS_MAX 2
+  contracts in a row; when the 2nd ends he goes to free agency (no re-sign; any team, old one included, can bid; the next
+  signing is contract 1). Contracts = day-one deals, re-signings, free-agency signings (plan adds + auction wins), the $1
+  rookie deal; taxi and in-season pickups are not contracts. OPTION B (retroactive): serviceMap still runs, and a player on
+  league rosters (active / IR) every season since the 2023 startup (svc >= cur - 2023 + 1) has used one: his day-one deal =
+  contract 2 of 2 (row.cn 2; rookie deals and everyone else cn 1; taxi 0). No length caps any more (lengthBlock / Suggest
+  service checks removed). Planner: expiring cn >= 2 = svcOut ("2nd contract over: free agency", no re-sign slot); re-sign ->
+  cn + 1; call-up -> cn 1; adds -> cn 1; carried keep cn. Rookies: rookie deal (call-up -> 4th NBA season) + 1 more = at most
+  8 years from the draft, taxi included. Page: Initial contracts "Contract 2 of 2 on day one (on league rosters every season
+  since the 2023 startup): free agency when it ends" / "Contract 1 of 2 on day one: one more contract after it" / taxi + free
+  agent lines; planner rows "Contract N of 2" (dayOne wrapper) + "Contract 1 of 2 ends: a re-sign is his 2nd and last"; grid
+  "FA · 2 contracts done"; Upcoming FAs / auction "2 contracts done". How it works "A player's life" = a drafted rookie row
+  (taxi, C1 rookie x3, C2 x4, FA) + a startup veteran row (C2 day one x2, FA, C1 x3, C2 re-sign) + bullets; numbers card "2
+  contracts in a row". Checked Nov 8 2026: Parma 19 of 26 startup holdovers = contract 2, 7 = contract 1 (Robinson,
+  Coulibaly...); Booker 2-season day-one deal -> summer 2029 free agent; Robinson 1 + re-sign 2 -> summer 2030 free agent;
+  320 px no overflow (How it works boxes fit).
+  RE-SIGN PRICE OF A FREE-AGENCY SIGNING (owner, Nov 8 2026, "Higher of price or tier"): rows from plan adds (incl. auction
+  wins) carry market: true (not rookie adds); planSummer expiring: tierNext = his plain tier (priceAt), next = tierNext,
+  but when r.market and his current price is higher, next.price = his current price (kept: true, "keeps his free-agency price
+  (re-signing never lowers it)" on the planner row). Tier-priced deals re-sign at the tier as before. Other teams always see
+  the plain tier: Upcoming FAs use next = r.tierNext and the auction's tier = (r.tierNext ?? r.next).price. How it works: step
+  3 + an auction bullet. Checked Nov 8 2026: Wembanyama won at $150 for 1 season in 2028 -> Parma's summer 2029 re-sign
+  $150; loganzarvell's Upcoming FAs list him at his $30 tier.
   TRADE TREES (tab=tradetree; owner, Nov 2 2026; logic `assets/tradetree.js`, no DOM; renderTradeTree in app.js, .tt-* in
   styles.css). Owner's answers: a tree starts from a TRADE (both sides), goes ALL THE WAY down (levels 0-1 open, deeper
   folded <details>; nodes on the way to ?p= stay open), each node = locked points + how it ended, Test features ONLY (no
