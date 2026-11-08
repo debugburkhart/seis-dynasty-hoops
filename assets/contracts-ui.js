@@ -23,7 +23,8 @@ import {
 } from './leaguecontracts.js';
 
 // Tab order (owner, Nov 7 2026): set day-one contracts first, then see where teams stand, trade, plan the summer, waivers.
-const VIEWS = [['init', 'Initial contracts'], ['status', 'Team status'], ['block', 'Trade block'], ['plan', `Offseason planner (summer ${START_SEASON + 1})`], ['fa', 'Free agency auction'], ['ww', 'Waiver wire'], ['how', 'How it works']];
+// Owner, Nov 8 2026: How it works first, Initial contracts second.
+const VIEWS = [['how', 'How it works'], ['init', 'Initial contracts'], ['status', 'Team status'], ['block', 'Trade block'], ['plan', `Offseason planner (summer ${START_SEASON + 1})`], ['fa', 'Free agency auction'], ['ww', 'Waiver wire']];
 const $ = n => `$${Number.isInteger(n) ? n : n.toFixed(1)}`;
 const f1 = x => (x == null ? '—' : (Math.round(x * 10) / 10).toFixed(1));
 const chip = t => (t ? `<span class="rs-tier rs-t${t.sym.length}" title="${t.label}">${t.sym}</span>` : '');
@@ -141,8 +142,16 @@ export async function renderContracts(body, params, h) {
       <td class="n">${priceTxt(r.price, !r.known, r.why)} ${chip(r.tier)}${guessSel(r)}</td><td>${lenBtns(r)}${relBtn(r)}</td></tr>`;
     // 23 contracts at most on day one (owner, Nov 8 2026 = ROSTER_MAX; taxi exempt). Release = no contract: a free agent.
     const over = T.counted - ROSTER_MAX;
-    const relBtn = r => `<button type="button" class="ct-chip cx-relbtn" data-rel="${r.pid}" title="No day-one contract: he becomes a free agent">Release</button>`;
-    const offered = `<div class="cx-offer ${over > 0 ? 'over' : 'ok'}"><b>${T.counted} / ${ROSTER_MAX}</b> contracts offered${over > 0 ? ` · <b>release ${over} more</b> to get to ${ROSTER_MAX}` : T.counted === ROSTER_MAX ? ' · at the limit' : ` · ${ROSTER_MAX - T.counted} open`}${T.released.length ? ` · ${T.released.length} released` : ''}</div>`;
+    // One-time taxi forgiveness (owner, Nov 8 2026): players still inside their first 3 NBA seasons in 2027-28 can go back to
+    // taxi instead of getting a contract (not one of the 23; back on the $1 rookie path).
+    const relBtn = r => `<div class="cx-acts">${r.forgivable ? `<button type="button" class="ct-chip cx-taxibtn" data-forgive="${r.pid}" title="One-time taxi forgiveness: back to the taxi squad, no contract, not one of the ${ROSTER_MAX}">Back to taxi</button>` : ''}<button type="button" class="ct-chip cx-relbtn" data-rel="${r.pid}" title="No day-one contract: he becomes a free agent">Release</button></div>${r.forgivable ? `<small class="cx-sub cx-forg">Taxi-eligible: ${span(L.start)} is inside his first ${TAXI_YEARS} NBA seasons</small>` : ''}`;
+    const forgiven = taxi.filter(r => r.forgiven);
+    const taxiN = taxi.length;
+    const forg = forgiven.length ? `<div class="rc-scroll"><table class="rc-tbl cx-init cx-forgt"><thead><tr><th>Back to taxi (one-time forgiveness)</th><th class="n">Taxi through</th><th></th></tr></thead><tbody>
+      ${forgiven.map(r => `<tr><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small><small class="cx-sub">No contract, not one of the ${ROSTER_MAX}. Called up later = the $1 league rookie deal through his ${ROOKIE_SEASONS}th NBA season; an in-season call-up needs $1 of cap room.</small></td><td class="n">${span(r.taxiLast)}</td>
+        <td><button type="button" class="ct-chip" data-unforgive="${r.pid}"${over >= 0 ? ` disabled title="Already ${T.counted} / ${ROSTER_MAX} contracts: release someone else first"` : ''}>Undo</button></td></tr>`).join('')}
+    </tbody></table></div>` : '';
+    const offered = `<div class="cx-offer ${over > 0 ? 'over' : 'ok'}"><b>${T.counted} / ${ROSTER_MAX}</b> contracts offered${over > 0 ? ` · <b>release ${over} more</b> (or send taxi-eligible players back to taxi) to get to ${ROSTER_MAX}` : T.counted === ROSTER_MAX ? ' · at the limit' : ` · ${ROSTER_MAX - T.counted} open`}${T.released.length ? ` · ${T.released.length} released` : ''}${forgiven.length ? ` · ${forgiven.length} back to taxi` : ''} · taxi <b class="${taxiN > TAXI_MAX ? 'rc-over' : ''}">${taxiN} / ${TAXI_MAX}</b>${taxiN > TAXI_MAX ? ` (${taxiN - TAXI_MAX} over the taxi limit)` : ''}</div>`;
     const rel = T.released.length ? `<div class="rc-scroll"><table class="rc-tbl cx-init cx-rel"><thead><tr><th>Released (free agents)</th><th class="n">Tier ${span(L.start)}</th><th></th></tr></thead><tbody>
       ${T.released.map(r => `<tr><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small><small class="cx-sub">No day-one contract: free agent for ${span(L.start)} (any team can sign him; his next deal is contract 1 of 2)</small></td><td class="n">${priceTxt(r.grid[0].price, r.grid[0].est, r.grid[0].why)} ${chip(r.grid[0].tier)}</td>
         <td><button type="button" class="ct-chip" data-unrel="${r.pid}"${over >= 0 ? ` disabled title="Already ${T.counted} / ${ROSTER_MAX} contracts: release someone else first"` : ''}>Undo</button></td></tr>`).join('')}
@@ -159,6 +168,7 @@ export async function renderContracts(body, params, h) {
         ${deals.map(row).join('')}
         ${rk.length ? `<tr class="cx-sep"><td colspan="4">League rookie deals (rookie draft picks and called-up taxi rookies; fixed: $1 from call-up through his ${ROOKIE_SEASONS}th NBA season)</td></tr>${rk.map(r => `<tr><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small></td><td class="n cx-nba">${nbaCell(r)}</td><td class="n">${$(1)} <span class="cx-r">R</span></td><td><small>${r.len} season${r.len === 1 ? '' : 's'} left</small>${relBtn(r)}</td></tr>`).join('')}` : ''}
       </tbody></table></div>
+      ${forg}
       ${rel}
       ${taxi.length ? `<details class="rp-more"><summary>Taxi squad: ${taxi.length} exempt (no contract until called up)</summary><p class="cm-rule">${taxi.map(r => `${card2k(r.pid, r.name)}`).join(' · ')}</p></details>` : ''}`, { sub: `${deals.filter(r => r.set).length} of ${deals.length} set` });
   }
@@ -386,6 +396,8 @@ export async function renderContracts(body, params, h) {
     if (t.dataset.block) { const b = blockOf(S.team); gmSave(`gm-ct-block-${S.team}`, b.includes(t.dataset.block) ? b.filter(x => x !== t.dataset.block) : [...b, t.dataset.block]); draw(); return; }
     if (t.dataset.len) { setLen(S.team, t.dataset.pid, Number(t.dataset.len)); draw(); return; }
     if (t.dataset.rel) { saveDeals(d => ({ ...d, [t.dataset.rel]: { rel: true, o: S.team, t: Date.now() } })); draw(); return; }
+    if (t.dataset.forgive) { saveDeals(d => ({ ...d, [t.dataset.forgive]: { taxi: true, o: S.team, t: Date.now() } })); draw(); return; }
+    if (t.dataset.unforgive) { saveDeals(d => { const n = { ...d }; delete n[t.dataset.unforgive]; return n; }); draw(); return; }
     if (t.dataset.unrel) { saveDeals(d => { const n = { ...d }; delete n[t.dataset.unrel]; return n; }); draw(); return; }
     if (t.dataset.fill) {
       const T = L().teams.find(x => x.owner === S.team);

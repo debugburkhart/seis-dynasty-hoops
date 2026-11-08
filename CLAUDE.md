@@ -1162,6 +1162,16 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (data-rel) on every deal + rookie-deal row, "Released (free agents)" table with Undo (data-unrel; disabled while at 23).
   Not enforced beyond the warning (teams start at 26-28). Checked: Parma 26 -> released 3 -> 23 / 23, payroll $525 -> $520,
   pool 26 -> 23, every other tab renders.
+- TAB ORDER (owner, Nov 8 2026): How it works, Initial contracts, Team status, Trade block, Offseason planner, Free agency
+  auction, Waiver wire (VIEWS). Initial contracts' name column is frozen while its tables scroll sideways (.cx-init sticky).
+- ONE-TIME TAXI FORGIVENESS (owner, Nov 8 2026): on day one a player NOT on taxi who is taxi-eligible for 2027-28 (taxiOk(exp,
+  START_SEASON, cur) = inside his first 3 NBA seasons; today = the 2025 + 2026 classes on active rosters, e.g. Flagg, Dybantsa)
+  gets a purple "Back to taxi" button (data-forgive) next to Release; gm-ct-deals { taxi: true } -> buildLeague slot 'taxi'
+  (row.forgivable / row.forgiven; pick = rookies[pid] ?? { left: 0, forgiven: true } so he's on the rookie path: taxi while
+  eligible, then $1 rookie deal from call-up through his 4th NBA season). Not a contract, not one of the 23; offer box also
+  shows "N back to taxi" + taxi N / 15 (red over); "Back to taxi (one-time forgiveness)" table with Undo (data-unforgive,
+  disabled at 23). In-season call-ups need cap room for the $1 (rule text in the table + How it works card 7; not simulated).
+  Checked: owner 866760756052537344 (6 eligible) 22 -> 20 contracts, Wilson + Dybantsa Taxi 2027-29 then $1 2029-30, planner taxi call-ups right.
 
 ## Test features (commish office, owner Oct 25 2026)
 - Third tab group in the commish office ("My GM", "League office", "Test features"): where brand-new

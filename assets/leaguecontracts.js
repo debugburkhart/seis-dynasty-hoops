@@ -234,8 +234,14 @@ export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}
       const exp = p.years_exp ?? null;
       // A taxi player just traded sits on the active roster until his new team moves him: still taxi (rookiePicks tradedTaxi).
       const tradedTaxi = !taxi.has(pid) && !!rookies[pid]?.tradedTaxi;
-      const slot = taxi.has(pid) || tradedTaxi ? 'taxi' : ir.has(pid) ? 'ir' : 'active';
-      const pick = rookies[pid] ?? null; // a taxi rookie or rookie draft pick: gets the league rookie deal
+      // ONE-TIME TAXI FORGIVENESS (owner, Nov 8 2026): on day one a player off taxi who is still taxi-eligible for the first
+      // league season (inside his first 3 NBA seasons) may go back to taxi: no contract, not one of the 23, back on the rookie
+      // path ($1 rookie deal from his next call-up). gm-ct-deals { taxi: true }. forgivable = the option can be offered.
+      const onTaxi = taxi.has(pid) || tradedTaxi;
+      const forgivable = !onTaxi && exp != null && taxiOk(exp, start, cur);
+      const forgiven = forgivable && !!deals[pid]?.taxi;
+      const slot = onTaxi || forgiven ? 'taxi' : ir.has(pid) ? 'ir' : 'active';
+      const pick = rookies[pid] ?? (forgiven ? { left: 0, forgiven: true } : null); // a taxi rookie or rookie draft pick: gets the league rookie deal
       const kind = slot === 'taxi' ? 'taxi' : pick?.left > 0 ? 'rookie' : 'deal';
       const pr = kind === 'rookie' ? { price: ROOKIE_TIER.price, tier: ROOKIE_TIER, known: true, salary: 0, why: 'league rookie deal' } : priceFor(c, start, exp, cur, guesses[pid] ?? null);
       // Service: seasons under league contract so far (league-wide); a deal can't run past his 8th.
@@ -265,7 +271,7 @@ export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}
       });
       return {
         pid, name: info?.[pid]?.name ?? ([p.first_name, p.last_name].filter(Boolean).join(' ') || pid), team: p.team ?? '', pos: p.position ?? '',
-        age: info?.[pid]?.age ?? p.age ?? null, fpg: info?.[pid]?.fpg ?? null, exp, c, slot, kind, len: (ros ? 1 : L), len0: (ros ? 1 : L), svc, cn, cur, svcEnd: cn >= CONTRACTS_MAX ? start + L - 1 : null, set, signer, ros, rosOk, pick: !!pick, tradedTaxi, callUp: pick?.callUp ?? null, taxiLast: exp == null ? null : cur + TAXI_YEARS - 1 - exp, traded: signer !== r.owner_id,
+        age: info?.[pid]?.age ?? p.age ?? null, fpg: info?.[pid]?.fpg ?? null, exp, c, slot, kind, len: (ros ? 1 : L), len0: (ros ? 1 : L), svc, cn, cur, svcEnd: cn >= CONTRACTS_MAX ? start + L - 1 : null, set, signer, ros, rosOk, pick: !!pick, tradedTaxi, forgivable, forgiven, callUp: pick?.callUp ?? null, taxiLast: exp == null ? null : cur + TAXI_YEARS - 1 - exp, traded: signer !== r.owner_id,
         price: kind === 'taxi' ? 0 : pr.price, known: pr.known, tier: pr.tier, why: pr.why, guessable: !pr.known,
         real: c?.seasons?.find(x => Number(x.season) === cur)?.salary ?? 0, nbaEnd: end, grid,
       };

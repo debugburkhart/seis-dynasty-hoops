@@ -110,6 +110,8 @@ export function howItWorks(L) {
     <li><b>Both teams must still fit</b> the cap, the pool and the roster limit after the trade. Trades aren't new signings, so the 4-season limit doesn't apply.</li>
     <li><b>Taxi players keep the rookie path in a trade</b>, even while Sleeper parks them on the new team's active roster for a moment.</li>
     <li><b>Sent back to taxi at the deadline:</b> it counts as if he'd always been on taxi; his ${$(1)} deal starts fresh at the next call-up.</li>
+    <li><b>One-time taxi forgiveness on day one:</b> a player still inside his first ${TAXI_YEARS} NBA seasons in ${span(START_SEASON)} can go back to taxi instead of getting a contract. He isn't one of the ${ROSTER_MAX} contracts and is back on the rookie path.</li>
+    <li><b>Call-ups during the season</b> need cap room for his ${$(1)} rookie deal (almost always there).</li>
     <li><b>Drops reset the rookie path:</b> a player picked up straight onto an active roster is a normal pickup, not a rookie deal.</li>
   </ul>`;
 

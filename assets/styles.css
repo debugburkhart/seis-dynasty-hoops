@@ -4517,3 +4517,13 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .cx-offer.over { background: #fde8e8; color: #8a1f1f; border-left-color: #c33; }
 .cx-relbtn { margin-top: 4px; color: #a32020; border-color: #e3b3b3; }
 .cx-rel td { opacity: .9; }
+.cx-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.cx-acts .cx-relbtn { margin-top: 0; }
+.cx-taxibtn { color: #4b3c8f; border-color: #c9bdf0; }
+.cx-forg { color: #4b3c8f; }
+/* Initial contracts: name column frozen while the table scrolls sideways (owner, Nov 8 2026) */
+.cx-init th:first-child, .cx-init td:first-child { position: sticky; left: 0; z-index: 1; background: var(--paper); box-shadow: 1px 0 0 var(--line); }
+.cx-init tr.cx-sep td:first-child { background: var(--cream); position: static; }
+@media (max-width: 560px) {
+  .cx-init td:first-child { min-width: 140px; max-width: 170px; }
+}
