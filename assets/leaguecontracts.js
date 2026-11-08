@@ -312,7 +312,7 @@ export function planSummer(team, plan, { cap, summer, priceAt, cur }) {
   if (roster > ROSTER_MAX) warn.push(`${roster} players signed (active + IR): ${roster - ROSTER_MAX} over the ${ROSTER_MAX}-man roster limit.`);
   const taxiLeft = taxi.filter(r => !r.up && !r.forced).length;
   if (taxiLeft > TAXI_MAX) warn.push(`${taxiLeft} on taxi: ${taxiLeft - TAXI_MAX} over the ${TAXI_MAX}-player taxi limit.`);
-  if (forcedOut.length) warn.push(`${forcedOut.map(r => r.name).join(', ')} ${forcedOut.length === 1 ? 'has' : 'have'} used up ${forcedOut.length === 1 ? 'his' : 'their'} taxi time: call ${forcedOut.length === 1 ? "him up or he’s" : "them up or they’re"} released.`);
+  if (forcedOut.length) warn.push(`${forcedOut.map(r => r.name).join(', ')} ${forcedOut.length === 1 ? 'has' : 'have'} finished ${forcedOut.length === 1 ? 'his' : 'their'} 3rd NBA season, so taxi time is up for ${span(summer)}: call ${forcedOut.length === 1 ? "him up or he’s" : "them up or they’re"} released.`);
   if (undecided) warn.push(`${undecided} expiring player${undecided === 1 ? '' : 's'} not decided yet (released on the deadline if not re-signed).`);
   return { seasons, carried, expiring, taxi, adds, money, pool, fours, roster, undecided, warn, dead: carried.filter(r => r.cut).reduce((s, r) => s + r.dead * r.left, 0) };
 }

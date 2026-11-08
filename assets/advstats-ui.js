@@ -54,6 +54,9 @@ const tipAttr = (esc, t) => ` data-tip="${esc(t)}" tabindex="0"`;
 
 export async function renderAdvanced(body, params, h) {
   const { DATA, esc, gmLoad, gmSave, COMMISH, teamName } = h;
+  // dark mode (theme.js): the navy series color would vanish on a dark card, so it turns light blue
+  const navy = document.documentElement.classList.contains('dark') ? '#8eb4ec' : '#173266';
+  COLORS[0] = navy; MIX_COLORS.pts = navy;
   const cur = DATA.seasons.at(-1);
   const seasonsAll = DATA.seasons.map(s => s.season);
   const season = params.get('season') === 'career' ? 'career' : seasonsAll.includes(params.get('season')) ? params.get('season') : cur.season;
@@ -375,7 +378,7 @@ export async function renderAdvanced(body, params, h) {
       const pos = parts.filter(([, v]) => v > 0.05), tot = pos.reduce((s, [, v]) => s + v, 0) || 1;
       return `<div class="as-mixrow"><div class="as-mixname" style="color:${COLORS[O.teams.indexOf(t)]}"><b>${t}</b></div><div class="as-mixbar">${pos.map(([k, v, l]) => `<i style="width:${(v / tot) * 100}%;background:${colors[k]}"${tipAttr(esc, `${nbaTeamName(t)} · ${title}: ${l} ${f1(v)} FP/G (${pc(v / tot)})`)}>${v / tot >= 0.12 ? Math.round((v / tot) * 100) : ''}</i>`).join('')}</div></div>`;
     };
-    const POSC = { PG: '#173266', SG: '#2f8fd8', SF: '#d9a53f', PF: '#3a9d6a', C: '#c8553d' };
+    const POSC = { PG: COLORS[0], SG: '#2f8fd8', SF: '#d9a53f', PF: '#3a9d6a', C: '#c8553d' };
     return betaCard('Team profile', `${tbl}
       <h3 class="as-h3">FP by position (who produces)</h3>${picked.map(t => stack(t, Object.entries(T[t].pos).map(([k, v]) => [k, v, k]), POSC, 'by position')).join('')}
       <div class="as-legend">${Object.entries(POSC).map(([k, c]) => `<span><i style="background:${c}"></i>${k}</span>`).join('')}</div>

@@ -24,6 +24,7 @@ import { reportSalaryNba } from './report-salary-nba.js';
 import { reportTokens } from './report-tokens.js';
 import { reportYearsPool } from './report-yearspool.js';
 import { paintSync, syncInit, syncSave } from './sync.js';
+import { themeSwitch, paintTheme } from './theme.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 import { taxiAppearances } from './taxiweek.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
@@ -246,10 +247,12 @@ function renderSidebar(page) {
     </nav>
     <a class="commish-btn${page === 'commish' ? ' active' : ''}" href="#/commish">${icon('lock')}<span>Commish</span></a>
     <div class="sidebar-foot">
+      ${themeSwitch()}
       <div class="sync-box" data-sync="side"></div>
       ${DATA.live ? 'Live from Sleeper' : `Updated ${esc(updated)} CT`}
     </div>`;
   paintSync($('#sidebar'));
+  $('#sidebar').querySelectorAll('[data-theme-box]').forEach(paintTheme);
 }
 
 function renderSoon(main, page) {

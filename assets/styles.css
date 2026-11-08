@@ -4270,3 +4270,16 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .cx-rosline { color: #1e7a34; }
 .cx-len .cx-ros { font-weight: 800; }
 .cx-len .cx-ros.on { background: #1e7a34; border-color: #1e7a34; color: #fff; }
+
+/* ---------- Light / dark switch (sidebar foot; assets/theme.js) ---------- */
+.theme-box { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.theme-lbl { font: 800 10px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+.theme-seg { display: inline-flex; padding: 2px; border: 1px solid rgba(255,255,255,.14); border-radius: 99px; background: rgba(255,255,255,.05); }
+.theme-seg button {
+  border: 0; background: transparent; color: #d3dcea; cursor: pointer;
+  font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 99px;
+}
+.theme-seg button:hover { color: #fff; }
+.theme-seg button.on { background: var(--gold); color: var(--navy-900); font-weight: 700; }
+.theme-seg button:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.cx-when { margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: #fdf6e3; border-left: 3px solid var(--gold); font-size: 12.5px; line-height: 1.45; }

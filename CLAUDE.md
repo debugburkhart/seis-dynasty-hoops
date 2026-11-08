@@ -29,6 +29,20 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   favicon), assets/icon-180.png (iPhone home screen) and icon-512.png, all drawn from the same
   shapes; downloadable copies in brand/ (SVG, 512/1024 PNG, 1024 avatar on navy). PNGs are
   drawn with PowerShell System.Drawing (no Node locally), matching the SVG geometry.
+- LIGHT / DARK MODE (owner, Nov 8 2026): `assets/theme.js`, switch "Theme Light / Dark / Auto" in the sidebar foot
+  (themeSwitch/paintTheme in renderSidebar, .theme-* in styles.css), localStorage 'theme' (per device, not synced;
+  default light; auto = the device's setting, follows changes). NO hand-written dark CSS: when dark is on, theme.js reads
+  every styles.css rule once and writes <style id="theme-dark"> (html.dark + each selector, every color declaration
+  re-emitted so rule order/specificity is unchanged, wrapped in @media screen so print/PDF stays light). Colors converted
+  by ROLE in OKLab: backgrounds (light surfaces -> dark navy-tinted, solid navy/dark and bright accents L<.9 C>.085 kept),
+  text (dark -> light; kept when the rule's own solid background is kept, or the selector sits inside a rule with a
+  bright background, e.g. `.bk .bk-table tr.on td` -> `tr.on .bk-rk`), borders, SVG fill/stroke (graphic), custom props by
+  name (--*bg* / --*edge* / --*ink*, -c). Rules inside containers that are ALREADY dark in light mode (single-class
+  selectors with a solid dark background: .sidebar, .bk, .fight...) and KEEP (.bk-total/.bk-dyn/.bk-lock badges) are
+  written unchanged. index.html sets html.dark before first paint + a body background (no white flash). JS inline
+  colors aren't converted: advstats-ui.js swaps its navy series color to light blue in dark. Checked Nov 8 2026: text
+  contrast audit on every public page + most commish tabs (only chips that are the same in light mode), 402 + desktop.
+  If a new component looks wrong in dark: add its container selector to KEEP, or give it a solid background.
 - `index.html`: shell + import map. Every module in `assets/` must be listed in the
   import map with `?v=dev` (the Action replaces it with a version fingerprint).
 - `assets/rules.js`: the league Rulebook text (#/rules, under Now). Rules grouped by season
@@ -1316,6 +1330,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   years)". Checked Nov 8 2026: Parma 7 pickups (Robinson, Hachimura, Eason, Portis, Coulibaly, da Silva, Risacher) -> pool
   26 -> 19; Robinson set to 3 seasons -> 22; Suggest gave Hachimura 2, Eason / da Silva / Risacher 3, kept the rest ROS
   (49 / 50); 320 px no overflow.
+  PLANNER LABELS (owner, Nov 8 2026: Raynaud read as "not eligible"; the clock was right (2025 pick, rookie 2025-26, taxi
+  through 2027-28 = his 3rd NBA season) but the owner took the planner for THIS coming summer): tab label "Offseason planner
+  (summer 2028)", card "· summer 2028" + gold .cx-when box ("summer 2028, after the 2027-28 season (day one) and before
+  2028-29 ... not this coming summer"), Upcoming FAs "summer 2028 (before 2028-29)"; taxi rows "Can stay on taxi through X
+  (his 3rd NBA season)" / "Taxi time is up after X (his 3rd NBA season): call him up for Y or he's released"; grid tag "last
+  taxi season (3rd NBA season)"; warning "finished their 3rd NBA season, so taxi time is up for 2028-29". Rule unchanged.
   TRADE TREES (tab=tradetree; owner, Nov 2 2026; logic `assets/tradetree.js`, no DOM; renderTradeTree in app.js, .tt-* in
   styles.css). Owner's answers: a tree starts from a TRADE (both sides), goes ALL THE WAY down (levels 0-1 open, deeper
   folded <details>; nodes on the way to ?p= stay open), each node = locked points + how it ended, Test features ONLY (no

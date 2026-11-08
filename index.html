@@ -19,6 +19,9 @@
     cached. The import map applies the same tag when the scripts load each other.
   -->
   <link rel="stylesheet" href="assets/styles.css?v=dev">
+  <!-- Dark mode (assets/theme.js): set before the page draws so there's no white flash. -->
+  <script>try{var t=localStorage.getItem('theme');if(t==='dark'||(t==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}</script>
+  <style>@media screen{html.dark body{background:#18202d;color:#dfe4ec}}</style>
   <script type="importmap">
   {
     "imports": {
@@ -63,6 +66,7 @@
       "./assets/standings.js": "./assets/standings.js?v=dev",
       "./assets/sync.js": "./assets/sync.js?v=dev",
       "./assets/test-features.js": "./assets/test-features.js?v=dev",
+      "./assets/theme.js": "./assets/theme.js?v=dev",
       "./assets/timeline.js": "./assets/timeline.js?v=dev",
       "./assets/tradefinder.js": "./assets/tradefinder.js?v=dev",
       "./assets/transactions.js": "./assets/transactions.js?v=dev"

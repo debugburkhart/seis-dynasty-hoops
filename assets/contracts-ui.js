@@ -20,7 +20,7 @@ import {
 } from './leaguecontracts.js';
 
 // Tab order (owner, Nov 7 2026): set day-one contracts first, then see where teams stand, trade, plan the summer, waivers.
-const VIEWS = [['init', 'Initial contracts'], ['status', 'Team status'], ['block', 'Trade block'], ['plan', 'Offseason planner'], ['ww', 'Waiver wire']];
+const VIEWS = [['init', 'Initial contracts'], ['status', 'Team status'], ['block', 'Trade block'], ['plan', `Offseason planner (summer ${START_SEASON + 1})`], ['ww', 'Waiver wire']];
 const $ = n => `$${Number.isInteger(n) ? n : n.toFixed(1)}`;
 const f1 = x => (x == null ? '—' : (Math.round(x * 10) / 10).toFixed(1));
 const chip = t => (t ? `<span class="rs-tier rs-t${t.sym.length}" title="${t.label}">${t.sym}</span>` : '');
@@ -118,7 +118,7 @@ export async function renderContracts(body, params, h) {
     const cell = (r, g) => {
       const mark = r.nbaEnd != null && g.s === r.nbaEnd + 1;
       const tag = mark ? `<em class="cx-endtag" title="His real NBA deal ends after ${span(r.nbaEnd)}: a new price is possible from ${span(g.s)}, but only when his league deal ends.">${g.k === 'fa' ? 'new NBA deal' : 'NBA deal ends · locked'}</em>` : '';
-      if (g.k === 'taxi') return `<td class="cx-c cx-taxi">Taxi${g.last ? '<em class="cx-endtag">last taxi season</em>' : ''}${tag}</td>`;
+      if (g.k === 'taxi') return `<td class="cx-c cx-taxi">Taxi${g.last ? '<em class="cx-endtag">last taxi season (3rd NBA season)</em>' : ''}${tag}</td>`;
       if (g.k === 'proj') return `<td class="cx-c cx-proj" title="Projected: off taxi after his 3rd NBA season, then the $1 league rookie deal for ${LEAGUE_ROOKIE_YEARS} seasons (not counted until he's called up)">${$(g.price)} <span class="cx-r">R</span>${g.first ? '<em class="cx-endtag">call-up due</em>' : ''}${tag}</td>`;
       if (g.k === 'fa') return `<td class="cx-c cx-fa${mark ? ' cx-end' : ''}" title="Not under league contract: re-sign window / free agency at his ${span(g.s)} tier">FA · ${priceTxt(g.price, g.est, g.why)}${tag}</td>`;
       return `<td class="cx-c cx-on${g.k === 'rookie' ? ' cx-rk' : ''}${mark ? ' cx-end' : ''}">${priceTxt(g.price, g.est, r.why)} ${g.k === 'rookie' ? '<span class="cx-r" title="League rookie deal">R</span>' : chip(g.tier)}${tag}</td>`;
@@ -281,7 +281,7 @@ export async function renderContracts(body, params, h) {
     const car = `<div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Player · day-one deal</th><th class="n">Price (locked)</th><th class="n">Seasons left</th><th>Cut?</th></tr></thead><tbody>
       ${P.carried.map(r => `<tr class="${r.cut ? 'cx-gone' : ''}"><td>${nameCell(r)}${dayOne(r)}</td><td class="n">${$(r.price)} ${r.kind === 'rookie' ? '<span class="cx-r">R</span>' : chip(r.tier)}</td><td class="n">${r.left}</td><td><label class="cx-cut"><input type="checkbox" data-cut="${r.pid}"${r.cut ? ' checked' : ''}> ${r.free ? 'free' : `dead ${$(r.dead)} × ${r.left}`}</label></td></tr>`).join('') || '<tr><td colspan="4"><small>No contracts run into next season yet: set lengths on Initial contracts.</small></td></tr>'}
     </tbody></table></div>`;
-    const tx = P.taxi.length ? `<div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Taxi player</th><th>Call up?</th></tr></thead><tbody>${P.taxi.map(r => `<tr class="${r.forced && !r.up ? 'cx-gone' : ''}"><td>${nameCell(r)}<small class="cx-sub">${r.forced ? '<b class="rc-over">Taxi time is up: call him up or he\x27s released</b>' : `Can stay on taxi through ${span(r.taxiLast)}`}${r.pick ? '' : ' · not our draft pick: signs at his tier'}</small></td><td><label class="cx-cut"><input type="checkbox" data-up="${r.pid}"${r.up ? ' checked' : ''}> ${$(r.upPrice)} × ${r.upLen} season${r.upLen === 1 ? '' : 's'}</label></td></tr>`).join('')}</tbody></table></div>` : '<p class="cm-rule">No taxi players.</p>';
+    const tx = P.taxi.length ? `<div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Taxi player</th><th>Call up?</th></tr></thead><tbody>${P.taxi.map(r => `<tr class="${r.forced && !r.up ? 'cx-gone' : ''}"><td>${nameCell(r)}<small class="cx-sub">${r.forced ? `<b class="rc-over">Taxi time is up after ${span(r.taxiLast)} (his 3rd NBA season): call him up for ${span(summer)} or he's released</b>` : `Can stay on taxi through ${span(r.taxiLast)} (his 3rd NBA season)`}${r.pick ? '' : ' · not our draft pick: signs at his tier'}</small></td><td><label class="cx-cut"><input type="checkbox" data-up="${r.pid}"${r.up ? ' checked' : ''}> ${$(r.upPrice)} × ${r.upLen} season${r.upLen === 1 ? '' : 's'}</label></td></tr>`).join('')}</tbody></table></div>` : '<p class="cm-rule">No taxi players.</p>';
     const adds = `${P.adds.length ? `<div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Added</th><th class="n">Price</th><th class="n">Seasons</th><th></th></tr></thead><tbody>${P.adds.map(a => `<tr><td><b>${a.pid ? card2k(a.pid, a.name) : esc(a.name)}</b><small class="cx-sub">${a.rookie ? 'rookie draft pick' : 'free agent'}</small></td><td class="n">${$(a.price)}</td><td class="n">${a.rookie ? a.len : `<select data-addlen="${a.id}">${[1, 2, 3, 4].map(n => `<option value="${n}"${a.len === n ? ' selected' : ''}>${n}</option>`).join('')}</select>`}</td><td><button type="button" class="cx-x" data-rmadd="${a.id}" aria-label="Remove">×</button></td></tr>`).join('')}</tbody></table></div>` : ''}
       <div class="cx-addform">
         <input type="text" list="cx-players" placeholder="Player name (any NBA player or a made-up one)" data-add="name" maxlength="40">
@@ -291,13 +291,14 @@ export async function renderContracts(body, params, h) {
         <label class="cx-cut"><input type="checkbox" data-add="rookie"> Rookie pick ($1 × ${LEAGUE_ROOKIE_YEARS})</label>
         <button type="button" class="btn" data-addgo>Add</button>
       </div>`;
-    return betaCard(`${tn(T.owner)} · summer before ${span(summer)}`, `
+    return betaCard(`${tn(T.owner)} · summer ${summer}`, `
+      <p class="cx-when"><b>Which summer:</b> summer ${summer}, after the ${span(L.start)} season (day one) and before ${span(summer)}. That's one year after the day-one contracts start, not this coming summer (the day-one contracts themselves are set on Initial contracts).</p>
       <p class="cm-rule">Every contract loses a season. Players at 0 are expiring: re-sign them at their <b>new tier</b> (his real ${span(summer)} salary) for 1-${MAX_YEARS} seasons, or release them to free agency. Contracts still running keep their locked price; cutting one costs ${Math.round(CUT_SHARE * 100)}% of his price for every season left (free at ${$(FREE_CUT)} or less) and his years stay used until next summer.</p>
       ${d1Line}${totals}`, { sub: 'Saved on this account', cls: 'cx-plantop' })
       + betaCard('Still under contract (day-one deals running)', car, { sub: `${P.carried.length} players` })
       + betaCard('Expiring: re-sign or release', exp, { sub: `${P.expiring.length} players` })
       + betaCard('Taxi call-ups', tx)
-      + betaCard(`Upcoming free agents · summer before ${span(summer)}`, upcomingFas(L, T, P, summer), { sub: 'Other teams’ expiring deals' })
+      + betaCard(`Upcoming free agents · summer ${summer} (before ${span(summer)})`, upcomingFas(L, T, P, summer), { sub: 'Other teams’ expiring deals' })
       + betaCard('Add free agents and rookies', adds +'<p class="cm-rule">Free agency = one Sleeper waiver / FAAB period; the winner picks the length and needs cap room and pool years. Real players get their own tier price unless you pick one.</p><div class="cx-btns"><button type="button" class="btn" data-planreset>Reset this plan</button></div>');
   }
 
