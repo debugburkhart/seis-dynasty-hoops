@@ -242,7 +242,7 @@ export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}
       const svc = service[pid] ?? 0; // league seasons in a row on rosters (serviceMap), as of day one
       // Contract number of his day-one deal: 2 when he has been on rosters every season since the startup (option B).
       const cn = slot === 'taxi' ? 0 : !(pick?.left > 0) && svc >= cur - 2023 + 1 ? 2 : 1;
-      const L = kind === 'taxi' ? 0 : kind === 'rookie' ? pick.left : Math.min(MAX_YEARS, Math.max(1, Number(deals[pid]?.len) || 1));
+      const L = kind === 'taxi' ? 0 : kind === 'rookie' ? pick.left : Math.min(MAX_YEARS, Math.max(1, Number(deals[pid]?.len) || 1)); // released: see below
       const rosOk = false;
       const ros = false;
       const set = kind === 'deal' && (deals[pid]?.len != null || ros);
@@ -270,7 +270,15 @@ export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}
         real: c?.seasons?.find(x => Number(x.season) === cur)?.salary ?? 0, nbaEnd: end, grid,
       };
     }).sort((a, b) => (a.kind === 'taxi') - (b.kind === 'taxi') || b.price - a.price || (b.fpg ?? 0) - (a.fpg ?? 0));
-    return teamTotals({ owner: r.owner_id, rows, seasons });
+    // RELEASED ON DAY ONE (owner, Nov 8 2026: "a max of 23 contracts offered ... add a Release option"): gm-ct-deals entry
+    // { rel: true } = no day-one contract, he's a free agent from 2027-28 (next signing = contract 1). Kept out of team.rows
+    // (so every count, the planner, trade block and auction ignore him) and listed in team.released.
+    const released = rows.filter(x => x.kind !== 'taxi' && deals[x.pid]?.rel).map(x => ({
+      ...x, rel: true, len: 0, len0: 0, cn: 0, set: true,
+      grid: seasons.map(s => { const re = priceFor(x.c, s, x.exp, cur, guesses[x.pid] ?? null); return { k: 'fa', s, price: re.price, est: !re.known, tier: re.tier, why: re.why }; }),
+    }));
+    const kept = rows.filter(x => !released.some(y => y.pid === x.pid));
+    return teamTotals({ owner: r.owner_id, rows: kept, released, seasons });
   });
   const avg = teams.length ? teams.reduce((t, x) => t + x.payroll, 0) / teams.length : 0;
   return { teams, cap: CAP, floor: FLOOR, avg, start, seasons };
@@ -289,6 +297,7 @@ function teamTotals(t) {
   t.underBySeason = t.seasons.map((s, i) => signed.filter(r => r.grid[i].k !== 'fa').length);
   t.counted = signed.length;
   t.taxi = t.rows.length - signed.length;
+  t.released ??= [];
   return t;
 }
 

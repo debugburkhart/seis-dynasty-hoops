@@ -4513,3 +4513,7 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .mg-rin small { padding: 0 14px; line-height: 1.2; }
 .mg-re .mg-nm { position: sticky; left: 0; background: #0b1d3d; z-index: 1; min-width: 104px; }
 .mg-re tr.on .mg-nm, .mg-cap tr.on .mg-nm { background: #22427e; }
+.cx-offer { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; font-size: 13.5px; background: #e7f4ea; color: #1d5b2c; border-left: 4px solid #2f8a46; }
+.cx-offer.over { background: #fde8e8; color: #8a1f1f; border-left-color: #c33; }
+.cx-relbtn { margin-top: 4px; color: #a32020; border-color: #e3b3b3; }
+.cx-rel td { opacity: .9; }

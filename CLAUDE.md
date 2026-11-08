@@ -1154,6 +1154,14 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   first + LAST, NBA team, age, Nth NBA season, fantasy team, FP/G ring), light panel (Contract N of 2 / Taxi / Free agent +
   why, tier, signed, dead money if cut, real NBA deal end, links to the 2K card + Advanced stats with back), season table
   (age, real NBA salary, cap hit). Checked Nov 8 2026: 320 / 402 / desktop no overflow, dark mode (.mg kept navy).
+- DAY-ONE RELEASE + 23 CONTRACTS (owner, Nov 8 2026: "Initial contracts should have a max of 23 contracts offered. Add a
+  Release option"): gm-ct-deals { rel: true, o, t } = no day-one contract; buildLeague moves him out of team.rows into
+  team.released (grid all FA at his tier; free agent from 2027-28, next deal = contract 1), so payroll, pool, roster, planner,
+  trade block and auction ignore him; picking a length (setLen) un-releases. Initial contracts: .cx-offer box "N / 23
+  contracts offered · release N more" (red over, green otherwise; ROSTER_MAX, taxi exempt), a red "Release" button
+  (data-rel) on every deal + rookie-deal row, "Released (free agents)" table with Undo (data-unrel; disabled while at 23).
+  Not enforced beyond the warning (teams start at 26-28). Checked: Parma 26 -> released 3 -> 23 / 23, payroll $525 -> $520,
+  pool 26 -> 23, every other tab renders.
 
 ## Test features (commish office, owner Oct 25 2026)
 - Third tab group in the commish office ("My GM", "League office", "Test features"): where brand-new

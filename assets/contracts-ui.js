@@ -138,8 +138,17 @@ export async function renderContracts(body, params, h) {
     const svcTxt = r => `<small class="cx-sub cx-svcline">${svcLine(r)}</small>`;
     const guessSel = r => (r.guessable ? `<select class="cx-guess" data-guess="${r.pid}" title="His real ${span(L.start)} deal isn’t signed yet: pick the price you expect"><option value="">est. ${$(priceFor(r.c, L.start, r.exp, season).price)}</option>${PRICE_STEPS.map(p => `<option value="${p}"${g[r.pid] === p ? ' selected' : ''}>${$(p)}</option>`).join('')}</select>` : '');
     const row = r => `<tr class="${r.slot}"><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small>${svcTxt(r)}</td><td class="n cx-nba">${nbaCell(r)}</td>
-      <td class="n">${priceTxt(r.price, !r.known, r.why)} ${chip(r.tier)}${guessSel(r)}</td><td>${lenBtns(r)}</td></tr>`;
+      <td class="n">${priceTxt(r.price, !r.known, r.why)} ${chip(r.tier)}${guessSel(r)}</td><td>${lenBtns(r)}${relBtn(r)}</td></tr>`;
+    // 23 contracts at most on day one (owner, Nov 8 2026 = ROSTER_MAX; taxi exempt). Release = no contract: a free agent.
+    const over = T.counted - ROSTER_MAX;
+    const relBtn = r => `<button type="button" class="ct-chip cx-relbtn" data-rel="${r.pid}" title="No day-one contract: he becomes a free agent">Release</button>`;
+    const offered = `<div class="cx-offer ${over > 0 ? 'over' : 'ok'}"><b>${T.counted} / ${ROSTER_MAX}</b> contracts offered${over > 0 ? ` · <b>release ${over} more</b> to get to ${ROSTER_MAX}` : T.counted === ROSTER_MAX ? ' · at the limit' : ` · ${ROSTER_MAX - T.counted} open`}${T.released.length ? ` · ${T.released.length} released` : ''}</div>`;
+    const rel = T.released.length ? `<div class="rc-scroll"><table class="rc-tbl cx-init cx-rel"><thead><tr><th>Released (free agents)</th><th class="n">Tier ${span(L.start)}</th><th></th></tr></thead><tbody>
+      ${T.released.map(r => `<tr><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small><small class="cx-sub">No day-one contract: free agent for ${span(L.start)} (any team can sign him; his next deal is contract 1 of 2)</small></td><td class="n">${priceTxt(r.grid[0].price, r.grid[0].est, r.grid[0].why)} ${chip(r.grid[0].tier)}</td>
+        <td><button type="button" class="ct-chip" data-unrel="${r.pid}"${over >= 0 ? ` disabled title="Already ${T.counted} / ${ROSTER_MAX} contracts: release someone else first"` : ''}>Undo</button></td></tr>`).join('')}
+    </tbody></table></div>` : '';
     return betaCard(`${tn(T.owner)} · day-one contracts`, `
+      ${offered}
       <div class="cx-sum">
         <div><b>${T.pool}</b> / ${POOL} contract-years · <b>${POOL - T.pool}</b> free<div class="rc-bar"><span class="rc-a${T.pool > POOL ? ' cx-overbar' : ''}" style="width:${Math.min(100, (100 * T.pool) / POOL)}%"></span></div></div>
         <div><b>${T.fours}</b> / ${FOUR_YEAR_PER_SUMMER} four-season deals · payroll <b>${$(T.payroll)}</b> ${room(T.payroll, L.cap)} · roster <b class="${T.counted > ROSTER_MAX ? 'rc-over' : ''}">${T.counted} / ${ROSTER_MAX}</b></div>
@@ -148,8 +157,9 @@ export async function renderContracts(body, params, h) {
       <p class="cm-rule">Pick a length (1-${MAX_YEARS} seasons) for every player; unassigned = 1 season. Lengths never change the price (his ${span(L.start)} tier, locked for the deal). Greyed buttons would break the ${POOL}-year pool or the ${FOUR_YEAR_PER_SUMMER} four-season deals. Suggest: best FP/G first, age ≤ ${SUGGEST_AGE[0][0]} = 4, ≤ ${SUGGEST_AGE[1][0]} = 3, ≤ ${SUGGEST_AGE[2][0]} = 2, older or under ${SUGGEST_MIN_FPG} FP/G = 1, within the pool (in-season waiver pickups don't count toward the cap or the pool, so all ${POOL} can go to day-one deals). Contracts belong to the <b>player</b>: if he’s traded in Sleeper, his length and price go with him (“traded in”), and the quick fills leave those alone.</p>
       <div class="rc-scroll"><table class="rc-tbl cx-init"><thead><tr><th>Player</th><th class="n">Real now</th><th class="n">Price ${span(L.start)}</th><th>Seasons</th></tr></thead><tbody>
         ${deals.map(row).join('')}
-        ${rk.length ? `<tr class="cx-sep"><td colspan="4">League rookie deals (rookie draft picks and called-up taxi rookies; fixed: $1 from call-up through his ${ROOKIE_SEASONS}th NBA season)</td></tr>${rk.map(r => `<tr><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small></td><td class="n cx-nba">${nbaCell(r)}</td><td class="n">${$(1)} <span class="cx-r">R</span></td><td><small>${r.len} season${r.len === 1 ? '' : 's'} left</small></td></tr>`).join('')}` : ''}
+        ${rk.length ? `<tr class="cx-sep"><td colspan="4">League rookie deals (rookie draft picks and called-up taxi rookies; fixed: $1 from call-up through his ${ROOKIE_SEASONS}th NBA season)</td></tr>${rk.map(r => `<tr><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small></td><td class="n cx-nba">${nbaCell(r)}</td><td class="n">${$(1)} <span class="cx-r">R</span></td><td><small>${r.len} season${r.len === 1 ? '' : 's'} left</small>${relBtn(r)}</td></tr>`).join('')}` : ''}
       </tbody></table></div>
+      ${rel}
       ${taxi.length ? `<details class="rp-more"><summary>Taxi squad: ${taxi.length} exempt (no contract until called up)</summary><p class="cm-rule">${taxi.map(r => `${card2k(r.pid, r.name)}`).join(' · ')}</p></details>` : ''}`, { sub: `${deals.filter(r => r.set).length} of ${deals.length} set` });
   }
 
@@ -375,6 +385,8 @@ export async function renderContracts(body, params, h) {
     if (t.dataset.faadd) { const pid = t.dataset.faadd; if (banCheck(pid)) return; const p = planOf(S.team); p.adds = [...p.adds, { id: String(Date.now()), pid, name: info[pid]?.name ?? pid, price: Number(t.dataset.price), len: 1, rookie: false }]; savePlan(S.team, p); draw(); return; }
     if (t.dataset.block) { const b = blockOf(S.team); gmSave(`gm-ct-block-${S.team}`, b.includes(t.dataset.block) ? b.filter(x => x !== t.dataset.block) : [...b, t.dataset.block]); draw(); return; }
     if (t.dataset.len) { setLen(S.team, t.dataset.pid, Number(t.dataset.len)); draw(); return; }
+    if (t.dataset.rel) { saveDeals(d => ({ ...d, [t.dataset.rel]: { rel: true, o: S.team, t: Date.now() } })); draw(); return; }
+    if (t.dataset.unrel) { saveDeals(d => { const n = { ...d }; delete n[t.dataset.unrel]; return n; }); draw(); return; }
     if (t.dataset.fill) {
       const T = L().teams.find(x => x.owner === S.team);
       const had = T.rows.some(r => r.set);
