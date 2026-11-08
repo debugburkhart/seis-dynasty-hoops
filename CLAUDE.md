@@ -1191,6 +1191,120 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   updateAdvStats for 2025 + 2026: 2,462 team-games (1,231 x 2), 661 player-teams, 297 KB, 20 s; 2025-26 page from it (Giannis
   splits 36 games = home 19 + away 17); 320 / 402 / desktop no page overflow (wide tables scroll in .as-scroll). NOT checked:
   the first nightly run in Actions (look for "Advanced stats" lines in the log + data/adv-stats.json).
+  CONTRACT SANDBOX (tab=contracts, tab label renamed from "Contracts" by the owner Nov 7 2026; owner, Nov 7 2026: the Reports' "Salary system v2" + "years pool" as a working sandbox): logic
+  `assets/leaguecontracts.js` (no DOM; imports the rule constants now EXPORTED from report-salary-nba.js (tiers, cap
+  rounding, dead money, rookie years) and report-yearspool.js (POOL 50, FOUR_YEAR_PER_SUMMER 2)), page `assets/contracts-ui.js`
+  renderContracts(body, params, h) (h = { DATA, esc, gmLoad, gmSave, COMMISH, teamName, name, loadContracts } from app.js
+  renderContractsPage), .cx-* at the end of styles.css (.ct-* is taken by the coach track record). Owner's answers (Contracts by player since round 4, see below): any team
+  (picker, default COMMISH); day-one contracts are signed for START_SEASON 2027 (2027-28) = price = tier of his REAL 2027-28
+  salary (nbaTier), locked for the league deal; a real deal not signed for that season = estimate (tier of his last real
+  salary, never the rookie tier; italic "~$X") or the team's guess (gm-ct-guess { pid: price }, select on Initial contracts);
+  "Suggest lengths" = age + FP/G (best FP/G first; age <= 24 -> 4, <= 27 -> 3, <= 30 -> 2, else 1; under SUGGEST_MIN_FPG 15 =
+  1; max 2 fours; keeps SUGGEST_SPARE 3 pool years free); SANDBOX NOW, real later (saved per team with gmSave, synced via
+  'gm-ct-'; a later step can publish the list as a static file). Data: data/contracts.json, live rosters, /v1/players/nba
+  (years_exp: rookie tier = first 4 NBA seasons), loadBreakdown { list: 'league', withFa: true } (FP/G, age, free agents),
+  rookiePicks(DATA) = rookie-draft picks with LEAGUE_ROOKIE_YEARS - (2027 - draft season) > 0 left (on the active roster =
+  called up in his draft season; $1, fixed length); taxi = exempt, no contract. Cap = average day-one payroll + 10% rounded
+  to $50 (Nov 7 2026 on 2027-28 prices: avg $458 -> cap $500, floor $400; the report's $450 used 2026-27 prices).
+  Views (?view=, saved gm-ct-view; ?team= saved gm-ct-team): TEAM STATUS = League overview (all 8: payroll, room, pool, 4-yr
+  deals, lengths set, est. prices; tap = that team) + team outlook grid (sticky player column, 2027-28..2030-31): navy cell =
+  under league contract at the locked price, R = league rookie deal, striped "FA · $X" = re-sign / free agency at that
+  season's tier, gold left edge + "new NBA deal" / "NBA deal ends · locked" = first season after his real NBA deal ends
+  (nbaEnd = last season row incl. options; waived = none), Committed row per season. OFFSEASON PLANNER = summer before 2028-29
+  (planSummer): expiring (len 1) with the new tier price + Re-sign 1-4 / Release (undecided = warning), still under contract
+  with Cut (dead = 50% of price per season left, free at <= $3; years stay used this summer), taxi call-ups ($1 x 3, any taxi
+  player), adds (name with a datalist of every player = his 2028-29 tier, or a made-up one with a picked price; Rookie pick
+  = $1 x 3); live payroll / pool / 4-season count + warnings + 4-season money table; gm-ct-plan-{owner} { re, cut, up,
+  adds }. INITIAL CONTRACTS = length buttons 1-4 per player (gm-ct-init-{owner} { at, len }), unset = 1; buttons that would
+  pass the pool or the 2 fours are disabled with the reason; Everyone 1 season / Suggest (confirm when lengths exist).
+  WAIVER WIRE (owner added the same day) = every free agent with an NBA team: FP/G (3+ GP sorted first), real salary, CAP
+  HIT NOW = his tier on this season's real salary (rest-of-season deal, 1 pool year), 2027-28 price, Fits? vs the picked
+  team's day-one payroll and pool; search + sort FP/G / Cap hit / Salary / Age, 50 at a time. Links everywhere: name ->
+  2K card (list=league, &fa=1 for free agents), "Adv" -> Advanced Stats (?p= adds him to the shared compare tray), both with
+  back/backl = "Back to Contracts". Checked Nov 7 2026 (live rosters + real files): Booker 2027-28 $61.0M -> $50, Haliburton
+  $52.3M -> $40 (2028-29 $55.7M -> $50), Banchero $44.8M -> $30 (just under the $45M cutoff), Sengun $37.3M -> $30; Parma
+  Suggest 47 / 50 years, 2 fours (Sengun, Banchero); planner re-sign 4 / release / cut / adds totals right; 320 / desktop no
+  page overflow (grids scroll in .rc-scroll); 2K + Advanced back pills work. Not tested: Firestore sync of gm-ct- keys.
+  SECOND ROUND (owner, same day): TRADE BLOCK view (?view=block, 2nd tab): gm-ct-block-{owner} = [pid] per team (sandbox: set
+  any team's block). whoCanAfford(L, from, row) in leaguecontracts.js: per other team cap room + pool years free vs his
+  contract (price + seasons left move with him; trades aren't new signings, so no 4-season limit; taxi = $0 / 0 years):
+  Yes, or "Only if they send back $X+ and/or N+ yrs" with their cheapest single player that covers it AND keeps the seller
+  under the cap + pool ("e.g. Jimmy Butler III ($50, 1 season)"); when the seller is over the cap even after moving him it
+  says it can't take salary back. Cards: the team's block (verdict table per player), "Add players to the block" (+ Block,
+  N / 7 teams that can afford), "Other teams' blocks: can {team} afford them?". PLANNER now shows the day-one decisions:
+  summary line (N x 4 / 3 / 2 / 1 seasons, unset count in red = they expire here) + a "Day one: N seasons · 2027-28 –
+  2030-31" line on every row (rookie deals too); "Still under contract (day-one deals running)" card moved above Expiring
+  (owner: "I wouldn't be re-signing a player I initially signed on the 4 year deal": they were already carried, never in
+  Expiring, but it wasn't visible). Checked Nov 7 2026: Parma Suggest -> Sengun / Banchero 4 seasons carried with 3 left,
+  1-season deals in Expiring; Tatum on loganzarvell's block = 3 of 7 teams can afford, bigtrey via Butler; 320 px no overflow.
+  THIRD ROUND (owner, same day): TAB ORDER Initial contracts, Team status, Trade block, Offseason planner, Waiver wire (VIEWS;
+  default view = init when nothing is saved). UPCOMING FREE AGENTS card in the planner (upcomingFas in contracts-ui.js, above
+  "Add free agents and rookies"): every OTHER team's planSummer expiring players not re-signed in that team's own plan
+  (released = red tag, undecided = "not re-signed yet"), sorted by FP/G, top 30 + Show all, at the 2028-29 tier price, Fits?
+  vs this plan (payroll after the plan + price <= cap, 1+ pool year free); "Add" = an add in this plan (1 season); added
+  players now have a 1-4 length select (data-addlen). Red note when other teams have no day-one lengths set (their whole
+  roster shows as free agents). Checked Nov 7 2026: 175 listed with only Parma's lengths set, Doncic added at $50 then 3
+  seasons -> payroll $446, pool 24 / 50; 320 px no overflow.
+  FOURTH ROUND (owner, same day: "fix the first two" of the gaps list): (1) CONTRACTS BELONG TO THE PLAYER: one synced store
+  gm-ct-deals { at, d: { pid: { len, o (team that signed it), t } } } replaces gm-ct-init-{owner} (old per-team saves folded
+  in once on the first visit, that team = signer); buildLeague({ deals }) gives every row signer + traded (signer != the
+  roster he's on now), so a Sleeper trade carries length + price to the new team ("traded in (signed by X)" tag, .cx-trd);
+  the 4-season limit counts only deals THIS team signed (t.fours, lengthBlock); Suggest / Everyone 1 season skip traded-in
+  contracts (suggestLengths counts their years as fixed). Plans and trade blocks stay per team. (2) TIER CUTOFFS GROW WITH
+  THE NBA CAP: leaguecontracts.js TIER_BASE 2026, CAP_GROWTH 0.07 (owner may change when real caps are announced),
+  tierScale(s), tierFor(salary, s); priceFor reads a real salary against THAT season's grown cutoffs (rookie / no-deal tiers
+  unchanged) and estimates from his last salary against that last season's cutoffs; report-salary-nba.js is NOT changed
+  (current season, scale 1). Team status has a "Tier cutoffs by season" card (2026-27 .. 2030-31). Effect Nov 7 2026: cap
+  $500 -> $450 (avg $425; same as the report), Parma $567 -> $525; Sengun 2027-28 $37.3M -> $20 (near max starts at $37.5M);
+  Haliburton 2028-29 $55.7M -> $40 (max, was supermax); Booker 2029-30 $69.2M still $50. Tested: migration, simulated trade
+  (Sengun signed by loganzarvell, on Parma: tag shown, Parma fours 1 / 2 after Suggest, his deal untouched), 320 px no overflow.
+  FIFTH ROUND (owner, Nov 8 2026: "a rookie could technically be part of the team for 6 years (3 on taxi and 3 on rookie
+  deal)"): leaguecontracts.js TAXI_YEARS 3 + taxiOk(exp, season, cur) = Sleeper years_exp + seasons ahead < 3 (his first 3
+  NBA seasons, = commish.js TAXI_SEASONS). rookiePicks(DATA, history) now starts the $1 rookie deal clock at CALL-UP, not
+  the draft: history = every league season's Sleeper rosters (past = as the season ended, current = live; fetched by the
+  page), callUp = first season from his draft on where he finished on a roster off taxi; { ds, callUp, left }. Only OUR
+  rookie draft picks get the league rookie deal (De Larrea / Reed / Philon on Parma's taxi are FA pickups: their call-up
+  signs at their tier, $1 for NBA rookies anyway, 1 season). Grid taxi rows: "Taxi" while taxiOk (+ "last taxi season"),
+  then for picks a projected dashed "$1 R" x 3 (k 'proj', .cx-proj, first = "call-up due"; NOT counted in money / pool
+  until the planner calls him up), then FA; non-picks go to FA. Planner taxi card: "Can stay on taxi through X" or red
+  "Taxi time is up: call him up or he's released" (forced, warning in the totals), call-up = $1 x 3 for picks, his tier x 1
+  for others (planSummer takes cur). Checked Nov 8 2026: Stirtz (2026 pick) taxi 2026-28, call-up due 2029-30, R through
+  2031-32 = 6 seasons; da Silva called up 2025-26 -> 1 left at 2027-28; forced in summer 2028: Cardwell, Raynaud, Penda.
+  SIXTH ROUND (owner, Nov 8 2026: "any taxi rookie"): the league rookie deal ($1 x 3 from call-up) goes to every rookie draft
+  pick AND every player ever seen on a taxi squad in the roster history (undrafted rookies stashed there); rookiePicks adds
+  them with ds = first season seen on taxi, drafted false (a draft pick's own entry wins). Replaces the "only our draft
+  picks" rule of the fifth round: De Larrea / Reed / Philon / Cardwell now show taxi -> call-up due -> $1 R x 3 and the
+  planner calls them up at $1 x 3.
+  SEVENTH ROUND (owner, Nov 8 2026), rookiePicks(DATA, history, start, { taxiLog, cur }) rewritten: (1) DROPS RESET IT: the
+  latest waiver / free_agent ADD restarts a player's path; picked up straight onto an active roster = normal waiver add (no
+  rookie deal, even for a former draft pick / taxi player); back on the rookie path only if he is seen on a taxi squad after
+  that pickup (history season or taxi-log 'on' event). Trades and commissioner moves never reset. (2) TRADES KEEP IT
+  ("taxi trades retain the rookie contract as they were never dropped"): Sleeper puts a traded taxi player on the new team's
+  ACTIVE roster until it moves him, so in the season in progress a player whose last move is a trade that he left a taxi
+  squad in (data/taxi-log.json 'out' event by the sender within 3 days of the trade; before the log: on taxi at the previous
+  season's end) and with no 'up' event by the new team since = tradedTaxi: buildLeague treats him as taxi (exempt, no cap
+  hit, tag "traded off taxi: still taxi"), no call-up. Real case: Morez Johnson Jr., Nov 2 2026, ~17 h active on
+  BenDoverPlz123 before going to taxi. (3) SENT BACK DOWN at the trade deadline = "as if he had always been on the taxi":
+  callUp = first season off taxi AFTER the last season he finished on a taxi squad (earlier call-ups wiped; rookie deal
+  starts fresh at the next call-up; taxi time still ends after his 3rd NBA season). The page now loads data/taxi-log.json.
+  Tested Nov 8 2026 with made-up cases (traded off taxi -> still taxi; activated by new team -> call-up; sent back down ->
+  no call-up; dropped -> active = normal add; dropped -> taxi = rookie path) and live data: Tristan da Silva and Zaccharie
+  Risacher (2024 picks, dropped and re-added in 2026 straight to active) are now normal deals, not rookie deals.
+  NO FLOOR (owner, Nov 8 2026: "drop the floor"): the sandbox has a cap only. buildLeague no longer returns `floor`,
+  planSummer has no floor warning, the page dropped the floor marker / "under floor" labels (header says "no floor").
+  Reason given to the owner: low payroll here = young / rebuilding (rookies $1, taxi exempt), and with no real money a floor
+  needs an invented penalty. The reports (report-salary-nba.js FLOOR_SHARE etc.) still describe a floor: they're the
+  original proposals, unchanged.
+  ROSTER LIMIT (owner, Nov 8 2026: "23 is the max roster size"): leaguecontracts.js ROSTER_MAX 23 (active + IR, taxi not
+  counted = the Depth Chart's ROSTER_LIMIT rule) + TAXI_MAX 15. Shown: overview "Roster" column (red when over), team card
+  "roster N / 23 + M taxi", Initial contracts summary, planner totals (P.roster) + warnings (over 23 signed; over 15 left on
+  taxi). whoCanAfford adds needSpot (roster spot, or taxi spot for a taxi player): money + years fit but no spot =
+  "Roster full (26 / 23): send back any player or drop one" (Taxi full for taxi players); trade-block table has a Roster
+  column. Upcoming FAs "Fits?" needs P.roster < 23 ("Roster full"); Waiver wire "Fits?" needs a spot ("Drop first").
+  Nov 8 2026: every team but simeoncampbell7 (22) is over 23 today (jimmycooks2 28, tzola13 28, Parma 26...).
+  REST-OF-SEASON ADDS ARE EXEMPT from the years pool (owner, Nov 8 2026; the years-pool report said 1 year each): waiver
+  "Fits?" checks cap room + a roster spot only; SUGGEST_SPARE = 0 (Suggest can use all 50 years; raise it to hold some
+  back). Checked: Parma Suggest 50 / 50, 2 fours.
   TRADE TREES (tab=tradetree; owner, Nov 2 2026; logic `assets/tradetree.js`, no DOM; renderTradeTree in app.js, .tt-* in
   styles.css). Owner's answers: a tree starts from a TRADE (both sides), goes ALL THE WAY down (levels 0-1 open, deeper
   folded <details>; nodes on the way to ?p= stay open), each node = locked points + how it ended, Test features ONLY (no
@@ -1362,7 +1476,68 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   TRT3), matching the real brackets). Every traded-away player in Reports (reports 1 and 3) shows "Got back: ..."
   (owner, Oct 28 2026; tradeReturn(t, owner, pname): players added to him + picks sent to him, "2027 1st
   (simeoncampbell7's)" / "(his own)" from the pick's orig roster id; .rp-got small navy line). Players who ARRIVED
-  by trade (report 3 right side) show "Gave up: ..." (tradeReturn(..., gave = true): his drops + picks he sent). renderReports must stay async (renderCommish
+  by trade (report 3 right side) show "Gave up: ..." (tradeReturn(..., gave = true): his drops + picks he sent).
+  Report 4 (owner, Nov 7 2026) "Real NBA contracts by team + what a salary cap would look like": `assets/report-contracts.js`
+  reportContracts(h) (h = { DATA, esc, get, name, teamName, loadContracts }; .rc-* at the end of styles.css): data/
+  contracts.json + live rosters + this season's playerWeeks. Per team: total / counted (active + IR, taxi out, no-deal
+  players at NO_DEAL $1.3M) / active / IR / taxi bar with the cap line, top-3 share, expiring, next 2 seasons committed,
+  first-NBA-deal count (readContract with nbaSeasons = min(3, Sleeper years_exp)), no-deal count, $ per locked point,
+  "to get under" + 3 biggest deals (>= $10M, not taxi) with the fewest locked points, full player table (fold). Cap
+  section: League average / avg + 10% (RECOMMENDED, TOLERANCE) / avg + 20%, rounded up to CAP_STEP $25M, + next season's
+  commitments; floor = FLOOR_SHARE 70% of the cap; recommendations (league-scale cap, floor, taxi out / IR in, start next
+  season, soft cap with FAAB / draft penalty first, fixed check dates, rulebook edge cases) + concerns (salary vs value /
+  rookie deals, re-signings / extensions / NBA trades, IR salary, data gaps, Sleeper can't enforce, character / vote).
+  Nov 7 2026: $4.84B on rosters = 83% of all NBA salary, average counted $571.5M, recommended cap $650M, floor $450M;
+  over: jimmycooks2 +$179.6M (IR $176.9M), bigdaddyburk +$55.8M; under the floor: simeoncampbell7, BenDoverPlz123.
+  Report 5 (owner, Nov 7 2026) "Our own salary system: $, $$ and $$$ contracts with a cap": `assets/report-salary.js`
+  reportSalary(h) (h adds dynasty: () => gmDynasty(new URLSearchParams())). A PROPOSAL in plain words, rules = constants
+  at the top: price = MAX_PRICE $50 x (dynasty score / 100) ^ CURVE 1.6, min $1; tiers $ (1-7) / $$ (8-24) / $$$ (25+)
+  (.rs-tier chips); cap = average payroll (active + IR, TAXI EXEMPT per the owner) + 10% rounded up to $10, floor 75%;
+  contracts 1-MAX_YEARS 4 seasons, flat price, +10% per year past the first; rookie scale ROOKIE_SCALE (1.01 $8 ... 1.08
+  $4, round 2 $3/$2, round 3 $1), 3 seasons, clock starts when called up from taxi; waiver / FA adds = rest-of-season deal
+  at his price (FAAB unchanged, need cap room); cuts = 50% of this season's price as dead money, later years wiped, free for
+  $1 / pickups / first-season rookies; free agency = contracts tick down -> re-sign window (10% home discount) -> blind bids
+  (price + years, highest price wins, tie longer deal then worse finish, max $50) -> rookie draft; trades carry contracts,
+  both under the cap. "Today" view: drafted in the last 3 rookie drafts + not on taxi = rookie scale, else market price.
+  Nov 7 2026: cap $160, floor $120; over: TRT3 $183, jimmycooks2 $176, tzola13 $164; under the floor: bigtrey5456 $116,
+  BenDoverPlz123 $60; biggest: Wembanyama $50, Doncic $45, Jokic $36, Giannis $30, SGA $25.
+  Report 6 (owner, Nov 7 2026: "I don't love having contract values tied to dynasty score ... base off the real NBA
+  contract with tiers (supermax highest, rookie lowest)") "Salary system v2: prices from real NBA contracts":
+  `assets/report-salary-nba.js` reportSalaryNba(h) (h = DATA, esc, get, name, teamName, loadContracts). REVISED the same
+  day (owner: "$50 being the max (= supermax) ... a more rounded number for salary cap, 370 is wonky ... contract length
+  independent of their NBA contract"): NBA_TIERS on real salary (cutoffs in real dollars for 2026-27, raise them with the
+  NBA cap each summer): Supermax $55M+ $50, Max $45M+ $40, Near max $35M+ $30 ($$$), Big starter $25M+ $20, Starter $15M+
+  $15, Mid-level $8M+ $10 ($$), Role $4M+ $5, Bench $2.5M+ $3, Minimum $2 ($), ROOKIE_TIER $1 = first ROOKIE_SEASONS 4 NBA
+  seasons (Sleeper years_exp < 4, any pick, even with a later extension signed: Wembanyama), no NBA deal $1; taxi exempt;
+  cap = avg + 10% rounded to the nearest CAP_ROUND $50 (explained as "room for N supermax deals"; keep it fixed a few
+  seasons), floor 75% rounded to $50, hard cap. LEAGUE CONTRACTS 1-MAX_YEARS 4 seasons chosen by the team, independent of
+  the NBA deal; price = tier of his real salary for the first season of the league deal, LOCKED for the whole deal; our
+  rookie picks = LEAGUE_ROOKIE_YEARS 3 seasons at $1 (clock from call-up). Year: contracts tick down -> NBA draft / FA (sets
+  prices, raise cutoffs) -> re-sign window (new tier, any length) -> free agency = one Sleeper waiver / FAAB period, winner
+  picks the length -> rookie draft -> season-start cap + floor check; in season adds = rest-of-season deal at today's tier;
+  cuts = CUT_SHARE 50% of his price for EVERY season left (free: <= $3, pickups, first-season rookies); trades carry price +
+  years. Section 6 "lock-in bargains" = players whose real contract already puts them in a pricier tier next season
+  (nbaTier for season + 1, exp + 1). Nov 7 2026: avg $402 -> cap $450 (= 9 supermax deals), floor $350; over: jimmycooks2
+  $633, bigdaddyburk $531; under the floor: loganzarvell, simeoncampbell7, BenDoverPlz123; jumps: Wembanyama / Holmgren /
+  Brandon Miller / Amen Thompson $1 -> $30, SGA $30 -> $50.
+  Report 8 (owner, Nov 7 2026) "Salary system v2: a years pool for contract lengths": `assets/report-yearspool.js`
+  reportYearsPool(h) (h = DATA, esc, get, name, teamName, COMMISH). Plugs into v2 (prices / cap / dead money unchanged):
+  POOL 50 contract-years out at once per team (active + IR, taxi exempt), any length 1-MAX_YEARS 4 that fits,
+  FOUR_YEAR_PER_SUMMER 2 new 4-season deals a summer; pool refills as contracts tick down; rest-of-season adds use 1 year;
+  a cut player's years stay used until next summer (plus v2 dead money); trades need pool room on the receiving side; our
+  rookie picks use 3 years once called up. Table per team: under contract, rookie deals (years left), minimum years used
+  (rookie years + 1 per other player), spare years; example plan for COMMISH; comparison of 6 methods (free choice,
+  4-season cap only, years pool (recommended, .rc-rec row), tokens, length price premium, mirror NBA). Nov 7 2026: ~26
+  players per team outside taxi, spare years 18 (tzola13) to 24 (Parma).
+  Report 7 (owner, Nov 7 2026) "Token contracts: lengths only, no salaries": `assets/report-tokens.js` reportTokens(h)
+  (h adds COMMISH + dynasty, dynasty ONLY for the example of who'd get the long deals). Rules = constants at the top:
+  LAUNCH day one 2 x 4-yr, 3 x 3-yr, 5 x 2-yr, rest 1-yr; SUMMER tokens 1 x 4, 1 x 3, 2 x 2, 3 x 1 (7 signings, 14
+  contract-years), use or lose, optionally tradeable; MAX_YEARS 4; taxi exempt; rookie picks free ROOKIE_YEARS 3 deal
+  (clock from call-up); in-season adds = free rest-of-season deals; drops anytime, the token is just lost; trades carry
+  contracts; no in-season extensions. Offseason: contracts tick down -> token day -> re-sign window (commish releases the
+  rest on the deadline) -> free agency = one long Sleeper waiver / FAAB period (1-yr deal or attach a token) -> rookie
+  draft -> leftover tokens vanish. Nov 7 2026: ~26 players per team outside taxi, 111 expiring after year one, 56+ to
+  free agency (7 tokens each for re-signing). renderReports must stay async (renderCommish
   calls .catch() on every tab's result; a plain function crashed the office page).
   2K BREAKDOWN (tab=breakdown; owner's NBA 2K roster screenshot, Oct 25 2026; logic `assets/breakdown.js`, no
   DOM; renderBreakdown + BK state/BK_VIEWS in app.js, .bk-* in styles.css). Team picker (default COMMISH) +

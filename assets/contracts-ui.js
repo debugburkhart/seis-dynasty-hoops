@@ -1,0 +1,397 @@
+// Contracts page (Test features, owner Nov 7 2026; logic in assets/leaguecontracts.js). app.js passes its helpers in:
+// h = { DATA, esc, gmLoad, gmSave, COMMISH, teamName, name, loadContracts }. Four views (?view=):
+//   status = every team's payroll / years pool + one team's 4-season contract outlook (with when his NBA deal ends),
+//   plan   = offseason planner for the summer after day one (re-sign / release / cut / call up / add),
+//   init   = day-one contracts: a length 1-4 for every player within the pool (the other views read these),
+//   (planner also lists Upcoming free agents: other teams' expiring day-one deals not re-signed in their plans)
+//   ww     = waiver wire: every free agent's cap hit if added (owner asked the same day).
+//   block  = trade block: a team's players on the block + which teams can afford each contract (owner, Nov 7 2026).
+// Saved (gmSave, synced via 'gm-ct-'): gm-ct-deals { at, d: { pid: { len, o (team that signed it), t } } } = contracts BY PLAYER
+// (a traded player keeps his deal; older per-team gm-ct-init-{owner} saves are folded in once), gm-ct-plan-{owner} { at, re, cut, up,
+// adds }, gm-ct-guess { pid: price } (prices for players whose next real deal isn't signed), gm-ct-block-{owner} [pid], gm-ct-view, gm-ct-team.
+
+import { get } from './commish.js';
+import { betaCard } from './test-features.js';
+import { loadBreakdown } from './breakdown.js';
+import { money } from './contracts.js';
+import {
+  CUT_SHARE, FOUR_YEAR_PER_SUMMER, FREE_CUT, GRID_SEASONS, LEAGUE_ROOKIE_YEARS, MAX_YEARS, NBA_TIERS, POOL, PRICE_STEPS, ROOKIE_TIER,
+  START_SEASON, SUGGEST_AGE, SUGGEST_MIN_FPG, SUGGEST_SPARE, buildLeague, lengthBlock, nbaEnd, planSummer, priceFor, rookiePicks, span, suggestLengths, whoCanAfford, CAP_GROWTH, tierScale, TAXI_YEARS, ROSTER_MAX, TAXI_MAX,
+} from './leaguecontracts.js';
+
+// Tab order (owner, Nov 7 2026): set day-one contracts first, then see where teams stand, trade, plan the summer, waivers.
+const VIEWS = [['init', 'Initial contracts'], ['status', 'Team status'], ['block', 'Trade block'], ['plan', 'Offseason planner'], ['ww', 'Waiver wire']];
+const $ = n => `$${Number.isInteger(n) ? n : n.toFixed(1)}`;
+const f1 = x => (x == null ? '—' : (Math.round(x * 10) / 10).toFixed(1));
+const chip = t => (t ? `<span class="rs-tier rs-t${t.sym.length}" title="${t.label}">${t.sym}</span>` : '');
+const WW_PAGE = 50;
+
+export async function renderContracts(body, params, h) {
+  const { DATA, esc, gmLoad, gmSave, COMMISH, teamName, name } = h;
+  body.innerHTML = betaCard('Contract Sandbox', '<p class="cm-rule">Reading rosters, real NBA contracts and this season’s stats…</p>');
+  const cur = DATA.seasons.at(-1);
+  const season = Number(cur.season);
+  const [file, rosters, all, bk] = await Promise.all([
+    h.loadContracts(), get(`/v1/league/${cur.leagueId}/rosters?t=${Date.now()}`, []), get('/v1/players/nba', {}),
+    loadBreakdown(DATA, { list: 'league', withFa: true, season: cur.season }).catch(() => null),
+  ]);
+  if (!body.isConnected) return;
+  if (!file?.players) {
+    body.innerHTML = betaCard('Contract Sandbox', '<p class="empty">The NBA contract file (data/contracts.json) isn’t available yet: it’s built by the nightly update on Sundays.</p>');
+    return;
+  }
+  const info = {};
+  for (const p of bk?.players ?? []) info[p.pid] = { name: p.name, age: p.age, fpg: p.avg?.gp ? p.avg.fp : null, gp: p.tot?.gp ?? 0, team: p.team, pos: p.mainPos, owner: p.owner };
+  const owners = (rosters ?? []).filter(r => r.owner_id).map(r => r.owner_id);
+  // Each league season's rosters as they ended (current season = live) to find when each rookie pick left taxi.
+  const hist = { [season]: rosters };
+  await Promise.all(DATA.seasons.filter(x => Number(x.season) !== season && x.leagueId).map(x => get(`/v1/league/${x.leagueId}/rosters`, []).then(r => { hist[Number(x.season)] = r; })));
+  // Taxi moves logged nightly (data/taxi-log.json): tells a trade off a taxi squad from a real call-up.
+  const taxiLog = await fetch(`data/taxi-log.json?t=${Date.now()}`, { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).catch(() => null);
+  const rookies = rookiePicks(DATA, hist, START_SEASON, { taxiLog, cur: season });
+  const S = { view: params.get('view') || gmLoad('gm-ct-view', 'init'), team: params.get('team') || gmLoad('gm-ct-team', COMMISH), ww: { q: '', sort: 'fpg', n: WW_PAGE } };
+  if (!VIEWS.some(([v]) => v === S.view)) S.view = 'init';
+  if (!owners.includes(S.team)) S.team = owners.includes(COMMISH) ? COMMISH : owners[0];
+
+  // Contracts by player. First visit after the change: fold the old per-team saves in (that team = the signer).
+  const dealsNow = () => gmLoad('gm-ct-deals', null);
+  if (!dealsNow()) {
+    const d = {};
+    for (const o of owners) for (const [pid, len] of Object.entries(gmLoad(`gm-ct-init-${o}`, { len: {} }).len ?? {})) d[pid] = { len: Number(len), o, t: Date.now() };
+    gmSave('gm-ct-deals', { at: Date.now(), d });
+  }
+  const deals = () => dealsNow()?.d ?? {};
+  const saveDeals = upd => gmSave('gm-ct-deals', { at: Date.now(), d: upd({ ...deals() }) });
+  const guesses = () => gmLoad('gm-ct-guess', {});
+  const league = () => buildLeague({ rosters, all, file, info, deals: deals(), guesses: guesses(), rookies, cur: season });
+  const tn = o => `${esc(teamName(o, cur.season))} <small>(${esc(name(o))})</small>`;
+  const here = () => `#/commish?tab=contracts&view=${S.view}&team=${S.team}`;
+  const back = () => `&back=${encodeURIComponent(here())}&backl=${encodeURIComponent('Contracts')}`;
+  const card2k = (pid, label) => `<a class="cx-name" href="#/commish?tab=breakdown&list=league&p=${pid}${info[pid]?.owner ? '' : '&fa=1'}${back()}" title="2K breakdown card">${esc(label)}</a>`;
+  const adv = pid => `<a class="cx-adv" href="#/commish?tab=advanced&p=${pid}${back()}" title="Advanced stats">Adv</a>`;
+  const who = r => `${esc([r.pos, r.team || 'no NBA team', r.age != null ? `age ${r.age}` : ''].filter(Boolean).join(' · '))}${r.fpg != null ? ` · ${f1(r.fpg)} FP/G` : ''}${r.slot === 'ir' ? ' · <b class="cx-ir">IR</b>' : r.slot === 'taxi' ? ' · taxi' : ''}${r.tradedTaxi ? ' · <b class="cx-trd" title="Traded off a taxi squad: Sleeper puts him on the active roster until his new team moves him, so he still counts as taxi (no call-up, no cap hit)">traded off taxi: still taxi</b>' : ''}${r.traded ? ` · <b class="cx-trd" title="His contract came with him in a trade">traded in</b> (signed by ${esc(name(r.signer))})` : ''}`;
+  const nbaCell = r => {
+    if (!r.c?.seasons?.length) return '<small>No NBA deal</small>';
+    if (r.c.waived?.length) return `<small>Waived (${esc(r.c.waived.join('/'))} pays)</small>`;
+    return `${r.real ? money(r.real) : '—'}<small>ends ${span(r.nbaEnd)}</small>`;
+  };
+  const priceTxt = (price, est, why) => `<span${est ? ` class="cx-est" title="${esc(why || 'estimate: his real deal for that season isn’t signed yet')}"` : ''}>${est ? '~' : ''}${$(price)}</span>`;
+  const bar = (val, cap, max) => `<div class="rc-bar"><span class="rc-a${val > cap ? ' cx-overbar' : ''}" style="width:${Math.min(100, (100 * val) / max)}%"></span><i class="rc-cap" style="left:${(100 * cap) / max}%" title="Cap ${$(cap)}"></i></div>`;
+  const room = (val, cap) => `<span class="${val > cap ? 'rc-over' : 'rc-ok'}">${val > cap ? `${$(val - cap)} over` : `${$(cap - val)} room`}</span>`;
+
+  // ---------------- page frame ----------------
+  const page = document.createElement('div');
+  page.className = 'cx-page';
+  body.replaceChildren(page);
+  const draw = () => {
+    gmSave('gm-ct-view', S.view);
+    gmSave('gm-ct-team', S.team);
+    try { history.replaceState(null, '', here() + (params.get('back') ? `&back=${encodeURIComponent(params.get('back'))}&backl=${encodeURIComponent(params.get('backl') ?? '')}` : '')); } catch { /* fine */ }
+    const L = league();
+    const T = L.teams.find(t => t.owner === S.team) ?? L.teams[0];
+    const head = `<div class="cx-head">
+      <div class="dvp-seg" role="group">${VIEWS.map(([v, l]) => `<button type="button" class="ct-chip${S.view === v ? ' on' : ''}" data-view="${v}">${l}</button>`).join('')}</div>
+      <label class="cx-pick">Team <select data-team>${L.teams.map(t => `<option value="${t.owner}"${t.owner === S.team ? ' selected' : ''}>${esc(teamName(t.owner, cur.season))} (${esc(name(t.owner))})</option>`).join('')}</select></label>
+    </div>
+    <div class="rp-stats cx-stats">
+      <div><b>${$(L.cap)}</b><span>cap (league average ${$(Math.round(L.avg))} + 10%, nearest $50) · no floor</span></div>
+      <div><b>${POOL} yrs</b><span>contract-years per team · ${FOUR_YEAR_PER_SUMMER} new 4-season deals a summer</span></div>
+      <div><b>${span(START_SEASON)}</b><span>day one: prices = tier of his real ${span(START_SEASON)} salary, locked for the deal</span></div>
+    </div>`;
+    const views = { status: viewStatus, block: viewBlock, plan: viewPlan, init: viewInit, ww: viewWaivers };
+    page.innerHTML = betaCard('Contract Sandbox', head + '<p class="cm-rule">A sandbox for the proposed league contracts (Reports: “Salary system v2” + “years pool”). Taxi is exempt; active roster + IR count. Saved on this account (synced), nothing is official yet.</p>', { sub: `Real salaries ${esc(String(file.source?.read ?? file.at ?? '').slice(0, 10))}` }) + views[S.view](L, T);
+    if (S.view === 'ww') drawWaivers(L, T);
+  };
+
+  // ---------------- 1. Team status ----------------
+  function viewStatus(L, T) {
+    const max = Math.max(L.cap, ...L.teams.map(t => t.payroll)) * 1.05;
+    const overview = `<div class="rc-scroll"><table class="rc-tbl cx-ov"><thead><tr><th>Team</th><th class="n">Payroll ${span(L.start)}</th><th class="n">Cap room</th><th class="n">Roster</th><th class="n">Pool used</th><th class="n">4-yr deals</th><th class="n">Lengths set</th><th class="n">Est. prices</th></tr></thead><tbody>
+      ${[...L.teams].sort((a, b) => b.payroll - a.payroll).map(t => `<tr class="${t.owner === S.team ? 'cx-me' : ''}" data-goteam="${t.owner}"><td><b>${tn(t.owner)}</b>${bar(t.payroll, L.cap, max)}</td>
+        <td class="n"><b>${$(t.payroll)}</b></td><td class="n">${room(t.payroll, L.cap)}</td>
+        <td class="n ${t.counted > ROSTER_MAX ? 'rc-over' : ''}">${t.counted} / ${ROSTER_MAX}</td>
+        <td class="n ${t.pool > POOL ? 'rc-over' : ''}">${t.pool} / ${POOL}</td><td class="n ${t.fours > FOUR_YEAR_PER_SUMMER ? 'rc-over' : ''}">${t.fours} / ${FOUR_YEAR_PER_SUMMER}</td>
+        <td class="n">${t.counted - t.unset - t.rows.filter(r => r.kind === 'rookie').length} of ${t.rows.filter(r => r.kind === 'deal').length}</td><td class="n">${t.est || ''}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="cm-rule">Tap a team to see its outlook. “Lengths set” = players given a length on Initial contracts (unset = 1 season). Est. prices = players whose real ${span(L.start)} deal isn’t signed yet (estimated, or your guess on Initial contracts).</p>`;
+
+    const cell = (r, g) => {
+      const mark = r.nbaEnd != null && g.s === r.nbaEnd + 1;
+      const tag = mark ? `<em class="cx-endtag" title="His real NBA deal ends after ${span(r.nbaEnd)}: a new price is possible from ${span(g.s)}, but only when his league deal ends.">${g.k === 'fa' ? 'new NBA deal' : 'NBA deal ends · locked'}</em>` : '';
+      if (g.k === 'taxi') return `<td class="cx-c cx-taxi">Taxi${g.last ? '<em class="cx-endtag">last taxi season</em>' : ''}${tag}</td>`;
+      if (g.k === 'proj') return `<td class="cx-c cx-proj" title="Projected: off taxi after his 3rd NBA season, then the $1 league rookie deal for ${LEAGUE_ROOKIE_YEARS} seasons (not counted until he's called up)">${$(g.price)} <span class="cx-r">R</span>${g.first ? '<em class="cx-endtag">call-up due</em>' : ''}${tag}</td>`;
+      if (g.k === 'fa') return `<td class="cx-c cx-fa${mark ? ' cx-end' : ''}" title="Not under league contract: re-sign window / free agency at his ${span(g.s)} tier">FA · ${priceTxt(g.price, g.est, g.why)}${tag}</td>`;
+      return `<td class="cx-c cx-on${g.k === 'rookie' ? ' cx-rk' : ''}${mark ? ' cx-end' : ''}">${priceTxt(g.price, g.est, r.why)} ${g.k === 'rookie' ? '<span class="cx-r" title="League rookie deal">R</span>' : chip(g.tier)}${tag}</td>`;
+    };
+    const signed = T.rows.filter(r => r.kind !== 'taxi');
+    const taxi = T.rows.filter(r => r.kind === 'taxi');
+    const row = r => `<tr class="${r.slot}"><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}${r.kind === 'deal' ? ` · <b>${r.len} season${r.len === 1 ? '' : 's'}</b>${r.set ? '' : ' (unset)'}` : r.kind === 'rookie' ? ` · rookie deal (called up ${span(r.callUp)}), ${r.len} left` : ''}</small></td>
+      <td class="n cx-nba">${nbaCell(r)}</td>${r.grid.map(g => cell(r, g)).join('')}</tr>`;
+    const grid = `<div class="rc-scroll cx-gridwrap"><table class="rc-tbl cx-grid"><thead><tr><th>Player</th><th class="n">Real now</th>${L.seasons.map(s => `<th class="cx-c">${span(s)}</th>`).join('')}</tr></thead><tbody>
+      ${signed.map(row).join('')}
+      <tr class="cx-tot"><td><b>Committed</b><small class="cx-sub">players under league contract</small></td><td></td>${T.bySeason.map((m, i) => `<td class="cx-c"><b class="${i === 0 && m > L.cap ? 'rc-over' : ''}">${$(m)}</b><small>${T.underBySeason[i]} pl.</small></td>`).join('')}</tr>
+      ${taxi.length ? `<tr class="cx-sep"><td colspan="${2 + GRID_SEASONS}">Taxi squad (exempt for his first ${TAXI_YEARS} NBA seasons; every taxi rookie then gets the $1 rookie deal for ${LEAGUE_ROOKIE_YEARS} seasons from call-up = up to 6 seasons on the team)</td></tr>${taxi.map(row).join('')}` : ''}
+    </tbody></table></div>`;
+    const teamCard = betaCard(`${tn(T.owner)} · contract outlook`, `
+      <div class="cx-sum">
+        <div><b>${$(T.payroll)}</b> payroll ${span(L.start)} · ${room(T.payroll, L.cap)}${bar(T.payroll, L.cap, Math.max(L.cap, T.payroll) * 1.1)}</div>
+        <div><b>${T.pool}</b> / ${POOL} contract-years used · <b>${POOL - T.pool}</b> free · 4-season deals ${T.fours} / ${FOUR_YEAR_PER_SUMMER} · roster <b class="${T.counted > ROSTER_MAX ? 'rc-over' : ''}">${T.counted} / ${ROSTER_MAX}</b> + ${T.taxi} taxi<div class="rc-bar"><span class="rc-a${T.pool > POOL ? ' cx-overbar' : ''}" style="width:${Math.min(100, (100 * T.pool) / POOL)}%"></span></div></div>
+      </div>
+      <div class="rc-key cx-key"><span class="cx-k cx-on"></span> under league contract (price locked) <span class="cx-k cx-fa"></span> FA: re-sign / free agency at that season’s tier <span class="cx-k cx-end"></span> his real NBA deal has ended: new price possible, only once his league deal ends · ~ = estimate · R = league rookie deal</div>
+      ${grid}
+      <p class="cm-rule">Lengths come from <a href="${here().replace(/view=\w+/, 'view=init')}">Initial contracts</a>. Names open the 2K card, “Adv” opens Advanced Stats.</p>`, { sub: `${T.counted} signed · ${T.taxi} taxi` });
+    // Tier cutoffs per season (they grow with the NBA cap, CAP_GROWTH a year from the 2026-27 numbers).
+    const cuts = betaCard('Tier cutoffs by season', `<p class="cm-rule">A player’s price is the tier of his real salary in the season his league deal starts. The cutoffs are 2026-27 dollars grown ${Math.round(CAP_GROWTH * 100)}% a season with the NBA cap, so a normal max deal stays a max deal later on. First ${4} NBA seasons = rookie tier ($1).</p>
+      <div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Tier</th><th class="n">Price</th>${[season, ...L.seasons].map(s => `<th class="n">${span(s)}</th>`).join('')}</tr></thead><tbody>
+        ${NBA_TIERS.map(t => `<tr><td>${chip(t)} ${esc(t.label)}</td><td class="n"><b>${$(t.price)}</b></td>${[season, ...L.seasons].map(s => `<td class="n">${t.min ? `${money(t.min * tierScale(s))}+` : 'any'}</td>`).join('')}</tr>`).join('')}
+      </tbody></table></div>`, { sub: `+${Math.round(CAP_GROWTH * 100)}% a season` });
+    return betaCard('League overview', overview, { sub: `${span(L.start)} day one` }) + teamCard + cuts;
+  }
+
+  // ---------------- 3. Initial contracts ----------------
+  function viewInit(L, T) {
+    const deals = T.rows.filter(r => r.kind === 'deal');
+    const rk = T.rows.filter(r => r.kind === 'rookie');
+    const taxi = T.rows.filter(r => r.kind === 'taxi');
+    const g = guesses();
+    const lenBtns = r => `<div class="cx-len">${[1, 2, 3, 4].map(n => {
+      const why = n === r.len ? '' : lengthBlock(T, r, n);
+      return `<button type="button" class="ct-chip${n === r.len ? ' on' : ''}" data-len="${n}" data-pid="${r.pid}"${why ? ` disabled title="${esc(why)}"` : ''}>${n}</button>`;
+    }).join('')}</div>`;
+    const guessSel = r => (r.guessable ? `<select class="cx-guess" data-guess="${r.pid}" title="His real ${span(L.start)} deal isn’t signed yet: pick the price you expect"><option value="">est. ${$(priceFor(r.c, L.start, r.exp, season).price)}</option>${PRICE_STEPS.map(p => `<option value="${p}"${g[r.pid] === p ? ' selected' : ''}>${$(p)}</option>`).join('')}</select>` : '');
+    const row = r => `<tr class="${r.slot}"><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small></td><td class="n cx-nba">${nbaCell(r)}</td>
+      <td class="n">${priceTxt(r.price, !r.known, r.why)} ${chip(r.tier)}${guessSel(r)}</td><td>${lenBtns(r)}</td></tr>`;
+    return betaCard(`${tn(T.owner)} · day-one contracts`, `
+      <div class="cx-sum">
+        <div><b>${T.pool}</b> / ${POOL} contract-years · <b>${POOL - T.pool}</b> free<div class="rc-bar"><span class="rc-a${T.pool > POOL ? ' cx-overbar' : ''}" style="width:${Math.min(100, (100 * T.pool) / POOL)}%"></span></div></div>
+        <div><b>${T.fours}</b> / ${FOUR_YEAR_PER_SUMMER} four-season deals · payroll <b>${$(T.payroll)}</b> ${room(T.payroll, L.cap)} · roster <b class="${T.counted > ROSTER_MAX ? 'rc-over' : ''}">${T.counted} / ${ROSTER_MAX}</b></div>
+      </div>
+      <div class="cx-btns"><button type="button" class="btn" data-fill="one">Everyone 1 season</button><button type="button" class="btn" data-fill="suggest">Suggest (age + FP/G)</button></div>
+      <p class="cm-rule">Pick a length (1-${MAX_YEARS} seasons) for every player; unassigned = 1 season. Lengths never change the price (his ${span(L.start)} tier, locked for the deal). Greyed buttons would break the ${POOL}-year pool or the ${FOUR_YEAR_PER_SUMMER} four-season deals. Suggest: best FP/G first, age ≤ ${SUGGEST_AGE[0][0]} = 4, ≤ ${SUGGEST_AGE[1][0]} = 3, ≤ ${SUGGEST_AGE[2][0]} = 2, older or under ${SUGGEST_MIN_FPG} FP/G = 1, within the pool (rest-of-season waiver adds don't use pool years, so all ${POOL} can go to day-one deals). Contracts belong to the <b>player</b>: if he’s traded in Sleeper, his length and price go with him (“traded in”), and the quick fills leave those alone.</p>
+      <div class="rc-scroll"><table class="rc-tbl cx-init"><thead><tr><th>Player</th><th class="n">Real now</th><th class="n">Price ${span(L.start)}</th><th>Seasons</th></tr></thead><tbody>
+        ${deals.map(row).join('')}
+        ${rk.length ? `<tr class="cx-sep"><td colspan="4">League rookie deals (rookie draft picks and called-up taxi rookies; fixed: $1, ${LEAGUE_ROOKIE_YEARS} seasons from call-up)</td></tr>${rk.map(r => `<tr><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small></td><td class="n cx-nba">${nbaCell(r)}</td><td class="n">${$(1)} <span class="cx-r">R</span></td><td><small>${r.len} season${r.len === 1 ? '' : 's'} left</small></td></tr>`).join('')}` : ''}
+      </tbody></table></div>
+      ${taxi.length ? `<details class="rp-more"><summary>Taxi squad: ${taxi.length} exempt (no contract until called up)</summary><p class="cm-rule">${taxi.map(r => `${card2k(r.pid, r.name)}`).join(' · ')}</p></details>` : ''}`, { sub: `${deals.filter(r => r.set).length} of ${deals.length} set` });
+  }
+
+  // ---------------- 2. Offseason planner ----------------
+  // ---------------- Trade block ----------------
+  // gm-ct-block-{owner} = [pid] per team (sandbox: you can put any team's players on its block).
+  const blockOf = o => gmLoad(`gm-ct-block-${o}`, []);
+  function viewBlock(L, T) {
+    const mine = new Set(blockOf(T.owner));
+    const contractTxt = r => (r.kind === 'taxi' ? 'Taxi: exempt, no contract' : `${priceTxt(r.price, !r.known, r.why)} ${r.kind === 'rookie' ? '<span class="cx-r">R</span>' : chip(r.tier)} × ${r.len} season${r.len === 1 ? '' : 's'} (through ${span(L.start + r.len - 1)})`);
+    // The seller is still over the cap after sending him away: it can't take back any salary.
+    // Money and years fit, but no roster (or taxi) spot: any player back, or a drop, makes room.
+    const spotTxt = (x, r) => (r.kind === 'taxi' ? `<b class="rc-over">Taxi full</b> (${x.taxi} / ${TAXI_MAX}): send back or drop a taxi player` : `<b class="rc-over">Roster full</b> (${x.roster} / ${ROSTER_MAX}): send back any player or drop one`);
+    const sellerStuck = (from, r) => { const s = L.teams.find(t => t.owner === from); return s.payroll - (r.kind === 'taxi' ? 0 : r.price) > L.cap; };
+    const verdicts = (from, r) => {
+      const v = whoCanAfford(L, from, r);
+      const ok = v.filter(x => x.fits).length;
+      return `<p class="cx-afford"><b class="${ok ? 'rc-ok' : 'rc-over'}">${ok} of ${v.length} teams can afford him</b> as is.</p>
+      <div class="rc-scroll"><table class="rc-tbl cx-aff"><thead><tr><th>Team</th><th class="n">Cap room</th><th class="n">Years free</th><th class="n">Roster</th><th>Can they take him?</th></tr></thead><tbody>
+        ${v.map(x => `<tr class="${x.fits ? 'cx-yes' : 'cx-no'}"><td>${tn(x.owner)}</td><td class="n ${x.room < 0 ? 'rc-over' : ''}">${x.room < 0 ? `−${$(-x.room)}` : $(x.room)}</td><td class="n">${x.years}</td><td class="n ${x.roster > ROSTER_MAX ? 'rc-over' : ''}">${x.roster} / ${ROSTER_MAX}</td>
+          <td>${x.fits ? '<b class="rc-ok">Yes</b>' : !x.needMoney && !x.needYears ? spotTxt(x, r) : `<b class="rc-over">Only if they send back</b> ${[x.needMoney ? `${$(x.needMoney)}+` : '', x.needYears ? `${x.needYears}+ yrs` : ''].filter(Boolean).join(' and ')}${x.back ? `<small class="cx-sub">e.g. ${card2k(x.back.pid, x.back.name)} (${$(x.back.price)}, ${x.back.len} season${x.back.len === 1 ? '' : 's'})</small>` : `<small class="cx-sub">${sellerStuck(from, r) ? `${esc(teamName(from, cur.season))} is over the cap even after moving him, so it can’t take salary back` : 'no single player of theirs covers it and keeps both teams legal'}</small>`}`}</td></tr>`).join('')}
+      </tbody></table></div>`;
+    };
+    const blocked = T.rows.filter(r => mine.has(r.pid));
+    const yours = blocked.map(r => `<div class="cx-blk"><div class="cx-blkh"><div>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small></div><button type="button" class="ct-chip on" data-block="${r.pid}" title="Take him off the block">On the block ×</button></div>
+      <div class="cx-blkc">Contract: ${contractTxt(r)}</div>${verdicts(T.owner, r)}</div>`).join('') || '<p class="cm-rule">Nobody on the block yet: add players below.</p>';
+    const pick = `<div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Player</th><th class="n">Contract</th><th class="n">Teams that can afford</th><th></th></tr></thead><tbody>
+      ${T.rows.map(r => { const n = whoCanAfford(L, T.owner, r).filter(x => x.fits).length; return `<tr class="${r.slot}"><td>${card2k(r.pid, r.name)}<small class="cx-sub">${who(r)}</small></td><td class="n">${r.kind === 'taxi' ? '<small>Taxi</small>' : `${$(r.price)} × ${r.len}`}</td><td class="n">${n} / ${L.teams.length - 1}</td>
+        <td><button type="button" class="ct-chip${mine.has(r.pid) ? ' on' : ''}" data-block="${r.pid}">${mine.has(r.pid) ? 'On block' : '+ Block'}</button></td></tr>`; }).join('')}
+    </tbody></table></div>`;
+    // Other teams' blocks: can the picked team take each one on?
+    const others = L.teams.filter(t => t.owner !== T.owner).flatMap(t => { const b = new Set(blockOf(t.owner)); return t.rows.filter(r => b.has(r.pid)).map(r => ({ t, r })); });
+    const otherRows = others.map(({ t, r }) => {
+      const me = whoCanAfford(L, t.owner, r).find(x => x.owner === T.owner);
+      return `<tr><td>${card2k(r.pid, r.name)}<small class="cx-sub">${tn(t.owner)} · ${who(r)}</small></td><td class="n">${r.kind === 'taxi' ? '<small>Taxi</small>' : `${$(r.price)} × ${r.len}`}</td>
+        <td>${me.fits ? '<b class="rc-ok">Yes</b>' : !me.needMoney && !me.needYears ? spotTxt(me, r) : `<b class="rc-over">Send back</b> ${[me.needMoney ? `${$(me.needMoney)}+` : '', me.needYears ? `${me.needYears}+ yrs` : ''].filter(Boolean).join(' and ')}${me.back ? `<small class="cx-sub">e.g. ${esc(me.back.name)} (${$(me.back.price)} × ${me.back.len})</small>` : ''}`}</td></tr>`;
+    }).join('');
+    return betaCard(`${tn(T.owner)} · trade block`, `
+      <p class="cm-rule">A contract moves with the player in a trade (same price, same seasons left), and the team getting him must stay under the ${$(L.cap)} cap and inside its ${POOL}-year pool (day-one ${span(L.start)} numbers). “Send back” = salary and/or contract-years they’d have to return; the example is their cheapest single player that covers it and keeps ${esc(teamName(T.owner, cur.season))} legal too.</p>
+      ${yours}`, { sub: `${blocked.length} on the block` })
+      + betaCard('Add players to the block', pick, { sub: 'Tap + Block' })
+      + betaCard(`Other teams’ blocks: can ${esc(teamName(T.owner, cur.season))} afford them?`, otherRows ? `<div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Player</th><th class="n">Contract</th><th>Fits?</th></tr></thead><tbody>${otherRows}</tbody></table></div>` : '<p class="cm-rule">No other team has anyone on its block. Pick another team above to set up its block (sandbox).</p>', { sub: `${others.length} players` });
+  }
+
+  const planOf = o => ({ re: {}, cut: [], up: [], adds: [], ...gmLoad(`gm-ct-plan-${o}`, {}) });
+  const savePlan = (o, p) => gmSave(`gm-ct-plan-${o}`, { ...p, at: Date.now() });
+  // Upcoming free agents (owner, Nov 7 2026): every OTHER team's players whose day-one deal ends before `summer` and that
+  // its own plan doesn't re-sign (released, or not decided = released on the deadline), at their new tier price, with
+  // whether the planned team could fit him (payroll after this plan + his price <= cap, pool + 1 season <= 50).
+  S.faAll ??= false;
+  function upcomingFas(L, T, P, summer) {
+    const g = guesses();
+    const priceAt = (r, s) => priceFor(r.c, s, r.exp, season, g[r.pid] ?? null);
+    const inPlan = new Set(P.adds.map(a => a.pid).filter(Boolean));
+    const list = L.teams.filter(t => t.owner !== T.owner).flatMap(t => {
+      const Q = planSummer(t, planOf(t.owner), { cap: L.cap, summer, priceAt, cur: season });
+      return Q.expiring.filter(r => !(r.choice > 0)).map(r => ({ ...r, from: t.owner, released: r.choice === 0 }));
+    }).sort((a, b) => (b.fpg ?? 0) - (a.fpg ?? 0) || b.next.price - a.next.price);
+    const room = L.cap - P.money[0];
+    const free = POOL - P.pool;
+    const shown = S.faAll ? list : list.slice(0, 30);
+    const spot = P.roster < ROSTER_MAX;
+    const fits = spot ? list.filter(r => r.next.price <= room && free >= 1).length : 0;
+    const noLens = L.teams.filter(t => t.owner !== T.owner && !t.rows.some(r => r.set)).map(t => esc(name(t.owner)));
+    return `<p class="cm-rule">${list.length} players on other teams are on 1-season day-one deals (or rookie deals ending) and aren’t re-signed in their team’s plan, so they’d hit free agency at their <b>${span(summer)}</b> tier. With this plan ${esc(teamName(T.owner, cur.season))} has <b>${room < 0 ? `no room (${$(-room)} over)` : `${$(room)} of cap room`}</b> and <b>${free}</b> pool years free: <b>${fits}</b> of them fit on a 1-season deal. “Add” puts him in this plan (1 season; change it below).${noLens.length ? ` <span class="rc-over">No day-one lengths set yet for ${noLens.join(", ")}: everyone on those teams counts as a 1-season deal, so their whole rosters show here.</span>` : ''}</p>
+      <div class="rc-scroll"><table class="rc-tbl cx-ufa"><thead><tr><th>Player</th><th class="n">FP/G</th><th class="n">Price ${span(summer)}</th><th class="n">Fits?</th><th></th></tr></thead><tbody>
+        ${shown.map(r => {
+          const ok = r.next.price <= room && free >= 1 && spot;
+          return `<tr><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${tn(r.from)} · ${esc([r.pos, r.team, r.age != null ? `age ${r.age}` : ''].filter(Boolean).join(' · '))}</small><small class="cx-sub">${r.released ? '<b class="rc-over">Released in their plan</b>' : 'Not re-signed in their plan (yet)'} · now ${$(r.price)}</small></td>
+            <td class="n">${f1(r.fpg)}</td><td class="n"><b>${priceTxt(r.next.price, !r.next.known, r.next.why)}</b> ${chip(r.next.tier)}</td><td class="n ${ok ? 'rc-ok' : 'rc-over'}">${ok ? 'Yes' : !spot ? 'Roster full' : free < 1 ? 'No years' : 'No room'}</td>
+            <td>${inPlan.has(r.pid) ? '<small>In plan</small>' : `<button type="button" class="ct-chip" data-faadd="${r.pid}" data-price="${r.next.price}">Add</button>`}</td></tr>`;
+        }).join('') || '<tr><td colspan="5"><small>Nobody: every other team’s day-one deals run past this summer or are re-signed.</small></td></tr>'}
+      </tbody></table></div>
+      ${list.length > 30 ? `<div class="cx-btns"><button type="button" class="btn" data-faall>${S.faAll ? 'Show top 30' : `Show all ${list.length}`}</button></div>` : ''}`;
+  }
+
+  function viewPlan(L, T) {
+    const summer = L.start + 1;
+    const g = guesses();
+    const plan = planOf(T.owner);
+    const P = planSummer(T, plan, { cap: L.cap, summer, priceAt: (r, s) => priceFor(r.c, s, r.exp, season, g[r.pid] ?? null), cur: season });
+    const maxM = Math.max(L.cap, ...P.money) * 1.08;
+    const sel = r => `<select data-re="${r.pid}"><option value=""${r.choice == null ? ' selected' : ''}>— decide —</option>${[1, 2, 3, 4].map(n => `<option value="${n}"${r.choice === n ? ' selected' : ''}>Re-sign ${n} season${n === 1 ? '' : 's'}</option>`).join('')}<option value="0"${r.choice === 0 ? ' selected' : ''}>Release</option></select>`;
+    const nameCell = r => `${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small>`;
+    // The day-one decision behind each row (owner, Nov 7 2026: "show the decisions of the initial contracts").
+    const dayOne = r => (r.kind === 'rookie'
+      ? `<span class="cx-d1">League rookie deal · ${r.len} season${r.len === 1 ? '' : 's'} left on day one · through ${span(L.start + r.len - 1)}</span>`
+      : `<span class="cx-d1${r.set ? '' : ' unset'}">Day one: <b>${r.len} season${r.len === 1 ? '' : 's'}</b> ${r.set ? '' : '(not set = 1) '}· ${span(L.start)}${r.len > 1 ? ` – ${span(L.start + r.len - 1)}` : ' only'}</span>`);
+    const deals = T.rows.filter(r => r.kind === 'deal');
+    const byLen = [4, 3, 2, 1].map(n => [n, deals.filter(r => r.len === n).length]).filter(([, k]) => k);
+    const unset = deals.filter(r => !r.set).length;
+    const d1Line = `<p class="cx-d1line">Day-one contracts (from <a href="${here().replace(/view=\w+/, 'view=init')}">Initial contracts</a>): ${byLen.map(([n, k]) => `<b>${k}</b> × ${n} season${n === 1 ? '' : 's'}`).join(' · ')}${unset ? ` · <span class="rc-over">${unset} not set (= 1 season, so they expire here)</span>` : ''}. Players signed for 2+ seasons are still under contract this summer and can’t be re-signed; only 1-season deals expire.</p>`;
+    const fa =Object.entries(info).filter(([pid]) => all?.[pid]?.team).map(([pid, p]) => `<option value="${esc(p.name)}">`).join('');
+    const totals = `<div class="cx-sum cx-plansum">
+        <div><b>${$(P.money[0])}</b> payroll ${span(summer)} · ${room(P.money[0], L.cap)}${bar(P.money[0], L.cap, maxM)}</div>
+        <div><b>${P.pool}</b> / ${POOL} contract-years · 4-season deals this summer <b class="${P.fours > FOUR_YEAR_PER_SUMMER ? 'rc-over' : ''}">${P.fours} / ${FOUR_YEAR_PER_SUMMER}</b> · roster <b class="${P.roster > ROSTER_MAX ? 'rc-over' : ''}">${P.roster} / ${ROSTER_MAX}</b><div class="rc-bar"><span class="rc-a${P.pool > POOL ? ' cx-overbar' : ''}" style="width:${Math.min(100, (100 * P.pool) / POOL)}%"></span></div></div>
+      </div>
+      ${P.warn.length ? `<ul class="cx-warn">${P.warn.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : '<p class="cx-good">Under the cap, inside the pool and the 4-season limit.</p>'}
+      <div class="rc-scroll"><table class="rc-tbl cx-money"><thead><tr><th>After this plan</th>${P.seasons.map(s => `<th class="n">${span(s)}</th>`).join('')}</tr></thead><tbody><tr><td>Committed</td>${P.money.map(m => `<td class="n"><b class="${m > L.cap ? 'rc-over' : ''}">${$(m)}</b></td>`).join('')}</tr></tbody></table></div>`;
+    const exp = `<div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Player · day-one deal</th><th class="n">Old price</th><th class="n">New price ${span(summer)}</th><th>Decision</th></tr></thead><tbody>
+      ${P.expiring.map(r => `<tr class="${r.choice === 0 ? 'cx-gone' : ''}"><td>${nameCell(r)}${dayOne(r)}</td><td class="n">${$(r.price)}${r.kind === 'rookie' ? ' <span class="cx-r">R</span>' : ''}</td><td class="n"><b>${priceTxt(r.next.price, !r.next.known, r.next.why)}</b> ${chip(r.next.tier)}${r.next.price !== r.price ? `<small class="${r.next.price > r.price ? 'rc-over' : 'rc-ok'}">${r.next.price > r.price ? '+' : '−'}${$(Math.abs(r.next.price - r.price))}</small>` : ''}</td><td>${sel(r)}</td></tr>`).join('') || `<tr><td colspan="4"><small>Nobody: every contract runs past ${span(L.start)}.</small></td></tr>`}
+    </tbody></table></div>`;
+    const car = `<div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Player · day-one deal</th><th class="n">Price (locked)</th><th class="n">Seasons left</th><th>Cut?</th></tr></thead><tbody>
+      ${P.carried.map(r => `<tr class="${r.cut ? 'cx-gone' : ''}"><td>${nameCell(r)}${dayOne(r)}</td><td class="n">${$(r.price)} ${r.kind === 'rookie' ? '<span class="cx-r">R</span>' : chip(r.tier)}</td><td class="n">${r.left}</td><td><label class="cx-cut"><input type="checkbox" data-cut="${r.pid}"${r.cut ? ' checked' : ''}> ${r.free ? 'free' : `dead ${$(r.dead)} × ${r.left}`}</label></td></tr>`).join('') || '<tr><td colspan="4"><small>No contracts run into next season yet: set lengths on Initial contracts.</small></td></tr>'}
+    </tbody></table></div>`;
+    const tx = P.taxi.length ? `<div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Taxi player</th><th>Call up?</th></tr></thead><tbody>${P.taxi.map(r => `<tr class="${r.forced && !r.up ? 'cx-gone' : ''}"><td>${nameCell(r)}<small class="cx-sub">${r.forced ? '<b class="rc-over">Taxi time is up: call him up or he\x27s released</b>' : `Can stay on taxi through ${span(r.taxiLast)}`}${r.pick ? '' : ' · not our draft pick: signs at his tier'}</small></td><td><label class="cx-cut"><input type="checkbox" data-up="${r.pid}"${r.up ? ' checked' : ''}> ${$(r.upPrice)} × ${r.upLen} season${r.upLen === 1 ? '' : 's'}</label></td></tr>`).join('')}</tbody></table></div>` : '<p class="cm-rule">No taxi players.</p>';
+    const adds = `${P.adds.length ? `<div class="rc-scroll"><table class="rc-tbl"><thead><tr><th>Added</th><th class="n">Price</th><th class="n">Seasons</th><th></th></tr></thead><tbody>${P.adds.map(a => `<tr><td><b>${a.pid ? card2k(a.pid, a.name) : esc(a.name)}</b><small class="cx-sub">${a.rookie ? 'rookie draft pick' : 'free agent'}</small></td><td class="n">${$(a.price)}</td><td class="n">${a.rookie ? a.len : `<select data-addlen="${a.id}">${[1, 2, 3, 4].map(n => `<option value="${n}"${a.len === n ? ' selected' : ''}>${n}</option>`).join('')}</select>`}</td><td><button type="button" class="cx-x" data-rmadd="${a.id}" aria-label="Remove">×</button></td></tr>`).join('')}</tbody></table></div>` : ''}
+      <div class="cx-addform">
+        <input type="text" list="cx-players" placeholder="Player name (any NBA player or a made-up one)" data-add="name" maxlength="40">
+        <datalist id="cx-players">${fa}</datalist>
+        <select data-add="price" title="Price (filled in for real players)"><option value="">Price: his tier</option>${PRICE_STEPS.map(p => `<option value="${p}">${$(p)}</option>`).join('')}</select>
+        <select data-add="len">${[1, 2, 3, 4].map(n => `<option value="${n}">${n} season${n === 1 ? '' : 's'}</option>`).join('')}</select>
+        <label class="cx-cut"><input type="checkbox" data-add="rookie"> Rookie pick ($1 × ${LEAGUE_ROOKIE_YEARS})</label>
+        <button type="button" class="btn" data-addgo>Add</button>
+      </div>`;
+    return betaCard(`${tn(T.owner)} · summer before ${span(summer)}`, `
+      <p class="cm-rule">Every contract loses a season. Players at 0 are expiring: re-sign them at their <b>new tier</b> (his real ${span(summer)} salary) for 1-${MAX_YEARS} seasons, or release them to free agency. Contracts still running keep their locked price; cutting one costs ${Math.round(CUT_SHARE * 100)}% of his price for every season left (free at ${$(FREE_CUT)} or less) and his years stay used until next summer.</p>
+      ${d1Line}${totals}`, { sub: 'Saved on this account', cls: 'cx-plantop' })
+      + betaCard('Still under contract (day-one deals running)', car, { sub: `${P.carried.length} players` })
+      + betaCard('Expiring: re-sign or release', exp, { sub: `${P.expiring.length} players` })
+      + betaCard('Taxi call-ups', tx)
+      + betaCard(`Upcoming free agents · summer before ${span(summer)}`, upcomingFas(L, T, P, summer), { sub: 'Other teams’ expiring deals' })
+      + betaCard('Add free agents and rookies', adds +'<p class="cm-rule">Free agency = one Sleeper waiver / FAAB period; the winner picks the length and needs cap room and pool years. Real players get their own tier price unless you pick one.</p><div class="cx-btns"><button type="button" class="btn" data-planreset>Reset this plan</button></div>');
+  }
+
+  // ---------------- 4. Waiver wire ----------------
+  function viewWaivers(L, T) {
+    return betaCard('Waiver wire: cap hit to add', `
+      <p class="cm-rule">Every free agent with an NBA team. In season an add signs a <b>rest-of-season</b> deal at his tier <b>today</b> (real ${span(season)} salary). It uses <b>no pool years</b> (rest-of-season deals are exempt) but needs cap room and a roster spot. “${span(L.start)}” = his price if signed on day one. “Fits?” checks ${tn(T.owner)}’s day-one payroll (${$(T.payroll)} of ${$(L.cap)}) and roster (${T.counted} / ${ROSTER_MAX}).</p>
+      <div class="cx-wwctl"><input type="search" placeholder="Search players" data-wwq value="${esc(S.ww.q)}">
+        <div class="dvp-seg" role="group">${[['fpg', 'FP/G'], ['hit', 'Cap hit'], ['salary', 'Real salary'], ['age', 'Age']].map(([k, l]) => `<button type="button" class="ct-chip${S.ww.sort === k ? ' on' : ''}" data-wwsort="${k}">${l}</button>`).join('')}</div></div>
+      <div id="cx-wwlist"></div>`, { sub: 'Free agents today' });
+  }
+  function drawWaivers(L, T) {
+    const box = page.querySelector('#cx-wwlist');
+    if (!box) return;
+    const g = guesses();
+    const free = L.cap - T.payroll;
+    const q = S.ww.q.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const rows = Object.entries(info).filter(([pid, p]) => !p.owner && all?.[pid]?.team).map(([pid, p]) => {
+      const c = file.players[pid] ?? null;
+      const exp = all?.[pid]?.years_exp ?? null;
+      const now = priceFor(c, season, exp, season);
+      const day1 = priceFor(c, L.start, exp, season, g[pid] ?? null);
+      return { pid, ...p, c, exp, now, day1, real: c?.seasons?.find(x => Number(x.season) === season)?.salary ?? 0, nbaEnd: nbaEnd(c), slot: 'fa' };
+    }).filter(r => !q || r.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().includes(q));
+    // FP/G: players with 3+ games first, so a one-game spike doesn't top the list.
+    const key = { fpg: r => (r.gp >= 3 ? 0 : 1000) - (r.fpg ?? -1), hit: r => -r.now.price, salary: r => -r.real, age: r => r.age ?? 99 }[S.ww.sort];
+    rows.sort((a, b) => key(a) - key(b) || (b.fpg ?? 0) - (a.fpg ?? 0));
+    const shown = rows.slice(0, S.ww.n);
+    box.innerHTML = `<div class="rc-scroll"><table class="rc-tbl cx-ww"><thead><tr><th>Player</th><th class="n">FP/G</th><th class="n">Real now</th><th class="n">Cap hit now</th><th class="n">${span(L.start)}</th><th class="n">Fits?</th></tr></thead><tbody>
+      ${shown.map(r => {
+        const ok = r.now.price <= free && T.counted < ROSTER_MAX; // rest-of-season: no pool years needed
+        return `<tr><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${esc([r.pos, r.team, r.age != null ? `age ${r.age}` : ''].filter(Boolean).join(' · '))}${r.gp ? ` · ${r.gp} GP` : ''}</small></td>
+          <td class="n">${f1(r.fpg)}</td><td class="n cx-nba">${nbaCell(r)}</td><td class="n"><b>${$(r.now.price)}</b> ${chip(r.now.tier)}<small>1 yr</small></td>
+          <td class="n">${priceTxt(r.day1.price, !r.day1.known, r.day1.why)}</td><td class="n ${ok ? 'rc-ok' : 'rc-over'}">${ok ? 'Yes' : T.counted >= ROSTER_MAX ? 'Drop first' : 'No room'}</td></tr>`;
+      }).join('') || '<tr><td colspan="6"><small>No free agents match.</small></td></tr>'}
+    </tbody></table></div>
+    <p class="cm-rule">${rows.length} free agents${rows.length > shown.length ? ` · showing ${shown.length}` : ''}.</p>
+    ${rows.length > shown.length ? `<div class="cx-btns"><button type="button" class="btn" data-wwmore>Show ${WW_PAGE} more</button></div>` : ''}`;
+  }
+
+  // ---------------- events ----------------
+  const setLen = (owner, pid, n) => {
+    saveDeals(d => ({ ...d, [pid]: { len: n, o: owner, t: Date.now() } }));
+  };
+  page.addEventListener('click', e => {
+    const t = e.target.closest('button, tr[data-goteam]');
+    if (!t || t.disabled) return;
+    const L = () => league();
+    if (t.dataset.view) { S.view = t.dataset.view; draw(); window.scrollTo(0, 0); return; }
+    if (t.dataset.goteam) { if (e.target.closest('a')) return; S.team = t.dataset.goteam; draw(); page.querySelectorAll('.tf-card')[2]?.scrollIntoView({ block: 'start' }); return; }
+    if (t.dataset.faall != null) { S.faAll = !S.faAll; draw(); return; }
+    if (t.dataset.faadd) { const p = planOf(S.team); const pid = t.dataset.faadd; p.adds = [...p.adds, { id: String(Date.now()), pid, name: info[pid]?.name ?? pid, price: Number(t.dataset.price), len: 1, rookie: false }]; savePlan(S.team, p); draw(); return; }
+    if (t.dataset.block) { const b = blockOf(S.team); gmSave(`gm-ct-block-${S.team}`, b.includes(t.dataset.block) ? b.filter(x => x !== t.dataset.block) : [...b, t.dataset.block]); draw(); return; }
+    if (t.dataset.len) { setLen(S.team, t.dataset.pid, Number(t.dataset.len)); draw(); return; }
+    if (t.dataset.fill) {
+      const T = L().teams.find(x => x.owner === S.team);
+      const had = T.rows.some(r => r.set);
+      if (had && !confirm(t.dataset.fill === 'one' ? 'Set every player back to 1 season?' : 'Replace every length with the suggestion (age + FP/G)?')) return;
+      // Only this team's own signings; contracts traded in from other teams stay as they are.
+      const len = t.dataset.fill === 'one' ? Object.fromEntries(T.rows.filter(r => r.kind === 'deal' && !r.traded).map(r => [r.pid, 1])) : suggestLengths(T);
+      saveDeals(d => { for (const [pid, n] of Object.entries(len)) d[pid] = { len: n, o: S.team, t: Date.now() }; return d; });
+      draw();
+      return;
+    }
+    if (t.dataset.wwsort) { S.ww.sort = t.dataset.wwsort; S.ww.n = WW_PAGE; page.querySelectorAll('[data-wwsort]').forEach(b => b.classList.toggle('on', b === t)); const Ln = L(); drawWaivers(Ln, Ln.teams.find(x => x.owner === S.team)); return; }
+    if (t.dataset.wwmore != null) { S.ww.n += WW_PAGE; const Ln = L(); drawWaivers(Ln, Ln.teams.find(x => x.owner === S.team)); return; }
+    if (t.dataset.rmadd) { const p = planOf(S.team); p.adds = p.adds.filter(a => a.id !== t.dataset.rmadd); savePlan(S.team, p); draw(); return; }
+    if (t.dataset.planreset != null) { if (confirm('Clear this team’s offseason plan?')) { gmSave(`gm-ct-plan-${S.team}`, { at: Date.now(), re: {}, cut: [], up: [], adds: [] }); draw(); } return; }
+    if (t.dataset.addgo != null) {
+      const val = k => page.querySelector(`[data-add="${k}"]`);
+      const nm = val('name').value.trim();
+      if (!nm) { val('name').focus(); return; }
+      const rookie = val('rookie').checked;
+      const pid = Object.keys(info).find(k => info[k].name.toLowerCase() === nm.toLowerCase()) ?? null;
+      let price = Number(val('price').value) || null;
+      if (!price) price = pid ? priceFor(file.players[pid], L().start + 1, all?.[pid]?.years_exp ?? null, season, guesses()[pid] ?? null).price : 2;
+      const p = planOf(S.team);
+      p.adds = [...p.adds, { id: String(Date.now()), pid, name: pid ? info[pid].name : nm, price: rookie ? ROOKIE_TIER.price : price, len: rookie ? LEAGUE_ROOKIE_YEARS : Number(val('len').value), rookie }];
+      savePlan(S.team, p);
+      draw();
+    }
+  });
+  page.addEventListener('change', e => {
+    const t = e.target;
+    if (t.dataset.team != null) { S.team = t.value; draw(); return; }
+    if (t.dataset.guess) { const g = guesses(); if (t.value) g[t.dataset.guess] = Number(t.value); else delete g[t.dataset.guess]; gmSave('gm-ct-guess', g); draw(); return; }
+    const p = planOf(S.team);
+    if (t.dataset.addlen) { p.adds = p.adds.map(a => (a.id === t.dataset.addlen ? { ...a, len: Number(t.value) } : a)); savePlan(S.team, p); draw(); return; }
+    if (t.dataset.re) { if (t.value === '') delete p.re[t.dataset.re]; else p.re[t.dataset.re] = Number(t.value); savePlan(S.team, p); draw(); return; }
+    if (t.dataset.cut) { p.cut = t.checked ? [...new Set([...p.cut, t.dataset.cut])] : p.cut.filter(x => x !== t.dataset.cut); savePlan(S.team, p); draw(); return; }
+    if (t.dataset.up) { p.up = t.checked ? [...new Set([...p.up, t.dataset.up])] : p.up.filter(x => x !== t.dataset.up); savePlan(S.team, p); draw(); }
+  });
+  page.addEventListener('input', e => {
+    if (e.target.dataset.wwq == null) return;
+    S.ww.q = e.target.value;
+    S.ww.n = WW_PAGE;
+    const Ln = league();
+    drawWaivers(Ln, Ln.teams.find(x => x.owner === S.team));
+  });
+  draw();
+}

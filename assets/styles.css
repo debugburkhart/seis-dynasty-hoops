@@ -4155,3 +4155,113 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .gm-mu { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
 .gm-mu b.up { color: #1d7a43; }
 .gm-mu b.down { color: #a63d2a; }
+
+/* Report: NBA contracts + salary cap (owner, Nov 7 2026; assets/report-contracts.js) */
+.rc-team { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.rc-th { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; font-size: 13.5px; }
+.rc-th small { color: var(--muted); font-weight: 500; }
+.rc-over { color: #b3261e; font-weight: 700; }
+.rc-ok { color: #1e7a34; font-weight: 700; }
+.rc-bar { position: relative; display: flex; height: 12px; margin: 8px 0 6px; border-radius: 99px; background: var(--paper); overflow: visible; }
+.rc-bar span:first-child { border-radius: 99px 0 0 99px; }
+.rc-a, .rc-key .rc-a { background: var(--navy-800); }
+.rc-i, .rc-key .rc-i { background: #d9534f; }
+.rc-t, .rc-key .rc-t { background: #c9d3e6; }
+.rc-cap { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--gold); }
+.rc-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 11.5px; color: var(--muted); }
+.rc-key span { display: inline-block; width: 12px; height: 8px; border-radius: 2px; }
+.rc-key .rc-cap { position: static; display: inline-block; width: 3px; height: 12px; }
+.rc-nums { display: flex; flex-wrap: wrap; gap: 3px 12px; font-size: 12px; color: var(--muted); }
+.rc-nums b { color: var(--navy-800); }
+.rc-dead { margin: 6px 0 0; font-size: 12px; line-height: 1.45; }
+.rc-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.rc-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rc-tbl th, .rc-tbl td { padding: 5px 6px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.rc-tbl td:first-child { white-space: normal; min-width: 150px; }
+.rc-tbl th { font-size: 11px; color: var(--muted); font-weight: 700; }
+.rc-tbl .n { text-align: right; }
+.rc-tbl tr.taxi td { color: var(--muted); }
+.rc-tbl tr.ir td:first-child b { color: #b3261e; }
+.rc-list { margin: 4px 0 8px; padding-left: 20px; font-size: 13px; line-height: 1.5; }
+.rc-list li { margin: 5px 0; }
+.rc-list small { color: var(--muted); }
+#rp-print .rc-scroll { overflow: visible; }
+#rp-print .rc-team { break-inside: avoid; }
+/* Report: league salary system tiers (assets/report-salary.js) */
+.rs-tier { display: inline-block; padding: 0 5px; border-radius: 99px; font: 800 10.5px/1.5 var(--display); letter-spacing: .02em; vertical-align: 1px; }
+.rs-t1 { background: #e8eef9; color: var(--navy-800); }
+.rs-t2 { background: #fdf0d2; color: #8a5a00; }
+.rs-t3 { background: var(--navy-800); color: var(--gold); }
+.rc-list ol { margin: 4px 0; padding-left: 18px; }
+.rc-tbl tr.rc-rec td { background: #fdf6e3; }
+.rc-tbl tr.rc-rec td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+/* Contracts (Test features, assets/contracts-ui.js) */
+.cx-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.cx-pick { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.cx-pick select { max-width: 240px; min-width: 0; padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 12.5px; }
+.cx-stats b { font-size: 20px; }
+.cx-sum { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 6px 16px; margin: 4px 0 8px; font-size: 12.5px; }
+.cx-sum b { color: var(--navy-800); }
+.cx-overbar { background: #b3261e !important; }
+.cx-name { font-weight: 700; color: var(--navy-800); text-decoration: none; }
+.cx-name:hover { text-decoration: underline; }
+.cx-adv { display: inline-block; margin-left: 4px; padding: 0 5px; border: 1px solid var(--line); border-radius: 99px; font-size: 10px; font-weight: 700; color: var(--muted); text-decoration: none; vertical-align: 1px; }
+.cx-sub { display: block; color: var(--muted); font-size: 11px; line-height: 1.35; }
+.cx-ir { color: #b3261e; }
+.rc-tbl .cx-nba small, .rc-tbl td.n small, .cx-c small { display: block; color: var(--muted); font-size: 10.5px; }
+.cx-c { text-align: center !important; min-width: 74px; }
+.cx-grid td.cx-c { position: relative; }
+.cx-on { background: #eef3fb; color: var(--navy-800); font-weight: 700; }
+.cx-rk { background: #f3f0fb; }
+.cx-fa { background: repeating-linear-gradient(135deg, #faf8f3 0 6px, #f2efe7 6px 12px); color: var(--muted); font-size: 11px; }
+.cx-taxi { color: var(--muted); font-size: 11px; }
+.cx-end { box-shadow: inset 3px 0 0 var(--gold); }
+.cx-endtag { display: block; margin-top: 2px; font: 700 9.5px/1.2 var(--body, inherit); font-style: normal; color: #8a5a00; white-space: normal; }
+.cx-est { font-style: italic; text-decoration: underline dotted; cursor: help; }
+.cx-r { display: inline-block; padding: 0 4px; border-radius: 99px; background: #e6def7; color: #4b2d8f; font: 800 10px/1.5 var(--display); }
+.cx-tot td { border-top: 2px solid var(--navy-800); }
+.cx-sep td { padding-top: 10px; font-size: 11.5px; font-weight: 700; color: var(--muted); background: var(--cream); }
+.cx-ov tr[data-goteam] { cursor: pointer; }
+.cx-ov tr.cx-me td { background: #fdf6e3; }
+.cx-ov .rc-bar { height: 6px; margin: 5px 0 0; max-width: 260px; }
+.cx-key { margin: 6px 0; }
+.cx-key .cx-k { width: 14px; height: 10px; border-radius: 2px; border: 1px solid var(--line); }
+.cx-len { display: flex; gap: 4px; }
+.cx-len .ct-chip { padding: 4px 10px; }
+.cx-len .ct-chip:disabled { opacity: .35; cursor: not-allowed; }
+.cx-guess { margin-left: 4px; padding: 2px; font-size: 11px; border: 1px solid var(--line); border-radius: 5px; max-width: 90px; }
+.cx-btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.cx-warn { margin: 6px 0; padding: 8px 10px 8px 26px; border-radius: 8px; background: #fbeaea; color: #8c1d18; font-size: 12.5px; line-height: 1.45; }
+.cx-good { margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: #e8f5ec; color: #1e7a34; font-size: 12.5px; }
+.cx-gone td { opacity: .5; }
+.cx-gone td:last-child { opacity: 1; }
+.cx-cut { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; }
+.cx-addform { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
+.cx-addform input[type=text] { flex: 1 1 220px; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; }
+.cx-addform select, .rc-tbl select { padding: 4px 5px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; max-width: 100%; }
+.cx-x { border: 0; background: none; font-size: 18px; color: var(--muted); cursor: pointer; }
+.cx-wwctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.cx-wwctl input { flex: 1 1 180px; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; }
+@media (max-width: 560px) {
+  .cx-pick { width: 100%; }
+  .cx-pick select { flex: 1; max-width: none; }
+  .cx-stats { grid-template-columns: 1fr; }
+}
+.cx-grid th:first-child, .cx-grid td:first-child { position: sticky; left: 0; z-index: 1; background: var(--paper); box-shadow: 1px 0 0 var(--line); }
+.cx-grid tr.cx-sep td:first-child { background: var(--cream); }
+@media (max-width: 560px) {
+  .cx-grid td:first-child, .cx-grid th:first-child { min-width: 118px; max-width: 128px; }
+  .cx-grid .cx-c { min-width: 66px; }
+}
+.cx-d1 { display: block; margin-top: 2px; font-size: 11px; color: var(--navy-700); }
+.cx-d1.unset { color: #b3261e; }
+.cx-d1line { margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: #eef3fb; font-size: 12.5px; line-height: 1.45; }
+.cx-blk { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.cx-blkh { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.cx-blkc { margin: 6px 0 2px; font-size: 12.5px; }
+.cx-afford { margin: 4px 0; font-size: 12.5px; }
+.cx-aff tr.cx-yes td:first-child { box-shadow: inset 3px 0 0 #1e7a34; }
+.cx-aff tr.cx-no td:first-child { box-shadow: inset 3px 0 0 #d9534f; }
+.cx-aff td:last-child { white-space: normal; min-width: 150px; }
+.cx-trd { color: #8a5a00; }
+.cx-proj { background: #f6f3fc; color: #4b2d8f; font-weight: 700; border: 1px dashed #c8b8ec; }

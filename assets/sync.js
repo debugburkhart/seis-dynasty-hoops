@@ -46,6 +46,7 @@ export const SYNCED = [
   'gm-dvp-', // Defense vs Position: view (opts), sort, fantasy team
   'gm-adv-', // Advanced Stats: view, window, pool, chart choices, NBA teams
   'gm-dc-', // Depth Chart: view, NBA team, custom order per fantasy team (gm-dc-chart-{owner})
+  'gm-ct-', // Contracts: day-one lengths (gm-ct-init-{owner}), offseason plans (gm-ct-plan-{owner}), price guesses, view, team
 ];
 export const isSynced = key => SYNCED.some(k => (k.endsWith('-') ? key.startsWith(k) : key === k));
 

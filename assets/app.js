@@ -18,6 +18,11 @@ import { buildTimeline } from './timeline.js';
 import { MIN_GAMES, TIERS, draftClasses, draftGrades, draftOfYear, draftedPlayers, projectedOrder, reportCards, seasonPoints } from './draft.js';
 import { gradeOf } from './scout.js';
 import { CONTRACTS_SOURCE, contractText, readContract } from './contracts.js';
+import { reportContracts } from './report-contracts.js';
+import { reportSalary } from './report-salary.js';
+import { reportSalaryNba } from './report-salary-nba.js';
+import { reportTokens } from './report-tokens.js';
+import { reportYearsPool } from './report-yearspool.js';
 import { paintSync, syncInit, syncSave } from './sync.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
 import { taxiAppearances } from './taxiweek.js';
@@ -27,6 +32,7 @@ import { benchDates, chicagoDate, hintsFor, lawFor, lawMarks, lawPoints, lineupG
 import { betaCard, isTestTab, testTabs } from './test-features.js';
 import { dvpChips, renderDefense } from './defense-ui.js';
 import { renderAdvanced } from './advstats-ui.js';
+import { renderContracts } from './contracts-ui.js';
 import { DAYS, MIN_LOCKS, managerCards, seasonStarts } from './lockcard.js';
 import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, injuryNow, injuryDiff, INJ_LOG_VERSION, INJ_LOG_DAYS, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
 
@@ -2401,7 +2407,7 @@ function renderCommish(main, params) {
     </div>`;
   const body = $('#cm-body', main);
   paintSync(main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth, devdash: renderDevDash, defense: renderDefensePage,tradetree: renderTradeTree, lockcard: renderLockCard, advanced: renderAdvancedPage }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth, devdash: renderDevDash, defense: renderDefensePage,tradetree: renderTradeTree, lockcard: renderLockCard, advanced: renderAdvancedPage, contracts: renderContractsPage }[tab];
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
@@ -2593,6 +2599,8 @@ async function loadLawSrc(fresh = false) {
 const renderDefensePage = (body, params) => renderDefense(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName });
 // Advanced Stats (Test features, owner Nov 4 2026): page in advstats-ui.js, logic in advstats.js.
 const renderAdvancedPage = (body, params) => renderAdvanced(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName });
+// Contracts (Test features, owner Nov 7 2026): page in contracts-ui.js, logic in leaguecontracts.js.
+const renderContractsPage = (body, params) => renderContracts(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName, name, loadContracts });
 
 async function renderDevDash(body, params) {
   const cur = DATA.seasons.at(-1);
@@ -4216,6 +4224,21 @@ const REPORTS = [
   { id: 'trey-2024-vs-2025', added: '2026-10-28', title: 'bigtrey5456: 2024 championship team vs 2025 playoff team',
     sub: 'Who carried over from the 2024 runner-up roster to the 2025 semifinal run, who left, who came in',
     run: () => reportCompareRuns('1035999704737259520', '2024', '2025') },
+  { id: 'contracts-cap', added: '2026-11-07', title: 'Real NBA contracts by team + what a salary cap would look like',
+    sub: 'Every team’s payroll and breakdown, cap scenarios, recommendations and concerns',
+    run: () => reportContracts({ DATA, esc, get, name, teamName, loadContracts }) },
+  { id: 'salary-system', added: '2026-11-07', title: 'Our own salary system: $, $$ and $$$ contracts with a cap',
+    sub: 'A simple league-made pay scale: prices, cap, rookie deals, waivers, drops, contract length and free agency',
+    run: () => reportSalary({ DATA, esc, get, name, teamName, dynasty: () => gmDynasty(new URLSearchParams()) }) },
+  { id: 'salary-nba-tiers', added: '2026-11-07', title: 'Salary system v2: prices from real NBA contracts (supermax to rookie)',
+    sub: 'Prices $1 (rookie) to $50 (supermax) from real NBA contract tiers, a round cap, league-chosen 1-4 season contracts, the whole year step by step',
+    run: () => reportSalaryNba({ DATA, esc, get, name, teamName, loadContracts }) },
+  { id: 'contract-tokens', added: '2026-11-07', title: 'Token contracts: lengths only, no salaries',
+    sub: 'A limited number of 4-, 3-, 2- and 1-year deals per team: how it works, waivers, drops, trades and the offseason',
+    run: () => reportTokens({ DATA, esc, get, name, teamName, COMMISH, dynasty: () => gmDynasty(new URLSearchParams()) }) },
+  { id: 'years-pool', added: '2026-11-07', title: 'Salary system v2: a years pool for contract lengths',
+    sub: 'Any length 1-4 as long as the years fit, a limit on 4-season deals, how it works in practice, compared with the other ways',
+    run: () => reportYearsPool({ DATA, esc, get, name, teamName, COMMISH }) },
 ];
 
 async function renderReports(body) { // async: renderCommish calls .catch() on every tab's result
