@@ -1125,6 +1125,36 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - Tested Oct 25 2026 with faked votes (fetch stub): tallies, verdicts, party exclusion, 3-team plurality,
   layouts 320/402/1300. Owner uploaded it, published the rules and confirmed it works live (Oct 25 2026).
 
+## MyGM (#/mygm; owner, Nov 8 2026)
+- The home for the GM tools as they graduate from Test features ("I'm building a lot of these test features to eventually
+  be deployed in a full feature called MyGM"). Owner's answers: its OWN page (not the office's "My GM" tab group, which
+  stays as is for now), COMMISH ONLY for now (same passcode + session flag as the office: COMMISH_OPEN / cm-open; going
+  between #/commish and #/mygm stays unlocked, any other page locks both), Beta tags kept until he says a feature is live.
+- app.js: renderMyGM(main, params) (lock form like the office's, then header "Commish only · Beta" + tab bar .mygm-tabs +
+  #cm-body.tf-body); MYGM_TABS [[id, label]] + MYGM_SHOW { id: renderer }: TO ADD A FEATURE add both (and remove its
+  TEST_FEATURES entry). Sidebar: a second dashed button "MyGM Beta" (.commish-btn.mygm-btn, clipboard icon) under Commish.
+  render() keeps the session unlocked for page mygm too.
+- Tabs: CONTRACTS (#/mygm?tab=contracts, the Contract Sandbox; moved out of Test features Nov 8 2026: TEST_FEATURES entry
+  removed, #/commish?tab=contracts forwards to #/mygm with the same params, contracts-ui.js here() + back links / 2K + Adv
+  back pills point to #/mygm, its first card is titled "Contracts"). Everything under "CONTRACT SANDBOX" in Test features
+  below still describes it. Checked Nov 8 2026: gate, unlock, tab, old-link redirect, 2K card + "Back to Contracts", leaving
+  to Home locks again, 402 px no overflow.
+- 2K LOOK (owner, Nov 8 2026: "everything in MyGM will look like the 2K breakdown", from his NBA 2K MyLEAGUE screenshots):
+  `assets/contracts-2k.js` (no DOM; in the import map; .mg-* at the end of styles.css; page gets class mg-page = navy card
+  heads with gold italic titles). ring() = SVG ring (gold arc, red when over). capTable() REPLACES Team status ("Salary cap
+  table"): team chips, big italic team name, 4 season buttons (S.capSeason, data-capseason; each shows $ room + pool years
+  free), CAP ring (T.bySeason[i] vs CAP, centre = room) + POOL ring (sum of max(0, len - i) over signed rows vs POOL, centre
+  = years free; owner: "a similar circle design ... next 4 years ahead"), callouts, legend, dark cap-hit table (selected
+  season tinted, gold left edge = real NBA deal over), All 8 teams + Tier cutoffs in folds. Later seasons = contracts already
+  running only (planner adds come on top). resignBoard() = "Contract extensions" card in the planner (was the Expiring
+  table): hero (photo, italic name, contract N of 2, re-sign price ring) for the picked row (S.reSel, data-resel), table
+  Name / Age / Status (Undecided / Re-sign N yrs / Released / Ineligible) / Expected / Contract / Decision (same sel()),
+  strip re-signed N / 6, pool, cap room, roster; ineligible (2 contracts done) sorted last. contractCard() = EVERY player
+  name in Contracts (card2k now = a button data-ccard) opens it at the top (S.card; × = data-ccard-close): header (#, pos,
+  first + LAST, NBA team, age, Nth NBA season, fantasy team, FP/G ring), light panel (Contract N of 2 / Taxi / Free agent +
+  why, tier, signed, dead money if cut, real NBA deal end, links to the 2K card + Advanced stats with back), season table
+  (age, real NBA salary, cap hit). Checked Nov 8 2026: 320 / 402 / desktop no overflow, dark mode (.mg kept navy).
+
 ## Test features (commish office, owner Oct 25 2026)
 - Third tab group in the commish office ("My GM", "League office", "Test features"): where brand-new
   features are born and tested, early access for the owner only (the office is passcode-gated).

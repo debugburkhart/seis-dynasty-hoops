@@ -246,6 +246,7 @@ function renderSidebar(page) {
       `).join('')}
     </nav>
     <a class="commish-btn${page === 'commish' ? ' active' : ''}" href="#/commish">${icon('lock')}<span>Commish</span></a>
+    <a class="commish-btn mygm-btn${page === 'mygm' ? ' active' : ''}" href="#/mygm">${icon('clipboard')}<span>MyGM</span><span class="gm-beta">Beta</span></a>
     <div class="sidebar-foot">
       ${themeSwitch()}
       <div class="sync-box" data-sync="side"></div>
@@ -2347,6 +2348,8 @@ const cmFlag = on => { try { on ? sessionStorage.setItem('cm-open', '1') : sessi
 let COMMISH_OPEN = (() => { try { return sessionStorage.getItem('cm-open') === '1'; } catch { return false; } })();
 
 function renderCommish(main, params) {
+  // Contracts moved from Test features to MyGM (owner, Nov 8 2026): old links forward there.
+  if (params.get('tab') === 'contracts') { location.replace(`#/mygm?${params}`); return; }
   if (!COMMISH_OPEN) {
     main.innerHTML = `
       <div class="page">
@@ -2414,6 +2417,55 @@ function renderCommish(main, params) {
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
+  });
+}
+
+// ---------- MyGM (owner, Nov 8 2026) ----------
+// The home for the GM tools as they graduate from Test features, one tab per feature (MYGM_TABS). Commish only for now:
+// the same passcode / session flag as the office (COMMISH_OPEN; moving between the office and MyGM stays unlocked), and
+// every tab keeps its Beta tags (tf-body + betaCard) until the owner says a feature goes live. First tab: Contracts
+// (the Contract Sandbox, moved from Test features). To add a tab: an entry in MYGM_TABS + its renderer in MYGM_SHOW.
+const MYGM_TABS = [['contracts', 'Contracts']];
+const MYGM_SHOW = { contracts: (body, params) => renderContractsPage(body, params) };
+function renderMyGM(main, params) {
+  if (!COMMISH_OPEN) {
+    main.innerHTML = `
+      <div class="page">
+        <section class="card cm-lock">
+          <div class="page-icon">${icon('clipboard')}</div>
+          <h1>MyGM</h1>
+          <p class="card-sub">Commish only for now: enter the passcode to open MyGM.</p>
+          <form class="cm-form" autocomplete="off">
+            <input type="password" id="cm-code" placeholder="Passcode" aria-label="Passcode" autocomplete="off" autofocus>
+            <button class="btn" type="submit">Open</button>
+          </form>
+          <p class="cm-error" id="cm-error" hidden>Wrong passcode.</p>
+        </section>
+      </div>`;
+    $('.cm-form', main).addEventListener('submit', async e => {
+      e.preventDefault();
+      if (await checkPasscode($('#cm-code', main).value)) { COMMISH_OPEN = true; cmFlag(true); renderMyGM(main, route().params); }
+      else { $('#cm-error', main).hidden = false; $('#cm-code', main).select(); }
+    });
+    $('#cm-code', main).focus();
+    return;
+  }
+  const tab = MYGM_TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : MYGM_TABS[0][0];
+  clearInterval(GM_TIMER);
+  main.innerHTML = `
+    <div class="page page-wide">
+      <div class="page-head">
+        <div class="page-icon">${icon('clipboard')}</div>
+        <div><div class="eyebrow">Commish only · Beta</div><h1>MyGM</h1></div>
+      </div>
+      <div class="st-tabs cm-tabs mygm-tabs" role="tablist">
+        ${MYGM_TABS.map(([id, text]) => `<a role="tab" class="${tab === id ? 'on' : ''}" href="#/mygm?tab=${id}">${text} <span class="gm-beta">Beta</span></a>`).join('')}
+      </div>
+      <div id="cm-body" class="tf-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
+    </div>`;
+  const body = $('#cm-body', main);
+  MYGM_SHOW[tab](body, params).catch(err => {
+    body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this page: ${esc(err.message)}</p></section>`;
   });
 }
 
@@ -10766,7 +10818,7 @@ function render() {
   const { page, sub, params } = route();
   clearInterval(HYPE_TIMER);
   // Leaving the section locks it again, except for a trip that carries a way back into it (2K Transactions links).
-  if (page !== 'commish' && !params.get('ret')?.startsWith('#/commish')) { COMMISH_OPEN = false; cmFlag(false); }
+  if (page !== 'commish' && page !== 'mygm' && !params.get('ret')?.startsWith('#/commish')) { COMMISH_OPEN = false; cmFlag(false); }
   $('#dk-tip')?.classList.remove('on');
   renderSidebar(page);
   const main = $('#main');
@@ -10777,6 +10829,7 @@ function render() {
   else if (page === 'awards') renderAwards(main);
   else if (page === 'players') renderPlayers(main, params);
   else if (page === 'commish') renderCommish(main, params);
+  else if (page === 'mygm') renderMyGM(main, params);
   else if (page === 'records') renderRecordBook(main, sub, params);
   else if (page === 'power') renderPower(main, params);
   else if (page === 'standings') renderStandings(main, params);

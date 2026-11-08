@@ -23,8 +23,6 @@ export const TEST_FEATURES = [
   { id: 'tradetree', label: 'Trade Trees', since: '2026-11-02' },
   // Advanced Stats (owner, Nov 4 2026): charts comparing players and NBA / fantasy teams in depth (advstats.js + advstats-ui.js).
   { id: 'advanced', label: 'Advanced Stats', since: '2026-11-04' },
-  // Contracts (owner, Nov 7 2026): league contract sandbox: team status + 4-season outlook, offseason planner, day-one lengths, waiver cap hits.
-  { id: 'contracts', label: 'Contract Sandbox', since: '2026-11-07' },
 ];
 
 export const BETA = '<span class="gm-beta">Beta</span>';
