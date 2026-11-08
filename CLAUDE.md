@@ -1350,6 +1350,68 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   the shown summer. Checked Nov 8 2026: Parma 2028 re-sign Ingram 2 / cut Sengun ($20 x 4 left -> $10 dead) / call up
   Raynaud / add Doncic 1 -> 2029: Ingram + Raynaud carried, Doncic expiring, Sengun $10 x 2 dead; 2030: Ingram expiring;
   320 px no overflow.
+  ROOKIE DEAL / SERVICE TIME / RE-SIGN LIMIT (owner, Nov 8 2026): (1) $1 LEAGUE ROOKIE DEAL = from CALL-UP (nothing on the
+  books while on taxi) to the end of his NBA rookie years (first ROOKIE_SEASONS 4 NBA seasons; "Option A": then he costs
+  his real-salary tier): rookieThrough(exp, cur) / rookieLen(exp, cur, from) in leaguecontracts.js; rookiePicks(..., { all })
+  left = rookieThrough - start + 1 (<= 0 = normal deal); taxi grid projects $1 R only through rookieThrough (a player
+  called up after 3 taxi seasons gets 1 cheap season); planner call-up upLen = rookieLen; rookie-pick adds = 4. Replaces
+  the old 3-seasons-from-call-up rule. Checked: 2026 rookies 3 left on day one (Dybantsa, Peterson through 2029-30), 2025
+  class 2 (Flagg), 2024 class 1 (Sarr, Castle, Clingan). (2) SERVICE_MAX 8 LEAGUE-WIDE (not per team), RETROACTIVE from
+  2023: serviceMap(history, cur, skip) = league seasons he finished on an active roster or IR (taxi seasons and traded-off-
+  taxi don't count); row svc / svcLeft / svcEnd; day-one lengths capped (lengthBlock "8-season service limit"; Suggest);
+  grid red striped "FA · 8 seasons" + "service limit: free agent" tag (.cx-svcfa / .cx-svc1); Initial contracts line
+  "League service: N seasons · can be signed through X at most"; planner: svcNow = svc + 1 per season under contract
+  (next rows carry svc), at 8 = svcOut (choice forced to release, "8 seasons played: free agency", no re-sign slot used),
+  re-sign lengths capped at 8 - svcNow; a summer free-agency signing (plan add) resets svc to 0; Upcoming FAs tag "8 league
+  seasons: must hit free agency". Loaner trades in a player's 8th season need nothing extra (contracts travel). Startup
+  players have 4 seasons by 2027 -> signed through 2030-31 at most -> the big wave of forced free agents is summer 2031
+  (owner was told; leave as is for now). (3) RESIGN_MAX 6 re-signings per summer per team (players coming off the league
+  rookie deal exempt; rest-of-season pickups count): P.resigns, warning, "re-signed N / 6" in the totals, further re-sign
+  options greyed once 6 are used. Checked Nov 8 2026: Parma 7th expiring player's re-sign options disabled at 6 / 6; Booker
+  on a 4-season deal = svcOut in summer 2031; 320 px no overflow.
+  SERVICE = NBA SEASONS (owner, same day, REPLACES the league-seasons-from-2023 clock above: "based on their rookie year so
+  numbers divisible by 8 would effectively be at 0 ... every player accrues service time regardless of league team
+  rostering"): service = his NBA seasons from his rookie year (Sleeper years_exp; taxi, free agency, any team all count),
+  in 8-season CYCLES: after his 8th, 16th, 24th ... NBA season he goes to free agency. leaguecontracts.js nbaYear(exp, s,
+  cur) = his Nth NBA season in season s; cycleDone(exp, s, cur) = seasons done in the current cycle before s (0 = fresh);
+  row svc = cycleDone at day one, svcLeft = 8 - svc, svcEnd; planner done = exp + (summer - cur), svcOut when done is a
+  multiple of 8 (> 0), maxLen = 8 - done % 8; no reset bookkeeping (the cycle does it); serviceMap() is no longer used.
+  Shown: Initial contracts "NBA rookie year 2015-16 · 2027-28 = his 13th NBA season · service 4 of 8 done (free agency
+  after every 8th) · can be signed through 2030-31 at most" (svcLine in contracts-ui.js, also on every Waiver wire row),
+  "NBA yr N now" in every row's sub line (this season), grid "FA · after NBA yr 16" + tag, planner "NBA yr 8 done (1 x 8):
+  free agency", Upcoming FAs "NBA yr N done: must hit free agency". Sleeper's years_exp is wrong for a few players (see
+  Rookie of the Year notes): the shown rookie year makes that visible. Checked Nov 8 2026: Booker (2015-16) 13th season in
+  2027-28 -> through 2030-31; Banchero (2022-23) through 2029-30 (4 disabled); Sengun (2021-22) through 2028-29, a 2-season
+  deal -> summer 2029 free agency; Harden (2009-10) 19th -> through 2032-33; Mo Bamba on the wire 10th season, 1 of 8.
+  IN-SEASON PICKUPS FREE (owner, Nov 8 2026: "I don't want in-season waiver wire pickups to count towards the salary cap or
+  the year pool ... remove the ROS thing from the initial contracts because that will be done in the offseason"): the "ROS
+  ON DAY ONE" exception above is REMOVED (buildLeague no longer reads txs for pickups; rosOk / ros always false; no ROS
+  button, green box or "Picked up" line; old { ros: true } saves = a normal 1-season deal; every day-one player takes pool
+  years). Waiver wire tab = "Waiver wire: in-season pickups": a pickup has no cap hit and no pool years, only a roster spot;
+  columns Player (NBA years line), FP/G, Real now, "2027-28 price" (= his tier if re-signed / signed on day one), "Roster
+  spot?" (Yes / Drop first); sort chip "Re-sign price". Keeping him after the season = a summer re-sign at his tier (counts
+  toward the 6, uses pool years). Checked Nov 8 2026: Parma all-1-season pool 26 / 50 (Robinson etc. normal rows), Suggest
+  49 / 50; waiver rows show price + roster spot only.
+  CUT PLAYERS (owner, Nov 8 2026, "Yes, build them"): (1) another team signs a player you cut = the dead money STAYS with
+  the cutting team (no NBA-style set-off); Upcoming FAs now also lists every other team's cuts that summer ("Cut by X (dead
+  money stays with them)", price = his tier that summer). (2) the cutting team can't sign him again until his old deal's
+  last season is over: planSummer({ banned }) (rollPlans carries bannedNext: pid -> summer + left - 1 at the cut; cuts the
+  same summer count too); a banned add gets a.banned, is left out of money / pool / roster / next, and warns "you cut him, so
+  he can't come back until after X"; the page's add buttons (Upcoming FA "Add" + the add form) refuse it with an alert
+  (banCheck). (3) in season (not simulated): re-adding a player you cut restores his old contract and cancels the dead money
+  = a written rule in the planner text (expanded Nov 8 2026: a cut ends his contract, nobody inherits his old seasons; in-season pickup = free, re-sign at tier that summer; unsigned at season end = free agent for any other team; cut in his last season = cutting team may sign him the next summer). Checked Nov 8 2026: Booker (4-season deal) cut in summer 2028 -> $25 dead, re-add
+  blocked through 2030-31 (allowed in summer 2031), loganzarvell's Upcoming FAs list him "Cut by bigdaddyburk".
+  HOW IT WORKS (owner, Nov 8 2026: "a friendly graphic that explains every aspect"): 6th tab (?view=how), `assets/contracts-how.js`
+  howItWorks(L) (own module, in the import map; .hw-* at the end of styles.css, plain HTML/CSS graphics so theme.js dark
+  mode converts them; every number from the leaguecontracts.js constants + L.cap, so rule changes update it). Cards: big
+  picture (Price / Length / Limits pillars), price ladder (tier bars + grown real-salary cutoffs for 2027-28, rookie $1),
+  price lock example (real salary bars rising, league price locked $20 x 3), a player's life (2 rows of 8 NBA seasons:
+  taxi -> $1 rookie deal through yr 4 -> deals at tier, gold edge = free agency after every 8th; service, loaner stars, any
+  taxi rookie), years pool (50 squares filled with an example: 2 x 4, 4 x 3, 6 x 2, 12 x 1, 6 free; 4-season limit, taxi /
+  pickups free), the league year (7 numbered steps incl. 6 re-signings, FAAB free agency, hard cap check), cuts (a $20
+  player with 3 left -> $10 x 3; free <= $3; a cut ends his contract; no return until the old deal ends), trades + taxi
+  (contract travels, must fit cap / pool / roster, taxi trades keep the rookie path, sent back down, drops reset), all the
+  numbers. Checked Nov 8 2026: desktop, 402, 320 (no overflow), dark mode.
   TRADE TREES (tab=tradetree; owner, Nov 2 2026; logic `assets/tradetree.js`, no DOM; renderTradeTree in app.js, .tt-* in
   styles.css). Owner's answers: a tree starts from a TRADE (both sides), goes ALL THE WAY down (levels 0-1 open, deeper
   folded <details>; nodes on the way to ?p= stay open), each node = locked points + how it ended, Test features ONLY (no
