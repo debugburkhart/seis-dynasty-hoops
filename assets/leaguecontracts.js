@@ -151,8 +151,17 @@ export function rookiePicks(DATA, history = {}, start = START_SEASON, { taxiLog 
 // Every team's day-one contracts. deals = { pid: { len 1-4, o (team that signed it), t } }: CONTRACTS BELONG TO THE PLAYER
 // (owner, Nov 7 2026), so a player traded in Sleeper keeps his length and price on his new team (row.signer, row.traded); info = { pid: { name, age, fpg, team, pos } };
 // guesses = { pid: price }. Returns { teams, cap, avg, start }. NO SALARY FLOOR (owner dropped it, Nov 8 2026: low payroll here means young / rebuilding, and with no real money a floor would need an invented penalty).
-export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}, rookies = {}, cur, start = START_SEASON }) {
+export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}, rookies = {}, txs = [], cur, start = START_SEASON }) {
   const seasons = Array.from({ length: GRID_SEASONS }, (_, i) => start + i);
+  // REST-OF-SEASON EXCEPTION (owner, Nov 8 2026): players picked up off waivers / free agency THIS season (cur) are on
+  // rest-of-season deals, which use no pool years. { pid: { ts, type, bid } } = his latest waiver / free-agent add, if it
+  // was this season (a later trade keeps it: contracts travel).
+  const pickups = {};
+  for (const t of txs) {
+    if (t.type !== 'waiver' && t.type !== 'free_agent') continue;
+    for (const pid of Object.keys(t.adds ?? {})) if (!pickups[pid] || pickups[pid].ts < t.ts) pickups[pid] = { ts: t.ts, type: t.type, bid: t.bid ?? null, s: Number(t.s) };
+  }
+  for (const pid of Object.keys(pickups)) if (pickups[pid].s !== cur) delete pickups[pid];
   const teams = (rosters ?? []).filter(r => r.owner_id).map(r => {
     const taxi = new Set(r.taxi ?? []);
     const ir = new Set(r.reserve ?? []);
@@ -167,8 +176,11 @@ export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}
       const kind = slot === 'taxi' ? 'taxi' : pick?.left > 0 ? 'rookie' : 'deal';
       const pr = kind === 'rookie' ? { price: ROOKIE_TIER.price, tier: ROOKIE_TIER, known: true, salary: 0, why: 'league rookie deal' } : priceFor(c, start, exp, cur, guesses[pid] ?? null);
       const L = kind === 'taxi' ? 0 : kind === 'rookie' ? pick.left : Math.min(MAX_YEARS, Math.max(1, Number(deals[pid]?.len) || 1));
-      const set = kind === 'deal' && deals[pid]?.len != null;
-      const signer = set ? deals[pid].o ?? r.owner_id : r.owner_id;
+      // Eligible pickups default to the rest-of-season deal (0 pool years) until the team gives him a real length.
+      const rosOk = kind === 'deal' && !!pickups[pid];
+      const ros = rosOk && (deals[pid]?.len == null || deals[pid].ros === true);
+      const set = kind === 'deal' && (deals[pid]?.len != null || ros);
+      const signer = set ? deals[pid]?.o ?? r.owner_id : r.owner_id;
       const end = nbaEnd(c);
       const grid = seasons.map(s => {
         if (kind === 'taxi') {
@@ -186,7 +198,7 @@ export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}
       });
       return {
         pid, name: info?.[pid]?.name ?? ([p.first_name, p.last_name].filter(Boolean).join(' ') || pid), team: p.team ?? '', pos: p.position ?? '',
-        age: info?.[pid]?.age ?? p.age ?? null, fpg: info?.[pid]?.fpg ?? null, exp, c, slot, kind, len: L, set, signer, pick: !!pick, tradedTaxi, callUp: pick?.callUp ?? null, taxiLast: exp == null ? null : cur + TAXI_YEARS - 1 - exp, traded: signer !== r.owner_id,
+        age: info?.[pid]?.age ?? p.age ?? null, fpg: info?.[pid]?.fpg ?? null, exp, c, slot, kind, len: (ros ? 1 : L), set, signer, ros, rosOk, pickup: pickups[pid] ?? null, pick: !!pick, tradedTaxi, callUp: pick?.callUp ?? null, taxiLast: exp == null ? null : cur + TAXI_YEARS - 1 - exp, traded: signer !== r.owner_id,
         price: kind === 'taxi' ? 0 : pr.price, known: pr.known, tier: pr.tier, why: pr.why, guessable: !pr.known,
         real: c?.seasons?.find(x => Number(x.season) === cur)?.salary ?? 0, nbaEnd: end, grid,
       };
@@ -201,7 +213,8 @@ export function buildLeague({ rosters, all, file, info, deals = {}, guesses = {}
 function teamTotals(t) {
   const signed = t.rows.filter(r => r.kind !== 'taxi');
   t.payroll = signed.reduce((s, r) => s + r.price, 0);
-  t.pool = signed.reduce((s, r) => s + r.len, 0);
+  t.pool = signed.reduce((s, r) => s + (r.ros ? 0 : r.len), 0); // rest-of-season deals use no pool years
+  t.ros = signed.filter(r => r.ros).length;
   // The 4-season limit counts deals THIS team signed (one traded in doesn't use its limit).
   t.fours = signed.filter(r => r.kind === 'deal' && r.len === 4 && r.signer === t.owner).length;
   t.unset = signed.filter(r => r.kind === 'deal' && !r.set).length;
@@ -217,7 +230,7 @@ function teamTotals(t) {
 // Can this length be given? Returns '' or the reason it can't. lenNow = the player's current length.
 export function lengthBlock(team, row, want) {
   if (row.kind !== 'deal') return 'Fixed (rookie deal or taxi)';
-  const pool = team.pool - row.len + want;
+  const pool = team.pool - (row.ros ? 0 : row.len) + want;
   if (pool > POOL) return `That would use ${pool} of ${POOL} contract-years.`;
   if (want === 4 && !(row.len === 4 && row.signer === team.owner) && team.fours >= FOUR_YEAR_PER_SUMMER) return `Only ${FOUR_YEAR_PER_SUMMER} four-season deals a summer.`;
   return '';
@@ -230,7 +243,8 @@ export function suggestLengths(team) {
   // Contracts traded in from another team are kept as they are (counted as fixed years).
   const deals = team.rows.filter(r => r.kind === 'deal' && !r.traded);
   const fixed = team.rows.filter(r => r.kind === 'rookie' || (r.kind === 'deal' && r.traded)).reduce((s, r) => s + r.len, 0);
-  let left = POOL - fixed - deals.length - SUGGEST_SPARE; // spare years after 1 season each, minus SUGGEST_SPARE kept free
+  // Rest-of-season pickups cost nothing at 1 season (they stay on the exception); a real deal for one costs his full length.
+  let left = POOL - fixed - deals.filter(r => !r.rosOk).length - SUGGEST_SPARE; // spare years after 1 season each, minus SUGGEST_SPARE kept free
   let fours = 0;
   const out = Object.fromEntries(deals.map(r => [r.pid, 1]));
   const order = [...deals].sort((a, b) => (b.fpg ?? 0) - (a.fpg ?? 0) || (a.age ?? 99) - (b.age ?? 99));
@@ -238,10 +252,11 @@ export function suggestLengths(team) {
     if ((r.fpg ?? 0) < SUGGEST_MIN_FPG || r.age == null) continue;
     let want = SUGGEST_AGE.find(([a]) => r.age <= a)?.[1] ?? 1;
     if (want === 4 && fours >= FOUR_YEAR_PER_SUMMER) want = 3;
-    want = Math.min(want, 1 + Math.max(0, left));
+    const base = r.rosOk ? 0 : 1;
+    want = Math.min(want, base + Math.max(0, left));
     if (want <= 1) continue;
     out[r.pid] = want;
-    left -= want - 1;
+    left -= want - base;
     if (want === 4) fours++;
   }
   return out;

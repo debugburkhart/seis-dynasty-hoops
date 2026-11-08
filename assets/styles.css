@@ -4265,3 +4265,8 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .cx-aff td:last-child { white-space: normal; min-width: 150px; }
 .cx-trd { color: #8a5a00; }
 .cx-proj { background: #f6f3fc; color: #4b2d8f; font-weight: 700; border: 1px dashed #c8b8ec; }
+.cx-rosbox { margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: #e8f5ec; color: #14532d; font-size: 12.5px; line-height: 1.5; }
+.cx-rosbox small { color: #3d6b4c; }
+.cx-rosline { color: #1e7a34; }
+.cx-len .cx-ros { font-weight: 800; }
+.cx-len .cx-ros.on { background: #1e7a34; border-color: #1e7a34; color: #fff; }

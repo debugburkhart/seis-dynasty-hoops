@@ -1305,6 +1305,17 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   REST-OF-SEASON ADDS ARE EXEMPT from the years pool (owner, Nov 8 2026; the years-pool report said 1 year each): waiver
   "Fits?" checks cap room + a roster spot only; SUGGEST_SPARE = 0 (Suggest can use all 50 years; raise it to hold some
   back). Checked: Parma Suggest 50 / 50, 2 fours.
+  ROS ON DAY ONE (owner, Nov 8 2026: "show the players that were added this season and that would be eligible for rest of
+  season waiver exception to contract pool"): buildLeague({ txs: DATA.transactions }) finds each player's latest waiver /
+  free_agent add; if it was this season (cur) and he's a 'deal' row, rosOk (a later trade keeps it). Eligible players
+  default to ros = a rest-of-season deal (1 season, 0 pool years: t.pool skips them, lengthBlock / suggestLengths count
+  them at 0) until the team picks 1-4 (= a real contract, full years). gm-ct-deals entry { len: 1, ros: true } = ROS.
+  Initial contracts: green box "Added this season: N players qualify for the rest-of-season exception" (names + ROS / N
+  seasons), an "ROS" button first in the length chooser, and "Picked up {date} (waiver $bid / free agent): ..." under each
+  name; quick fills keep eligible players left at 1 season on ROS. Team status rows say "ROS (rest-of-season, no pool
+  years)". Checked Nov 8 2026: Parma 7 pickups (Robinson, Hachimura, Eason, Portis, Coulibaly, da Silva, Risacher) -> pool
+  26 -> 19; Robinson set to 3 seasons -> 22; Suggest gave Hachimura 2, Eason / da Silva / Risacher 3, kept the rest ROS
+  (49 / 50); 320 px no overflow.
   TRADE TREES (tab=tradetree; owner, Nov 2 2026; logic `assets/tradetree.js`, no DOM; renderTradeTree in app.js, .tt-* in
   styles.css). Owner's answers: a tree starts from a TRADE (both sides), goes ALL THE WAY down (levels 0-1 open, deeper
   folded <details>; nodes on the way to ?p= stay open), each node = locked points + how it ended, Test features ONLY (no

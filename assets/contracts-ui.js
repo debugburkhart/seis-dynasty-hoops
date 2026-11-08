@@ -63,7 +63,7 @@ export async function renderContracts(body, params, h) {
   const deals = () => dealsNow()?.d ?? {};
   const saveDeals = upd => gmSave('gm-ct-deals', { at: Date.now(), d: upd({ ...deals() }) });
   const guesses = () => gmLoad('gm-ct-guess', {});
-  const league = () => buildLeague({ rosters, all, file, info, deals: deals(), guesses: guesses(), rookies, cur: season });
+  const league = () => buildLeague({ rosters, all, file, info, deals: deals(), guesses: guesses(), rookies, txs: DATA.transactions ?? [], cur: season });
   const tn = o => `${esc(teamName(o, cur.season))} <small>(${esc(name(o))})</small>`;
   const here = () => `#/commish?tab=contracts&view=${S.view}&team=${S.team}`;
   const back = () => `&back=${encodeURIComponent(here())}&backl=${encodeURIComponent('Contracts')}`;
@@ -125,7 +125,7 @@ export async function renderContracts(body, params, h) {
     };
     const signed = T.rows.filter(r => r.kind !== 'taxi');
     const taxi = T.rows.filter(r => r.kind === 'taxi');
-    const row = r => `<tr class="${r.slot}"><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}${r.kind === 'deal' ? ` · <b>${r.len} season${r.len === 1 ? '' : 's'}</b>${r.set ? '' : ' (unset)'}` : r.kind === 'rookie' ? ` · rookie deal (called up ${span(r.callUp)}), ${r.len} left` : ''}</small></td>
+    const row = r => `<tr class="${r.slot}"><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}${r.kind === 'deal' && r.ros ? ' · <b>ROS</b> (rest-of-season, no pool years)' : r.kind === 'deal' ? ` · <b>${r.len} season${r.len === 1 ? '' : 's'}</b>${r.set ? '' : ' (unset)'}` : r.kind === 'rookie' ? ` · rookie deal (called up ${span(r.callUp)}), ${r.len} left` : ''}</small></td>
       <td class="n cx-nba">${nbaCell(r)}</td>${r.grid.map(g => cell(r, g)).join('')}</tr>`;
     const grid = `<div class="rc-scroll cx-gridwrap"><table class="rc-tbl cx-grid"><thead><tr><th>Player</th><th class="n">Real now</th>${L.seasons.map(s => `<th class="cx-c">${span(s)}</th>`).join('')}</tr></thead><tbody>
       ${signed.map(row).join('')}
@@ -154,18 +154,22 @@ export async function renderContracts(body, params, h) {
     const rk = T.rows.filter(r => r.kind === 'rookie');
     const taxi = T.rows.filter(r => r.kind === 'taxi');
     const g = guesses();
-    const lenBtns = r => `<div class="cx-len">${[1, 2, 3, 4].map(n => {
-      const why = n === r.len ? '' : lengthBlock(T, r, n);
-      return `<button type="button" class="ct-chip${n === r.len ? ' on' : ''}" data-len="${n}" data-pid="${r.pid}"${why ? ` disabled title="${esc(why)}"` : ''}>${n}</button>`;
+    // Eligible pickups get an "ROS" choice first (rest-of-season deal: 1 season, no pool years); 1-4 = a real contract.
+    const lenBtns = r => `<div class="cx-len">${r.rosOk ? `<button type="button" class="ct-chip cx-ros${r.ros ? ' on' : ''}" data-len="ros" data-pid="${r.pid}" title="Rest-of-season deal: picked up this season, so no pool years">ROS</button>` : ''}${[1, 2, 3, 4].map(n => {
+      const on = n === r.len && !r.ros;
+      const why = on ? '' : lengthBlock(T, r, n);
+      return `<button type="button" class="ct-chip${on ? ' on' : ''}" data-len="${n}" data-pid="${r.pid}"${why ? ` disabled title="${esc(why)}"` : ''}>${n}</button>`;
     }).join('')}</div>`;
+    const pickTxt = r => (r.rosOk ? `<small class="cx-sub cx-rosline">Picked up ${new Date(r.pickup.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (${r.pickup.type === 'waiver' ? `waiver${r.pickup.bid ? ` $${r.pickup.bid}` : ''}` : 'free agent'}): ${r.ros ? '<b>rest-of-season deal, no pool years</b>' : 'eligible for the rest-of-season exception (tap ROS)'}</small>` : '');
     const guessSel = r => (r.guessable ? `<select class="cx-guess" data-guess="${r.pid}" title="His real ${span(L.start)} deal isn’t signed yet: pick the price you expect"><option value="">est. ${$(priceFor(r.c, L.start, r.exp, season).price)}</option>${PRICE_STEPS.map(p => `<option value="${p}"${g[r.pid] === p ? ' selected' : ''}>${$(p)}</option>`).join('')}</select>` : '');
-    const row = r => `<tr class="${r.slot}"><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small></td><td class="n cx-nba">${nbaCell(r)}</td>
+    const row = r => `<tr class="${r.slot}"><td>${card2k(r.pid, r.name)} ${adv(r.pid)}<small class="cx-sub">${who(r)}</small>${pickTxt(r)}</td><td class="n cx-nba">${nbaCell(r)}</td>
       <td class="n">${priceTxt(r.price, !r.known, r.why)} ${chip(r.tier)}${guessSel(r)}</td><td>${lenBtns(r)}</td></tr>`;
     return betaCard(`${tn(T.owner)} · day-one contracts`, `
       <div class="cx-sum">
         <div><b>${T.pool}</b> / ${POOL} contract-years · <b>${POOL - T.pool}</b> free<div class="rc-bar"><span class="rc-a${T.pool > POOL ? ' cx-overbar' : ''}" style="width:${Math.min(100, (100 * T.pool) / POOL)}%"></span></div></div>
         <div><b>${T.fours}</b> / ${FOUR_YEAR_PER_SUMMER} four-season deals · payroll <b>${$(T.payroll)}</b> ${room(T.payroll, L.cap)} · roster <b class="${T.counted > ROSTER_MAX ? 'rc-over' : ''}">${T.counted} / ${ROSTER_MAX}</b></div>
       </div>
+      ${(() => { const pk = deals.filter(r => r.rosOk); return pk.length ? `<div class="cx-rosbox"><b>Added this season: ${pk.length} player${pk.length === 1 ? '' : 's'} qualify for the rest-of-season exception</b> (picked up off waivers / free agency in ${span(season)}: a rest-of-season deal uses no pool years; tap 1-4 to give one a real contract instead). ${pk.map(r => `${esc(r.name)} <small>(${r.ros ? 'ROS' : `${r.len} season${r.len === 1 ? '' : 's'}`})</small>`).join(' · ')}</div>` : `<p class="cm-rule">No waiver / free-agent pickups this season on this roster, so nobody qualifies for the rest-of-season exception.</p>`; })()}
       <div class="cx-btns"><button type="button" class="btn" data-fill="one">Everyone 1 season</button><button type="button" class="btn" data-fill="suggest">Suggest (age + FP/G)</button></div>
       <p class="cm-rule">Pick a length (1-${MAX_YEARS} seasons) for every player; unassigned = 1 season. Lengths never change the price (his ${span(L.start)} tier, locked for the deal). Greyed buttons would break the ${POOL}-year pool or the ${FOUR_YEAR_PER_SUMMER} four-season deals. Suggest: best FP/G first, age ≤ ${SUGGEST_AGE[0][0]} = 4, ≤ ${SUGGEST_AGE[1][0]} = 3, ≤ ${SUGGEST_AGE[2][0]} = 2, older or under ${SUGGEST_MIN_FPG} FP/G = 1, within the pool (rest-of-season waiver adds don't use pool years, so all ${POOL} can go to day-one deals). Contracts belong to the <b>player</b>: if he’s traded in Sleeper, his length and price go with him (“traded in”), and the quick fills leave those alone.</p>
       <div class="rc-scroll"><table class="rc-tbl cx-init"><thead><tr><th>Player</th><th class="n">Real now</th><th class="n">Price ${span(L.start)}</th><th>Seasons</th></tr></thead><tbody>
@@ -336,7 +340,7 @@ export async function renderContracts(body, params, h) {
 
   // ---------------- events ----------------
   const setLen = (owner, pid, n) => {
-    saveDeals(d => ({ ...d, [pid]: { len: n, o: owner, t: Date.now() } }));
+    saveDeals(d => ({ ...d, [pid]: n === 'ros' ? { len: 1, ros: true, o: owner, t: Date.now() } : { len: n, o: owner, t: Date.now() } }));
   };
   page.addEventListener('click', e => {
     const t = e.target.closest('button, tr[data-goteam]');
@@ -347,14 +351,16 @@ export async function renderContracts(body, params, h) {
     if (t.dataset.faall != null) { S.faAll = !S.faAll; draw(); return; }
     if (t.dataset.faadd) { const p = planOf(S.team); const pid = t.dataset.faadd; p.adds = [...p.adds, { id: String(Date.now()), pid, name: info[pid]?.name ?? pid, price: Number(t.dataset.price), len: 1, rookie: false }]; savePlan(S.team, p); draw(); return; }
     if (t.dataset.block) { const b = blockOf(S.team); gmSave(`gm-ct-block-${S.team}`, b.includes(t.dataset.block) ? b.filter(x => x !== t.dataset.block) : [...b, t.dataset.block]); draw(); return; }
-    if (t.dataset.len) { setLen(S.team, t.dataset.pid, Number(t.dataset.len)); draw(); return; }
+    if (t.dataset.len) { setLen(S.team, t.dataset.pid, t.dataset.len === 'ros' ? 'ros' : Number(t.dataset.len)); draw(); return; }
     if (t.dataset.fill) {
       const T = L().teams.find(x => x.owner === S.team);
       const had = T.rows.some(r => r.set);
       if (had && !confirm(t.dataset.fill === 'one' ? 'Set every player back to 1 season?' : 'Replace every length with the suggestion (age + FP/G)?')) return;
       // Only this team's own signings; contracts traded in from other teams stay as they are.
       const len = t.dataset.fill === 'one' ? Object.fromEntries(T.rows.filter(r => r.kind === 'deal' && !r.traded).map(r => [r.pid, 1])) : suggestLengths(T);
-      saveDeals(d => { for (const [pid, n] of Object.entries(len)) d[pid] = { len: n, o: S.team, t: Date.now() }; return d; });
+      // Rest-of-season pickups left at 1 season stay on the exception (no pool years).
+      const rosOk = new Set(T.rows.filter(r => r.rosOk).map(r => r.pid));
+      saveDeals(d => { for (const [pid, n] of Object.entries(len)) d[pid] = rosOk.has(pid) && n === 1 ? { len: 1, ros: true, o: S.team, t: Date.now() } : { len: n, o: S.team, t: Date.now() }; return d; });
       draw();
       return;
     }
