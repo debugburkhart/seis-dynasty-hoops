@@ -10,6 +10,9 @@ import { ALL_STAR_POSITIONS } from './corrections.js';
 import { allFantasy, allStars, championshipMvp, mvpRace, playerOfTheYear, rookieClass } from './awards.js';
 import { draftOfYear } from './draft.js';
 import { normName } from './scout.js';
+import { weekBoxes } from './locks.js';
+import { CANDIDATES as SLP_QUERIES, gql, locksFromLegs } from './sleeperpriv.js';
+const LOCKS_QUERY = SLP_QUERIES.find(c => c.id === 'locks').query;
 
 export const fantasy = (stats, scoring) => Object.entries(scoring).reduce((sum, [k, v]) => sum + (Number(stats?.[k]) || 0) * v, 0);
 // Minutes: `min`, or seconds played / 60 (older rows have only `sp`).
@@ -807,6 +810,75 @@ export function lockedTotals(DATA, { season = 'career', owner = null } = {}) {
   }
   return out;
 }
+
+// LIVE LOCKS (owner, Nov 8 2026: "update the 2K breakdown as soon as a lock hits", no waiting for the week to end).
+// Sleeper's own lock data (sleeperpriv.js: matchup_legs_raw starters_games, NO login, unofficial) for the week being
+// played: every starter already locked -> { s, w, t: 'R', o, pid, p, date, live: true }, the same shape as
+// DATA.playerWeeks (o = the team whose MATCHUP lineup has him, p = that game's box score under league scoring). A
+// locked week is SETTLED for that player: his points can't change and his later games that week aren't LGS. null when no
+// regular week is in progress (or Sleeper / the box scores don't answer: then pages show finished weeks only, as before).
+// Cached 2 minutes. Page-side only: DATA.playerWeeks, the nightly job and the solver never see these rows.
+let LIVE = null;
+export async function liveLocks(DATA) {
+  if (LIVE && Date.now() - LIVE.at < 120_000) return LIVE.v;
+  const v = await (async () => {
+    const cur = DATA.seasons.at(-1);
+    const state = await get('/v1/state/nba', null);
+    const week = Number(state?.week);
+    if (state?.season_type !== 'regular' || String(state.season) !== String(cur.season) || !week || Number(state.last_scored_leg) >= week) return null;
+    const [res, schedule, scoring] = await Promise.all([
+      gql(LOCKS_QUERY, { leagueId: cur.leagueId, round: week }),
+      get(`/schedule/nba/regular/${cur.season}`, []),
+      scoringFor(DATA, cur.season),
+    ]);
+    const legs = res.data?.matchup_legs_raw;
+    if (!Array.isArray(legs)) return null;
+    const boxes = await weekBoxes(cur.season, week, scoring ?? {});
+    if (!boxes) return null;
+    const ownerOf = Object.fromEntries(cur.teams.map(t => [t.rosterId, t.owner]));
+    const rows = [];
+    for (const [rid, t] of Object.entries(locksFromLegs(legs, schedule))) {
+      const o = ownerOf[rid];
+      if (!o) continue;
+      for (const [pid, l] of Object.entries(t.locks)) {
+        if (!l.date || !t.starters.includes(pid)) continue;
+        const g = boxes.games?.[pid]?.find(x => x.date === l.date);
+        if (!g) continue;
+        rows.push({ s: String(cur.season), w: week, t: 'R', o, pid, p: g.p, date: l.date, live: true });
+      }
+    }
+    return { season: String(cur.season), week, rows, locked: new Set(rows.map(r => `${r.o}|${r.pid}`)), at: Date.now() };
+  })().catch(() => null);
+  LIVE = { at: Date.now(), v };
+  return v;
+}
+// DATA with the live week's locked starters added to playerWeeks (for lockedTotals and friends on a page).
+export const withLiveWeeks = (DATA, live) => (live?.rows?.length ? { ...DATA, playerWeeks: [...(DATA.playerWeeks ?? []), ...live.rows] } : DATA);
+// data/lgs.json with the live week's after-lock games flagged 'k' right away (the watcher's markAfterLock only does it
+// once the week is settled): a copy, the loaded file is never changed.
+export function withLiveLgs(lgs, live) {
+  const S0 = lgs?.seasons?.[live?.season];
+  if (!S0 || !live.rows.length) return lgs;
+  const p = { ...S0.p };
+  for (const r of live.rows) {
+    const games = p[r.pid];
+    if (!games) continue;
+    let copy = null;
+    for (const [key, rec] of Object.entries(games)) {
+      const [v, o, fl = ''] = rec;
+      if (o !== r.o || Number(S0.games?.[key]?.w) !== live.week || key.slice(0, 10) <= r.date || fl.includes('k')) continue;
+      (copy ??= { ...games })[key] = [v, o, `${fl}k`];
+    }
+    if (copy) p[r.pid] = copy;
+  }
+  return { ...lgs, seasons: { ...lgs.seasons, [live.season]: { ...S0, p } } };
+}
+// LGS records that count toward Lock per start % (owner, Oct 31 2026: finished weeks only): a finished week, or the live
+// week once THIS player is locked for that team (his week is settled).
+export const lgsSettled = (lgs, live, s, key, o, pid, doneWeekOf) => {
+  const w = Number(lgs?.seasons?.[s]?.games?.[key]?.w);
+  return w <= doneWeekOf(s) || (!!live && s === live.season && w === live.week && live.locked.has(`${o}|${pid}`));
+};
 
 // The page's player list. list: 'team' (owner's roster), 'fa' (waiver wire: active players with an NBA
 // team on no roster) or 'league' (every rostered player); rosters are today's. season = a season, or

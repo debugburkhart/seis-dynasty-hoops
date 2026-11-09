@@ -212,7 +212,9 @@ function lgsFromLocks(answers, teamOf, gamesOn) {
   }
   return out;
 }
-const FILL_INS = [['2026', 1]];
+// Week 2 (owner, Nov 8 2026): the watcher started Oct 29, so week 2's Oct 26-28 locked games had no LGS (Sengun:
+// locked 3 weeks, 2 LGS). Same fill-in as week 1: each starter's counted game, never over a watched game.
+const FILL_INS = [['2026', 1], ['2026', 2]];
 async function fillIns(db) {
   const todo = FILL_INS.filter(([s, w]) => !db.filled?.[`${s}-${w}`]);
   if (!todo.length) return false;

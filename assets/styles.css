@@ -4597,3 +4597,17 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .si-tot { margin: 4px 0 0; padding: 4px 6px; border-radius: 6px; background: #f3f5f9; font-size: 11.5px; font-weight: 700; }
 .si-tot.si-ok { background: #eef6f0; color: #2a6b3a; }
 .si-tot.si-bad { background: #fbeeee; color: #8a2424; font-weight: 600; }
+.si-corr { display: block; margin-top: 2px; padding: 2px 6px; border-radius: 4px; background: #fdf3dc; color: #7a5208; font-size: 10.5px; }
+.si-totnote { margin: 3px 0 0; padding: 4px 6px; border-radius: 6px; background: #fdf3dc; color: #6b4a08; font-size: 11px; line-height: 1.4; }
+.si-odd-wk { margin: 12px 0 4px; font: 800 12px/1.2 var(--display); text-transform: uppercase; letter-spacing: .06em; color: var(--navy-700); }
+.si-odd-wk small { color: var(--muted); text-transform: none; letter-spacing: 0; font-weight: 600; }
+.si-odd { list-style: none; margin: 0; padding: 0; }
+.si-odd li { display: flex; flex-direction: column; gap: 2px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.si-odd-who { font-size: 12.5px; }
+.si-odd-who small { color: var(--muted); }
+.si-odd-t { color: var(--ink); line-height: 1.4; }
+.si-k { align-self: flex-start; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; background: #eef0f4; color: var(--navy-700); }
+.si-k-corr, .si-k-bench { background: #fdf3dc; color: #7a5208; }
+.si-k-total, .si-k-other, .si-k-zero, .si-k-nogame { background: #fbe4e4; color: #8a2424; }
+.si-k-pick, .si-k-extra { background: #e6ecf8; color: #22427e; }
+.bk-livelk { color: var(--gold-ink); font-weight: 600; }

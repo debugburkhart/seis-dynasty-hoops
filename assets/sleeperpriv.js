@@ -236,6 +236,81 @@ export function countedGame(list, bench, left = 0) {
   return { g, p: g ? g.p : 0, final: left === 0, left, sat: played.length - lineup.length };
 }
 
+// One week, every starter (owner, Nov 8 2026). Player points = TODAY's box score (after any NBA stat correction); the team
+// total REPORTED = Sleeper's final (t.points) once the week is over, never re-added. saved = { 'owner|pid': points } from
+// league.json playerWeeks (what Sleeper counted at the time, settled by weekfix) -> a starter whose counted game's box
+// score changed since gets note { kind 'corr', was, now }; if the saved value equals ANOTHER of his games, { kind 'other' }
+// (records and Sleeper's lock data disagree on which game counted). explained = sum(was - now); unexplained = official -
+// today's sum - explained (a bench game the watcher missed, a lock read wrong...). benchOf(pid, owner) = Set of bench dates.
+const r1 = n => Math.round(n * 10) / 10;
+export function weekReport({ legs, schedule, boxes, benchOf, saved = {}, ownerOf, done = false }) {
+  const locks = locksFromLegs(legs, schedule);
+  const gameAt = {};
+  for (const g of schedule ?? []) for (const s of [g.home?.team, g.away?.team]) if (s) gameAt[`${g.date}|${s}`] = `${g.away?.team} @ ${g.home?.team}`;
+  const teams = {};
+  for (const [rid, t] of Object.entries(locks)) {
+    const owner = ownerOf[rid];
+    const rows = t.starters.map(pid => {
+      const list = boxes?.games?.[pid] ?? [];
+      const played = list.filter(x => x.done !== false);
+      const bench = benchOf?.(pid, owner) ?? new Set();
+      const l = t.locks[pid] ?? null;
+      let g = null;
+      let left = 0;
+      let final = true;
+      if (l) g = l.date ? list.find(x => x.date === l.date) ?? null : null;
+      else {
+        const nbaTeam = list.at(-1)?.team;
+        left = nbaTeam ? (boxes?.sched?.[nbaTeam] ?? []).filter(x => !x.done).length : 0;
+        const c = countedGame(list, bench, left);
+        g = c.g;
+        final = c.final;
+      }
+      const p = g ? g.p : 0;
+      const sv = saved[`${owner}|${pid}`];
+      let note = null;
+      if (done && sv != null && Math.abs(sv - p) >= 0.05) {
+        const other = played.find(x => x !== g && Math.abs(x.p - sv) < 0.05);
+        note = other ? { kind: 'other', was: sv, now: p, otherDate: other.date } : { kind: 'corr', was: sv, now: p };
+      }
+      return { pid, lock: l, g, p, left, final, played: played.length, benchGames: played.filter(x => bench.has(x.date)), saved: sv ?? null, note, matchup: g ? gameAt[`${g.date}|${g.team}`] ?? null : null };
+    });
+    const today = r1(rows.reduce((s, r) => s + r.p, 0));
+    const explained = r1(rows.reduce((s, r) => s + (r.note ? r.note.was - r.note.now : 0), 0));
+    const official = t.points ?? null;
+    const unexplained = done && official != null ? r1(official - today - explained) : null;
+    teams[rid] = { rid, owner, rows, today, official, explained, unexplained, open: rows.filter(r => !r.final).length, extras: Object.keys(t.locks).filter(pid => !t.starters.includes(pid)), matchup: t.matchup, locks: t.locks };
+  }
+  return { locks, teams };
+}
+
+// Everything odd in one week, as plain records (cacheable): { week, owner, pid, kind, ... }.
+// kinds: corr (stat corrected after the week), other (records say a different game counted), total (team total off by
+// more than the corrections explain), bench (played from the bench: those games didn't count), zero (played, but only
+// from the bench: 0), extra (locked, but not in the final starters: traded after his lock?), nogame (lock on a game id
+// not on the schedule), pick (Sleeper's lock != your Dev Dashboard pick; added live, never cached).
+export function weekOddities(week, rep) {
+  const out = [];
+  for (const t of Object.values(rep.teams)) {
+    for (const r of t.rows) {
+      const base = { week, owner: t.owner, pid: r.pid };
+      if (r.note) out.push({ ...base, kind: r.note.kind, was: r.note.was, now: r.note.now, date: r.g?.date ?? null, otherDate: r.note.otherDate ?? null });
+      if (r.lock && !r.lock.date) out.push({ ...base, kind: 'nogame' });
+      // Only bench games that CHANGED what counts: an unlocked starter benched for games after his last lineup game (so an
+      // earlier game counted), or benched for all of them (0). Bench games before he moved in, or before a lock, are routine.
+      const late = r.lock ? [] : r.benchGames.filter(x => !r.g || x.date > r.g.date);
+      // Only once his week is settled (no games left): a player still to play can move back into the lineup and his
+      // last game counts after all (owner, Nov 8 2026: Dejounte Murray was flagged while playing his Sunday game).
+      if (late.length && r.final) {
+        out.push({ ...base, kind: r.g ? 'bench' : 'zero', dates: late.map(x => ({ date: x.date, p: x.p })), counted: r.g ? { date: r.g.date, p: r.g.p } : null, live: !r.final });
+      }
+    }
+    if (t.unexplained != null && Math.abs(t.unexplained) >= 0.05) out.push({ week, owner: t.owner, pid: null, kind: 'total', official: t.official, today: t.today, explained: t.explained, diff: t.unexplained });
+    for (const pid of t.extras) out.push({ week, owner: t.owner, pid, kind: 'extra', date: t.locks[pid]?.date ?? null });
+  }
+  return out;
+}
+
 // "Save Sleeper's locks as picks" (owner, Nov 8 2026: the solver gets Sleeper's locks ONLY when he presses the button).
 // locks = locksFromLegs(), law = lawFor() picks, ownerOf = roster_id -> owner id (the MATCHUP lineup's team, so a starter
 // traded after his lock stays with his old team, like the Dev Dashboard), ptsOf(pid, date) = box-score points, done =

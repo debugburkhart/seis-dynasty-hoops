@@ -36,7 +36,7 @@ import { renderAdvanced } from './advstats-ui.js';
 import { renderContracts } from './contracts-ui.js';
 import { renderSleeperInsider } from './sleeperpriv-ui.js';
 import { DAYS, MIN_LOCKS, managerCards, seasonStarts } from './lockcard.js';
-import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, injuryNow, injuryDiff, INJ_LOG_VERSION, INJ_LOG_DAYS, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
+import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, liveLocks, withLiveWeeks, withLiveLgs, lgsSettled, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, injuryNow, injuryDiff, INJ_LOG_VERSION, INJ_LOG_DAYS, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -3488,7 +3488,12 @@ async function renderBreakdown(body, params) {
   // League list "Include waiver wire" (owner, Oct 26 2026): rostered players + every free agent, saved in gm-bk-lgfa.
   // ?fa=1 = include free agents for this visit (the card's "View in League" arrow on a free agent).
   const lgFa = list === 'league' && (params.get('fa') === '1' || gmLoad('gm-bk-lgfa', false));
-  const [bk, dyn, rings, , , espnOut, , , lgsData] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, nbaTeam, withFa: lgFa, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft(), get('/v1/players/nba', {}).then(espnInjuries).catch(() => null), autoTagData(), loadTaxiWeeks(), loadLgs().catch(() => null)]);
+  let [bk, dyn, rings, , , espnOut, , , lgsData] = await Promise.all([loadBreakdown(DATA, { list, owner: me, season, nbaTeam, withFa: lgFa, stints: season === 'career' && list === 'team' ? frontOffice(DATA).stints : [] }), gmDynasty(params).catch(() => null), championshipRings(DATA).catch(() => ({})), loadContracts(), loadNbaDraft(), get('/v1/players/nba', {}).then(espnInjuries).catch(() => null), autoTagData(), loadTaxiWeeks(), loadLgs().catch(() => null)]);
+  // LIVE LOCKS (owner, Nov 8 2026): Sleeper's locks for the week in progress (no login), so a lock shows up here at once:
+  // locked points / weeks locked count it, his later games that week stop being LGS, and the game log marks it.
+  BK_LIVE = season === 'career' || season === cur.season ? await liveLocks(DATA) : null;
+  const DL = withLiveWeeks(DATA, BK_LIVE);
+  lgsData = withLiveLgs(lgsData, BK_LIVE);
   BK.espn = espnOut ?? {}; // ESPN injury estimates (return date, out for season) by pid
   await autoDynasty(dyn?.v ?? null); // taxi / contract / riser-faller / Top 100 prospect auto tags
   // Season-banner awards per player (same rules as the Awards page), worked out once per visit.
@@ -3497,7 +3502,7 @@ async function renderBreakdown(body, params) {
   BK.dyn = dynOf;
   // Locked points (owner, Oct 25 2026): this team's only on Team, any team on League / Waiver wire; the
   // chosen season or every season in Career. From DATA.playerWeeks (finished weeks).
-  const locked = lockedTotals(DATA, { season, owner: list === 'team' ? me : null });
+  const locked = lockedTotals(DL, { season, owner: list === 'team' ? me : null });
   BK.locked = pid => locked[pid] ?? null;
   // League Games Started: this team's only on Team (like Locked), any team elsewhere; the chosen season or Career.
   const lgsC = lgsCounts(lgsData, season, list === 'team' ? me : null);
@@ -3507,7 +3512,7 @@ async function renderBreakdown(body, params) {
   const lgsSeasons = Object.keys(lgsData?.seasons ?? {});
   const lkTracked = {};
   for (const s of season === 'career' ? lgsSeasons : lgsSeasons.filter(x => x === season)) {
-    for (const [pid, r] of Object.entries(lockedTotals(DATA, { season: s, owner: list === 'team' ? me : null }))) lkTracked[pid] = (lkTracked[pid] ?? 0) + r.starts;
+    for (const [pid, r] of Object.entries(lockedTotals(DL, { season: s, owner: list === 'team' ? me : null }))) lkTracked[pid] = (lkTracked[pid] ?? 0) + r.starts;
   }
   BK.lkWeeks = pid => lkTracked[pid] ?? 0;
   // Only FINISHED weeks on both sides (a week's lock counts once it's over), so a week in progress doesn't drag it down.
@@ -3709,7 +3714,7 @@ async function renderBreakdown(body, params) {
           ${p.rankOvr ? `<p class="bk-share" title="Rank by total fantasy points under our league scoring, ${esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season))}: among all NBA players and among ${esc(p.mainPos)}s"><span class="ct-label">League rank</span> <b>${p.rankPos ?? '—'} ${esc(p.mainPos)}</b> · <b>${p.rankOvr} OVR</b> <small>(${esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season))})</small></p>` : ''}
           ${p.owned != null ? `<p class="bk-share" title="Share of Sleeper NBA dynasty leagues where he is on a roster / in a starting lineup this week (the numbers the Sleeper app shows in this league)"><span class="ct-label">Sleeper</span> Rostered <b>${bkShare(p.owned)}</b> · Started <b>${bkShare(p.started)}</b> of dynasty leagues</p>` : ''}
           ${p.tot.usg != null ? `<p class="bk-share bk-role" title="Usage rate: the share of his team's plays he finished (shot, free-throw trip or turnover) while on the floor, ${esc(period)}. Under 20% Role Player / Connector · 20-23% Average Starter · 24-29% Co-Star / Lead Scorer · 30-35% Primary Creator / Superstar · 35%+ Ultra-High Usage"><span class="ct-label">Role</span> <b>${esc(usgRole(p.tot.usg))}</b> (${p.tot.usg.toFixed(1)}% usage${p.tot.gp < 5 ? `, ${p.tot.gp} game${p.tot.gp === 1 ? '' : 's'}` : ''})</p>` : ''}
-          ${BK.lgs(p.pid) ? (() => { const c = BK.lgs(p.pid); return `<p class="bk-share bk-lgs" title="League Games Started: games where a fantasy team${list === 'team' ? ' (this one)' : ''} had him in a starting slot when his NBA game tipped off (one per game, any slot; his games after his lock that week don't count). Out of the games he played while on a roster here, taxi / IR left out. Unsure = moved in or out right around tip-off. Tracked since ${esc(BK.lgsSince ? shortMd(BK.lgsSince) : 'Oct 29')} (week 1: only the game each starter was locked on). Lock per start = weeks locked ÷ LGS."><span class="ct-label">League Games Started</span> <b>${c.n}</b> of ${c.seen} game${c.seen === 1 ? '' : 's'}${c.u ? ` <small>(${c.u} unsure)</small>` : ''} · Locked <b>${BK.lkWeeks(p.pid)}</b> week${BK.lkWeeks(p.pid) === 1 ? '' : 's'}${BK.lkPct(p.pid) != null ? ` · <b>${BK.lkPct(p.pid)}%</b> lock per start` : ''}</p>`; })() : ''}
+          ${BK.lgs(p.pid) ? (() => { const c = BK.lgs(p.pid); return `<p class="bk-share bk-lgs" title="League Games Started: games where a fantasy team${list === 'team' ? ' (this one)' : ''} had him in a starting slot when his NBA game tipped off (one per game, any slot; his games after his lock that week don't count). Out of the games he played while on a roster here, taxi / IR left out. Unsure = moved in or out right around tip-off. Tracked since ${esc(BK.lgsSince ? shortMd(BK.lgsSince) : 'Oct 29')} (week 1: only the game each starter was locked on). Lock per start = weeks locked ÷ LGS."><span class="ct-label">League Games Started</span> <b>${c.n}</b> of ${c.seen} game${c.seen === 1 ? '' : 's'}${c.u ? ` <small>(${c.u} unsure)</small>` : ''} · Locked <b>${BK.lkWeeks(p.pid)}</b> week${BK.lkWeeks(p.pid) === 1 ? '' : 's'}${BK.lkPct(p.pid) != null ? ` · <b>${BK.lkPct(p.pid)}%</b> lock per start` : ''}${BK_LIVE?.rows.some(r => r.pid === p.pid) ? ` <small class="bk-livelk" title="Sleeper shows him locked in week ${BK_LIVE.week} (still being played): that lock already counts in his locked points, weeks locked and LGS">· incl. week ${BK_LIVE.week} lock (live)</small>` : ''}</p>`; })() : ''}
         </div>
       </div>
       <div class="bk-info">
@@ -3765,7 +3770,7 @@ async function renderBreakdown(body, params) {
     if (BK.pid !== p.pid || !box.isConnected) return;
     const mode = gmLoad('gm-bk-yrmode', 'nba') === 'league' ? 'league' : 'nba';
     const view = YR_VIEWS.some(([id]) => id === gmLoad('gm-bk-yrview', 'avg')) ? gmLoad('gm-bk-yrview', 'avg') : 'avg';
-    const pw = (DATA.playerWeeks ?? []).filter(x => x.pid === p.pid);
+    const pw = (DL.playerWeeks ?? []).filter(x => x.pid === p.pid);
     const lockOf = keep => { const l = pw.filter(keep); return { pts: l.reduce((a, x) => a + x.p, 0), starts: l.length, mine: l.filter(x => x.o === me).reduce((a, x) => a + x.p, 0) }; };
     const mineCol = list === 'team' && mode === 'nba';
     // League Games Started for a row (data/lgs.json; tracked from the 2026-27 season on): count of his games kept by
@@ -3778,7 +3783,7 @@ async function renderBreakdown(body, params) {
       for (const s of seasonsT) for (const [key, [v, o, fl = '']] of Object.entries(lgsData.seasons[s].p?.[p.pid] ?? {})) {
         if (v !== 1 || fl.includes('k') || !keep(s, key.slice(0, 10), o)) continue;
         n++;
-        if (lgsData.seasons[s].games?.[key]?.w <= doneWeek(s)) d++;
+        if (lgsSettled(lgsData, BK_LIVE, s, key, o, p.pid, doneWeek)) d++;
       }
       return { n, d };
     };
@@ -3885,11 +3890,12 @@ async function renderBreakdown(body, params) {
     const starts = {};
     for (const [key, [v, o, fl = '']] of Object.entries(lgsData?.seasons?.[logSeason]?.p?.[p.pid] ?? {})) if (v === 1 && !fl.includes('k')) starts[key.slice(0, 10)] = o;
     const locks = {};
-    for (const x of (DATA.playerWeeks ?? []).filter(y => y.s === logSeason && y.pid === p.pid)) {
+    for (const x of (DL.playerWeeks ?? []).filter(y => y.s === logSeason && y.pid === p.pid)) {
       const wk = games.filter(g => !g.dnp && g.week === x.w).sort((a, b) => (a.date < b.date ? -1 : 1));
       const law = lawSrc ? lawFor(logSeason, x.w, lawSrc)[p.pid] : null;
       let g = null;
-      if (law?.k === 'lock') g = wk.find(y => y.date === law.d);
+      if (x.live) g = wk.find(y => y.date === x.date); // Sleeper's live lock (week in progress)
+      else if (law?.k === 'lock') g = wk.find(y => y.date === law.d);
       else if (law?.k === 'last') g = wk.filter(y => starts[y.date] || !Object.keys(starts).length).at(-1) ?? wk.at(-1);
       else if (!law) {
         const fits = wk.filter(y => Math.abs(y.line.fp - x.p) < 0.06);
@@ -3997,7 +4003,7 @@ async function renderBreakdown(body, params) {
     if (run !== cmpRun || !box.isConnected) return;
     const ps = l.map(pid => got?.players.find(p => p.pid === pid)).filter(Boolean);
     for (const p of ps) BK_NAMES[p.pid] = p.name;
-    const lk = lockedTotals(DATA, { season });
+    const lk = lockedTotals(DL, { season });
     const awardsOf = pid => {
       const g = {};
       for (const r of rings[pid] ?? []) g.Champion = (g.Champion ?? 0) + 1;
@@ -4429,6 +4435,8 @@ function tradeReturn(t, owner, pname, gave = false) {
   return `${gave ? 'Gave up' : 'Got back'}: ${got.join(', ') || 'nothing'}`;
 }
 
+// Live locks of the week in progress for the 2K page (breakdown.js liveLocks; set by renderBreakdown, null = none).
+let BK_LIVE = null;
 // Last finished fantasy week per season (DATA.playerWeeks holds finished weeks only).
 const doneWeek = s => Math.max(0, ...(DATA.playerWeeks ?? []).filter(x => x.s === s).map(x => x.w));
 // LGS per player over finished weeks only (for Lock per start %): same skips as lgsCounts (after-lock, taxi/IR, unsure).
@@ -4439,7 +4447,7 @@ function lgsFinished(lgs, season, owner = null) {
     const last = doneWeek(s);
     for (const [pid, games] of Object.entries(S.p ?? {})) {
       for (const [key, [v, o, fl = '']] of Object.entries(games)) {
-        if (v !== 1 || fl.includes('k') || (owner && o !== owner) || !(S.games?.[key]?.w <= last)) continue;
+        if (v !== 1 || fl.includes('k') || (owner && o !== owner) || !(S.games?.[key]?.w <= last || lgsSettled(lgs, BK_LIVE, s, key, o, pid, doneWeek))) continue;
         out[pid] = (out[pid] ?? 0) + 1;
       }
     }
@@ -5021,14 +5029,17 @@ async function renderDepth(body, params) {
   const fantasyView = view === 'fantasy';
   body.innerHTML = `<div class="loading">Pulling ${fantasyView ? 'the roster' : 'ESPN’s depth chart'} and stats…</div>`;
   const all = await get('/v1/players/nba', {});
-  const [bk, dyn, espn, lgsData, depth, ranks] = await Promise.all([
+  const [bk, dyn, espn, lgsRaw, depth, ranks, live] = await Promise.all([
     loadBreakdown(DATA, fantasyView ? { list: 'team', owner: me, season: cur.season } : { list: 'nba', nbaTeam: nba, season: cur.season }),
     gmDynasty(params).catch(() => null),
     espnInjuries(all).catch(() => null),
     loadLgs().catch(() => null),
     fantasyView ? null : espnDepthChart(nba, all),
     fantasyView ? fpgRanks(DATA, cur.season).catch(() => ({})) : {},
+    liveLocks(DATA), // live locks of the week in progress (owner, Nov 8 2026), same as the 2K breakdown
   ]);
+  const lgsData = withLiveLgs(lgsRaw, live);
+  const DL = withLiveWeeks(DATA, live);
   const players = bk?.players ?? [];
   const byId = Object.fromEntries(players.map(p => [p.pid, p]));
   const dynOf = pid => dyn?.v?.players?.[pid]?.score ?? null;
@@ -5036,8 +5047,8 @@ async function renderDepth(body, params) {
   const lgs = lgsData ? lgsCounts(lgsData, cur.season, fantasyView ? me : null) : null;
   // Locked points this season (owner, Oct 29 2026; DATA.playerWeeks = finished weeks, like the Player Index): any team,
   // plus this team's share on a fantasy chart when he also scored for another team.
-  const lockAll = lockedTotals(DATA, { season: cur.season });
-  const lockHere = fantasyView ? lockedTotals(DATA, { season: cur.season, owner: me }) : null;
+  const lockAll = lockedTotals(DL, { season: cur.season });
+  const lockHere = fantasyView ? lockedTotals(DL, { season: cur.season, owner: me }) : null;
   const dkey = `gm-dc-desig-${me}`;
   // cut = the Cut List (owner, Oct 29 2026): ordered [pid], a red "Cut" tag on top of any designation tint.
   // rawDesig = what's saved; desig = the same with d = your designations once you've changed any (custom), else the

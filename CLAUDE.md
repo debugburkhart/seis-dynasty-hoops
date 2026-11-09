@@ -1254,6 +1254,42 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   8 of 8 = Sleeper, week 1 7 of 8 (bigtrey5456 340 vs 343 = LaVine 45 -> 44 + Isaiah Stewart 26 -> 24 box-score
   corrections), all 25 unlocked starters of weeks 1-2 = league.json playerWeeks (incl. Podziemski / Hachimura bench
   games). Week 1 has no bench records (watcher started Oct 29). 320 px OK. Display only: picksToSave unchanged.
+  STAT CORRECTIONS + ODD GAMES (owner, Nov 8 2026: "report player scores accurately (post stat correction) and keep whatever
+  sleeper has as the final score ... make a note of it on the team ... add a section of all these weird games"): logic
+  weekReport() + weekOddities() in sleeperpriv.js; the page loads each week once per visit (loadWeekRep: matchup_legs_raw +
+  weekBoxes + lgs bench dates + league.json playerWeeks as `saved` = what Sleeper counted then; cache cleared after 5 min).
+  Player rows = TODAY's box score; a row whose saved value differs gets a note ("Stat correction: Sleeper counted 45 then,
+  box score now 44", or "Our records have N = his {day} game, not this one" when saved = another of his games). Finished
+  week team line = "Final N (Sleeper)" (✓ when nothing to note) + notes: "Box scores now add up to X: LaVine 45 → 44, ..."
+  and, if official - today - corrections != 0, a red "+d not explained" line. New card "Odd games this season" (between Locks
+  and Trade block): every week 1..current scanned (newest first), kind chips with counts: corr (stat corrections), total
+  (unexplained team total), other (records vs Sleeper on the game), pick (Sleeper's lock != Dev Dashboard pick; computed
+  live every visit), zero (starter, every game from the bench = 0), bench ("Benched late": unlocked starter on the bench for
+  games AFTER his last lineup game, so an earlier game counted; routine bench games before he moved in / before a lock are
+  NOT listed; zero + bench only once he has NO games left: owner caught Dejounte Murray flagged mid-Sunday-game), extra
+  (locked but not in the final starters), nogame. Weeks finished 3+ weeks ago are cached in localStorage
+  si-odd-{season}-{week} (not synced; picks never cached). Checked Nov 8 2026: week 1 bigtrey5456 "Final 343" + LaVine /
+  Stewart notes, the other 15 team-weeks of weeks 1-2 ✓; odd games = 4 (2 corrections wk 1, Dejounte Murray benched late wk 3,
+  Saddiq Bey benched to 0 wk 3); the owner had already changed Peterson's wk 3 pick to Sleeper's (locked Fri), so no pick
+  difference; 320 px + dark OK.
+  LIVE LOCKS ON THE 2K BREAKDOWN + DEPTH CHART (owner, Nov 8 2026: "update the 2k breakdown as soon as a lock hits ...
+  effectively live updated"): breakdown.js liveLocks(DATA) (page-side only, cached 2 min) = Sleeper's locks for the regular
+  week in progress (state.week, only while last_scored_leg < week) from matchup_legs_raw (sleeperpriv.js, NO login) ->
+  rows shaped like DATA.playerWeeks { s, w, t 'R', o (team whose MATCHUP lineup has him), pid, p (that game's box score,
+  league scoring), date, live: true } + locked Set 'o|pid'. withLiveWeeks(DATA, live) = DATA with those rows appended to
+  playerWeeks (a copy; DATA itself, the nightly job, weekfix, records and awards never see them). withLiveLgs(lgs, live) =
+  a copy of data/lgs.json with that team's records of the player AFTER his lock date in the live week flagged 'k' at once
+  (the watcher's markAfterLock still does it for real once the week settles). lgsSettled() = a finished week, or the live
+  week once that player is locked for that team (Lock per start % counts only settled weeks). 2K breakdown (renderBreakdown,
+  BK_LIVE; current season or Career only): Locked points / Wks Lk / Lk% / LGS column + card line (" · incl. week N lock
+  (live)", .bk-livelk), Season by season Locked/Starts/LGS, Compare locked, game log navy lock row (x.live -> its date) and
+  after-lock games no longer yellow. Depth Chart: LGS + Locked use the same overlay. Checked Nov 8 2026 week 3 (live): 55
+  live locks, 82 after-lock LGS dropped across 45 players (Jrue Holiday locked Mon: 6 -> 3, Curry 3 -> 1); Parma locked points
+  = Locks card (Sengun 97 -> 148, Booker 57 -> 99, ...); Sengun's game log Nov 2 navy, Nov 4 / 7 plain. FOUND: week 2 games of
+  Oct 26-28 had no LGS (watcher started Oct 29), so locked weeks > LGS (Sengun 3 vs 2, 150%): scripts/lgs.mjs FILL_INS now
+  [['2026', 1], ['2026', 2]] (one-time, next watcher run: 29 counted games of Oct 26-28 added as [1, owner, 'b'], 43 watched
+  games untouched; simulated in the browser, the watcher itself not run). Lineup games of Oct 26-28 that weren't the counted
+  game stay unknown.
   DEFENSE VS POSITION (tab=defense; owner, Nov 2 2026): `assets/defense.js` (logic, no DOM) + `assets/defense-ui.js` (the
   page: renderDefense(body, params, h), h = { DATA, esc, gmLoad, gmSave, COMMISH, teamName } passed by app.js
   renderDefensePage; kept out of app.js on purpose), .dvp-* at the end of styles.css. Owner's answers: BOTH splits with a
