@@ -23,6 +23,8 @@ export const TEST_FEATURES = [
   { id: 'tradetree', label: 'Trade Trees', since: '2026-11-02' },
   // Advanced Stats (owner, Nov 4 2026): charts comparing players and NBA / fantasy teams in depth (advstats.js + advstats-ui.js).
   { id: 'advanced', label: 'Advanced Stats', since: '2026-11-04' },
+  // Sleeper Insider (owner, Nov 8 2026): Sleeper's private GraphQL API, read-only, his own token in this browser only.
+  { id: 'sleeper', label: 'Sleeper Insider', since: '2026-11-08' },
 ];
 
 export const BETA = '<span class="gm-beta">Beta</span>';

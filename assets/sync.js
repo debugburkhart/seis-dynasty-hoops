@@ -27,6 +27,7 @@ const SDK = 'https://www.gstatic.com/firebasejs/10.14.1';
 // Keys that follow the account. A key matches an entry exactly, or starts with it when the entry
 // ends in '-'. To sync a new setting: save it with gmSave in app.js and add its key here.
 // Never add caches (gm-tips-{date}) or session flags (cm-open).
+// NEVER add 'slp-token' (Sleeper Insider, sleeperpriv.js): the owner's Sleeper token stays in one browser only.
 export const SYNCED = [
   'gm-locks-', // lock marks per week, yours and opponents'
   'gm-whatif-', // what-if locks per week

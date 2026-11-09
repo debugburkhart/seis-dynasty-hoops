@@ -34,6 +34,7 @@ import { betaCard, isTestTab, testTabs } from './test-features.js';
 import { dvpChips, renderDefense } from './defense-ui.js';
 import { renderAdvanced } from './advstats-ui.js';
 import { renderContracts } from './contracts-ui.js';
+import { renderSleeperInsider } from './sleeperpriv-ui.js';
 import { DAYS, MIN_LOCKS, managerCards, seasonStarts } from './lockcard.js';
 import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, injuryNow, injuryDiff, INJ_LOG_VERSION, INJ_LOG_DAYS, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
 
@@ -2413,7 +2414,7 @@ function renderCommish(main, params) {
     </div>`;
   const body = $('#cm-body', main);
   paintSync(main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth, devdash: renderDevDash, defense: renderDefensePage,tradetree: renderTradeTree, lockcard: renderLockCard, advanced: renderAdvancedPage, contracts: renderContractsPage }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth, devdash: renderDevDash, defense: renderDefensePage,tradetree: renderTradeTree, lockcard: renderLockCard, advanced: renderAdvancedPage, contracts: renderContractsPage, sleeper: renderSleeperPage }[tab];
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
@@ -2656,6 +2657,8 @@ const renderDefensePage = (body, params) => renderDefense(body, params, { DATA, 
 const renderAdvancedPage = (body, params) => renderAdvanced(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName });
 // Contracts (Test features, owner Nov 7 2026): page in contracts-ui.js, logic in leaguecontracts.js.
 const renderContractsPage = (body, params) => renderContracts(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName, name, loadContracts });
+// Sleeper Insider (Test features, owner Nov 8 2026): Sleeper's private GraphQL API, read-only (sleeperpriv.js + sleeperpriv-ui.js).
+const renderSleeperPage = (body, params) => renderSleeperInsider(body, params, { DATA, esc, name, teamName, COMMISH, sleeper, savePick });
 
 async function renderDevDash(body, params) {
   const cur = DATA.seasons.at(-1);

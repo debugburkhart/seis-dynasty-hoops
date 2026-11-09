@@ -6,7 +6,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - Live site: https://debugburkhart.github.io/seis-dynasty-hoops/
 - Repo: https://github.com/debugburkhart/seis-dynasty-hoops (public)
 - Owner says he IS a developer (Nov 1 2026): technical detail is fine; still give exact upload steps (no git/Node
-  locally). He does NOT want a Sleeper login/dummy account for the site (Nov 1 2026): public API only.
+  locally). Sleeper login (CHANGED Nov 8 2026): the public site, the nightly job, weekfix and the Dev Dashboard stay on
+  Sleeper's public API (no dummy account, ever); the ONE exception is the Test features tab "Sleeper Insider", where the
+  owner pastes HIS OWN Sleeper token himself (this browser's localStorage only). Claude never types his password, never
+  handles or asks for the token. (Nov 1 2026 he had said public API only; he changed his mind Nov 8.)
 
 ## How the owner deploys (important)
 - No git/Node locally. The owner uploads files through GitHub's web UI:
@@ -1187,6 +1190,60 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (a public page in NAV/READY, or a My GM / League office tab), remove its TEST_FEATURES entry, swap
   betaCard for plain cards (no Beta tags), and note the date + new place here.
 - Current test features:
+  SLEEPER INSIDER (tab=sleeper; owner, Nov 8 2026): Sleeper's PRIVATE GraphQL API (https://sleeper.com/graphql, the one
+  sleeper.com + the app use; unofficial, undocumented, can change any time, likely against Sleeper's terms: owner accepted),
+  READ-ONLY. Logic `assets/sleeperpriv.js` (no DOM), page `assets/sleeperpriv-ui.js` (renderSleeperInsider(body, params, h),
+  h = { DATA, esc, name, teamName, COMMISH, sleeper } from app.js renderSleeperPage), .si-* at the end of styles.css. HARD
+  RULES: token only in this browser's localStorage 'slp-token' (NOT gmSave, NOT in SYNCED: a comment in sync.js says so,
+  never in the repo / data/), sent only to sleeper.com (gql(): Authorization = the raw token, no "Bearer", like the site
+  does), "Forget token" button; readOnlyProblem() refuses any text with "mutation"/"subscription" outside strings/comments
+  BEFORE a request is made; `me` asks only user_id / username / display_name (never email / phone / token). Token how-to on
+  the page (desktop: DevTools -> Network -> a graphql request's `authorization` header, or Application -> Local Storage ->
+  sleeper.com -> `token`, where sleeper.com's code saves it at sign-in; iPhone has no DevTools). tokenInfo() reads a JWT's
+  exp locally to show expiry.
+  RESEARCH (Nov 8 2026, sleeper.com league app bundle sleepercdn.com/js/bundle-*.js + live calls): (1) LOCKS ARE IN
+  `starters_games` = { player_id: Sleeper game_id } on matchup_legs / matchup_legs_raw / matchup_legs_related_to_roster: the
+  game each starter is locked on (Lock-In mode; the app's lock button writes it via mutation update_matchup_leg); unlocked
+  starters have no entry. game_id = the public /schedule/nba/regular/{s} rows' game_id. matchup_legs_raw(league_id, round)
+  { starters starters_games ... } answers WITHOUT A LOGIN (points null in a live week). Checked vs the owner's Dev Dashboard
+  picks: weeks 2-3 64 of 65 the same (only Peterson week 3: Sleeper locked Fri Nov 6, pick "not locked" = unresolved, ask
+  him); week 2 27 / 27 on the page; 12 reads in a row byte-identical (unlike the public matchups feed). (2) TRADE BLOCK:
+  league_players(league_id) { player_id metadata settings } also WITHOUT a login: settings.otb = roster_id that listed him,
+  otb_added_at ms; metadata.note (the league's player notes, e.g. award/ring notes) + likes; settings
+  last_substituted_as_starter:regular:{s}:{w} = ms of his last move into the starters that week (not used yet). 32 on blocks
+  Nov 8. (3) NEED A LOGIN: matchup_legs (+ points, proj_points, max_points, players, subs), matchup_legs_related_to_roster,
+  league_transactions_filtered (status_filters 'pending' = waiver claims, 'proposed' = trade offers; full field list in
+  CANDIDATES), league_transactions_by_player, league_event_logs, me. Other no-login reads: scores(date, season,
+  season_type, sport) (game_id, status, start_time, metadata with on_court + starters), roster_draft_picks. NOT TRIED WITH A
+  TOKEN YET (Claude has none): what the login-only queries really return.
+  Page cards (betaCard): "Your Sleeper token" (status, paste box type=password, Save / Check token (me) / Forget token, how-to
+  fold, warnings); "Locks from Sleeper" (no login: week chips ?week=, every matchup's starters with 🔒 day · AWY @ HOM · box-
+  score points (locks.js weekBoxes, league scoring) or "not locked", "= pick" / "≠ pick" vs Dev Dashboard picks
+  (compareWithPicks, Firestore locks/), summary + differences line); "Trade block from Sleeper" (no login, per team, since
+  date); "Explore Sleeper's private API" (CANDIDATES chips tagged no login / needs login, ?q=, fields per query, editable
+  query + variables, "Send my token" (default on only for login queries with a token saved), Run -> HTTP / ms / KB / token
+  sent?, Unauthorized explained, starters_games note, Copy JSON, 60 KB shown then Show all). NOTHING ELSE USES IT YET: coach,
+  Dev Dashboard, weekfix, nightly job unchanged. Tested Nov 8 2026: live no-login queries (locks weeks 2-3, trade block,
+  real "unauthorized" for event logs), token flow with a FAKE JWT and stubbed login answers (save strips "Bearer ", expiry,
+  me check, forget), mutation refused with 0 requests sent, 320 / 402 / desktop no overflow, light + dark.
+  OWNER'S ANSWERS (Nov 8 2026): locks = SHOW ONLY for now (coach / Briefing / live points unchanged); solver = ONLY BY A
+  BUTTON ('Save Sleeper's locks as picks for week N' on this page -> Dev Dashboard picks; BUILT Nov 8, see below; nightly job stays
+  public-API only); he'll use the token on his PHONE too (make the token card phone-friendly); wants next, after he checks
+  Explore with his token: real trade blocks in Trade finder / Managers / 2K tags, his pending waivers + trade offers on the
+  Briefing, lock history / event log (if it holds lineup or lock events), Sleeper's proj_points / max_points next to the coach's.
+  SAVE AS PICKS (built Nov 8 2026, owner said build it): box at the top of the Locks card. picksToSave(locks, law,
+  ownerOf, ptsOf, { done }) in sleeperpriv.js: Sleeper locks of LINEUP starters with no pick -> add { k 'lock', d, p =
+  box-score points }; owner = the roster whose MATCHUP leg has him (traded-after-lock stays with the old team, like the
+  Dev Dashboard); locks whose game id isn't on the schedule are skipped; unlocked starters with no pick are NOT saved.
+  Existing picks are NEVER overwritten by "Save N as picks" (confirm first): each difference is listed with its own
+  "Use Sleeper's" button (confirm); Sleeper "not locked" vs a lock pick can be replaced (k 'last') only when the week
+  is over (week < Sleeper state week or last_scored_leg >= week), live weeks say "Sleeper may show his lock later".
+  Writes go through app.js savePick (passed in h; same Firestore doc shape + rules as the Dev Dashboard, no rules
+  change): the first save pops up sign-in / rules problems and stops; the rest are quiet; the card redraws after. Saved
+  picks = word of law, so the coach / Briefing / Lock Report Card / Monday solve use them like any pick (said on the
+  card). Tested with a STUBBED savePick on a copy of the page (week 3: 18 new + 36 matching = Sleeper's 54 locks, args
+  right, Peterson replace = lock Fri 36 for simeoncampbell7) + made-up edge cases; a real Firestore write was NOT
+  tested (needs the owner's sign-in). 320 px OK.
   DEFENSE VS POSITION (tab=defense; owner, Nov 2 2026): `assets/defense.js` (logic, no DOM) + `assets/defense-ui.js` (the
   page: renderDefense(body, params, h), h = { DATA, esc, gmLoad, gmSave, COMMISH, teamName } passed by app.js
   renderDefensePage; kept out of app.js on purpose), .dvp-* at the end of styles.css. Owner's answers: BOTH splits with a
