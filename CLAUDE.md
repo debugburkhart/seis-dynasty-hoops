@@ -8,7 +8,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - Owner says he IS a developer (Nov 1 2026): technical detail is fine; still give exact upload steps (no git/Node
   locally). Sleeper login (CHANGED Nov 8 2026): the public site, the nightly job, weekfix and the Dev Dashboard stay on
   Sleeper's public API (no dummy account, ever); the ONE exception is the Test features tab "Sleeper Insider", where the
-  owner pastes HIS OWN Sleeper token himself (this browser's localStorage only). Claude never types his password, never
+  owner pastes HIS OWN Sleeper token himself (this browser's localStorage only). ALSO (Nov 8 2026, owner asked): Home +
+  Matchup Hype + 2K + Depth Chart + Assistant Coach read Sleeper's NO-LOGIN private lock data in the browser (see
+  LIVE LOCKED SCORES); the nightly job, weekfix and the watcher still never do. Claude never types his password, never
   handles or asks for the token. (Nov 1 2026 he had said public API only; he changed his mind Nov 8.)
 
 ## How the owner deploys (important)
@@ -1290,6 +1292,42 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   [['2026', 1], ['2026', 2]] (one-time, next watcher run: 29 counted games of Oct 26-28 added as [1, owner, 'b'], 43 watched
   games untouched; simulated in the browser, the watcher itself not run). Lineup games of Oct 26-28 that weren't the counted
   game stay unknown.
+  LIVE LOCKED SCORES ON HOME + MATCHUP HYPE (owner, Nov 8 2026: "currently locked scores as the big number ... 100%
+  accurate"; REPLACES the Oct 22 rule that public pages show Sleeper's live total): breakdown.js liveTeamScores(DATA,
+  season, week) per owner = Sleeper-locked starters (box score of the locked game) + unlocked starters whose LAST game of
+  the week has tipped (in_game / complete: that game always counts, live while played; sat on the bench for it = his last
+  lineup game via countedGame); unlocked starters with games left = `open` (not counted); `live` = starters in a game now.
+  liveWeek() (app.js) adds out.lk (current season only, 9 s timeout, null = fall back to Sleeper's live total as before).
+  lkScore(d, o) / lkNote(d, o). Hype: duel numbers = locked, label "Locked · K open · J playing" (data-lbl, refreshed
+  every minute), lead line "X leads by N locked · ... K starters still open", status "Locked · updated", slate "locked".
+  Home slide: score = locked, status "Locked · updated time" (owner removed the live totals the same night: "they don't add
+  anything"; Sleeper's live total only shows when the lock data can't be read). Traffic: locks query ~3 KB + today's scores(date) statuses
+  ~1 KB per call, season schedule once per 30 min, week box scores (~300 KB gzip) only while a game is in progress (max every
+  2 min) or a game ended since (LS cache). Sleeper's per-day stats endpoint /stats/nba/{date} returns EMPTY stats (not
+  usable). Checked Nov 8 2026 9:25 PM (week 3 Sunday): Main event 310–422 locked vs live 334–435 (live counts latest
+  games); settled teams 386 / 399 / 362 / 422 = the Insider's Locks card totals. Wager Weeks tracker still uses Sleeper's
+  live total (not changed).
+  ASSISTANT COACH USES SLEEPER LOCKS (owner, Nov 8 2026): sleeperMarks(season, week) in app.js = liveLocks rows as marks
+  { pid: { date, sleeper: true } } UNDER the manager's marks + Dev Dashboard picks: gmWeek marks = { ...slp, ...mergeMarks(...) }
+  (coach, board, odds, Briefing, pipeline) and lockedPoints(..., fill) in gm.js (commish locked points). Opponents' locks
+  are now known (My D Rose 399 locked, 0 left; Parma 260 = its 6 Sleeper locks). "How the coach decides" text updated.
+  A LOCK IS A START (owner, Nov 8 2026: "assume week 1 locks had one LGS that week so max Lk% is 100%"): breakdown.js
+  withLockLgs(lgs, DL) adds a virtual [1, owner, 'v'] LGS for any locked week (playerWeeks incl. live rows) with no LGS for
+  that team that week; 2K + Depth Chart apply it after withLiveLgs; the game log ignores 'v'. Checked: Lk% over 100% for 17
+  players (max 200%) -> 0 (max 100%); 30 virtual LGS today (week-2 gap; the watcher fill-in makes them real). Game-log tint:
+  owner first asked to remove it on games after a current-week lock, then said the whole-row LGS tint is fine: unchanged.
+  SOFT LOCK + NO MANUAL LOCKS IN THE COACH (owner, Nov 8 2026; REPLACES "HELD, NOT DONE" and the I-locked-him / game-chip /
+  Not-locked marks above): "all locks will now be detected from Sleeper". sleeperMarks() returns null when Sleeper's lock data
+  can't be read; gmWeek marks = slp ?? (old local marks + Dev Dashboard picks), lockedPoints(..., fill) uses fill alone when
+  given. The coach card has no "I locked him" / "They locked him" / "Not locked" buttons and game chips are plain (handlers left
+  in place, nothing to bind); the "What if I/they lock him?" button stays. SOFT LOCK = an unlocked starter on his LAST game of
+  the week (gm.js coachCall: call 'held' (done playing, week not over, incl. no games = 0) or 'live' with no games left, flag
+  r.soft): counts as locked (board tally: score in locked points, not in "left"; Briefing / board label "Soft lock", .mb-soft
+  dashed box, .gm-soft card, summary "soft locked") but can still be moved off the lineup (planner still treats him as
+  benchable, sim unchanged). lockedPoints (commish locked points) adds soft locks too (team's last game in_game / complete ->
+  that game's box score). Soft locks NEVER touch the 2K breakdown / Depth Chart: those read liveLocks = Sleeper's real locks only
+  (end-of-week settled weeks come from DATA.playerWeeks as before). Checked Nov 8 2026 week 3 Sunday night: Parma 324 locked,
+  0 left (260 real locks + 3 soft = Home's locked score), My D Rose 399 / 0; Porter Jr. "Soft lock 27"; no mark buttons.
   DEFENSE VS POSITION (tab=defense; owner, Nov 2 2026): `assets/defense.js` (logic, no DOM) + `assets/defense-ui.js` (the
   page: renderDefense(body, params, h), h = { DATA, esc, gmLoad, gmSave, COMMISH, teamName } passed by app.js
   renderDefensePage; kept out of app.js on purpose), .dvp-* at the end of styles.css. Owner's answers: BOTH splits with a

@@ -4611,3 +4611,9 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .si-k-total, .si-k-other, .si-k-zero, .si-k-nogame { background: #fbe4e4; color: #8a2424; }
 .si-k-pick, .si-k-extra { background: #e6ecf8; color: #22427e; }
 .bk-livelk { color: var(--gold-ink); font-weight: 600; }
+/* Soft lock (owner, Nov 8 2026): last game of the week, counts as locked but can still be moved off the lineup. */
+.mb-pts.mb-soft { background: #dbe4f5; color: var(--navy-800); border: 1.5px dashed var(--navy-600); }
+.mb-pts.mb-soft.mb-softlive { border-color: #c2410c; }
+.gm-call.gm-soft { border-left-color: var(--navy-600); border-left-style: dashed; }
+.gm-soft .gm-badge { background: #dbe4f5; color: var(--navy-800); }
+.gm-badge-s.gm-soft { background: #dbe4f5; color: var(--navy-800); }

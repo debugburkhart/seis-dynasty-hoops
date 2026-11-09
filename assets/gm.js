@@ -162,7 +162,10 @@ export function mergeMarks(local = {}, law = {}) {
 // or picked his locked game, or once the NBA week is over (every game final: his last game counts). Nothing is read
 // from Sleeper's counted score (owner, Nov 6 2026). law = the Dev Dashboard picks (lawMarks); the newer of a pick and
 // this browser's mark wins (mergeMarks).
-export async function lockedPoints(season, week, leagueId, rows, law = {}) {
+// fill (owner, Nov 8 2026) = Sleeper's live locks as marks ({ pid: { date, sleeper: true } }). When it was read (not null)
+// it is the ONLY lock source ("all locks will now be detected from Sleeper"); null = Sleeper unreadable: marks + picks as before.
+// SOFT LOCKS count too: an unlocked starter whose last game of the week has tipped (live or final) adds that game's score.
+export async function lockedPoints(season, week, leagueId, rows, law = {}, fill = null) {
   const [league, stats, slate] = await Promise.all([
     get(`/v1/league/${leagueId}`, {}),
     get(`/stats/nba/${season}/${week}?season_type=regular`, []),
@@ -180,7 +183,7 @@ export async function lockedPoints(season, week, leagueId, rows, law = {}) {
   for (const list of Object.values(boxes)) list.sort((a, b) => (a.date < b.date ? -1 : 1));
   let local = {};
   try { local = JSON.parse(localStorage.getItem(`gm-locks-${season}-${week}`) ?? '{}') ?? {}; } catch { /* none */ }
-  const marks = mergeMarks(local, law);
+  const marks = fill ?? mergeMarks(local, law);
   const weekGames = Object.values(slate ?? {}).flat();
   const weekDone = weekGames.length > 0 && weekGames.every(g => g.status === 'complete');
   const out = {};
@@ -200,6 +203,11 @@ export async function lockedPoints(season, week, leagueId, rows, law = {}) {
       if (markedGame) sum += markedGame.pts;
       else if (typeof mk === 'number' && played.length) sum += counted; // old-style mark = the score counting then
       else if (weekDone && latest) sum += latest.pts; // settled only once every NBA game of the week is final
+      else {
+        // Soft lock: his NBA team's last game this week has tipped (in progress or final) -> that game counts.
+        const last = (slate?.[team[pid]] ?? []).at(-1);
+        if (last && ['in_game', 'in_progress', 'complete'].includes(last.status)) sum += played.find(b => b.date === last.date)?.pts ?? 0;
+      }
     }
     out[m.roster_id] = r1(sum);
   }
@@ -263,12 +271,14 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked, whatif) {
   if (playingNow) {
     const bars = lockBars(perGame, upcoming.length, risk);
     const bar = upcoming.length ? bars[upcoming.length] : null;
-    return { ...base, call: 'live', bar, score: playingNow.pts,
-      text: upcoming.length ? `Playing now${playingNow.pts != null ? `: ${playingNow.pts} so far` : ''}. Lock it if he finishes at ${bar}+.` : `Playing his last game of the week now${playingNow.pts != null ? `: ${playingNow.pts} so far` : ''}. It counts if he’s still in your lineup when the week ends.` };
+    // SOFT LOCK (owner, Nov 8 2026): his LAST game of the week has tipped and he isn't locked: the score counts in the
+    // locked total and he counts as locked, but he can still be moved off the lineup (then it's gone).
+    return { ...base, call: 'live', bar, score: playingNow.pts, soft: !upcoming.length,
+      text: upcoming.length ? `Playing now${playingNow.pts != null ? `: ${playingNow.pts} so far` : ''}. Lock it if he finishes at ${bar}+.` : `Playing his last game of the week now${playingNow.pts != null ? `: ${playingNow.pts} so far` : ''}. Soft lock: it counts in your locked total, but moving him off the lineup before the week ends loses it.` };
   }
   if (!latest) {
     if (!upcoming.length) return weekOver ? { ...base, call: 'final', score: 0, text: 'Didn’t play this week.' }
-      : { ...base, call: 'held', score: 0, text: `No games left and none played: 0. He can be swapped out for a player who still plays before ${lastDay}.` };
+      : { ...base, call: 'held', soft: true, score: 0, text: `Soft lock at 0: no games left and none played. Swap him out for a player who still plays before ${lastDay}.` };
     if (upcoming.length === 1) return { ...base, call: 'plan', text: `One game (${day(upcoming[0].date)}): it counts no matter what.` };
     const bars = lockBars(perGame, upcoming.length - 1, risk);
     return { ...base, call: 'plan', bar: bars[upcoming.length - 1], bars,
@@ -279,7 +289,7 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked, whatif) {
     if (weekOver) return { ...base, call: 'final', score: x, text: `Week over: his last game (${x}) counts.` };
     // Done playing, week not over (owner, Nov 6 2026): nothing is settled until every NBA game of the week is final. His
     // score counts only if he's still in the lineup then; he can still be benched (score gone) for a later player.
-    return { ...base, call: 'held', score: x, text: `Done playing this week: his ${x} counts only if he’s still in your lineup when the week ends (after ${lastDay}’s games). Benching him before then loses it.` };
+    return { ...base, call: 'held', soft: true, score: x, text: `Soft lock: his last game (${x}) counts in your locked total. He can still be moved off the lineup before the week ends (after ${lastDay}’s games); then it’s gone.` };
   }
   if (out) return { ...base, call: 'lock', score: x, text: `Listed ${p.injury}: lock the ${x} so a missed game can’t cost you.` };
   const bars = lockBars(perGame, upcoming.length, risk);

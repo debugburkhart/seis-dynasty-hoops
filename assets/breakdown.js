@@ -11,7 +11,7 @@ import { allFantasy, allStars, championshipMvp, mvpRace, playerOfTheYear, rookie
 import { draftOfYear } from './draft.js';
 import { normName } from './scout.js';
 import { weekBoxes } from './locks.js';
-import { CANDIDATES as SLP_QUERIES, gql, locksFromLegs } from './sleeperpriv.js';
+import { CANDIDATES as SLP_QUERIES, countedGame, gql, locksFromLegs } from './sleeperpriv.js';
 const LOCKS_QUERY = SLP_QUERIES.find(c => c.id === 'locks').query;
 
 export const fantasy = (stats, scoring) => Object.entries(scoring).reduce((sum, [k, v]) => sum + (Number(stats?.[k]) || 0) * v, 0);
@@ -852,6 +852,85 @@ export async function liveLocks(DATA) {
   LIVE = { at: Date.now(), v };
   return v;
 }
+// LIVE LOCKED SCORES (owner, Nov 8 2026: Home + Matchup Hype "currently locked scores as the big number ... 100%
+// accurate"). Per team, the points that are CERTAIN to count: every starter Sleeper shows locked (that game's box score)
+// + every unlocked starter whose LAST game of the week has tipped (in progress or final: his last game counts, so it's
+// his week's score, live while it's being played; same idea as the Assistant Coach's last-game call). Unlocked starters
+// with games still to come aren't counted ("open"). A last game he sat on the bench for (watcher) -> his last lineup game
+// (countedGame). -> { at, week, teams: { owner: { pts, open, live (starters in a game right now) } } } | null.
+// Traffic (public pages, every minute): locks query ~3 KB + today's statuses ~1 KB each call; the season schedule once per
+// 30 min; the week's box scores (~300 KB gzip) only when a game is in progress (at most every 2 min) or a game ended since.
+const LS = { sched: null, schedAt: 0, boxes: null, boxesAt: 0, boxKey: '', doneSeen: '' };
+const IN_PLAY = ['in_game', 'in_progress', 'complete'];
+export async function liveTeamScores(DATA, season, week) {
+  const cur = DATA.seasons.find(s => String(s.season) === String(season));
+  if (!cur || !week) return null;
+  try {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
+    if (!LS.sched || Date.now() - LS.schedAt > 30 * 60_000) { LS.sched = await get(`/schedule/nba/regular/${season}`, null); LS.schedAt = Date.now(); }
+    const [res, todayRes, scoring, lgs] = await Promise.all([
+      gql(LOCKS_QUERY, { leagueId: cur.leagueId, round: Number(week) }),
+      gql('query scores($date: String!, $season: String!, $seasonType: String!, $sport: String!) { scores(date: $date, season: $season, season_type: $seasonType, sport: $sport) { game_id status } }', { date: today, season: String(season), seasonType: 'regular', sport: 'nba' }),
+      scoringFor(DATA, season),
+      loadLgs().catch(() => null),
+    ]);
+    const legs = res.data?.matchup_legs_raw;
+    if (!Array.isArray(legs) || !Array.isArray(LS.sched)) return null;
+    const status = Object.fromEntries((todayRes.data?.scores ?? []).map(g => [g.game_id, g.status]));
+    const games = LS.sched.filter(g => Number(g.week) === Number(week)).map(g => ({ id: g.game_id, date: g.date, home: g.home?.team, away: g.away?.team, status: status[g.game_id] ?? (g.date < today ? 'complete' : g.status) }));
+    const liveNow = games.some(g => ['in_game', 'in_progress'].includes(g.status));
+    const doneKey = games.filter(g => g.status === 'complete').map(g => g.id).join();
+    const key = `${season}|${week}`;
+    if (!LS.boxes || LS.boxKey !== key || LS.doneSeen !== doneKey || (liveNow && Date.now() - LS.boxesAt > 120_000)) {
+      const rows = await get(`/stats/nba/${season}/${week}?season_type=regular`, null);
+      if (!Array.isArray(rows)) return null;
+      const boxes = {};
+      for (const r of rows) {
+        if (!/^\d+$/.test(r.player_id) || exhibitionRow(r) || !r.stats || !(r.stats.gp || r.stats.sp || r.stats.min)) continue;
+        (boxes[r.player_id] ??= []).push({ date: r.date, p: Math.round(fantasy(r.stats, scoring ?? {}) * 10) / 10, team: r.team, done: status[r.game_id] ? status[r.game_id] === 'complete' : r.date < today });
+      }
+      for (const l of Object.values(boxes)) l.sort((a, b) => (a.date < b.date ? -1 : 1));
+      Object.assign(LS, { boxes, boxesAt: Date.now(), boxKey: key, doneSeen: doneKey });
+    }
+    const byTeam = {};
+    for (const g of games) for (const t of [g.home, g.away]) if (t) (byTeam[t] ??= []).push(g);
+    for (const l of Object.values(byTeam)) l.sort((a, b) => (a.date < b.date ? -1 : 1));
+    const ownerOf = Object.fromEntries(cur.teams.map(t => [t.rosterId, t.owner]));
+    const locks = locksFromLegs(legs, LS.sched);
+    const teams = {};
+    for (const [rid, t] of Object.entries(locks)) {
+      const o = ownerOf[rid];
+      if (!o) continue;
+      let pts = 0, open = 0, live = 0;
+      for (const pid of t.starters) {
+        const list = LS.boxes[pid] ?? [];
+        const l = t.locks[pid];
+        if (l?.date) { pts += list.find(x => x.date === l.date)?.p ?? 0; continue; }
+        const nba = list.at(-1)?.team ?? DATA.players?.[pid]?.t ?? null;
+        const last = (byTeam[nba] ?? []).at(-1);
+        if (!last) continue; // no games this week: 0, settled
+        if (!IN_PLAY.includes(last.status)) { open++; continue; }
+        if (last.status !== 'complete') live++;
+        const bench = benchSet(lgs, season, pid, o, week);
+        const g = last.status === 'complete' && bench.has(last.date)
+          ? countedGame(list, bench).g // sat on the bench for his last game: his last lineup game
+          : list.find(x => x.date === last.date);
+        pts += g?.p ?? 0;
+      }
+      teams[o] = { pts: Math.round(pts * 10) / 10, open, live };
+    }
+    return { at: Date.now(), week: Number(week), teams };
+  } catch {
+    return null;
+  }
+}
+const benchSet = (lgs, season, pid, owner, week) => {
+  const out = new Set();
+  const S = lgs?.seasons?.[season];
+  for (const [k, rec] of Object.entries(S?.p?.[pid] ?? {})) if (Number(S.games?.[k]?.w) === Number(week) && rec?.[0] === 0 && rec[1] === owner) out.add(k.slice(0, 10));
+  return out;
+};
+
 // DATA with the live week's locked starters added to playerWeeks (for lockedTotals and friends on a page).
 export const withLiveWeeks = (DATA, live) => (live?.rows?.length ? { ...DATA, playerWeeks: [...(DATA.playerWeeks ?? []), ...live.rows] } : DATA);
 // data/lgs.json with the live week's after-lock games flagged 'k' right away (the watcher's markAfterLock only does it
@@ -873,6 +952,31 @@ export function withLiveLgs(lgs, live) {
   }
   return { ...lgs, seasons: { ...lgs.seasons, [live.season]: { ...S0, p } } };
 }
+// A LOCK IS A START (owner, Nov 8 2026: "assume week 1 locks had one LGS that week so max Lk% is 100%"): a player whose
+// week counted for a team (D.playerWeeks, live rows included) was in that team's lineup for at least one game, so a
+// week with a lock but no LGS record for that team (week 1 before the fill-in, Oct 26-28 of week 2 before the watcher
+// started) gets ONE virtual LGS: [1, owner, 'v'], key '{date}|lock-{owner}-{week}' (date = his lock date when known, else
+// the week's first game date). Counted by lgsCounts / Lock per start like any LGS; the game log skips 'v' (no real game).
+export function withLockLgs(lgs, D) {
+  if (!lgs?.seasons) return lgs;
+  const out = { ...lgs, seasons: { ...lgs.seasons } };
+  const firstDay = {};
+  for (const x of D?.playerWeeks ?? []) {
+    const S0 = out.seasons[x.s];
+    if (!S0) continue;
+    const w = Number(x.w);
+    const has = Object.entries(S0.p?.[x.pid] ?? {}).some(([k, [v, o, fl = '']]) => v === 1 && o === x.o && !fl.includes('k') && Number(S0.games?.[k]?.w) === w);
+    if (has) continue;
+    let S = S0;
+    if (S0 === lgs.seasons[x.s]) S = out.seasons[x.s] = { ...S0, p: { ...S0.p }, games: { ...S0.games } };
+    const date = x.date ?? (firstDay[`${x.s}|${w}`] ??= Object.entries(S.games).filter(([, g]) => Number(g.w) === w).map(([k]) => k.slice(0, 10)).sort()[0] ?? `${x.s}-00-00`);
+    const key = `${date}|lock-${x.o}-${w}`;
+    S.games[key] = { d: date, w };
+    S.p[x.pid] = { ...(S.p[x.pid] ?? {}), [key]: [1, x.o, 'v'] };
+  }
+  return out;
+}
+
 // LGS records that count toward Lock per start % (owner, Oct 31 2026: finished weeks only): a finished week, or the live
 // week once THIS player is locked for that team (his week is settled).
 export const lgsSettled = (lgs, live, s, key, o, pid, doneWeekOf) => {

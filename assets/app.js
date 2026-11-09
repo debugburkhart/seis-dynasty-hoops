@@ -36,7 +36,7 @@ import { renderAdvanced } from './advstats-ui.js';
 import { renderContracts } from './contracts-ui.js';
 import { renderSleeperInsider } from './sleeperpriv-ui.js';
 import { DAYS, MIN_LOCKS, managerCards, seasonStarts } from './lockcard.js';
-import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, liveLocks, withLiveWeeks, withLiveLgs, lgsSettled, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, injuryNow, injuryDiff, INJ_LOG_VERSION, INJ_LOG_DAYS, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
+import { DEPTH_POS, espnDepthChart, fpgRanks, loadLgs, lgsCounts, liveLocks, liveTeamScores, withLiveWeeks, withLiveLgs, withLockLgs, lgsSettled, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, injuryNow, injuryDiff, INJ_LOG_VERSION, INJ_LOG_DAYS, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -1262,8 +1262,29 @@ async function liveWeek(season, week, { locked: wantLocked = false } = {}) {
     pairs = Object.values(byMatch).filter(x => x.length === 2).map(([a, b]) => ({ a, b, t: 'R', label: null, final: null }));
   }
   const out = { scores, pairs, rows, at: Date.now() };
+  // LOCKED SCORES (owner, Nov 8 2026): Sleeper's live locks + each unlocked starter's last game once it tips
+  // (breakdown.js liveTeamScores; null = can't read them, pages fall back to Sleeper's live total).
+  out.lk = String(season) === String(DATA.seasons.at(-1).season) ? await withTimeout(liveTeamScores(DATA, season, week), 9000).catch(() => null) : null;
   if (wantLocked) out.locked = await lockedFor(season, week, rows);
   return (LIVE[key] = out);
+}
+// The big number on Home / Matchup Hype mid-week: the locked score when Sleeper's locks can be read, else Sleeper's
+// live total. lkOpen = starters still open (unlocked, games left) for that team, or null.
+const lkScore = (d, o) => d?.lk?.teams?.[o]?.pts ?? d?.scores?.[o];
+const lkNote = (d, o) => {
+  const t = d?.lk?.teams?.[o];
+  if (!t) return '';
+  // No live total here (owner, Nov 8 2026: "they don't add anything").
+  return [t.open ? `${t.open} open` : 'all counted', t.live ? `${t.live} playing` : ''].filter(Boolean).join(' · ');
+};
+// Sleeper's live locks for a week as coach marks: { pid: { date, sleeper: true } } (breakdown.js liveLocks; only the week
+// in progress). Owner, Nov 8 2026: "all locks will now be detected from Sleeper", so when they can be read they are the
+// ONLY lock source for the coach and the commish locked points; null = can't read them (or not the live week): the
+// coach falls back to this device's marks + Dev Dashboard picks as before.
+async function sleeperMarks(season, week) {
+  const live = await withTimeout(liveLocks(DATA), 9000).catch(() => null);
+  if (!live || String(live.season) !== String(season) || Number(live.week) !== Number(week)) return null;
+  return Object.fromEntries(live.rows.map(r => [r.pid, { date: r.date, sleeper: true }]));
 }
 // Locked points per owner (gm.js); null if the box scores can't be read, then the commish pages show Sleeper's total.
 async function lockedFor(season, week, rows) {
@@ -1272,7 +1293,7 @@ async function lockedFor(season, week, rows) {
   try {
     // Lock records (Dev Dashboard picks + sightings) beat Sleeper's reading, so the commish's locked points never flip.
     const src = await withTimeout(loadLawSrc(), 6000).catch(() => null);
-    const byRoster = await withTimeout(lockedPoints(season, week, s.leagueId, rows, src ? lawMarks(lawFor(season, week, src)) : {}), 8000);
+    const byRoster = await withTimeout(lockedPoints(season, week, s.leagueId, rows, src ? lawMarks(lawFor(season, week, src)) : {}, await sleeperMarks(season, week)), 8000);
     return Object.fromEntries(Object.entries(byRoster).map(([r, v]) => [ownerOf[r], v]));
   } catch { return null; }
 }
@@ -1470,8 +1491,9 @@ async function renderHype(main, params, preview = null) {
   const B = g.b;
   const score = o => {
     if (g.final) return o === A ? g.final.ap : g.final.bp;
-    return liveData?.scores?.[o] ?? 0;
+    return lkScore(liveData, o) ?? 0;
   };
+  const hasLk = Boolean(liveData?.lk);
   // Mid-week the number is Sleeper's live total (every starter's latest game, locked or not):
   // labeled live, not locked. A finished week shows the saved final (= the locked score).
   const isLive = !g.final && live && Boolean(liveData);
@@ -1494,7 +1516,7 @@ async function renderHype(main, params, preview = null) {
         <div class="hy-owner">${esc(name(o))}</div>
         <div class="hy-rec">${t ? rec(t.w, t.l, t.t) : '—'}</div>
         <div class="hy-pts" data-o="${esc(o)}">${num(score(o))}</div>
-        <div class="hy-pts-label">${g.final ? 'Final · locked' : isLive ? 'Live' : 'Points'}</div>
+        <div class="hy-pts-label" data-lbl="${esc(o)}">${g.final ? 'Final · locked' : isLive ? (hasLk ? `Locked · ${esc(lkNote(liveData, o))}` : 'Live') : 'Points'}</div>
       </div>`;
   };
   const leadLine = () => {
@@ -1508,11 +1530,18 @@ async function renderHype(main, params, preview = null) {
         : `${esc(name(w))} won by ${num(Math.abs(x - y))} · ${total} combined points`;
     }
     if (!x && !y) return 'No points on the board yet · tip-off pending';
+    if (liveData?.lk) {
+      const open = (liveData.lk.teams[A]?.open ?? 0) + (liveData.lk.teams[B]?.open ?? 0);
+      const lkn = ' · locked scores: each starter’s locked game, or his last game of the week once it tips (it always counts)'
+        + (open ? `; ${open} starter${open === 1 ? '' : 's'} still open (unlocked, games left)` : '; every starter counted');
+      if (x === y) return `All square at ${num(x)} locked${lkn}`;
+      return `${esc(name(x > y ? A : B))} leads by ${num(Math.abs(x - y))} locked${lkn}`;
+    }
     const note = ' · live scores count each starter’s latest game, locked or not; the final locked score shows when the week ends';
     if (x === y) return `All square · ${total} combined live points${note}`;
     return `${esc(name(x > y ? A : B))} leads by ${num(Math.abs(x - y))} live · ${total} combined live points${note}`;
   };
-  const status = g.final ? 'Final · locked scores' : live && liveData ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : preview ? 'Tip-off pending' : 'Scores load from Sleeper';
+  const status = g.final ? 'Final · locked scores' : live && liveData ? `${liveData.lk ? 'Locked' : 'Live'} · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : preview ? 'Tip-off pending' : 'Scores load from Sleeper';
 
   // ----- The hype -----
   const rankOnSlate = slate.games.indexOf(g) + 1;
@@ -1592,9 +1621,9 @@ async function renderHype(main, params, preview = null) {
     <section class="card hy-slate">
       <div class="card-head"><h2>The full slate</h2><span class="card-sub">Week ${week} · ranked by hype</span></div>
       ${slate.games.map((x, i) => {
-        const sa = x.final ? x.final.ap : liveData?.scores?.[x.a];
-        const sb = x.final ? x.final.bp : liveData?.scores?.[x.b];
-        const liveLine = !x.final && (sa || sb) ? '<small>live</small>' : '';
+        const sa = x.final ? x.final.ap : lkScore(liveData, x.a);
+        const sb = x.final ? x.final.bp : lkScore(liveData, x.b);
+        const liveLine = !x.final && (sa || sb) ? `<small>${liveData?.lk ? 'locked' : 'live'}</small>` : '';
         return `
         <a class="hy-game${x === g ? ' on' : ''}" href="${hash({ m: x.a })}">
           <span class="hy-g-rank">${i + 1}</span>
@@ -1647,11 +1676,12 @@ async function renderHype(main, params, preview = null) {
       try {
         const d = await liveWeek(season, week);
         liveData = d;
-        main.querySelectorAll('.hy-pts[data-o]').forEach(el => { el.textContent = num(d.scores[el.dataset.o] ?? 0); });
+        main.querySelectorAll('.hy-pts[data-o]').forEach(el => { el.textContent = num(lkScore(d, el.dataset.o) ?? 0); });
+        main.querySelectorAll('.hy-pts-label[data-lbl]').forEach(el => { el.textContent = d.lk ? `Locked · ${lkNote(d, el.dataset.lbl)}` : 'Live'; });
         const lead = $('#hy-lead', main);
         if (lead) lead.innerHTML = leadLine();
         const st = $('#hy-status', main);
-        if (st) st.textContent = `Live · updated ${new Date(d.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+        if (st) st.textContent = `${d.lk ? 'Locked' : 'Live'} · updated ${new Date(d.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
       } catch { /* try again next time */ }
     }, 60_000); // every minute while the page is open
   }
@@ -3493,7 +3523,7 @@ async function renderBreakdown(body, params) {
   // locked points / weeks locked count it, his later games that week stop being LGS, and the game log marks it.
   BK_LIVE = season === 'career' || season === cur.season ? await liveLocks(DATA) : null;
   const DL = withLiveWeeks(DATA, BK_LIVE);
-  lgsData = withLiveLgs(lgsData, BK_LIVE);
+  lgsData = withLockLgs(withLiveLgs(lgsData, BK_LIVE), DL); // + a lock is a start (Lk% never over 100%)
   BK.espn = espnOut ?? {}; // ESPN injury estimates (return date, out for season) by pid
   await autoDynasty(dyn?.v ?? null); // taxi / contract / riser-faller / Top 100 prospect auto tags
   // Season-banner awards per player (same rules as the Awards page), worked out once per visit.
@@ -3888,7 +3918,7 @@ async function renderBreakdown(body, params) {
     const lawSrc = await loadLawSrc().catch(() => null);
     if (BK.pid !== p.pid || !box.isConnected) return;
     const starts = {};
-    for (const [key, [v, o, fl = '']] of Object.entries(lgsData?.seasons?.[logSeason]?.p?.[p.pid] ?? {})) if (v === 1 && !fl.includes('k')) starts[key.slice(0, 10)] = o;
+    for (const [key, [v, o, fl = '']] of Object.entries(lgsData?.seasons?.[logSeason]?.p?.[p.pid] ?? {})) if (v === 1 && !fl.includes('k') && !fl.includes('v')) starts[key.slice(0, 10)] = o;
     const locks = {};
     for (const x of (DL.playerWeeks ?? []).filter(y => y.s === logSeason && y.pid === p.pid)) {
       const wk = games.filter(g => !g.dnp && g.week === x.w).sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -5038,8 +5068,8 @@ async function renderDepth(body, params) {
     fantasyView ? fpgRanks(DATA, cur.season).catch(() => ({})) : {},
     liveLocks(DATA), // live locks of the week in progress (owner, Nov 8 2026), same as the 2K breakdown
   ]);
-  const lgsData = withLiveLgs(lgsRaw, live);
   const DL = withLiveWeeks(DATA, live);
+  const lgsData = withLockLgs(withLiveLgs(lgsRaw, live), DL);
   const players = bk?.players ?? [];
   const byId = Object.fromEntries(players.map(p => [p.pid, p]));
   const dynOf = pid => dyn?.v?.players?.[pid]?.score ?? null;
@@ -5654,7 +5684,11 @@ async function gmWeek(params) {
   const medianOn = Boolean(DATA.seasons.find(s => s.season === at.season)?.medianGame);
   // This device's marks + Dev Dashboard picks: the newer one wins per player (gm.js mergeMarks; owner, Nov 6 2026).
   const lawSrc = await withTimeout(loadLawSrc(), 6000).catch(() => null);
-  const marks = mergeMarks(gmLoad(marksKey, {}), lawSrc ? lawMarks(lawFor(at.season, at.week, lawSrc)) : {});
+  // LIVE LOCKS (owner, Nov 8 2026: "apply the live lock logic to the assistant coach" + "all locks will now be detected
+  // from Sleeper"): Sleeper's locks for this week are the coach's ONLY locks (every team), so the board, odds, Briefing
+  // and pipeline see real locks; this device's marks / Dev Dashboard picks are used only when Sleeper can't be read.
+  const slp = await sleeperMarks(at.season, at.week);
+  const marks = slp ?? mergeMarks(gmLoad(marksKey, {}), lawSrc ? lawMarks(lawFor(at.season, at.week, lawSrc)) : {});
   // Matchup factors per game (data/matchup.json, owner Nov 4 2026); none yet = no adjustment.
   setMatchups(await loadMatchups().catch(() => null));
   const coach = gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode, marks, whatifs, medianOn });
@@ -6058,8 +6092,9 @@ async function renderCoach(body, params) {
     bindTeamPick(body);
     return;
   }
-  const count = c => coach.rows.filter(r => r.call === c).length;
-  const summary = [[count('lock'), 'to lock'], [count('live'), 'playing now'], [count('wait'), 'waiting'], [count('locked'), 'locked'], [count('held'), 'held (week not over)'], [count('final'), 'done'], [count('plan'), 'not started']].filter(([n]) => n);
+  const count = c => coach.rows.filter(r => r.call === c && !r.soft).length;
+  const softN = coach.rows.filter(r => r.soft).length;
+  const summary = [[count('lock'), 'to lock'], [count('live'), 'playing now'], [count('wait'), 'waiting'], [count('locked'), 'locked'], [softN, 'soft locked'], [count('final'), 'done'], [count('plan'), 'not started']].filter(([n]) => n);
   // Matchup factor chip on upcoming games (owner, Nov 4 2026; assets/matchup.js): only when it moves his expected score 1.5%+.
   const muOf = (pos, opp) => (pos && opp ? gameFactor(pos, opp) : { f: 1 });
   const muPct = m => { const d = Math.round((m.f - 1) * 100); return `${d > 0 ? '+' : '−'}${Math.abs(d)}%`; };
@@ -6082,15 +6117,12 @@ async function renderCoach(body, params) {
     const cls = g.playing ? 'playing' : g.done ? (g.pts == null ? 'dnp' : 'done') : 'next';
     // Upcoming games carry the Defense vs Position grade (Test features, owner Nov 2 2026).
     const inner = `<small>${shortDay(g.date)}${!g.done && !g.playing && tipShort(g) ? ` <span class="mb-tip">${tipShort(g)}</span>` : ''}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${!g.done && !g.playing ? dvp(pid, g.opp) + (["locked", "final"].includes(r.call) ? "" : muChip(pos, g.opp)) : ''}</span><b>${g.pts != null ? num(g.pts) : g.done ? 'DNP' : g.playing ? 'Live' : '–'}</b>`;
-    // A starter's played game is a button: tap = "he was locked on this game" (tap again to undo).
-    if (r.pid && g.done && g.pts != null) {
-      const on = r.marked && isLocked;
-      return `<button class="gm-game ${cls}${isLocked ? ' locked' : ''} gm-pick" type="button" data-pid="${esc(r.pid)}" data-date="${esc(g.date)}" aria-pressed="${on}" title="${on ? 'Undo this lock' : 'Mark as the game he was locked on'}">${inner}</button>`;
-    }
+    // Owner, Nov 8 2026: locks come from Sleeper now, so game chips are no longer tap-to-mark buttons.
     return `<span class="gm-game ${cls}${isLocked ? ' locked' : ''}">${inner}</span>`;
   };
-  const markable = r => r.call === 'lock' || r.call === 'wait' || r.call === 'held' || r.marked;
-  const label = r => (r.whatIf ? 'What-if' : CALL_LABEL[r.call]);
+  // Soft lock (owner, Nov 8 2026): his last game of the week has tipped, he isn't locked: counts as locked (score in the
+  // locked total) but can still be moved off the lineup. r.soft from gm.js coachCall (calls 'held', or 'live' on his last game).
+  const label = r => (r.whatIf ? 'What-if' : r.soft ? 'Soft lock' : CALL_LABEL[r.call]);
   // What-if button: lock him in the coach's math only, in the slot it suggests (else where he is).
   const whatIfBtn = (r, i, mine) => {
     if (r.whatIf) return `<button class="gm-whatif on" type="button" data-pid="${esc(r.pid)}">Undo what-if</button>`;
@@ -6101,18 +6133,16 @@ async function renderCoach(body, params) {
   };
   // A starter's lock card (opened from the board). mine = false: the opponent's (button says "They locked him").
   const card = (r, mine = true, i = 0) => (r.empty ? `<div class="gm-call gm-none"><div class="gm-call-top"><span class="cm-slot">${esc(r.slot)}</span><b>Empty spot</b></div></div>` : `
-    <div class="gm-call gm-${r.call}${r.whatIf ? ' gm-whatif-card' : ''}">
+    <div class="gm-call gm-${r.call}${r.soft ? ' gm-soft' : ''}${r.whatIf ? ' gm-whatif-card' : ''}">
       <div class="gm-call-top">
         <span class="cm-slot">${esc(r.slot)}</span>
         <div class="gm-who"><b>${esc(r.name)}</b> ${injuryTag(r)}<small>${esc([r.pos, r.team || 'No team', r.perGame ? `about ${num(r.perGame * LOCK_CAL)} a game` : ''].filter(Boolean).join(' · '))}</small></div>
         <span class="gm-badge">${label(r)}</span>
       </div>
       ${r.sched.length ? `<div class="gm-games">${r.sched.map(g => game(r, g)).join('')}</div>` : ''}
-      ${r.sched.some(g => g.done && g.pts != null) ? `<p class="gm-hint">Tap the game ${mine ? 'you' : 'they'} locked to mark it${r.marked ? ', or the marked one again to undo' : ''}.</p>` : ''}
       <p class="gm-text">${esc(r.text)}</p>
-      ${["locked", "final"].includes(r.call) ? "" : muLine(r.pos, r.sched)}
-      ${r.notLocked ? `<p class="gm-hint">Marked as not locked: his last game of the week counts.</p>` : ''}
-      <div class="gm-btns">${markable(r) ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-act="${r.marked ? 'clear' : 'latest'}" data-date="${esc(r.sched.filter(g => g.done && g.pts != null).at(-1)?.date ?? '')}">${r.marked ? 'Undo this mark' : mine ? 'I locked him' : 'They locked him'}</button>` : ''}${r.call === 'locked' && !r.whatIf ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-act="none">${mine ? 'He’s not locked' : 'Not locked'}</button>` : ''}${r.notLocked ? `<button class="gm-mark" type="button" data-pid="${esc(r.pid)}" data-act="clear">Undo “not locked”</button>` : ''}${whatIfBtn(r, i, mine)}</div>
+      ${["locked", "final"].includes(r.call) || r.soft ? "" : muLine(r.pos, r.sched)}
+      <div class="gm-btns">${whatIfBtn(r, i, mine)}</div>
     </div>`);
   const riskBtns = GM_MODES.map(([k, label]) => `<a href="#" data-risk="${k}" class="${k === w.mode ? 'on' : ''}">${label}</a>`).join('');
   const opp = coach.opp;
@@ -6151,10 +6181,11 @@ async function renderCoach(body, params) {
   const oppRows = coach.oppCoach?.rows ?? [];
   // Locked points and starters left to lock; ifLocked/ifLeft = the same if every unlocked
   // score (a finished game not locked yet) were locked now.
+  // Soft locks (owner, Nov 8 2026) count as locked: their score is in the locked total and they aren't "left to lock".
   const tally = rows => {
-    const locked = rows.reduce((t, r) => t + (!r.empty && ['locked', 'final'].includes(r.call) ? r.score ?? 0 : 0), 0);
-    const left = rows.filter(r => !r.empty && ['lock', 'wait', 'live', 'plan', 'held'].includes(r.call)).length;
-    const open = rows.filter(r => !r.empty && ['lock', 'wait', 'held'].includes(r.call) && r.score != null);
+    const locked = rows.reduce((t, r) => t + (!r.empty && (['locked', 'final'].includes(r.call) || r.soft) ? r.score ?? 0 : 0), 0);
+    const left = rows.filter(r => !r.empty && !r.soft && ['lock', 'wait', 'live', 'plan', 'held'].includes(r.call)).length;
+    const open = rows.filter(r => !r.empty && !r.soft && ['lock', 'wait', 'held'].includes(r.call) && r.score != null);
     return { locked, left, ifLocked: locked + open.reduce((t, r) => t + r.score, 0), ifLeft: left - open.length };
   };
   const short = n => { const [f, ...rest] = String(n ?? '').split(' '); return rest.length ? `${f[0]}. ${rest.join(' ')}` : f; };
@@ -6163,6 +6194,7 @@ async function renderCoach(body, params) {
     if (!r || r.empty) return '<span class="mb-pts mb-empty">–</span>';
     if (r.whatIf) return `<span class="mb-pts mb-whatif" title="What-if lock (coach only)">${num(r.score ?? 0)}</span>`;
     if (['locked', 'final'].includes(r.call)) return `<span class="mb-pts mb-locked">${num(r.score ?? 0)}</span>`;
+    if (r.soft) return `<span class="mb-pts mb-soft${r.call === 'live' ? ' mb-softlive' : ''}" title="Soft lock: his last game of the week, counts in the locked total, but he can still be moved off the lineup">${num(r.score ?? 0)}</span>`;
     if (r.call === 'live') return `<span class="mb-pts mb-live">${r.score != null ? num(r.score) : '0'}</span>`;
     if (r.score != null && ['lock', 'wait', 'held'].includes(r.call)) return `<span class="mb-pts mb-open">${num(r.score)}</span>`;
     return '<span class="mb-pts mb-empty">–</span>';
@@ -6320,7 +6352,7 @@ async function renderCoach(body, params) {
       <p class="cm-rule">The coach plans your <b>whole roster against the 9 spots</b>, not each player alone. A lock takes a spot for good, so a score’s lock bar is what that spot is worth: his own games left, or any bench player who fits it and still plays. A depth player’s 25 isn’t a lock while a better bench player with games left could use the spot; a 45 is. Late in the week, as the better players run out of games, the bars come back down. When it says lock, it names the spot: the one the fewest other players could use, so the open spots stay with the players still to play. Bench tips say when to move a bench player in (before his first game) and whether the starter he replaces gets a game first.</p>
       <p class="cm-rule"><b>Safe</b>, <b>Balanced</b> and <b>Bold</b> ignore the matchup and chase points: after each game they compare his score with a <b>lock bar</b>, what waiting is worth on average. Balanced scores the most points; Safe locks more often, Bold chases big games.</p>
       <p class="cm-rule">Tested on two full regular seasons, 2024–25 and 2025–26 (every team-week, against opponents’ real scores; wins = head-to-head plus median, out of 336). The real locked scores come from this site’s saved records, because Sleeper’s own data for old weeks has lost many locks. Settings were fitted on 2024–25 and checked on 2025–26. Play to win won 161 and 145 when spots with no game that day are filled with a bench player who plays (Balanced: 155 and 143), and 152 and 137 with the lineup set once (Balanced: 145 and 135), with the same points. Before the Oct 2026 recalibration it won 151 and 143: its simulation had other teams about 20 a week too strong. The spot-aware bars beat plain bars by 4–5 wins when spots are filled day by day. Each test week starts from the lineup the projections picked, so managers’ real seasons aren’t a fair comparison: their final lineups include news and moves the test can’t see.</p>
-      <p class="cm-rule">“About N a game” is Sleeper’s projection for this week under league scoring, for games he’s expected to play, plus 4% (the test’s best fit). Sleeper doesn’t share which game a manager locked, and its live scores flip between games from one read to the next, so <b>the coach never guesses a lock</b>. A player is locked only when you mark him: tap the game he was locked on (or <b>I locked him</b> / <b>They locked him</b>), or pick it on the Dev Dashboard. A mark stays on that game all week; only Sleeper correcting that game’s box score changes its points. Anyone not marked is treated as unlocked until his games are done, then his last game counts. Marks count in the board, the odds, the Briefing and the commish locked points, and are saved as Dev Dashboard picks when you’re signed in; the newer of a coach mark and a dashboard pick wins.</p>
+      <p class="cm-rule">“About N a game” is Sleeper’s projection for this week under league scoring, for games he’s expected to play, plus 4% (the test’s best fit). <b>Locks come from Sleeper’s own lock data</b> (the Sleeper Insider’s live locks, every team, read each time this page loads), so locks show up on their own, for you and your opponent; there’s nothing to mark. A locked game’s points follow Sleeper’s box score for it. <b>Soft lock</b> = a player on his last game of the week (playing it or done) who isn’t locked: that game is the one that counts, so his score is in the locked total and he counts as locked, but he can still be moved off the lineup before the week ends (then it’s gone). Soft locks never touch the 2K breakdown; only real locks do. <b>What if I lock him?</b> tries a lock in the coach’s math only. If Sleeper’s lock data can’t be read, the coach falls back to your old marks and Dev Dashboard picks.</p>
     </section></div>`;
 
   bindTeamPick(body);
@@ -6457,7 +6489,7 @@ async function renderBriefing(body, params) {
         <div class="card-head"><h2>Lock calls</h2>${link('coach', 'Assistant Coach')}</div>
         ${whatIfBanner(w)}
         ${callsLine}
-        ${otherCalls.length ? `<ol class="aw-race">${otherCalls.map(r => `<li><span>${esc(r.name)}<small>${esc(r.text)}</small></span><b class="gm-badge-s gm-${r.call}">${CALL_LABEL[r.call]}</b></li>`).join('')}</ol>` : coach.calls.length || planned ? '' : '<p class="empty">Nothing to decide right now.</p>'}
+        ${otherCalls.length ? `<ol class="aw-race">${otherCalls.map(r => `<li><span>${esc(r.name)}<small>${esc(r.text)}</small></span><b class="gm-badge-s gm-${r.soft ? 'soft' : r.call}">${r.soft ? 'Soft lock' : CALL_LABEL[r.call]}</b></li>`).join('')}</ol>` : coach.calls.length || planned ? '' : '<p class="empty">Nothing to decide right now.</p>'}
       </section>
       <section class="card">
         <div class="card-head"><h2>This week</h2>${link('scout', 'Scouting report')}</div>
@@ -9116,7 +9148,8 @@ function bindHomeSlides(box) {
 // One game's slide on Home (the first is the week's Main event).
 function homeSlide(g, i, n, { season, week, live, liveData, when, isPreview, on }) {
   // Mid-week: Sleeper's live total (every starter's latest game, locked or not), labeled live.
-  const score = o => (g.final ? (o === g.a ? g.final.ap : g.final.bp) : liveData?.scores?.[o]);
+  // Mid-week (owner, Nov 8 2026): the locked score (Sleeper's locks + last games once they tip) when readable.
+  const score = o => (g.final ? (o === g.a ? g.final.ap : g.final.bp) : lkScore(liveData, o));
   const sa = score(g.a);
   const sb = score(g.b);
   const hasScore = sa != null && (sa || sb);
@@ -9130,7 +9163,9 @@ function homeSlide(g, i, n, { season, week, live, liveData, when, isPreview, on 
         <div class="hm-owner">${esc(name(o))}${t ? ` · <span class="nw">${rec(t.w, t.l, t.t)}</span>` : ''}</div>
       </div>`;
   };
-  const status = g.final ? 'Final · locked scores' : live && hasScore ? `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : live ? 'Tip-off pending' : '';
+  const status = g.final ? 'Final · locked scores' : live && hasScore ? (liveData.lk
+    ? `Locked · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+    : `Live · updated ${new Date(liveData.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`) : live ? 'Tip-off pending' : '';
   const why = g.labels.find(l => l.id === 'main')?.why ?? g.labels[0]?.why;
   return `
     <a class="hm-main hm-slide${on ? ' on' : ''}" aria-hidden="${on ? 'false' : 'true'}" tabindex="${on ? 0 : -1}" aria-label="Game ${i + 1} of ${n}" href="${isPreview ? `#/commish?${new URLSearchParams({ tab: 'hype', view: 'page', week, m: g.a })}` : `#/hype?${new URLSearchParams({ season, week, m: g.a })}`}">
