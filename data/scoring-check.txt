@@ -43,4 +43,23 @@ Finished weeks the site couldn't settle for sure from Sleeper's official standin
    Sandro Mamukelashvili: 13 used, could be 24 or 28 (games: 10-27 24, 10-28 28, 11-01 13)
    Brandin Podziemski: 32 used, could be 17 (games: 10-26 32, 10-28 17, 11-01 32)
 
+2026 week 3 tzola13 (official score 386): the starters' games add up to 386 in 3 different ways. The site used the most likely one; pick these players on the Dev Dashboard (Commish, Test features).
+   Donovan Mitchell: 40 used, could be 46 (games: 11-02 31, 11-04 36, 11-06 40, 11-07 46)
+   Yaxel Lendeborg: 37 used, could be 34 (games: 11-02 28, 11-05 37, 11-07 34)
+   Tyler Herro: 38 used, could be 32 or 34 (games: 11-02 34, 11-04 32, 11-06 38, 11-08 15)
+   Dyson Daniels: 37 used, could be 38 (games: 11-04 30, 11-06 37, 11-07 38)
+
+2026 week 3 bigtrey5456 (official score 299): the starters' games add up to 299 in 9 different ways. The site used the most likely one; pick these players on the Dev Dashboard (Commish, Test features).
+   Josh Giddey: 41 used, could be 29 (games: 11-02 29, 11-04 14, 11-08 41)
+   Deni Avdija: 38 used, could be 39 or 34 (games: 11-02 34, 11-04 38, 11-06 39, 11-07 17)
+   Zach LaVine: 19 used, could be 25 or 23 or 26 (games: 11-02 25, 11-04 26, 11-06 23, 11-08 19)
+   Alex Sarr: 31 used, could be 30 or 26 (games: 11-04 26, 11-06 30, 11-07 31)
+   Brook Lopez: 28 used, could be 23 or 32 (games: 11-02 23, 11-04 32, 11-08 28)
+
+2026 week 3 TRT3 (official score 387): the starters' games add up to 387 in 4 different ways. The site used the most likely one; pick these players on the Dev Dashboard (Commish, Test features).
+   Jalen Brunson: 39 used, could be 26 or 45 (games: 11-02 26, 11-04 39, 11-07 45)
+   Trey Murphy III: 35 used, could be 23 or 28 (games: 11-02 28, 11-06 23, 11-08 35)
+   Julius Randle: 20 used, could be 33 (games: 11-02 33, 11-04 29, 11-07 29, 11-08 20)
+   Darius Acuff Jr.: 45 used, could be 38 or 33 (games: 11-02 33, 11-04 38, 11-06 35, 11-08 45)
+
 Pick those players on the Dev Dashboard (Commish office, Test features, Dev Dashboard): your pick is final and the next run uses it. (assets/corrections.js "players" still works too.)
