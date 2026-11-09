@@ -1244,6 +1244,16 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   card). Tested with a STUBBED savePick on a copy of the page (week 3: 18 new + 36 matching = Sleeper's 54 locks, args
   right, Peterson replace = lock Fri 36 for simeoncampbell7) + made-up edge cases; a real Firestore write was NOT
   tested (needs the owner's sign-in). 320 px OK.
+  NOT LOCKED = LAST LINEUP GAME (owner, Nov 8 2026): Sleeper's lock source has NO per-player points (matchup_legs_raw
+  refuses players_points / starters_points; only team points, null while live). So every number on the Locks card is OUR
+  math: locked = box score of the locked game (weekBoxes, league scoring); unlocked = countedGame() in sleeperpriv.js = his
+  last game of the week IN THE LINEUP (bench dates from data/lgs.json via locks.js benchDates + breakdown.js loadLgs;
+  "(N bench games skipped)"; no lineup game = 0); live week: "latest so far ... (N games left)" from weekBoxes sched for
+  his NBA team. Each team gets a total line: "So far N (k starters still playing)" / "Total N = Sleeper's N ✓" / red
+  "Total N vs Sleeper's M (+d: a box score corrected since, or a bench game the watcher missed)". Checked Nov 8 2026: week 2
+  8 of 8 = Sleeper, week 1 7 of 8 (bigtrey5456 340 vs 343 = LaVine 45 -> 44 + Isaiah Stewart 26 -> 24 box-score
+  corrections), all 25 unlocked starters of weeks 1-2 = league.json playerWeeks (incl. Podziemski / Hachimura bench
+  games). Week 1 has no bench records (watcher started Oct 29). 320 px OK. Display only: picksToSave unchanged.
   DEFENSE VS POSITION (tab=defense; owner, Nov 2 2026): `assets/defense.js` (logic, no DOM) + `assets/defense-ui.js` (the
   page: renderDefense(body, params, h), h = { DATA, esc, gmLoad, gmSave, COMMISH, teamName } passed by app.js
   renderDefensePage; kept out of app.js on purpose), .dvp-* at the end of styles.css. Owner's answers: BOTH splits with a

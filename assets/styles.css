@@ -4592,3 +4592,8 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .si-difflist li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 12px; }
 .si-difflist small { color: var(--muted); }
 .si-use { padding: 5px 10px; font-size: 11.5px; }
+.si-ul .si-lv { color: var(--ink); }
+.si-sat { color: var(--muted); font-size: 10.5px; }
+.si-tot { margin: 4px 0 0; padding: 4px 6px; border-radius: 6px; background: #f3f5f9; font-size: 11.5px; font-weight: 700; }
+.si-tot.si-ok { background: #eef6f0; color: #2a6b3a; }
+.si-tot.si-bad { background: #fbeeee; color: #8a2424; font-weight: 600; }

@@ -5,8 +5,9 @@
 
 import { get } from './commish.js';
 import { betaCard } from './test-features.js';
-import { lawFor, loadLockDocs, weekBoxes } from './locks.js';
-import { CANDIDATES, cleanToken, compareWithPicks, forgetToken, getToken, gql, locksFromLegs, picksToSave, queryText, readOnlyProblem, saveToken, tokenInfo, tradeBlock, unauthorized } from './sleeperpriv.js';
+import { benchDates, lawFor, loadLockDocs, weekBoxes } from './locks.js';
+import { loadLgs } from './breakdown.js';
+import { CANDIDATES, cleanToken, compareWithPicks, countedGame, forgetToken, getToken, gql, locksFromLegs, picksToSave, queryText, readOnlyProblem, saveToken, tokenInfo, tradeBlock, unauthorized } from './sleeperpriv.js';
 
 const SI = { week: null, q: 'locks', round: null, date: null, rosterId: 1, playerId: '', statuses: ['pending', 'proposed'], text: null, vars: null, result: null, busy: false, me: null, sendToken: null, full: false };
 const MAX_SHOW = 60_000; // characters of JSON drawn before "Show all"
@@ -87,11 +88,12 @@ async function fillLocks(card, x) {
     .map(w => `<button type="button" class="ct-chip${w === SI.week ? ' on' : ''}" data-week="${w}">Week ${w}</button>`).join('');
   area.innerHTML = `<div class="ct-chips">${chips}</div><p class="empty">Reading week ${SI.week}…</p>`;
   const league = await h.sleeper(`/league/${cur.leagueId}`).catch(() => null);
-  const [res, schedule, boxes, docs] = await Promise.all([
+  const [res, schedule, boxes, docs, lgs] = await Promise.all([
     gql(CANDIDATES[0].query, { leagueId: cur.leagueId, round: SI.week }),
     get(`/schedule/nba/regular/${season}`, []),
     weekBoxes(season, SI.week, league?.scoring_settings ?? {}),
     loadLockDocs().catch(() => []),
+    loadLgs().catch(() => null),
   ]);
   const legs = res.data?.matchup_legs_raw;
   if (!Array.isArray(legs)) {
@@ -107,20 +109,55 @@ async function fillLocks(card, x) {
   const startersN = Object.values(locks).reduce((n, t) => n + t.starters.length, 0);
   const byMatch = {};
   for (const [rid, t] of Object.entries(locks)) (byMatch[t.matchup ?? `x${rid}`] ??= []).push([rid, t]);
+  const ownerOf = Object.fromEntries(cur.teams.map(t => [t.rosterId, t.owner]));
+  // Matchup of a game by date + NBA team ("AWY @ HOM"), from the schedule.
+  const gameAt = {};
+  for (const g of schedule ?? []) for (const s of [g.home?.team, g.away?.team]) if (s) gameAt[`${g.date}|${s}`] = `${g.away?.team} @ ${g.home?.team}`;
+  // Unlocked starters (owner, Nov 8 2026): his last LINEUP game of the week counts, worked out from box scores.
+  const unlocked = (pid, owner) => {
+    const list = boxes?.games?.[pid] ?? [];
+    const nbaTeam = list.at(-1)?.team ?? null;
+    const left = nbaTeam ? (boxes?.sched?.[nbaTeam] ?? []).filter(g => !g.done).length : 0;
+    return countedGame(list, benchDates(lgs, season, pid, owner, SI.week), left);
+  };
   const teamHtml = ([rid, t]) => {
+    let total = 0;
+    let open = 0;
     const rows = t.starters.map(pid => {
       const l = t.locks[pid];
       const vs = l?.date ? (l.home && l.away ? ` · ${esc(l.away)} @ ${esc(l.home)}` : '') : '';
       const p = l?.date ? ptsOf(pid, l.date) : null;
       const pick = law[pid];
       const flag = pick && !cmp.find(r => r.pid === pid)?.same ? ` <span class="si-diff" title="Dev Dashboard pick: ${esc(pick.k === 'lock' ? `locked ${pick.d}` : pick.k)}">≠ pick</span>` : (pick ? ' <span class="si-same" title="Same as your Dev Dashboard pick">= pick</span>' : '');
-      return `<li class="${l ? 'si-lk' : ''}"><span class="si-pn">${esc(pname(pid))}</span><span class="si-lv">${l ? `🔒 ${esc(dayLabel(l.date))}${vs}${p != null ? ` · <b>${p}</b>` : ''}` : '<i>not locked</i>'}${flag}</span></li>`;
+      let line;
+      if (l) {
+        total += Number(p) || 0;
+        line = `🔒 ${esc(dayLabel(l.date))}${vs}${p != null ? ` · <b>${p}</b>` : ''}`;
+      } else {
+        const c = unlocked(pid, ownerOf[rid]);
+        total += c.p;
+        if (!c.final) open++;
+        const at = c.g ? ` · ${esc(dayLabel(c.g.date))}${gameAt[`${c.g.date}|${c.g.team}`] ? ` · ${esc(gameAt[`${c.g.date}|${c.g.team}`])}` : ''} · <b>${c.p}</b>` : ' · no lineup game · <b>0</b>';
+        const sat = c.sat ? ` <small class="si-sat">(${c.sat} bench game${c.sat > 1 ? 's' : ''} skipped)</small>` : '';
+        line = c.final
+          ? `<i>not locked</i> → last game${at}${sat}`
+          : `<i>not locked</i> → ${c.g ? `latest so far${at}` : 'no game yet'} <small class="si-sat">(${c.left} game${c.left > 1 ? 's' : ''} left)</small>${sat}`;
+      }
+      return `<li class="${l ? 'si-lk' : 'si-ul'}"><span class="si-pn">${esc(pname(pid))}</span><span class="si-lv">${line}${flag}</span></li>`;
     }).join('');
     const extra = Object.keys(t.locks).filter(pid => !t.starters.includes(pid));
-    return `<div class="si-team"><h4>${team(rid)} <span class="si-n">${Object.keys(t.locks).length} / ${t.starters.length} locked</span></h4><ul>${rows}</ul>${extra.length ? `<p class="cm-rule">Also in starters_games: ${extra.map(p => esc(pname(p))).join(', ')}</p>` : ''}</div>`;
+    total = Math.round(total * 10) / 10;
+    const official = t.points;
+    const check = open
+      ? `<p class="si-tot">So far ${total} <small>(${open} starter${open > 1 ? 's' : ''} still playing)</small></p>`
+      : official == null
+        ? `<p class="si-tot">Total ${total}</p>`
+        : Math.abs(official - total) < 0.05
+          ? `<p class="si-tot si-ok">Total ${total} = Sleeper’s ${official} ✓</p>`
+          : `<p class="si-tot si-bad">Total ${total} vs Sleeper’s ${official} (${official > total ? '+' : ''}${Math.round((official - total) * 10) / 10}: a box score corrected since, or a bench game the watcher missed)</p>`;
+    return `<div class="si-team"><h4>${team(rid)} <span class="si-n">${Object.keys(t.locks).length} / ${t.starters.length} locked</span></h4><ul>${rows}</ul>${check}${extra.length ? `<p class="cm-rule">Also in starters_games: ${extra.map(p => esc(pname(p))).join(', ')}</p>` : ''}</div>`;
   };
   // Save as picks (owner, Nov 8 2026: the solver gets Sleeper's locks only through this button).
-  const ownerOf = Object.fromEntries(cur.teams.map(t => [t.rosterId, t.owner]));
   const done = SI.week < x.liveWeek || Number(x.state?.last_scored_leg) >= SI.week;
   const plan = picksToSave(locks, law, ownerOf, ptsOf, { done });
   const pickWord = k => (k === 'last' ? 'not locked' : k === 'zero' ? 'benched' : `locked ${dayLabel(k)}`);
@@ -140,7 +177,7 @@ async function fillLocks(card, x) {
     ${cmp.length ? ` Your Dev Dashboard picks: <b>${same} of ${cmp.length}</b> the same.` : ' No Dev Dashboard picks for this week.'}</p>
     ${saveBox}
     <div class="si-grid">${Object.values(byMatch).map(m => `<div class="si-match">${m.map(teamHtml).join('<div class="si-vs">vs</div>')}</div>`).join('')}</div>
-    <p class="cm-rule">Points = that game's box score under league scoring. Nothing on this page changes anything until you press a save button.</p>`;
+    <p class="cm-rule">Points = that game's box score under league scoring (my math, not Sleeper's number). Not locked = his last game of the week IN THE LINEUP counts (bench games from the game-day watcher are skipped; week 1 has no bench records). Each team's total is checked against Sleeper's own total once the week is over. Nothing on this page changes anything until you press a save button.</p>`;
   const msg = t => { const m = area.querySelector('#si-savemsg'); if (m) m.textContent = t; };
   const busy = on => area.querySelectorAll('[data-save], [data-use]').forEach(b => { b.disabled = on || (b.dataset.save && !plan.add.length); });
   area.onclick = async e => {

@@ -222,6 +222,20 @@ export function compareWithPicks(locks, law) {
   return rows;
 }
 
+// An UNLOCKED starter's counted game (owner's rule: no lock = his LAST LINEUP game of the week counts; games played from
+// the bench never count). list = his box-score games that week (locks.js weekBoxes: { date, p, done }), bench = Set of
+// dates he sat on this team's bench (locks.js benchDates, from the game-day watcher), left = his NBA team's games this
+// week not finished yet. -> { g: counted game | null, p: points, final: nothing can change it any more, left, sat: games
+// he played from the bench }. Checked Nov 8 2026: weeks 1-2, Sleeper's locks + this for every unlocked starter = Sleeper's
+// official team total in 15 of 16 team-weeks (the 16th = bigtrey5456 week 1, 3 points of later box-score corrections:
+// LaVine 45 -> 44, Isaiah Stewart 26 -> 24), and all 25 unlocked starters = league.json playerWeeks.
+export function countedGame(list, bench, left = 0) {
+  const played = (list ?? []).filter(g => g.done !== false);
+  const lineup = played.filter(g => !bench?.has(g.date));
+  const g = lineup.at(-1) ?? null;
+  return { g, p: g ? g.p : 0, final: left === 0, left, sat: played.length - lineup.length };
+}
+
 // "Save Sleeper's locks as picks" (owner, Nov 8 2026: the solver gets Sleeper's locks ONLY when he presses the button).
 // locks = locksFromLegs(), law = lawFor() picks, ownerOf = roster_id -> owner id (the MATCHUP lineup's team, so a starter
 // traded after his lock stays with his old team, like the Dev Dashboard), ptsOf(pid, date) = box-score points, done =
