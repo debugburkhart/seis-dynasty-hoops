@@ -114,11 +114,52 @@ export async function loadLockDocs(fetchImpl = globalThis.fetch.bind(globalThis)
 }
 export const lockDocId = (season, week, pid) => `${season}_${week}_${pid}`;
 
-// One week's picks: pid -> { k, d, p, o, at }. Only the commish's own picks (src 'you').
+// One week's picks: pid -> { k, d, p, o, at, src }. The commish's own picks (src 'you', Firestore) beat Sleeper's own lock
+// data (src 'sleeper': added by the nightly job only, from sleeperLockDocs; Firestore can't hold them, its rules
+// require src 'you').
 export function lawFor(season, week, { docs = [] } = {}) {
   const out = {};
-  for (const x of docs) {
-    if (x.s === String(season) && x.w === Number(week) && x.src === 'you') out[x.pid] = { k: x.k, d: x.d, p: x.p, o: x.o, src: 'you', at: x.t };
+  for (const src of ['sleeper', 'you']) {
+    for (const x of docs) {
+      if (x.s === String(season) && x.w === Number(week) && x.src === src) out[x.pid] = { k: x.k, d: x.d, p: x.p, o: x.o, src, at: x.t };
+    }
+  }
+  return out;
+}
+
+// SLEEPER'S LOCKS FOR THE SOLVER (owner, Nov 9 2026: "yes, build it", after the nightly Scoring check kept failing on
+// week 2-3 ties): Sleeper's own lock data (sleeperpriv.js matchup_legs_raw starters_games, NO login, unofficial) for
+// every FINISHED regular week of the season in progress -> lock records { s, w, pid, o, k, d, src: 'sleeper' } for each
+// starter in the final lineup (o = the team whose matchup lineup has him): k 'lock' + d = the game he was locked on, or
+// k 'last' when he wasn't locked (his last lineup game counts). gql + locksFromLegs are passed in so this file needs no
+// import. Throws when Sleeper doesn't answer.
+export async function sleeperLockDocs({ leagueId, gql, locksFromLegs, query, fetchImpl = globalThis.fetch.bind(globalThis) }) {
+  const json = async path => { const r = await fetchImpl(`https://api.sleeper.app${path}`); if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`); return r.json(); };
+  const [lg, rosters] = await Promise.all([json(`/v1/league/${leagueId}`), json(`/v1/league/${leagueId}/rosters`)]);
+  const season = String(lg.season);
+  const done = Number(lg.settings?.last_scored_leg) || 0;
+  const regularEnd = (Number(lg.settings?.playoff_week_start) || 99) - 1;
+  if (!done) return [];
+  const schedule = await json(`/schedule/nba/regular/${season}`);
+  const ownerOf = Object.fromEntries((rosters ?? []).map(r => [String(r.roster_id), r.owner_id]));
+  const out = [];
+  for (let w = 1; w <= Math.min(done, regularEnd); w++) {
+    const res = await gql(query, { leagueId, round: w }, { fetchImpl });
+    const legs = res.data?.matchup_legs_raw;
+    if (!Array.isArray(legs)) throw new Error(`week ${w}: ${res.errors?.[0]?.message ?? 'no answer'}`);
+    for (const [rid, t] of Object.entries(locksFromLegs(legs, schedule))) {
+      const o = ownerOf[rid];
+      if (!o) continue;
+      for (const pid of t.starters) {
+        const l = t.locks[pid];
+        if (l && !l.date) continue; // locked on a game the schedule doesn't list: leave him to the solver
+        // Locked = that game. Not locked = the league rule: his LAST game of the week in the lineup counts (bench games
+        // never do: the solver's lineup games). A wrong record can't sneak in: pins that don't add up to the official
+        // score make the week "nofit" in the Scoring check.
+        out.push(l ? { s: season, w, pid, o, k: 'lock', d: l.date, p: NaN, src: 'sleeper', t: 0 }
+          : { s: season, w, pid, o, k: 'last', d: '', p: NaN, src: 'sleeper', t: 0 });
+      }
+    }
   }
   return out;
 }

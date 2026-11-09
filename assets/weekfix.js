@@ -304,14 +304,21 @@ export async function settleWeeks({ official, live, season, weekly, ownerOf, las
       const fixes = Object.entries(fixPlayers(w, o) ?? {});
       // The commish's Dev Dashboard picks for this team (assets/locks.js lawFor) are pins and beat corrections.js.
       // bench(w, o, pid) = dates he played from this team's bench (game-day watcher): those games never count.
-      const lw = Object.entries(law(w) ?? {}).filter(([, x]) => x.o === o).sort(([a], [b]) => (a < b ? -1 : 1));
+      // Sleeper's own lock data (src 'sleeper', nightly job, owner Nov 9 2026) only fills in where the solver wasn't sure:
+      // a team-week already settled 'unique' keeps its answer (a re-solve would read box scores Sleeper corrected later,
+      // e.g. Isaiah Stewart 26 -> 24, and stop adding up).
+      // (slp = that answer was itself solved with Sleeper's data: keep using it, or the key would change back every night.)
+      const settledOk = saved[o]?.v === WEEKFIX_VERSION && saved[o]?.how === 'unique' && !saved[o]?.slp;
+      const lw = Object.entries(law(w) ?? {}).filter(([, x]) => x.o === o && !(x.src === 'sleeper' && settledOk)).sort(([a], [b]) => (a < b ? -1 : 1));
       const benchKey = feedStarters.map(pid => [pid, [...bench(w, o, pid)].sort()]).filter(([, d]) => d.length);
       // Old answers keep their key (no picks, no bench records = the key they were saved with).
       const key = JSON.stringify(lw.length || benchKey.length ? [target, fixes, lw.map(([pid, x]) => [pid, x.k, x.d, x.p]), benchKey] : [target, fixes]);
       let r = saved[o];
       // The lineup that answer used (saved since Nov 1 2026; older answers: their games list = that lineup, unless another lineup was listed too).
       const prevStarters = r?.starters ?? (r?.games && !r.otherLineup ? Object.keys(r.games) : null);
-      if (!r || r.v !== WEEKFIX_VERSION || r.key !== key) {
+      // A night Sleeper's lock data didn't load (no 'sleeper' records for the whole week) keeps answers solved with it.
+      const slpMissing = r?.slp && !Object.values(law(w) ?? {}).some(x => x.src === 'sleeper');
+      if (!r || r.v !== WEEKFIX_VERSION || (r.key !== key && !slpMissing)) {
         if (boxes === undefined) {
           boxes = await weekGames(season, w, scoring, fetchImpl);
           if (!boxes) notes.push(`${season} week ${w}: Sleeper's box scores didn't load, so the players' locked points come from the matchup feed tonight (tried again next run).`);
@@ -333,10 +340,11 @@ export async function settleWeeks({ official, live, season, weekly, ownerOf, las
             if (games[pid] && !games[pid].some(g => Math.abs(g.p - p) < 0.05)) games[pid] = [{ date: 'saved', p }, ...games[pid]];
           }
           for (const [pid, x] of lw) {
+            if (x.src === 'sleeper' && pid in pins) continue; // corrections.js beats Sleeper's data (the commish's picks beat both)
             const v = lawValue(x, games[pid]);
             if (v != null) pins[pid] = v;
           }
-          r = saved[o] = { v: WEEKFIX_VERSION, key, at, snap: snap?.at ?? null, ...settleTeam({ lineups: [snap?.s, prevStarters, feedStarters], games, snap, target, pins }) };
+          r = saved[o] = { v: WEEKFIX_VERSION, key, at, snap: snap?.at ?? null, ...(lw.some(([, x]) => x.src === 'sleeper') ? { slp: 1 } : {}), ...settleTeam({ lineups: [snap?.s, prevStarters, feedStarters], games, snap, target, pins }) };
         }
       }
       (settled[w] ??= {})[m.roster_id] = { score: r.score, players: r.players };

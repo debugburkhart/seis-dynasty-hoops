@@ -10,7 +10,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Sleeper's public API (no dummy account, ever); the ONE exception is the Test features tab "Sleeper Insider", where the
   owner pastes HIS OWN Sleeper token himself (this browser's localStorage only). ALSO (Nov 8 2026, owner asked): Home +
   Matchup Hype + 2K + Depth Chart + Assistant Coach read Sleeper's NO-LOGIN private lock data in the browser (see
-  LIVE LOCKED SCORES); the nightly job, weekfix and the watcher still never do. Claude never types his password, never
+  LIVE LOCKED SCORES); the watcher still never does. CHANGED Nov 9 2026 (owner: "yes, build it", after the Scoring check
+  kept failing on week 2-3 ties): the NIGHTLY JOB now reads the same no-login lock data for weekfix (see SLEEPER LOCKS FOR
+  THE SOLVER under locks.js). Claude never types his password, never
   handles or asks for the token. (Nov 1 2026 he had said public API only; he changed his mind Nov 8.)
 
 ## How the owner deploys (important)
@@ -983,6 +985,18 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Monday solve pins them. gmWeek returns the merged marks (picks over local marks) so undo works on a dashboard pick.
   Rules published + files uploaded by the owner Nov 1 2026 (REST read of locks = 200). Firestore write from the coach
   not tested here (needs the owner's sign-in).
+  SLEEPER LOCKS FOR THE SOLVER (owner, Nov 9 2026): locks.js sleeperLockDocs({ leagueId, gql, locksFromLegs, query }) =
+  matchup_legs_raw (sleeperpriv.js, no login) for every finished regular week (league last_scored_leg, < playoff start) ->
+  records { s, w, pid, o (matchup team), k: 'lock' + d = locked game | 'last' (not locked: last lineup game), src: 'sleeper' }
+  for every final-lineup starter; update.mjs pushes them into weekFix.law.docs after the Firestore picks (failure = a log
+  line only). lawFor: 'sleeper' records first, the commish's 'you' picks override. weekfix settleWeeks: corrections.js pins
+  beat sleeper pins; a team-week already 'unique' WITHOUT Sleeper's data keeps its answer (a re-solve would hit later box-score
+  corrections: Isaiah Stewart 26 -> 24 made week 1 bigtrey5456 'nofit'); answers solved with it carry slp: 1 (so they keep using
+  it); a night with no sleeper records for the week keeps slp answers as they are. Tested Nov 9 2026 in the browser (real
+  buildLeagueData + raw data files): 179 locked + 37 unlocked starters weeks 1-3; ties 8 -> 0 (week 2: tzola13, bigtrey5456,
+  simeoncampbell7, jimmycooks2, BenDoverPlz123; week 3: tzola13, bigtrey5456, TRT3), Scoring check notes 0, every 2026
+  playerWeeks value = last night's file, stable over 4 simulated nights incl. one with Sleeper down. Sleeper's locks alone
+  left 3 ties (unlocked starters); the 'last' rule settled them, matching the solver's old picks.
   TRADED MID-WEEK (owner, Nov 1 2026; week 2: bigtrey5456 -> simeoncampbell7 Oct 28 sent George, Durant, Garland; Parma <->
   BenDover Oct 30): a starter traded AFTER his lock stays in his old team's MATCHUP lineup and his points count there
   (matchups: bigtrey still starts George 35 + Durant 40), but the old roster's `starters` shows '0' = an empty slot; an

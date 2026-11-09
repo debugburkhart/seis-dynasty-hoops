@@ -5,7 +5,8 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { FREEZE_SEED, LEAGUE_ID } from '../assets/config.js';
 import { buildLeagueData } from '../assets/build-data.js';
-import { loadLockDocs } from '../assets/locks.js';
+import { loadLockDocs, sleeperLockDocs } from '../assets/locks.js';
+import { gql, locksFromLegs, CANDIDATES as SLP_QUERIES } from '../assets/sleeperpriv.js';
 import { recordHistory } from '../assets/records.js';
 import { frontOffice } from '../assets/frontoffice.js';
 import { extractSeason, guardSeason, sameSeason, verifySeason } from '../assets/freeze.js';
@@ -50,6 +51,13 @@ const weekFix = {
 weekFix.law = { docs: [] };
 weekFix.lgs = await readJson('data/lgs.json');
 try { weekFix.law.docs = await loadLockDocs(); } catch (e) { weekFix.notes.push(`Dev Dashboard lock picks couldn't be read (${e.message}); finished weeks were solved without them tonight.`); }
+// Sleeper's own lock data for finished weeks (owner, Nov 9 2026; no login, unofficial): pins under the commish's picks.
+// A failed read only logs: the solver then runs as before (and any ties show in the Scoring check).
+try {
+  const slp = await sleeperLockDocs({ leagueId: LEAGUE_ID, gql, locksFromLegs, query: SLP_QUERIES.find(c => c.id === 'locks').query });
+  weekFix.law.docs.push(...slp);
+  console.log(`Sleeper locks for the solver: ${slp.filter(d => d.k === 'lock').length} locked + ${slp.filter(d => d.k === 'last').length} unlocked starters in finished weeks.`);
+} catch (e) { console.log(`Sleeper's lock data couldn't be read (${e.message}); finished weeks solved without it.`); }
 
 // All-Stars (they need every box score up to the break) and each season's rookies
 // are worked out once, then carried forward from last night's data.
