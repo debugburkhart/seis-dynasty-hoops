@@ -1929,7 +1929,28 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   contracts; no in-season extensions. Offseason: contracts tick down -> token day -> re-sign window (commish releases the
   rest on the deadline) -> free agency = one long Sleeper waiver / FAAB period (1-yr deal or attach a token) -> rookie
   draft -> leftover tokens vanish. Nov 7 2026: ~26 players per team outside taxi, 111 expiring after year one, 56+ to
-  free agency (7 tokens each for re-signing). renderReports must stay async (renderCommish
+  free agency (7 tokens each for re-signing).
+  Report 9 (owner, Nov 9 2026) "What if we used Yahoo's standard scoring?": `assets/report-yahoo.js` reportYahoo(h) (h = DATA,
+  esc, get, name, teamName). YAHOO = pts 1, reb 1.2, ast 1.5, stl 3, blk 3, to -1, no bonuses; ours = the live league
+  scoring_settings (pts/reb/ast 1, stl/blk 2, to -1, dd 1, td 2, 40/50-pt, 15-ast, 20-reb bonuses 2, tech/flagrant -2).
+  Every game of last season (weeks 1-26) + this season so far from /stats/nba/{s}/{w} (no All-Star rows, MIN_GAME 10+ min),
+  scored both ways with breakdown.js fantasy(); weeks cached per visit (~4 s). Sections: scoring table; comparable scores =
+  same percentile of games (20/30/40/50/60/70); team-week estimate (ratio of games scoring 25-55); positions (last season,
+  top POOL 200 by our FP/G with MIN_GP 20+, Sleeper main position: FP/G both ways, avg rank move, top 50 / 100 counts);
+  points mix by stat; biggest movers; our rosters' top-9 FP/G both ways; "if we switched" notes. Nov 9 2026: 25,360 games,
+  avg 21.0 -> 24.7 (+17.6%); our 40 (top 8%) = Yahoo 46, 30 -> 35, 50 -> 57, 60 -> 67; PG +3.5 rank places, C / SG +0.7,
+  PF -2.2, SF -3.6; climbers Draymond Green, Davion Mitchell, Suggs, Dyson Daniels; sliders Keldon Johnson, Hunter, LaVine,
+  Norman Powell; team ranks only loganzarvell / tzola13 swap 4-5.
+  ESPN ADDED (owner, Nov 9 2026, same report, title "What if we used Yahoo's or ESPN's standard scoring?"): ESPN = pts 1,
+  3PM 1, FGM 2, FGA -1, FTM 1, FTA -1, reb 1, ast 2, stl 4, blk 4, to -2, no bonuses; every section shows ours / Yahoo / ESPN.
+  RECORDS RE-SCORED: candidates = each season's best CAND_PLAYER 40 locked player games (DATA.playerWeeks) + CAND_TEAM 15 team
+  scores (DATA.games R + P, both sides); their weeks' box scores loaded; each locked game matched to the box-score game whose
+  score under THAT season's league scoring (each season's scoring_settings from Sleeper; 2023 = half a point per point) =
+  his locked points (closest + * if Sleeper corrected it since); team = sum of its starters' re-scored games (* if the sum !=
+  the official score). Top REC_N 10 lists per system in folds (ours open). Nov 9 2026: ours 40 = Yahoo 46 / ESPN 50; ESPN +21%
+  avg; ESPN PG +4.9 / SG +4.6 / PF -6.5 rank places; player record ours Wembanyama 104 (Yahoo 112.8, ESPN 119), ESPN No. 1 =
+  Doncic 2023-24 (65 ours at half points, 119 ESPN); team record ours 471 (8496, 2025-26 wk 4), ESPN No. 1 = 7792 466 -> 588.
+  renderReports must stay async (renderCommish
   calls .catch() on every tab's result; a plain function crashed the office page).
   2K BREAKDOWN (tab=breakdown; owner's NBA 2K roster screenshot, Oct 25 2026; logic `assets/breakdown.js`, no
   DOM; renderBreakdown + BK state/BK_VIEWS in app.js, .bk-* in styles.css). Team picker (default COMMISH) +

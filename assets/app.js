@@ -23,6 +23,7 @@ import { reportSalary } from './report-salary.js';
 import { reportSalaryNba } from './report-salary-nba.js';
 import { reportTokens } from './report-tokens.js';
 import { reportYearsPool } from './report-yearspool.js';
+import { reportYahoo } from './report-yahoo.js';
 import { paintSync, syncInit, syncSave } from './sync.js';
 import { themeSwitch, paintTheme } from './theme.js';
 import { allTimeBoard, gameKey, gradePick, leaderboard, settle, weekResults } from './props.js';
@@ -4494,6 +4495,9 @@ const REPORTS = [
   { id: 'years-pool', added: '2026-11-07', title: 'Salary system v2: a years pool for contract lengths',
     sub: 'Any length 1-4 as long as the years fit, a limit on 4-season deals, how it works in practice, compared with the other ways',
     run: () => reportYearsPool({ DATA, esc, get, name, teamName, COMMISH }) },
+  { id: 'yahoo-scoring', added: '2026-11-09', title: 'What if we used Yahoo’s or ESPN’s standard scoring?',
+    sub: 'Every game scored three ways: what our 40 equals, which positions gain or lose, the league’s records re-scored, biggest movers, our teams',
+    run: () => reportYahoo({ DATA, esc, get, name, teamName }) },
 ];
 
 async function renderReports(body) { // async: renderCommish calls .catch() on every tab's result
