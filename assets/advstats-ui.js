@@ -127,7 +127,7 @@ export async function renderAdvanced(body, params, h) {
 
   // ---------- Player cards ----------
   const pickerCard = () => {
-    const chips = P.map(p => `<span class="as-pchip" style="--c:${p.color}"><img src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy"><b>${esc(p.name)}</b><small>${esc([all?.[p.pid]?.team, all?.[p.pid]?.position].filter(Boolean).join(' · '))}</small><a href="#/commish?tab=breakdown&list=league&p=${p.pid}${ownerOf[p.pid] ? '' : '&fa=1'}&back=${encodeURIComponent(link())}&backl=${encodeURIComponent('Advanced Stats')}" title="2K card">2K</a><button type="button" data-rm="${p.pid}" aria-label="Remove ${esc(p.name)}">×</button></span>`).join('');
+    const chips = P.map(p => `<span class="as-pchip" style="--c:${p.color}"><img src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy"><b>${esc(p.name)}</b><small>${esc([all?.[p.pid]?.team, all?.[p.pid]?.position].filter(Boolean).join(' · '))}</small><a href="#/mygm?tab=rosters&list=league&p=${p.pid}${ownerOf[p.pid] ? '' : '&fa=1'}&back=${encodeURIComponent(link())}&backl=${encodeURIComponent('Advanced Stats')}" title="2K card">2K</a><button type="button" data-rm="${p.pid}" aria-label="Remove ${esc(p.name)}">×</button></span>`).join('');
     return betaCard('Players', `
       <div class="as-pchips">${chips || '<p class="empty">No players picked yet. Search below, or use + Compare on the 2K breakdown.</p>'}</div>
       ${P.length < MAX ? '<div class="as-search"><input type="search" placeholder="Add a player (name)" aria-label="Add a player" autocomplete="off"><div class="as-results"></div></div>' : ''}

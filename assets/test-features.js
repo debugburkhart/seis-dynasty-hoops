@@ -4,15 +4,11 @@
 // CLAUDE.md, "Test features").
 
 // One entry per feature: tab id (#/commish?tab=id), tab label, the day it was added.
+// Moved to MyGM (owner, Nov 8 2026): 2K breakdown (now "Rosters"), Assistant Coach, Depth Chart (and Contracts earlier).
 export const TEST_FEATURES = [
-  { id: 'breakdown', label: '2K breakdown', since: '2026-10-25' },
   { id: 'injuries', label: 'Injury Report', since: '2026-10-26' },
-  // Moved here from My GM by the owner (Oct 26 2026; was the Lock-in coach). Tab id stays 'coach' so old links work.
-  { id: 'coach', label: 'Assistant Coach', since: '2026-10-26' },
   // Reports (owner, Oct 28 2026): one-off questions answered from live data; each report is a title that opens.
   { id: 'reports', label: 'Reports', since: '2026-10-28' },
-  // Depth Chart (owner, Oct 29 2026): fantasy rosters by position (auto + drag order) and ESPN's NBA depth charts.
-  { id: 'depth', label: 'Depth Chart', since: '2026-10-29' },
   // Dev Dashboard (owner, Nov 1 2026): every starter's lock per matchup, every uncertainty, the commish's picks = law.
   { id: 'devdash', label: 'Dev Dashboard', since: '2026-11-01' },
   // Defense vs Position (owner, Nov 2 2026): FP each NBA team allows per position, this week's matchup grades.

@@ -73,6 +73,9 @@ const ICONS = {
   crown: '<path d="M3 7l3.5 3L10 5l3.5 5L17 7l-1.5 8h-11zM5 17.5h10"/>',
   medal: '<path d="M6 3h8l-2.5 5h-3zM10 8a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9zM10 10.5v4"/>',
   target: '<circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="4"/><circle cx="10" cy="10" r="1"/>',
+  // MyGM nav (owner, Nov 8 2026): a contract (page with a dollar sign) and a coach's whistle.
+  contract: '<path d="M5 2.5h7l3 3v12H5zM12 2.5v3h3M10 7.5v8M12 9c-.4-.5-1.1-.8-2-.8-1.1 0-2 .6-2 1.4 0 2 4 1.2 4 3.1 0 .8-.9 1.4-2 1.4-.9 0-1.7-.4-2-1"/>',
+  whistle: '<path d="M2.5 10.5a4.5 4.5 0 1 0 9 0V9h6v3h-3.5M5.5 5.5 4.5 3.5M8 4.5V2.5"/><circle cx="7" cy="10.5" r="1.3"/>',
   users: '<circle cx="8" cy="7" r="3"/><path d="M2.5 17a5.5 5.5 0 0 1 11 0M13 4.3a3 3 0 0 1 0 5.4M15 12.3A5.5 5.5 0 0 1 17.5 17"/>',
   flame: '<path d="M10 2.5c.5 3 4.5 5 4.5 9a4.5 4.5 0 0 1-9 0c0-2 1-3.2 2-4 0 1.5.8 2.5 1.8 2.8C9 8 9.2 5 10 2.5z"/>',
   arrow: '<path d="M4 10h12M11 5l5 5-5 5"/>',
@@ -2379,8 +2382,13 @@ const cmFlag = on => { try { on ? sessionStorage.setItem('cm-open', '1') : sessi
 let COMMISH_OPEN = (() => { try { return sessionStorage.getItem('cm-open') === '1'; } catch { return false; } })();
 
 function renderCommish(main, params) {
-  // Contracts moved from Test features to MyGM (owner, Nov 8 2026): old links forward there.
-  if (params.get('tab') === 'contracts') { location.replace(`#/mygm?${params}`); return; }
+  // Contracts, 2K breakdown (= Rosters), Assistant Coach and Depth Chart moved to MyGM (owner, Nov 8 2026): old links forward.
+  if (MYGM_IDS[params.get('tab')]) {
+    const q = new URLSearchParams(params);
+    q.set('tab', MYGM_IDS[params.get('tab')]);
+    location.replace(`#/mygm?${q}`);
+    return;
+  }
   if (!COMMISH_OPEN) {
     main.innerHTML = `
       <div class="page">
@@ -2456,8 +2464,26 @@ function renderCommish(main, params) {
 // the same passcode / session flag as the office (COMMISH_OPEN; moving between the office and MyGM stays unlocked), and
 // every tab keeps its Beta tags (tf-body + betaCard) until the owner says a feature goes live. First tab: Contracts
 // (the Contract Sandbox, moved from Test features). To add a tab: an entry in MYGM_TABS + its renderer in MYGM_SHOW.
-const MYGM_TABS = [['contracts', 'Contracts']];
-const MYGM_SHOW = { contracts: (body, params) => renderContractsPage(body, params) };
+// Nov 8 2026 (owner): 2K breakdown -> "Rosters", Assistant Coach and Depth Chart moved here from Test features, plus two new
+// tabs: Report Cards (a team's lock + draft report cards) and Trophy Room (a team's accomplishments, team + players).
+// [id, label, short label (phone bar), icon]. Nav (owner, Nov 8 2026: "C on desktop, D on phones"): a 2K-style navy menu
+// bar with big icons on desktop, a bottom tab bar pinned to the screen on phones (.mg-nav in styles.css).
+const MYGM_TABS = [['contracts', 'Contracts', 'Cap', 'contract'], ['rosters', 'Rosters', 'Rosters', 'users'], ['coach', 'Assistant Coach', 'Coach', 'whistle'], ['depth', 'Depth Chart', 'Depth', 'list'], ['cards', 'Report Cards', 'Grades', 'cap'], ['trophies', 'Trophy Room', 'Trophies', 'trophy']];
+const MYGM_SHOW = {
+  contracts: (body, params) => renderContractsPage(body, params),
+  rosters: (body, params) => renderBreakdown(body, params),
+  coach: (body, params) => renderCoach(body, params),
+  depth: (body, params) => renderDepth(body, params),
+  cards: (body, params) => renderReportCards(body, params),
+  trophies: (body, params) => renderTrophyRoom(body, params),
+};
+// Office tab ids that live in MyGM now (old ids kept: 'breakdown' = Rosters), and a link to any office / MyGM tab.
+const MYGM_IDS = { contracts: 'contracts', breakdown: 'rosters', rosters: 'rosters', coach: 'coach', depth: 'depth', cards: 'cards', trophies: 'trophies' };
+const officeHash = (tab, rest = {}) => (MYGM_IDS[tab]
+  ? `#/mygm?${new URLSearchParams({ tab: MYGM_IDS[tab], ...rest })}`
+  : `#/commish?${new URLSearchParams({ ...(tab === 'brief' ? {} : { tab }), ...rest })}`);
+// The office and MyGM share the same body (#cm-body) and session lock: pages built for one work in both.
+const inOffice = () => ['commish', 'mygm'].includes(route().page);
 function renderMyGM(main, params) {
   if (!COMMISH_OPEN) {
     main.innerHTML = `
@@ -2484,20 +2510,141 @@ function renderMyGM(main, params) {
   const tab = MYGM_TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : MYGM_TABS[0][0];
   clearInterval(GM_TIMER);
   main.innerHTML = `
-    <div class="page page-wide">
+    <div class="page page-wide mygm-page">
       <div class="page-head">
         <div class="page-icon">${icon('clipboard')}</div>
         <div><div class="eyebrow">Commish only · Beta</div><h1>MyGM</h1></div>
       </div>
-      <div class="st-tabs cm-tabs mygm-tabs" role="tablist">
-        ${MYGM_TABS.map(([id, text]) => `<a role="tab" class="${tab === id ? 'on' : ''}" href="#/mygm?tab=${id}">${text} <span class="gm-beta">Beta</span></a>`).join('')}
-      </div>
+      <nav class="mg-nav" aria-label="MyGM sections">
+        ${MYGM_TABS.map(([id, text, short, ic]) => `<a class="${tab === id ? 'on' : ''}" href="#/mygm?tab=${id}"${tab === id ? ' aria-current="page"' : ''}>${icon(ic)}<span class="mg-nl">${text}</span><span class="mg-ns">${short}</span><span class="gm-beta">Beta</span></a>`).join('')}
+      </nav>
       <div id="cm-body" class="tf-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
     </div>`;
   const body = $('#cm-body', main);
+  CM_REDRAW = () => MYGM_SHOW[tab](body, params).catch(() => {}); // a synced setting from another device redraws the tab
   MYGM_SHOW[tab](body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this page: ${esc(err.message)}</p></section>`;
   });
+}
+
+// MyGM team picker: like gmTeamPick, but it stays in MyGM on the same tab.
+const mygmTeam = params => (DATA.seasons.at(-1).teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH);
+
+// REPORT CARDS (MyGM, owner Nov 8 2026: "that team's report cards (lock report cards, draft report cards)"): the Lock
+// Report Card's team view (renderLockCard only: grade, rank, best / worst lock, timing, decisions by week) and the Draft
+// Kit's report card (reportCardsView(owner): GPA, every class, best / worst pick). ?team= (default COMMISH), ?week=.
+async function renderReportCards(body, params) {
+  const cur = DATA.seasons.at(-1);
+  const me = mygmTeam(params);
+  body.innerHTML = `
+    ${gmTeamPick(me, cur.season, 'cards')}
+    <div id="rc-lock"><section class="card"><p class="empty">Grading locks…</p></section></div>
+    ${betaCard('Draft report card', '<p class="empty">Grading drafts…</p>', { id: 'rc-draft', sub: 'every rookie draft · from Draft Grades' })}`;
+  bindTeamPick(body);
+  const lockBox = $('#rc-lock', body);
+  const lp = new URLSearchParams(params);
+  lp.set('m', me);
+  const draftJob = draftKitData().then(() => {
+    const box = $('#rc-draft', body);
+    if (box) box.querySelector('.empty').outerHTML = `${reportCardsView(me)}<p class="cm-rule"><a href="#/draft-grades?view=cards&manager=${encodeURIComponent(me)}">All report cards on Draft Grades →</a></p>`;
+  }).catch(err => { const box = $('#rc-draft', body); if (box) box.querySelector('.empty').textContent = `Couldn’t grade drafts: ${err.message}`; });
+  await Promise.all([
+    renderLockCard(lockBox, lp, { only: true, hash: q => officeHash('cards', { ...(me === COMMISH ? {} : { team: me }), ...q }) })
+      .then(() => { const h = lockBox.querySelector('.lc-page'); if (h) h.insertAdjacentHTML('beforeend', `<p class="cm-rule"><a href="${officeHash('lockcard', { m: me })}">The whole league’s Lock Report Card →</a></p>`); })
+      .catch(err => { lockBox.innerHTML = betaCard('Lock Report Card', `<p class="empty">Couldn’t grade locks: ${esc(err.message)}</p>`); }),
+    draftJob,
+  ]);
+}
+
+// TROPHY ROOM (MyGM, owner Nov 8 2026: "each team's accomplishments, both teams and individual players for that team"):
+// completed seasons only. Team: titles, runner-ups, No. 1 seeds (win %, then PF, like the Awards banner), playoff trips,
+// every season's finish; manager awards (GM of the Year, Draft of the Year, Steal of the Draft); rivalry traveling
+// trophies (hype.js trophyHistory). Players: awards they won WHILE ON THIS TEAM (breakdown.js playerAwards: the fantasy team
+// is the award's team, same as the 2K card's Awards row) and championship rings won here (rings: roster minus taxi).
+const TROPHY_ORDER = ['Championship MVP', 'League MVP', 'Player of the Year', 'Rookie of the Year', 'Steal of the Draft', 'All-Fantasy', 'All-Star', 'All-Rookie'];
+async function renderTrophyRoom(body, params) {
+  const cur = DATA.seasons.at(-1);
+  const me = mygmTeam(params);
+  body.innerHTML = `${gmTeamPick(me, cur.season, 'trophies')}<section class="card"><p class="empty">Polishing the trophies…</p></section>`;
+  bindTeamPick(body);
+  const fo = frontOffice(DATA);
+  await draftKitData().catch(() => null); // Draft of the Year / Steal need draft stats
+  BK_AWARDS ??= playerAwards(DATA, fo);
+  const rings = await championshipRings(DATA).catch(() => ({}));
+  if (!inOffice()) return;
+  const done = DATA.seasons.filter(s => s.status === 'complete' && s.champion);
+  const fin = finishes(DATA);
+  const pct = t => (t.w + t.t / 2) / Math.max(1, t.w + t.l + t.t);
+  const here = officeHash('trophies', me === COMMISH ? {} : { team: me });
+  const card2k = pid => officeHash('rosters', { list: 'league', p: pid, back: here, backl: 'Trophy Room' });
+  const pnm = pid => DATA.players?.[pid]?.n ?? `Player ${pid}`;
+
+  // Season by season.
+  const rows = done.map(s => {
+    const table = [...s.teams].sort((a, b) => pct(b) - pct(a) || b.pf - a.pf);
+    const seed = table.findIndex(t => t.owner === me) + 1;
+    const t = s.teams.find(x => x.owner === me);
+    const playoffs = (s.playoffTeams ?? []).includes(me) || DATA.games.some(g => g.s === s.season && g.t === 'P' && (g.a === me || g.b === me));
+    return { s: s.season, t, seed: seed || null, place: fin[s.season]?.[me] ?? null, playoffs, champ: s.champion === me, runner: s.runnerUp === me };
+  }).filter(r => r.t);
+  const titles = rows.filter(r => r.champ);
+  const seeds1 = rows.filter(r => r.seed === 1);
+  const trips = rows.filter(r => r.playoffs);
+  const runners = rows.filter(r => r.runner);
+
+  // Manager awards.
+  const mgr = [];
+  for (const s of done.map(x => x.season)) {
+    try { if (gmOfTheYear(DATA, fo, s)?.winner?.o === me) mgr.push({ s, label: 'GM of the Year' }); } catch { /* no data */ }
+    try {
+      const d = draftOfYear(DATA, s);
+      if (d?.winner?.owner === me) mgr.push({ s, label: 'Draft of the Year' });
+      if (d?.steal?.o === me) mgr.push({ s, label: 'Steal of the Draft', pid: d.steal.pid });
+    } catch { /* no data */ }
+  }
+  // Rivalry traveling trophies.
+  const rivals = RIVALRIES.filter(r => r[0] === me || r[1] === me).map(r => {
+    const h = trophyHistory(DATA, r);
+    return { r, won: h.seasons.filter(x => x.winner === me).map(x => x.season), holder: h.holder };
+  });
+  // Players: awards won on this team + rings won here.
+  const byP = {};
+  for (const [pid, list] of Object.entries(BK_AWARDS ?? {})) for (const a of list) if (a.o === me) (byP[pid] ??= []).push(a);
+  for (const [pid, list] of Object.entries(rings ?? {})) for (const r of list) if (r.o === me) (byP[pid] ??= []).push({ s: r.s, label: 'Champion', kind: 'ring' });
+  const weight = a => (a.label === 'Champion' ? -1 : TROPHY_ORDER.indexOf(a.label));
+  const players = Object.entries(byP).map(([pid, list]) => ({ pid, list, score: list.reduce((t, a) => t + (a.label === 'Champion' ? 3 : a.kind === 'indiv' ? 4 : 2), 0) }))
+    .sort((a, b) => b.score - a.score || pnm(a.pid).localeCompare(pnm(b.pid)));
+  const grouped = list => {
+    const g = {};
+    for (const a of [...list].sort((x, y) => weight(x) - weight(y) || x.s - y.s)) (g[a.label] ??= []).push(a.s);
+    return Object.entries(g).map(([label, ss]) => `<span class="tr-aw${label === 'Champion' ? ' ring' : TROPHY_ORDER.indexOf(label) < 5 ? ' indiv' : ''}">${ss.length > 1 ? `${ss.length} × ` : ''}${esc(label)} <small>${ss.map(seasonSpan).join(', ')}</small></span>`).join('');
+  };
+
+  const stat = (n, label, sub = '') => `<div class="tr-stat"><b>${n}</b><span>${label}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  const list = xs => xs.map(r => seasonSpan(r.s)).join(', ');
+  body.innerHTML = `
+    ${gmTeamPick(me, cur.season, 'trophies')}
+    <div class="gm-page tr-page">
+      ${betaCard(`${esc(teamName(me, cur.season))} <small>${esc(name(me))}</small>`, `
+        <div class="tr-stats">
+          ${stat(titles.length, `Championship${titles.length === 1 ? '' : 's'}`, list(titles))}
+          ${stat(runners.length, 'Runner-up', list(runners))}
+          ${stat(seeds1.length, 'No. 1 seed', list(seeds1))}
+          ${stat(`${trips.length}<small>/${rows.length}</small>`, 'Playoff trips')}
+          ${stat(mgr.length, 'Manager awards')}
+          ${stat(rivals.reduce((t, x) => t + x.won.length, 0), 'Rivalry trophies')}
+        </div>
+        <p class="cm-rule">Completed seasons only (${done.length}). Seeds: regular-season win %, then points for, like the Awards banner.</p>`, { sub: 'Trophy case' })}
+      ${betaCard('Season by season', rows.length ? `<div class="tr-scroll"><table class="tr-table">
+          <thead><tr><th>Season</th><th>Team</th><th>Record</th><th>Seed</th><th>Finish</th></tr></thead>
+          <tbody>${[...rows].reverse().map(r => `<tr class="${r.champ ? 'champ' : ''}"><td>${seasonSpan(r.s)}</td><td>${esc(teamName(me, r.s))}</td><td>${rec(r.t.w, r.t.l, r.t.t)}</td><td>${r.seed ?? '—'}</td><td>${r.champ ? '🏆 Champion' : r.place ? ordinalPlace(r.place) : r.playoffs ? 'Playoffs' : '—'}</td></tr>`).join('')}</tbody>
+        </table></div>` : '<p class="empty">No completed seasons yet.</p>')}
+      ${betaCard('Manager awards', mgr.length ? `<ul class="tr-list">${mgr.map(a => `<li><span class="tr-aw indiv">${esc(a.label)}</span><small>${seasonSpan(a.s)}${a.pid ? ` · <a href="${card2k(a.pid)}">${esc(pnm(a.pid))}</a>` : ''}</small></li>`).join('')}</ul>` : '<p class="empty">No GM of the Year, Draft of the Year or Steal of the Draft yet.</p>', { sub: 'GM of the Year · Draft of the Year · Steal of the Draft' })}
+      ${rivals.length ? betaCard('Rivalry trophies', `<ul class="tr-riv">${rivals.map(x => `<li>${trophyPic(x.r, 'tr-img')}<div><b>${esc(x.r[2])}</b><small>vs ${esc(name(x.r[0] === me ? x.r[1] : x.r[0]))} · ${x.won.length ? `won ${x.won.map(seasonSpan).join(', ')}` : 'not won yet'}${x.holder === me ? ' · <b class="tr-hold">holds it now</b>' : x.holder ? ` · held by ${esc(name(x.holder))}` : ''}</small></div></li>`).join('')}</ul>`) : ''}
+      ${betaCard('Player honors on this team', players.length ? `<ul class="tr-players">${players.map(p => `<li><img src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy"><div><a href="${card2k(p.pid)}"><b>${esc(pnm(p.pid))}</b></a><div class="tr-aws">${grouped(p.list)}</div></div></li>`).join('')}</ul>
+        <p class="cm-rule">Awards count for the fantasy team that had him for that award (season’s end; All-Stars at the All-Star break), the same as the Awards page and the Rosters card. Champion = on the title roster in championship week (taxi left out).</p>` : '<p class="empty">No player honors won on this team yet.</p>', { sub: `${players.length} player${players.length === 1 ? '' : 's'}` })}
+    </div>`;
+  bindTeamPick(body);
 }
 
 // ---------- Test features (commish office, Beta) ----------
@@ -2531,7 +2678,7 @@ async function renderTradeTree(body, params) {
   const caseOf = tx => cases.find(x => x.tx === tx);
   const courtLink = cs => `#/trade-court?${new URLSearchParams({ case: cs.no, ret: self, retl: 'Back to Trade Tree' })}`;
   const cardHref = x => (onRoster[x] || DATA.players?.[x]?.t
-    ? `#/commish?${new URLSearchParams({ tab: 'breakdown', list: 'league', p: x, ...(onRoster[x] ? {} : { fa: '1' }), back: self, backl: 'Trade Tree' })}` : null);
+    ? `#/mygm?${new URLSearchParams({ tab: 'rosters', list: 'league', p: x, ...(onRoster[x] ? {} : { fa: '1' }), back: self, backl: 'Trade Tree' })}` : null);
   const pLink = x => { const h = cardHref(x); return h ? `<a href="${esc(h)}">${esc(pn(x))}</a>` : esc(pn(x)); };
   const pickName = (p, s) => {
     const orig = pickOwner(p.season, p.orig, s);
@@ -2873,7 +3020,10 @@ const dayLabel = d => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US'
 // LOCK REPORT CARD (owner, Nov 2 2026; logic in lockcard.js): how each manager locks, finished regular weeks of this
 // season only. ?week=N = one week (else the season), ?m=owner = that manager's drill-down (default COMMISH).
 const LC_BOX = {}; // `${season}-${week}` -> weekBoxes (finished weeks don't change during a visit)
-async function renderLockCard(body, params) {
+// opts.only (MyGM Report Cards, owner Nov 8 2026): just this team (params m): no league board / highlights; opts.hash(q) =
+// where the week chips and back links point.
+async function renderLockCard(body, params, opts = {}) {
+  const only = Boolean(opts.only);
   const cur = DATA.seasons.at(-1);
   const season = cur.season;
   if (!body.querySelector('.lc-page')) body.innerHTML = '<section class="card"><p class="empty">Reading box scores…</p></section>';
@@ -2898,10 +3048,13 @@ async function renderLockCard(body, params) {
   const sgn = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${num(Math.abs(n))}`;
   const tone = n => (n > 0 ? 'up' : n < 0 ? 'down' : 'even');
   const pname = pid => DATA.players?.[pid]?.n ?? Object.values(boxes).find(b => b?.names[pid])?.names[pid] ?? `Player ${pid}`;
-  const here = `#/commish?${new URLSearchParams({ tab: 'lockcard', ...(week ? { week } : {}), m: me })}`;
-  const card2k = pid => `#/commish?${new URLSearchParams({ tab: 'breakdown', list: 'league', p: pid, back: here, backl: 'Lock Report Card' })}`;
+  const here = opts.hash ? opts.hash(week ? { week } : {}) : `#/commish?${new URLSearchParams({ tab: 'lockcard', ...(week ? { week } : {}), m: me })}`;
+  const card2k = pid => `#/mygm?${new URLSearchParams({ tab: 'rosters', list: 'league', p: pid, back: here, backl: 'Lock Report Card' })}`;
   // q.week null = the season view.
-  const link = (q = {}) => { const o = { tab: 'lockcard', week, m: me, ...q }; if (!o.week) delete o.week; return `#/commish?${new URLSearchParams(o)}`; };
+  const link = (q = {}) => {
+    if (opts.hash) { const o = { week, ...q }; if (!o.week) delete o.week; delete o.m; return opts.hash(o); }
+    const o = { tab: 'lockcard', week, m: me, ...q }; if (!o.week) delete o.week; return `#/commish?${new URLSearchParams(o)}`;
+  };
   const chips = `<a class="ld-wk${week ? '' : ' on'}" href="${link({ week: null })}">Season</a>${weeks.map(w => `<a class="ld-wk${w === week ? ' on' : ''}" href="${link({ week: w })}">Week ${w}</a>`).join('')}`;
   const lockLine = x => (x ? `<a href="${card2k(x.pid)}">${esc(pname(x.pid))}</a> <small>Wk ${x.w} · ${esc(x.day)} ${num(x.p)} vs last ${num(x.base)}</small> <b class="lc-d ${tone(x.delta)}">${sgn(x.delta)}</b>` : '<small>none</small>');
 
@@ -2963,9 +3116,9 @@ async function renderLockCard(body, params) {
         <div class="ld-wks">${chips}</div>
         ${lawSrc.error ? `<p class="ld-warn">Your Dev Dashboard picks couldn’t be read (${esc(lawSrc.error)}), so every lock comes from the locked points alone.</p>` : ''}
         ${unknown.length ? `<p class="cm-rule">${unknown.length} start${unknown.length === 1 ? '' : 's'} had no game matching the locked points (left out): ${unknown.map(x => `${esc(pname(x.pid))} wk ${x.w}`).join(', ')}. Pick them on the Dev Dashboard.</p>` : ''}`, { cls: 'ld-head' })}
-      ${betaCard(week ? `Week ${week} grades` : 'Season grades', `<ol class="lc-board">${cards.map(row).join('')}</ol>
+      ${only ? '' : betaCard(week ? `Week ${week} grades` : 'Season grades', `<ol class="lc-board">${cards.map(row).join('')}</ol>
         <p class="cm-rule">Graded on a curve: points per lock vs the league average (${sgn(cards.leagueAvg)} per lock${week ? ` in week ${week}` : ' this season'}). A+ +6 · A +4 · A− +2.5 · B+ +1 · B within 1 · B− −2.5 · C+ −4 · C −6 · C− −8 · D −11 · F below. Fewer than ${MIN_LOCKS} locks = INC.</p>`, { sub: `${locksAll.length} locks · ${starts.length} starts` })}
-      ${betaCard('League highlights', `<ul class="lc-hl">
+      ${only ? '' : betaCard('League highlights', `<ul class="lc-hl">
           <li><span>Best lock</span>${bestL && bestL.delta > 0 ? `${lockLine(bestL)} <small>${esc(teamName(bestL.o, season))}</small>` : '<small>none yet</small>'}</li>
           <li><span>Worst lock</span>${worstL && worstL.delta < 0 ? `${lockLine(worstL)} <small>${esc(teamName(worstL.o, season))}</small>` : '<small>none yet</small>'}</li>
           <li><span>Favorite lock day</span>${topDay?.[1] ? `<b>${topDay[0]}</b> <small>${topDay[1]} of ${locksAll.length} locks · ${dayAll.filter(d => d[1]).map(d => `${d[0]} ${d[1]}`).join(' · ')}</small>` : '<small>none yet</small>'}</li>
@@ -2973,6 +3126,7 @@ async function renderLockCard(body, params) {
       ${m ? betaCard(`${esc(teamName(m.o, season))} <small>${esc(name(m.o))}</small>`, `
         <div class="lc-sum">
           <span><small>Grade</small><b class="lc-grade g-${m.grade[0]}">${m.grade}</b></span>
+          ${only ? `<span><small>League rank</small><b>${m.rank ?? '–'} <small>of ${cards.length}</small></b></span>` : ''}
           <span><small>Per lock</small><b class="${tone(m.avg)}">${m.locks.length ? sgn(m.avg) : '—'}</b></span>
           <span><small>Net</small><b class="${tone(m.net)}">${sgn(m.net)}</b></span>
           <span><small>Rides left</small><b>${num(m.leftRides)}</b></span>
@@ -2984,7 +3138,7 @@ async function renderLockCard(body, params) {
         <h3 class="lc-wk">Lock timing</h3>${timing}
         ${byWeek}`, { id: 'lc-me', sub: 'Tap a player for his 2K card' }) : ''}
     </div>`;
-  if (params.get('m') && body.dataset.lcJump !== `${week}|${me}`) { body.dataset.lcJump = `${week}|${me}`; $('#lc-me', body)?.scrollIntoView({ block: 'start' }); }
+  if (!only && params.get('m') && body.dataset.lcJump !== `${week}|${me}`) { body.dataset.lcJump = `${week}|${me}`; $('#lc-me', body)?.scrollIntoView({ block: 'start' }); }
 }
 // LIKELY LOCK (owner, Nov 1 2026: "show likely locks"): a GUESS from the feed hints, shown on live-week rows only and
 // never counted anywhere (totals, solver, coach). hint = { points: reads }; played = his finished LINEUP games. A value
@@ -3496,14 +3650,14 @@ async function renderBreakdown(body, params) {
   // Back link (owner, Oct 30 2026): ?back = the page to return to, ?backl = its name ("Depth Chart", "League view"...).
   // Kept in this page's own links while browsing; the Injury Report's older ?from=inj still works.
   const back = params.get('back')?.startsWith('#/') ? { back: params.get('back'), backl: params.get('backl') || 'previous page' } : null;
-  const link = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...(fromInj ? { from: 'inj' } : {}), ...(back ?? {}), ...(list === 'team' ? { team: me } : {}), ...(list !== 'team' ? { list } : {}), ...(list === 'nba' ? { nba: nbaTeam } : {}), ...(season !== cur.season ? { season } : {}), ...(list === 'league' && params.get('fa') === '1' ? { fa: '1' } : {}), ...q })}`;
+  const link = q => `#/mygm?${new URLSearchParams({ tab: 'rosters', ...(fromInj ? { from: 'inj' } : {}), ...(back ?? {}), ...(list === 'team' ? { team: me } : {}), ...(list !== 'team' ? { list } : {}), ...(list === 'nba' ? { nba: nbaTeam } : {}), ...(season !== cur.season ? { season } : {}), ...(list === 'league' && params.get('fa') === '1' ? { fa: '1' } : {}), ...q })}`;
   // Card arrows (owner, Oct 30 2026): "View on NBA team" / "View in League" open the same player in that list; the new
   // page gets a "Back to {this list} view" link (back = this page, with its own back link kept inside it).
   const VIEW_NAME = { team: 'Team', fa: 'Waiver Wire', league: 'League', nba: 'NBA team' };
   const viewArrows = p => {
     const here = { back: link({ p: p.pid }), backl: `${VIEW_NAME[list]} view` };
     const keep = season !== cur.season ? { season } : {};
-    const to = q => `#/commish?${new URLSearchParams({ tab: 'breakdown', ...q, ...keep, p: p.pid, ...here })}`;
+    const to = q => `#/mygm?${new URLSearchParams({ tab: 'rosters', ...q, ...keep, p: p.pid, ...here })}`;
     const arrows = [
       NBA_TEAM_CODES.includes(p.team) && !(list === 'nba' && nbaTeam === p.team) ? `<a class="bk-gotoa" href="${to({ list: 'nba', nba: p.team })}">View on NBA team (${esc(p.team)}) →</a>` : '',
       list !== 'league' ? `<a class="bk-gotoa" href="${to({ list: 'league', ...(p.owner ? {} : { fa: '1' }) })}">View in League →</a>` : '',
@@ -3551,7 +3705,7 @@ async function renderBreakdown(body, params) {
   // Injured players listed Out count this season at half (Dynasty tab setting): show the full-health score too.
   const dynFull = dyn && !gmLoad('gm-dyn-full', false) ? dynastyValues(DATA, dyn.f, { fullInjured: true }) : null;
   const dynNote = pid => (dyn?.v?.players?.[pid]?.outCut && dynFull?.players?.[pid] ? `<small class="bk-dynnote">Dynasty ${dynFull.players[pid].score} at full health (listed Out: this season counts half)</small>` : '');
-  const listTabs = `<div class="st-tabs bk-lists" role="tablist">${BK_LISTS.map(([id, label]) => `<a role="tab" class="${id === list ? 'on' : ''}" href="#/commish?${new URLSearchParams({ tab: 'breakdown', ...(id !== 'team' ? { list: id } : {}), ...(season !== cur.season ? { season } : {}) })}">${label}</a>`).join('')}</div>`;
+  const listTabs = `<div class="st-tabs bk-lists" role="tablist">${BK_LISTS.map(([id, label]) => `<a role="tab" class="${id === list ? 'on' : ''}" href="#/mygm?${new URLSearchParams({ tab: 'rosters', ...(id !== 'team' ? { list: id } : {}), ...(season !== cur.season ? { season } : {}) })}">${label}</a>`).join('')}</div>`;
   if (!bk) {
     body.innerHTML = `<div class="gm-page">${listTabs}${gmTeamPick(me, cur.season, 'breakdown')}${betaCard('Team breakdown', '<p class="empty">No roster found for this team.</p>')}</div>`;
     bindTeamPick(body);
@@ -3811,7 +3965,7 @@ async function renderBreakdown(body, params) {
       // { n: LGS, d: LGS in finished weeks (for Lock per start %) }
       let n = 0, d = 0;
       for (const s of seasonsT) for (const [key, [v, o, fl = '']] of Object.entries(lgsData.seasons[s].p?.[p.pid] ?? {})) {
-        if (v !== 1 || fl.includes('k') || !keep(s, key.slice(0, 10), o)) continue;
+        if (v !== 1 || fl.includes('k') || !keep(s, key.slice(0, 10), o, Number(lgsData.seasons[s].games?.[key]?.w))) continue;
         n++;
         if (lgsSettled(lgsData, BK_LIVE, s, key, o, p.pid, doneWeek)) d++;
       }
@@ -3840,9 +3994,13 @@ async function renderBreakdown(body, params) {
         // Every locked start that season goes to that team's stretch (the one whose weeks hold it, else the nearest),
         // so a start in the week of a trade still counts for the team that locked it and the rows add up to Career.
         for (const seg of segs) seg.lk = seg.o ? { pts: 0, starts: 0 } : null;
+        // The stretch of team o that holds week w, else that team's nearest stretch (by weeks).
+        const segFor = (o, w) => {
+          const dist = seg => (w < seg.from.week ? seg.from.week - w : w > seg.to.week ? w - seg.to.week : 0);
+          return segs.filter(g => g.o === o).sort((a, b) => dist(a) - dist(b))[0] ?? null;
+        };
         for (const x of pw.filter(x => x.s === s)) {
-          const dist = seg => (x.w < seg.from.week ? seg.from.week - x.w : x.w > seg.to.week ? x.w - seg.to.week : 0);
-          const seg = segs.filter(g => g.o === x.o).sort((a, b) => dist(a) - dist(b))[0];
+          const seg = segFor(x.o, x.w);
           if (seg) { seg.lk.pts += x.p; seg.lk.starts++; }
         }
         // Newest stretch first, like the seasons (owner, Oct 26 2026: the table reads bottom-up in date order).
@@ -3852,7 +4010,10 @@ async function renderBreakdown(body, params) {
             s, label: bkSeason(s), when: `${shortMd(seg.from.date)}–${shortMd(seg.to.date)}`,
             team: seg.o ? `${esc(teamName(seg.o, s))} <small>${esc(name(seg.o))}</small>` : '<small>Not on a roster</small>',
             tot: totalOf(seg.games), cls: seg.o ? '' : 'bk-yr-fa', lk: seg.lk,
-            lgs: seg.o ? lgsIn((ss, d, o) => ss === s && o === seg.o && d >= seg.from.date && d <= seg.to.date, s) : null,
+            // LGS go to stretches by the SAME rule as locks (owner, Nov 8 2026: LeBron's BenDover row showed 200%): team +
+            // the stretch holding that week (else its nearest), not by date. In a trade week every game counts as the NEW
+            // team's (ownerAtWeek), so the old team's LGS that week were dated outside both rows.
+            lgs: seg.o ? lgsIn((ss, d, o, w) => ss === s && o === seg.o && segFor(o, w) === seg, s) : null,
           });
         }
       });
@@ -4142,7 +4303,7 @@ async function renderBreakdown(body, params) {
     gmSave('gm-bk-lgfa', e.target.checked);
     BK.limit = BK_PAGE;
     const ps = new URLSearchParams(location.hash.split('?')[1] ?? '');
-    if (ps.has('fa')) { ps.delete('fa'); history.replaceState(null, '', `#/commish?${ps}`); }
+    if (ps.has('fa')) { ps.delete('fa'); history.replaceState(null, '', `#/mygm?${ps}`); }
     renderBreakdown(body, ps).catch(() => {});
   });
   const heroEl = $('#bk-hero', body);
@@ -4656,7 +4817,7 @@ async function renderInjuries(body, params, me) {
   const cur = DATA.seasons.at(-1);
   // A name opens his 2K breakdown card in the NBA team view of his NBA team (owner, Oct 26 2026), with ?from=inj
   // so the card page shows "Back to Injury Report"; the report remembers where you were scrolled.
-  const cardLink = p => `#/commish?${new URLSearchParams({ tab: 'breakdown', from: 'inj', list: 'nba', nba: p.team, p: p.pid })}`;
+  const cardLink = p => `#/mygm?${new URLSearchParams({ tab: 'rosters', from: 'inj', list: 'nba', nba: p.team, p: p.pid })}`;
   const tabs = ''; // its own Test features tab now (was a list in the 2K breakdown)
   body.innerHTML = `<div class="gm-page bk-page">${tabs}<div class="loading">Pulling the injury report from Sleeper…</div></div>`;
   const all = await get('/v1/players/nba', {});
@@ -5118,8 +5279,8 @@ async function renderDepth(body, params) {
   const key = `gm-dc-chart-${me}`;
   const auto = dcAuto(players, dynOf, new Set(Object.entries(desig().d).filter(([, k]) => k === 'start').map(([pid]) => pid)));
   // A name opens his 2K card with a "Back to Depth Chart" link (back / backl, owner Oct 30 2026) to this same view.
-  const dcBack = { back: `#/commish?${new URLSearchParams(fantasyView ? { tab: 'depth', view: 'fantasy', team: me } : { tab: 'depth', view: 'nba', nba })}`, backl: 'Depth Chart' };
-  const cardLink = p => `#/commish?${new URLSearchParams(fantasyView ? { tab: 'breakdown', team: me, p: p.pid, ...dcBack } : { tab: 'breakdown', list: 'nba', nba, p: p.pid, ...dcBack })}`;
+  const dcBack = { back: `#/mygm?${new URLSearchParams(fantasyView ? { tab: 'depth', view: 'fantasy', team: me } : { tab: 'depth', view: 'nba', nba })}`, backl: 'Depth Chart' };
+  const cardLink = p => `#/mygm?${new URLSearchParams(fantasyView ? { tab: 'rosters', team: me, p: p.pid, ...dcBack } : { tab: 'rosters', list: 'nba', nba, p: p.pid, ...dcBack })}`;
 
   const row = (p, i, pos, o = {}) => {
     const e = espn?.[p.pid];
@@ -5245,7 +5406,7 @@ async function renderDepth(body, params) {
             <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>${pick}</span></label>
         ${fantasyView ? `<button type="button" class="btn dc-auto">Auto-generate best depth chart</button>
           <label class="dc-check"><input type="checkbox" data-hidetaxi${hideTaxi() ? ' checked' : ''}> Hide taxi <small>(${players.filter(p => p.slot === 'TX').length})</small></label>` : ''}
-        <a class="bk-gotoa dc-adv" href="#/commish?${new URLSearchParams({ tab: 'advanced', view: 'teams', ...(fantasyView ? { kind: 'fantasy', ...(me === COMMISH ? {} : { team: me }) } : { kind: 'nba', nba }), back: `#/commish?tab=depth&view=${view}${fantasyView ? (me === COMMISH ? '' : `&team=${me}`) : `&nba=${nba}`}`, backl: 'Depth Chart' })}">${fantasyView ? 'Who carried the team' : 'Usage tree'} in Advanced Stats →</a>
+        <a class="bk-gotoa dc-adv" href="#/commish?${new URLSearchParams({ tab: 'advanced', view: 'teams', ...(fantasyView ? { kind: 'fantasy', ...(me === COMMISH ? {} : { team: me }) } : { kind: 'nba', nba }), back: `#/mygm?tab=depth&view=${view}${fantasyView ? (me === COMMISH ? '' : `&team=${me}`) : `&nba=${nba}`}`, backl: 'Depth Chart' })}">${fantasyView ? 'Who carried the team' : 'Usage tree'} in Advanced Stats →</a>
       </div>
       ${fantasyView
     ? `<p class="dc-status">${chart.saved ? `<b>Your custom order</b> · saved ${esc(savedAt)} (follows you to your other devices when signed in)` :'<b>Automatic order</b> (by role)'}. Drag a player to reorder or move him to another position (phones: press and hold, then drag), or tap ⋮.</p>
@@ -5368,11 +5529,11 @@ async function renderDepth(body, params) {
   page.addEventListener('change', e => {
     if (e.target.matches('[data-hidetaxi]')) { gmSave('gm-dc-hidetaxi', e.target.checked); DC.menu = null; draw(); return; }
     if (!e.target.matches('.dc-pick')) return;
-    location.hash = `#/commish?${new URLSearchParams({ tab: 'depth', view, ...(fantasyView ? { team: e.target.value } : { nba: e.target.value }) })}`;
+    location.hash = `#/mygm?${new URLSearchParams({ tab: 'depth', view, ...(fantasyView ? { team: e.target.value } : { nba: e.target.value }) })}`;
   });
   page.addEventListener('click', e => {
     const v = e.target.closest('[data-view]');
-    if (v) { location.hash = `#/commish?${new URLSearchParams({ tab: 'depth', view: v.dataset.view, ...(v.dataset.view === 'fantasy' ? { team: me } : { nba }) })}`; return; }
+    if (v) { location.hash = `#/mygm?${new URLSearchParams({ tab: 'depth', view: v.dataset.view, ...(v.dataset.view === 'fantasy' ? { team: me } : { nba }) })}`; return; }
     if (e.target.closest('.dc-auto')) {
       // Resets this team's depth chart order AND designations to automatic (owner, Oct 30 2026); the Cut List stays.
       const R = rawDesig();
@@ -5449,7 +5610,7 @@ function syncRedraw(keys) {
   if (keys.some(k => k.startsWith('gm-locks-'))) for (const k of Object.keys(LIVE)) delete LIVE[k];
   clearTimeout(SYNC_WAIT);
   const body = $('#cm-body');
-  if (route().page !== 'commish' || !COMMISH_OPEN || !body || !CM_REDRAW) return;
+  if (!inOffice() || !COMMISH_OPEN || !body || !CM_REDRAW) return;
   if (body.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) {
     SYNC_WAIT = setTimeout(() => syncRedraw(keys), 3000);
     return;
@@ -5524,7 +5685,7 @@ async function renderScouting(body, params) {
   const opp = pair.a === me ? pair.b : pair.a;
   const ctx = await loadWeek(DATA, season, week);
   const [boxes, nbaSlate] = await Promise.all([loadBoxes(season, week, ctx.scoring), loadSlate(season, week)]);
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const A = teamRoster(DATA, ctx, me);
   const B = teamRoster(DATA, ctx, opp);
   // Their best healthy lineup (the same one the Lock-in coach and Briefing assume), scored the
@@ -5661,7 +5822,7 @@ function gmTeamPick(me, season, tab) {
 function bindTeamPick(body) {
   $('.gm-team', body)?.addEventListener('change', e => {
     const tab = e.target.dataset.tab;
-    location.hash = `#/commish?${new URLSearchParams({ ...(tab === 'brief' ? {} : { tab }), team: e.target.value })}`;
+    location.hash = officeHash(tab, { team: e.target.value });
   });
 }
 
@@ -6085,7 +6246,7 @@ async function renderCoach(body, params) {
     body.innerHTML = '<section class="card soon-card"><p>The season is over. The Assistant Coach returns when next season’s schedule is set.</p></section>';
     return;
   }
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const coach = w.coach;
   if (!coach) {
     body.innerHTML = `${gmTeamPick(w.me, w.season, 'coach')}<section class="card soon-card"><p>No roster found for this team.</p></section>`;
@@ -6308,7 +6469,7 @@ async function renderCoach(body, params) {
   const board = `
     <div class="mb-head">${side(w.me, tMe)}<span class="mb-mid">${gap()}<span class="mb-vs">vs</span></span>${side(opp, tOpp)}</div>
     <p class="mb-key">Locked points <span>(starters left to lock)</span><br>Small number: if every unlocked score were locked now · tap a player for his card</p>
-    <p class="mb-dgkey">Edge strip = <a href="#/commish?tab=depth&amp;team=${esc(w.me)}">Depth Chart</a> designation: ${DESIG.map(([k, label]) => `<b class="dc-dg dg-${k}">${DESIG_SHORT[k]} ${label}</b>`).join(' ')}</p>
+    <p class="mb-dgkey">Edge strip = <a href="#/mygm?tab=depth&amp;team=${esc(w.me)}">Depth Chart</a> designation: ${DESIG.map(([k, label]) => `<b class="dc-dg dg-${k}">${DESIG_SHORT[k]} ${label}</b>`).join(' ')}</p>
     <div class="mb-rows">${coach.rows.map((r, i) => {
       const o = oppRows[i];
       return `<div class="mb-row">${who(r, 'l')}<span class="mb-slot">${esc(r.slot)}</span>${who(o, 'r')}</div>
@@ -6413,7 +6574,7 @@ async function renderBriefing(body, params) {
     return;
   }
   const extra = await loadWaivers(w.season, w.week, w.started);
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const { season, week, me, ctx } = w;
   const coach = w.coach;
   if (!coach) {
@@ -6470,7 +6631,7 @@ async function renderBriefing(body, params) {
   const otherCalls = coach.rows.filter(r => ['lock', 'live', 'wait', 'held', 'none'].includes(r.call));
   const planned = coach.rows.filter(r => r.call === 'plan').length;
   if (planned) callsLine += `<p class="cm-rule">${planned === coach.rows.filter(r => !r.empty).length ? 'No games played yet this week.' : `${planned} more starter${planned === 1 ? ' hasn’t' : 's haven’t'} played yet.`} Each one’s lock bar for his first game is on the Assistant Coach.</p>`;
-  const link = (tab, text) => `<a class="gm-more" href="#/commish?${new URLSearchParams({ tab, ...(me === COMMISH ? {} : { team: me }) })}">${text} →</a>`;
+  const link = (tab, text) => `<a class="gm-more" href="${officeHash(tab, me === COMMISH ? {} : { team: me })}">${text} →</a>`;
 
   body.innerHTML = `<div class="gm-page">
     ${gmTeamPick(me, season, 'brief')}
@@ -7008,10 +7169,10 @@ const moveTag = m => (m == null || m === 0 ? '' : m === 'new' ? '<span class="pr
 
 async function renderProspects(body, params) {
   const { season, me, f, v } = await gmDynasty(params);
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const list = prospectRanking(v);
   const hist = await loadDynHistory();
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const { base, move } = prospectMoves(hist, list);
   const show = ['rostered', 'free', 'mine'].includes(params.get('show')) ? params.get('show') : 'all';
   const rows = list.map((p, i) => ({ p, rank: i + 1, m: move(p.pid, i + 1) }));
@@ -7147,7 +7308,7 @@ function scoutGradeChanges(sc, cls) {
 
 async function renderDraftScout(body, params) {
   const [{ season, me, v, f }, sc, nights] = await Promise.all([gmDynasty(params), loadScout(), loadDraftNights()]);
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   if (!sc?.classes || !Object.keys(sc.classes).length) {
     body.innerHTML = `<div class="gm-page">${gmTeamPick(me, season, 'draftscout')}<section class="card"><div class="card-head"><h2>Draft Scout</h2></div>
       <p class="empty">The draft classes haven’t been built yet. They’re built by the update once a week (Sundays), and right away by the first update after this page was added: tap <b>Run nightly update</b> above, wait 5–10 minutes, then reload.</p></section></div>`;
@@ -7293,7 +7454,7 @@ async function renderDraftScout(body, params) {
   if (night) {
     const scoring = f.league?.scoring_settings ?? {};
     const rows = await get(`/stats/nba/${season}?season_type=regular`, []);
-    if (route().page !== 'commish') return;
+    if (!inOffice()) return;
     const fp = st => Object.entries(scoring).reduce((a, [k, w]) => a + (Number(st?.[k]) || 0) * w, 0);
     const games = Object.fromEntries((rows ?? []).filter(x => x.stats?.gp).map(x => [x.player_id, { gp: x.stats.gp, fpg: fp(x.stats) / x.stats.gp }]));
     // Today: his prospect grade (24 and under) or the veteran chances, graded with the same letters.
@@ -7489,7 +7650,7 @@ function dynastyMap(v, me, season) {
 
 async function renderDynasty(body, params) {
   const { season, me, f, v } = await gmDynasty(params);
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const t = v.outlook[me];
   if (!t) {
     body.innerHTML = `<div class="gm-page">${gmTeamPick(me, season, 'dynasty')}<section class="card soon-card"><p>No roster found for this team.</p></section></div>`;
@@ -7739,7 +7900,7 @@ function trackerSeasons(pts, metric, markers, fmt) {
 async function renderTracker(body, params) {
   const { season, me, f, v } = await gmDynasty(params);
   const hist = await loadDynHistory();
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const full = Boolean(gmLoad('gm-dyn-full', false));
   const pick = rec => unpackTeam(rec?.[full ? 'f' : 'c'] ?? null);
   const impacts = moveImpacts(DATA, v, f.rosters);
@@ -7957,7 +8118,7 @@ function renderEvaluator(box, { season, me, f, v }) {
 
 async function renderTrades(body, params) {
   const { season, me, f, v } = await gmDynasty(params);
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const c = tradeContext(DATA, v, f.rosters, me);
   if (!c.assets[me]) {
     body.innerHTML = `<div class="gm-page">${gmTeamPick(me, season, 'trades')}<section class="card soon-card"><p>No roster found for this team.</p></section></div>`;
@@ -8080,7 +8241,7 @@ async function renderTrades(body, params) {
 
 async function renderManagers(body, params) {
   const { season, me, f, v } = await gmDynasty(params);
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const fo = ledger();
   const psNow = positionStrength(v, f.rosters, 'now');
   const psLater = positionStrength(v, f.rosters, 'later');
@@ -8202,7 +8363,7 @@ async function renderWaivers(body, params) {
     loadDynastyFeeds().then(f => dynastyValues(DATA, f, { fullInjured: gmLoad('gm-dyn-full', false) })).catch(() => null),
     loadContracts(),
   ]);
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const pos = ['G', 'F', 'C'].includes(params.get('pos')) ? params.get('pos') : 'all';
   const size = params.get('n') === '30' ? 30 : 10;
   const dy = p => dyn?.players[p.pid];
@@ -8397,7 +8558,7 @@ const mean = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
 async function renderPicks(body) {
   const traded = await loadTradedPicks(DATA);
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const { seasons, rounds, picks } = pickLedger(DATA, traded);
   const cur = DATA.seasons.at(-1);
   const ord = r => `${r}${{ 1: 'st', 2: 'nd', 3: 'rd' }[r] ?? 'th'}`;
@@ -8470,7 +8631,7 @@ async function renderRaces(body, params) {
   const done = s.status === 'complete';
   const fo = ledger();
   const [totals, gbg] = await Promise.all([seasonTotals(DATA, season), gameByGameTotals(season).catch(() => null)]);
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   // Game by game next to Sleeper's totals (owner, Oct 26 2026: Sleeper's stay the default; the second number is
   // there to gauge the difference). gfp = game-by-game points; a list shows each player's number + gap, and a line
   // under it names who would be in or out if the award went by game-by-game totals.
@@ -8739,7 +8900,7 @@ async function renderHealth(body) {
     fetch(`data/taxi-log.json?t=${Date.now()}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
     loadContracts().catch(() => null),
   ]);
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const when = x => new Date(x).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const ok = (good, text) => `<span class="cm-status ${good ? 'good' : 'bad'}">${good ? '✓' : '!'}</span>${text}`;
   const acts = activity(DATA);
@@ -8747,7 +8908,7 @@ async function renderHealth(body) {
   const flags = tradeFlags(DATA, fo);
   const lineups = ctx ? lineupIssues(DATA, ctx) : [];
   const taxi = ctx ? await taxiCheck(DATA, ctx.rosters, ctx.league, at.season).catch(() => null) : null;
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const taxiName = pid => {
     const i = ctx?.info?.[pid];
     return i ? `${i.first_name} ${i.last_name}` : DATA.players?.[pid]?.n ?? `Player ${pid}`;
@@ -9437,7 +9598,7 @@ function homeWager(live) {
 const WAGER_EDIT_URL = 'https://github.com/debugburkhart/seis-dynasty-hoops/edit/main/wager.json';
 async function renderWagerAdmin(body) {
   const live = await loadWagerResults();
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   // A save that GitHub hasn't published yet: start from it (for 20 minutes).
   const pending = gmLoad('wager-saved', null);
   const usePending = pending && Date.now() - pending.at < 20 * 60_000 && JSON.stringify(pending.parlays) !== JSON.stringify(live);
@@ -10120,16 +10281,17 @@ function pickRow(p, mine = false) {
     </a>`;
 }
 
-function reportCardsView() {
+// only = one owner's card (MyGM Report Cards, owner Nov 8 2026; drawn inside a Beta card, so no outer card box).
+function reportCardsView(only = null) {
   const owners = [...new Set([...DATA.seasons.at(-1).teams.map(t => t.owner), ...DRAFT_GRADES.picks.filter(p => p.kind === 'rookie').map(p => p.o)])];
-  const cards = reportCards(DRAFT_GRADES, owners);
+  const cards = reportCards(DRAFT_GRADES, owners).filter(c => !only || c.owner === only);
   const cur = DATA.seasons.at(-1).season;
   const pickLine = (label, p) => (p ? `
     <li><span>${label}</span><a href="${playerLink(p.pid)}"><b>${esc(playerName(p.pid))}</b> <small>${p.s} ${pickLabel(p)} · ${perGame(pickDiff(p))}</small></a></li>` : '');
   return `
     <div class="dk-cards">
       ${cards.map(c => `
-        <section class="card dk-card" id="rc-${esc(c.owner)}">
+        <section class="${only ? 'dk-card dk-card-in' : 'card dk-card'}" id="rc-${esc(c.owner)}">
           <div class="dk-card-head">
             ${gradeBadge(c.grade, true)}
             <div><b>${esc(teamName(c.owner, cur))}</b><small>${esc(name(c.owner))}${c.gpa != null ? ` · GPA ${c.gpa.toFixed(2)}` : ''}</small></div>
@@ -10590,7 +10752,7 @@ async function renderPropsAdmin(body) {
   body.innerHTML = '<div class="loading">Connecting…</div>';
   let acct;
   try { acct = await propsAccount(); } catch (e) { body.innerHTML = `<section class="card"><p class="empty">Couldn’t load Firebase: ${esc(e.message)}</p></section>`; return; }
-  if (route().page !== 'commish') return;
+  if (!inOffice()) return;
   const { fb, user } = acct;
   const setup = user ? `
     <section class="card">

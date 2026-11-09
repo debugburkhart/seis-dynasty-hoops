@@ -4617,3 +4617,57 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .gm-call.gm-soft { border-left-color: var(--navy-600); border-left-style: dashed; }
 .gm-soft .gm-badge { background: #dbe4f5; color: var(--navy-800); }
 .gm-badge-s.gm-soft { background: #dbe4f5; color: var(--navy-800); }
+
+/* MyGM Report Cards + Trophy Room (owner, Nov 8 2026) */
+.dk-card.dk-card-in { padding: 0; border: 0; box-shadow: none; background: transparent; }
+.tr-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 130px), 1fr)); gap: 8px; }
+.tr-stat { padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #fbfaf6; display: flex; flex-direction: column; gap: 2px; }
+.tr-stat b { font: 900 26px/1 var(--display); color: var(--navy-800); }
+.tr-stat b small { font-size: 14px; color: var(--muted); }
+.tr-stat span { font-size: 12px; font-weight: 700; }
+.tr-stat small { font-size: 11px; color: var(--muted); }
+.tr-scroll { overflow-x: auto; }
+.tr-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tr-table th { text-align: left; font-size: 11px; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.tr-table td { padding: 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tr-table tr.champ td { background: #fdf3dc; font-weight: 700; }
+.tr-list, .tr-riv, .tr-players { list-style: none; margin: 0; padding: 0; }
+.tr-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+.tr-list li:first-child, .tr-riv li:first-child, .tr-players li:first-child { border-top: 0; }
+.tr-aw { display: inline-block; margin: 2px 4px 2px 0; padding: 2px 8px; border-radius: 999px; border: 1px solid #b9c6e3; background: #eef2fa; color: var(--navy-700); font-size: 11.5px; font-weight: 700; }
+.tr-aw small { font-weight: 500; color: var(--muted); }
+.tr-aw.indiv { border-color: var(--brass); background: #fdf3dc; color: var(--gold-ink); }
+.tr-aw.ring { border-color: var(--navy-800); background: var(--navy-800); color: var(--gold); }
+.tr-aw.ring small { color: #d8dcea; }
+.tr-riv li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.tr-riv .tr-img { width: 54px; height: 54px; object-fit: contain; flex: none; }
+.tr-riv small { display: block; color: var(--muted); font-size: 11.5px; }
+.tr-hold { color: var(--gold-ink); }
+.tr-players li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--line); }
+.tr-players img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; background: #eef0f4; flex: none; }
+.tr-players a { color: var(--ink); }
+.tr-aws { margin-top: 2px; }
+
+/* MyGM nav (owner, Nov 8 2026: "C on desktop, D on phones"). Desktop: 2K-style navy menu bar, big icons, italic caps,
+   gold underline on the open tab. Phones (<700px): a bottom tab bar pinned to the screen (icon + short label). The bar is
+   solid navy in light mode too, so theme.js keeps it as is in dark mode. */
+.mg-nav { display: flex; gap: 4px; margin: 0 0 16px; padding: 8px 10px 0; background: #0b1d3d; border-radius: 14px; }
+.mg-nav a { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 4px 10px; color: #b9c6e3; text-decoration: none; border-bottom: 3px solid transparent; }
+.mg-nav a .ic { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.mg-nav .mg-nl { font: italic 800 12px/1.1 var(--display); letter-spacing: .06em; text-transform: uppercase; text-align: center; }
+.mg-nav .mg-ns { display: none; }
+.mg-nav .gm-beta { position: absolute; top: 4px; right: 6px; margin: 0; padding: 0 4px; font-size: 8.5px; line-height: 13px; }
+.mg-nav a:hover { color: #fff; }
+.mg-nav a.on { color: #f4c24f; border-bottom-color: #f4c24f; }
+@media (max-width: 699px) {
+  .mygm-page { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .mg-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; margin: 0; padding: 4px 2px calc(4px + env(safe-area-inset-bottom)); gap: 0; border-radius: 0; border-top: 1px solid #22427e; }
+  .mg-nav a { padding: 5px 0 4px; gap: 2px; border-bottom: 0; border-top: 3px solid transparent; }
+  .mg-nav a.on { border-top-color: #f4c24f; border-bottom: 0; }
+  .mg-nav a .ic { width: 22px; height: 22px; }
+  .mg-nav .mg-nl { display: none; }
+  .mg-nav .mg-ns { display: block; font: 700 10.5px/1.1 var(--font); }
+  .mg-nav .gm-beta { display: none; }
+  .mg-nav a.on .gm-beta { display: block; top: -9px; right: auto; left: 50%; transform: translateX(-50%); }
+  body:has(.mg-nav) .back-float, body:has(.mg-nav) .bk-tray { bottom: calc(68px + env(safe-area-inset-bottom)); }
+}

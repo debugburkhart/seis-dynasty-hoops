@@ -1139,7 +1139,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   #cm-body.tf-body); MYGM_TABS [[id, label]] + MYGM_SHOW { id: renderer }: TO ADD A FEATURE add both (and remove its
   TEST_FEATURES entry). Sidebar: a second dashed button "MyGM Beta" (.commish-btn.mygm-btn, clipboard icon) under Commish.
   render() keeps the session unlocked for page mygm too.
-- Tabs: CONTRACTS (#/mygm?tab=contracts, the Contract Sandbox; moved out of Test features Nov 8 2026: TEST_FEATURES entry
+- Tabs (see also ROSTERS ... TROPHY ROOM below): CONTRACTS (#/mygm?tab=contracts, the Contract Sandbox; moved out of Test features Nov 8 2026: TEST_FEATURES entry
   removed, #/commish?tab=contracts forwards to #/mygm with the same params, contracts-ui.js here() + back links / 2K + Adv
   back pills point to #/mygm, its first card is titled "Contracts"). Everything under "CONTRACT SANDBOX" in Test features
   below still describes it. Checked Nov 8 2026: gate, unlock, tab, old-link redirect, 2K card + "Back to Contracts", leaving
@@ -1178,6 +1178,36 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   disabled at 23). In-season call-ups need cap room for the $1 (rule text in the table + How it works card 7; not simulated).
   Checked: owner 866760756052537344 (6 eligible) 22 -> 20 contracts, Wilson + Dybantsa Taxi 2027-29 then $1 2029-30, planner taxi call-ups right.
 
+- ROSTERS, ASSISTANT COACH, DEPTH CHART, REPORT CARDS, TROPHY ROOM (owner, Nov 8 2026: "move 2k breakdown into the MyGM and
+  call it Rosters, add the Assistant coach and depth chart ... a Report Cards section ... a Trophy Room section ... keep the
+  beta tags on everything"): MYGM_TABS = Contracts, Rosters (renderBreakdown, tab id rosters), Assistant Coach (renderCoach),
+  Depth Chart (renderDepth), Report Cards (renderReportCards), Trophy Room (renderTrophyRoom); their TEST_FEATURES entries are
+  gone. MYGM_IDS maps office tab ids to MyGM ids (breakdown -> rosters); renderCommish forwards #/commish?tab=breakdown|coach|
+  depth|contracts to #/mygm (same params). officeHash(tab, rest) = the right link for any office / MyGM tab (Briefing links,
+  bindTeamPick); inOffice() = page commish OR mygm (replaced every `route().page !== 'commish'` guard: the moved renderers
+  share #cm-body). Every internal 2K / Depth Chart link now points at #/mygm?tab=rosters / depth (app.js, advstats-ui.js,
+  contracts-2k.js). renderMyGM sets CM_REDRAW (synced settings redraw the tab). Beta tags: tab labels + tf-body pseudo-tags.
+  REPORT CARDS: team picker (?team=, default COMMISH) + renderLockCard(box, params m=team, { only: true, hash }) (only = no
+  league board / highlights, adds "League rank N of 8"; week chips stay in MyGM; link to the whole league's card) + "Draft
+  report card" = reportCardsView(owner) (Draft Kit card for one team, .dk-card-in, link to Draft Grades). Owner listed lock +
+  draft report cards; possible later: Trade Court verdict record, Front Office / Value Desk trade grades, Props record.
+  TROPHY ROOM (completed seasons with a champion): trophy case stats (titles, runner-up, No. 1 seeds by win % then PF like the
+  Awards banner, playoff trips, manager awards, rivalry trophies), Season by season table (team name that season, record,
+  seed, finish via finishes()), Manager awards (gmOfTheYear winner.o, draftOfYear winner.owner + steal.o; draftKitData()
+  first), Rivalry trophies (RIVALRIES with this team, trophyHistory: seasons won, current holder, trophy image), Player honors
+  on this team (breakdown.js playerAwards entries whose o = this team + championshipRings rings won here; grouped chips
+  "2 × All-Fantasy (seasons)", ring = navy, individual = gold; names open the Rosters card with back = Trophy Room). .tr-* in
+  styles.css. NOT included yet: Record Book records held. Checked Nov 8 2026: Parma = 2024-25 title, 3/3 playoff trips, Steal
+  of the Draft 2024-25 (Sarr) + 2025-26 (Raynaud), The Crown Clash not won yet, 32 players (Banchero Championship MVP); Report
+  Cards Parma lock grade B (5 of 8), draft B+ GPA 3.15; old links forward; office Test features list no longer has 2K /
+  coach / depth; 402 px + dark OK.
+- MYGM NAV (owner, Nov 8 2026, picked from 4 mockups: "C on desktop, D on phones"): MYGM_TABS entries are [id, label, short,
+  icon]; renderMyGM draws <nav class="mg-nav"> (replaced the plain st-tabs bar). Desktop (700px+): navy 2K-style menu bar,
+  26px icons, italic caps labels, gold text + underline on the open tab, a small Beta tag on every item. Phones (<700px): the
+  same nav becomes a bottom tab bar fixed to the screen (icon + short label: Cap, Rosters, Coach, Depth, Grades, Trophies; gold
+  top edge on the open tab; Beta tag only on the open tab), .mygm-page gets bottom padding, and .back-float / .bk-tray sit
+  above it (body:has(.mg-nav)). New icons in ICONS: contract (page with a $), whistle. Solid navy in light mode, so theme.js
+  leaves it as is in dark. Checked 320 (dark) / 597 / 1280 px, no page overflow.
 ## Test features (commish office, owner Oct 25 2026)
 - Third tab group in the commish office ("My GM", "League office", "Test features"): where brand-new
   features are born and tested, early access for the owner only (the office is passcode-gated).
@@ -1328,6 +1358,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   that game's box score). Soft locks NEVER touch the 2K breakdown / Depth Chart: those read liveLocks = Sleeper's real locks only
   (end-of-week settled weeks come from DATA.playerWeeks as before). Checked Nov 8 2026 week 3 Sunday night: Parma 324 locked,
   0 left (260 real locks + 3 soft = Home's locked score), My D Rose 399 / 0; Porter Jr. "Soft lock 27"; no mark buttons.
+  TRADED PLAYERS' LK% PER STRETCH (owner, Nov 8 2026: LeBron's BenDoverPlz123 row in Season by season (League) showed 200%):
+  stretches split a player's games by ownerAtWeek, so in a trade week EVERY game is the new team's; LGS were matched to a
+  stretch by date, so the old team's LGS that week (and the virtual 'a lock is a start' LGS, dated the week's first watched
+  day) fell outside both rows while the lock (matched by team + week, nearest stretch) still counted. Fix in renderBreakdown
+  years(): segFor(o, w) = that team's stretch holding week w, else its nearest; locks AND LGS both use it (lgsIn's keep now
+  gets the record's week). Checked all 30 players traded in 2026 (46 stretch rows): none over 100%; LeBron BenDover 2 wk /
+  2 LGS = 100%, Parma 1 / 4 = 25%.
   DEFENSE VS POSITION (tab=defense; owner, Nov 2 2026): `assets/defense.js` (logic, no DOM) + `assets/defense-ui.js` (the
   page: renderDefense(body, params, h), h = { DATA, esc, gmLoad, gmSave, COMMISH, teamName } passed by app.js
   renderDefensePage; kept out of app.js on purpose), .dvp-* at the end of styles.css. Owner's answers: BOTH splits with a
