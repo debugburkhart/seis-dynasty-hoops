@@ -46,7 +46,7 @@ export const SYNCED = [
   'gm-notes', // player notes (2K breakdown): { pid: text }
   'gm-dvp-', // Defense vs Position: view (opts), sort, fantasy team
   'gm-adv-', // Advanced Stats: view, window, pool, chart choices, NBA teams
-  'gm-dc-', // Depth Chart: view, NBA team, chart mode, categories (gm-dc-cats), Current + Healthy orders / designations per team
+  'gm-dc-', // Depth Chart: view, NBA team, Hide taxi, categories (gm-dc-cats), order / designations / lineup slots per team
   'gm-ct-', // Contracts: day-one lengths (gm-ct-init-{owner}), offseason plans (gm-ct-plan-{owner}), price guesses, view, team
 ];
 export const isSynced = key => SYNCED.some(k => (k.endsWith('-') ? key.startsWith(k) : key === k));

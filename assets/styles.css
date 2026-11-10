@@ -3629,7 +3629,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 }
 @media (max-width: 560px) {
   .dc-grid { grid-template-columns: 1fr; }
-  .dc-auto, .dc-pull { flex: 1 1 100%; justify-content: center; }
+  .dc-auto { flex: 1 1 100%; justify-content: center; }
   .dc-picker { flex: 1 1 100%; }
   .dc-picker .ed-select { max-width: none; flex: 1; min-width: 0; justify-content: space-between; }
 }
@@ -3675,17 +3675,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .dgc-11 { --dg-bg: #eceef1; --dg-c: #66707f; }
 .dc-row.dg, .dc-drow.dg { background: var(--dg-bg); box-shadow: inset 4px 0 0 var(--dg-c); opacity: 1; }
 .dc-chip.dg { background: var(--dg-bg); border-color: var(--dg-c); box-shadow: inset 3px 0 0 var(--dg-c); opacity: 1; }
-/* Current / Healthy switch + the "Healthy: PG2" reminder + Customize categories (Nov 9 2026). */
-.dc-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-width: 520px; margin: 10px 0 4px; }
-.dc-modes button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
-.dc-modes button b { font: 800 14px/1.2 var(--display); }
-.dc-modes button small { font-size: 11px; color: var(--muted); line-height: 1.3; }
-.dc-modes button.on { border-color: var(--navy-800); background: var(--navy-800); color: #fff; }
-.dc-modes button.on b { color: var(--gold); }
-.dc-modes button.on small { color: #c9d4e6; }
-.dc-hl { color: var(--navy-700) !important; }
-.dc-hl b { color: var(--navy-900); }
-.dc-hl .dc-dg { margin-left: 2px; }
+/* Customize categories (Nov 9 2026). */
 .dc-cats { margin: 4px 0 12px; border: 1px solid var(--line); border-radius: 10px; background: #fcfbf8; }
 .dc-cats > summary { padding: 9px 12px; font-weight: 700; cursor: pointer; }
 .dc-cats > summary small { color: var(--muted); font-weight: 600; }
@@ -3724,6 +3714,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .dc-flexbtn { padding: 3px 11px; border: 1px solid var(--navy-800); border-radius: 99px; background: #fff; color: var(--navy-800); font: 800 11px/1.3 var(--font); cursor: pointer; }
 .dc-flexbtn.on { background: var(--navy-800); color: #f2c14e; }
 .dc-flexbtn:disabled { opacity: .4; cursor: not-allowed; }
+.dc-flexbtn small { font-weight: 600; opacity: .75; }
 .dc-dcard { margin-top: 14px; }
 .dc-dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; align-items: start; }
 .dc-dgroup { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: #fcfbf8; overflow: hidden; }

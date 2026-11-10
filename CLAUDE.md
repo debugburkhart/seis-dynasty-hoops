@@ -1877,13 +1877,30 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   "Not designated" fold; taxi players still filled the Designations groups (13 in Development) on both charts. Now txHidden()
   in renderDepth also hides them in every Designations group (count = shown players) and the Cut List; drags there save with
   keepHidden(keys, full, hidden) (module helper), which puts hidden taxi players back after the player above them.
-  "HEALTHY" RENAMED "SEASON" + PULL (owner, Nov 9 2026): the second chart is labeled Season everywhere (switch, titles, help,
+  [REMOVED the same day, see ONE CHART] "HEALTHY" RENAMED "SEASON" + PULL (owner, Nov 9 2026): the second chart is labeled Season everywhere (switch, titles, help,
   "Season: PG2" reminder on Current rows); ?chart=season (old ?chart=healthy and a saved gm-dc-mode "healthy" still open it);
   storage keys unchanged (gm-dc-hchart- / -hdesig- / -hflex-), code still says healthy. Current has a "Pull healthy order from
   Season" button (.dc-pull): Current order = the Season chart's columns (seasonCols, built with the "Season: PG2" reminder)
   with IR / injBad / ESPN out-for-season players moved after the healthy ones in each column, so the next player moves up
   (Season PG1 Haliburton on IR -> Murray PG1); confirm when a custom Current order exists; designations, Cut List and lineup
   slot picks untouched. Checked: Parma Haliburton / Banchero / Nurkic skipped.
+  ONE CHART (owner, Nov 9 2026: "Revert back to 1 Depth chart"): the Current / Season (Healthy) split, its switch (.dc-modes),
+  the "Season: PG2" reminder (.dc-hl) and the Pull button are GONE; everything above about TWO CHARTS / Healthy / Season is
+  history. renderDepth has const healthy = false (autoDesigs / dcAuto keep their healthy option, unused); keys gm-dc-chart-,
+  gm-dc-desig-, gm-dc-flex- {owner}; ?chart= is ignored; old gm-dc-h* / gm-dc-mode saves are just left unused. The chart
+  keeps the Current rules (Sleeper IR -> IR + bottom of the column, IR sync for custom sets) and is the one the Assistant Coach
+  reads. Custom categories, descriptions, lineup tags (PG..C + G / F / UTIL picks) and the Hide taxi fix stay.
+  FINICKY BUTTONS + POSITION RULE (owner, Nov 9 2026: "the choice G/F/UTIL buttons, they were finiky on the live site ...
+  not able to add a PG only into the C depth chart spot"): (1) dragSort got opts.ignore (a selector of controls inside an
+  item that never start a drag); the chart, Designations and Cut List pass DC_CTRL (.dc-move, .dc-flexset, .dc-dgset,
+  .dc-menu, button, input): a slow phone tap (> 0.35 s) or a mouse wiggle on a button used to start a drag and swallow the
+  tap. (2) A full slot is no longer a disabled button: tapping it takes the slot from the holder (UTIL: the one picked
+  first); the button says "G (from Dosunmu)"; only a slot he can't play is disabled. setFlex saves exactly the shown valid
+  picks (DC.tags.flex), so stale picks never block a slot. (3) dcCan(p, pos) = his Sleeper fantasy positions or his home
+  column: ⋮ Move to lists only those ("Only plays C" when none), the mv handler refuses others, the chart drag's same()
+  refuses a drop in any other column, and dcChart drops a saved spot he can't play (auto puts him home). Checked: 0.7 s
+  touch tap on G works, G Dosunmu -> Murray in one tap, UTIL takeover, PG/SG Murray: Move to = SG only, drag onto C refused,
+  drag onto SG works, an old save with him at C shows him at PG.
   ASSISTANT COACH EDGE STRIPS (owner, Oct 30 2026; first an outline, then the owner asked for "a thick colored area"
   on the outside): every player on the Lock-in coach board (starters, bench, IR; both sides) gets a strip on his OUTER
   edge (left for you, right for the opponent: dgBar() is the first child and .mb-r is row-reverse) in HIS team's
