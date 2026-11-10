@@ -7,7 +7,7 @@
 //   contractCard()  = "Roster Viewer" (tap any player name): contract panel + real NBA salary vs cap hit per season.
 // No DOM; contracts-ui.js passes ctx = { S, DATA, esc, name, teamName, cur, season, info, all, file, guesses, back, f1 }.
 // Styles: .mg-* at the end of styles.css (dark navy panels, gold numbers, like .bk on the 2K breakdown).
-import { betaCard } from './test-features.js';
+import { betaCard, mygmBase } from './test-features.js';
 import { money } from './contracts.js';
 import { playerPhoto } from './records.js';
 import {
@@ -168,7 +168,7 @@ export function contractCard(ctx, L, pid) {
           <dt>Dead money if cut</dt><dd>${dead}</dd>
           <dt>Real NBA deal</dt><dd>${c?.seasons?.length ? (c.waived?.length ? 'Waived' : `ends ${span(end)}`) : 'none'}</dd>
         </dl>
-        <div class="mg-links"><a href="#/mygm?tab=rosters&list=league&p=${pid}${owner ? '' : '&fa=1'}${back()}">2K card</a><a href="#/commish?tab=advanced&p=${pid}${back()}">Advanced stats</a></div>
+        <div class="mg-links"><a href="${mygmBase()}?tab=rosters&list=league&p=${pid}${owner ? '' : '&fa=1'}${back()}">2K card</a><a href="#/commish?tab=advanced&p=${pid}${back()}">Advanced stats</a></div>
       </div>
       <div class="mg-scroll"><table class="mg-tbl"><thead><tr><th>Season</th><th class="n">Age</th><th class="n">Real NBA</th><th class="n">Cap hit</th></tr></thead><tbody>${rows}</tbody></table></div>
     </div>

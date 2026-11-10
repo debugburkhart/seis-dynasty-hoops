@@ -31,7 +31,7 @@ import { taxiAppearances } from './taxiweek.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 import { playerTrades, tradeTree } from './tradetree.js';
 import { benchDates, chicagoDate, hintsFor, lawFor, lawMarks, lawPoints, lineupGames, loadLockDocs, lockDocId, weekBoxes } from './locks.js';
-import { betaCard, isTestTab, testTabs } from './test-features.js';
+import { betaCard, isMyGMPlus, isTestTab, mygmBase, testTabs } from './test-features.js';
 import { dvpChips, renderDefense } from './defense-ui.js';
 import { renderAdvanced } from './advstats-ui.js';
 import { renderContracts } from './contracts-ui.js';
@@ -2426,7 +2426,7 @@ function renderCommish(main, params) {
     ['League office', [['scout', 'Scouting report'], ['waivers', 'Waiver wire'], ['playoffs', 'Playoff picture'], ['recap', 'Weekly recap'], ['picks', 'Draft picks'], ['races', 'Award races'], ['hype', 'Early hype'], ['wager', 'Wager Weeks'], ['props', 'Props'], ['health', 'Health report']]],
     ['Test features', testTabs()],
   ];
-  const TABS = GROUPS.flatMap(([, tabs]) => tabs);
+  const TABS = GROUPS.flatMap(([, tabs]) => tabs).filter(t => !t[2]);
   const tab = TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : 'brief';
   clearInterval(GM_TIMER);
   main.innerHTML = `
@@ -2440,12 +2440,14 @@ function renderCommish(main, params) {
           <div class="sync-box sync-office" data-sync="office"></div>
         </div>
       </div>
+      <!-- MyGM+ (owner, Nov 9 2026: shown like the sidebar's Commish / MyGM buttons, but only inside the office) -->
+      <div class="cm-plus"><a class="commish-btn mygm-btn" href="#/mygmplus">${icon('clipboard')}<span>MyGM+</span><span class="gm-beta">Beta</span></a></div>
       <div class="cm-groups">
         ${GROUPS.map(([label, tabs]) => `
           <div class="cm-group-tabs">
             <span class="cm-group-label">${label}</span>
             <div class="st-tabs cm-tabs" role="tablist">
-              ${tabs.map(([id, text]) => `<a role="tab" class="${tab === id ? 'on' : ''}" href="#/commish${id === 'brief' ? '' : `?tab=${id}`}">${text}</a>`).join('')}
+              ${tabs.map(([id, text, href]) => `<a role="tab" class="${!href && tab === id ? 'on' : ''}" href="${href ?? `#/commish${id === 'brief' ? '' : `?tab=${id}`}`}">${text}</a>`).join('')}
             </div>
           </div>`).join('')}
       </div>
@@ -2481,18 +2483,22 @@ const MYGM_SHOW = {
 // Office tab ids that live in MyGM now (old ids kept: 'breakdown' = Rosters), and a link to any office / MyGM tab.
 const MYGM_IDS = { contracts: 'contracts', breakdown: 'rosters', rosters: 'rosters', coach: 'coach', depth: 'depth', cards: 'cards', trophies: 'trophies' };
 const officeHash = (tab, rest = {}) => (MYGM_IDS[tab]
-  ? `#/mygm?${new URLSearchParams({ tab: MYGM_IDS[tab], ...rest })}`
+  ? `${mygmBase()}?${new URLSearchParams({ tab: MYGM_IDS[tab], ...rest })}`
   : `#/commish?${new URLSearchParams({ ...(tab === 'brief' ? {} : { tab }), ...rest })}`);
 // The office and MyGM share the same body (#cm-body) and session lock: pages built for one work in both.
-const inOffice = () => ['commish', 'mygm'].includes(route().page);
+const inOffice = () => ['commish', 'mygm', 'mygmplus'].includes(route().page);
 function renderMyGM(main, params) {
+  // MyGM+ (#/mygmplus, owner Nov 9 2026) = the commish's full-featured copy: same tabs and renderers (isMyGMPlus() lets a tab
+  // show more there later); MyGM (#/mygm) is the one to be trimmed down for every manager.
+  const plus = isMyGMPlus();
+  const title = plus ? 'MyGM+' : 'MyGM';
   if (!COMMISH_OPEN) {
     main.innerHTML = `
       <div class="page">
         <section class="card cm-lock">
           <div class="page-icon">${icon('clipboard')}</div>
-          <h1>MyGM</h1>
-          <p class="card-sub">Commish only for now: enter the passcode to open MyGM.</p>
+          <h1>${title}</h1>
+          <p class="card-sub">Commish only: enter the passcode to open ${title}.</p>
           <form class="cm-form" autocomplete="off">
             <input type="password" id="cm-code" placeholder="Passcode" aria-label="Passcode" autocomplete="off" autofocus>
             <button class="btn" type="submit">Open</button>
@@ -2514,10 +2520,10 @@ function renderMyGM(main, params) {
     <div class="page page-wide mygm-page">
       <div class="page-head">
         <div class="page-icon">${icon('clipboard')}</div>
-        <div><div class="eyebrow">Commish only · Beta</div><h1>MyGM</h1></div>
+        <div><div class="eyebrow">${plus ? '<a href="#/commish">← Commissioner’s office</a> · full features' : 'Commish only · Beta'}</div><h1>${title}</h1></div>
       </div>
-      <nav class="mg-nav" aria-label="MyGM sections">
-        ${MYGM_TABS.map(([id, text, short, ic]) => `<a class="${tab === id ? 'on' : ''}" href="#/mygm?tab=${id}"${tab === id ? ' aria-current="page"' : ''}>${icon(ic)}<span class="mg-nl">${text}</span><span class="mg-ns">${short}</span><span class="gm-beta">Beta</span></a>`).join('')}
+      <nav class="mg-nav" aria-label="${title} sections">
+        ${MYGM_TABS.map(([id, text, short, ic]) => `<a class="${tab === id ? 'on' : ''}" href="${mygmBase()}?tab=${id}"${tab === id ? ' aria-current="page"' : ''}>${icon(ic)}<span class="mg-nl">${text}</span><span class="mg-ns">${short}</span><span class="gm-beta">Beta</span></a>`).join('')}
       </nav>
       <div id="cm-body" class="tf-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
     </div>`;
@@ -2679,7 +2685,7 @@ async function renderTradeTree(body, params) {
   const caseOf = tx => cases.find(x => x.tx === tx);
   const courtLink = cs => `#/trade-court?${new URLSearchParams({ case: cs.no, ret: self, retl: 'Back to Trade Tree' })}`;
   const cardHref = x => (onRoster[x] || DATA.players?.[x]?.t
-    ? `#/mygm?${new URLSearchParams({ tab: 'rosters', list: 'league', p: x, ...(onRoster[x] ? {} : { fa: '1' }), back: self, backl: 'Trade Tree' })}` : null);
+    ? `${mygmBase()}?${new URLSearchParams({ tab: 'rosters', list: 'league', p: x, ...(onRoster[x] ? {} : { fa: '1' }), back: self, backl: 'Trade Tree' })}` : null);
   const pLink = x => { const h = cardHref(x); return h ? `<a href="${esc(h)}">${esc(pn(x))}</a>` : esc(pn(x)); };
   const pickName = (p, s) => {
     const orig = pickOwner(p.season, p.orig, s);
@@ -3050,7 +3056,7 @@ async function renderLockCard(body, params, opts = {}) {
   const tone = n => (n > 0 ? 'up' : n < 0 ? 'down' : 'even');
   const pname = pid => DATA.players?.[pid]?.n ?? Object.values(boxes).find(b => b?.names[pid])?.names[pid] ?? `Player ${pid}`;
   const here = opts.hash ? opts.hash(week ? { week } : {}) : `#/commish?${new URLSearchParams({ tab: 'lockcard', ...(week ? { week } : {}), m: me })}`;
-  const card2k = pid => `#/mygm?${new URLSearchParams({ tab: 'rosters', list: 'league', p: pid, back: here, backl: 'Lock Report Card' })}`;
+  const card2k = pid => `${mygmBase()}?${new URLSearchParams({ tab: 'rosters', list: 'league', p: pid, back: here, backl: 'Lock Report Card' })}`;
   // q.week null = the season view.
   const link = (q = {}) => {
     if (opts.hash) { const o = { week, ...q }; if (!o.week) delete o.week; delete o.m; return opts.hash(o); }
@@ -3654,14 +3660,14 @@ async function renderBreakdown(body, params) {
   // Back link (owner, Oct 30 2026): ?back = the page to return to, ?backl = its name ("Depth Chart", "League view"...).
   // Kept in this page's own links while browsing; the Injury Report's older ?from=inj still works.
   const back = params.get('back')?.startsWith('#/') ? { back: params.get('back'), backl: params.get('backl') || 'previous page' } : null;
-  const link = q => `#/mygm?${new URLSearchParams({ tab: 'rosters', ...(fromInj ? { from: 'inj' } : {}), ...(back ?? {}), ...(list === 'team' ? { team: me } : {}), ...(list !== 'team' ? { list } : {}), ...(list === 'nba' ? { nba: nbaTeam } : {}), ...(season !== cur.season ? { season } : {}), ...(list === 'league' && params.get('fa') === '1' ? { fa: '1' } : {}), ...q })}`;
+  const link = q => `${mygmBase()}?${new URLSearchParams({ tab: 'rosters', ...(fromInj ? { from: 'inj' } : {}), ...(back ?? {}), ...(list === 'team' ? { team: me } : {}), ...(list !== 'team' ? { list } : {}), ...(list === 'nba' ? { nba: nbaTeam } : {}), ...(season !== cur.season ? { season } : {}), ...(list === 'league' && params.get('fa') === '1' ? { fa: '1' } : {}), ...q })}`;
   // Card arrows (owner, Oct 30 2026): "View on NBA team" / "View in League" open the same player in that list; the new
   // page gets a "Back to {this list} view" link (back = this page, with its own back link kept inside it).
   const VIEW_NAME = { team: 'Team', fa: 'Waiver Wire', league: 'League', nba: 'NBA team' };
   const viewArrows = p => {
     const here = { back: link({ p: p.pid }), backl: `${VIEW_NAME[list]} view` };
     const keep = season !== cur.season ? { season } : {};
-    const to = q => `#/mygm?${new URLSearchParams({ tab: 'rosters', ...q, ...keep, p: p.pid, ...here })}`;
+    const to = q => `${mygmBase()}?${new URLSearchParams({ tab: 'rosters', ...q, ...keep, p: p.pid, ...here })}`;
     const arrows = [
       NBA_TEAM_CODES.includes(p.team) && !(list === 'nba' && nbaTeam === p.team) ? `<a class="bk-gotoa" href="${to({ list: 'nba', nba: p.team })}">View on NBA team (${esc(p.team)}) →</a>` : '',
       list !== 'league' ? `<a class="bk-gotoa" href="${to({ list: 'league', ...(p.owner ? {} : { fa: '1' }) })}">View in League →</a>` : '',
@@ -3709,7 +3715,7 @@ async function renderBreakdown(body, params) {
   // Injured players listed Out count this season at half (Dynasty tab setting): show the full-health score too.
   const dynFull = dyn && !gmLoad('gm-dyn-full', false) ? dynastyValues(DATA, dyn.f, { fullInjured: true }) : null;
   const dynNote = pid => (dyn?.v?.players?.[pid]?.outCut && dynFull?.players?.[pid] ? `<small class="bk-dynnote">Dynasty ${dynFull.players[pid].score} at full health (listed Out: this season counts half)</small>` : '');
-  const listTabs = `<div class="st-tabs bk-lists" role="tablist">${BK_LISTS.map(([id, label]) => `<a role="tab" class="${id === list ? 'on' : ''}" href="#/mygm?${new URLSearchParams({ tab: 'rosters', ...(id !== 'team' ? { list: id } : {}), ...(season !== cur.season ? { season } : {}) })}">${label}</a>`).join('')}</div>`;
+  const listTabs = `<div class="st-tabs bk-lists" role="tablist">${BK_LISTS.map(([id, label]) => `<a role="tab" class="${id === list ? 'on' : ''}" href="${mygmBase()}?${new URLSearchParams({ tab: 'rosters', ...(id !== 'team' ? { list: id } : {}), ...(season !== cur.season ? { season } : {}) })}">${label}</a>`).join('')}</div>`;
   if (!bk) {
     body.innerHTML = `<div class="gm-page">${listTabs}${gmTeamPick(me, cur.season, 'breakdown')}${betaCard('Team breakdown', '<p class="empty">No roster found for this team.</p>')}</div>`;
     bindTeamPick(body);
@@ -4307,7 +4313,7 @@ async function renderBreakdown(body, params) {
     gmSave('gm-bk-lgfa', e.target.checked);
     BK.limit = BK_PAGE;
     const ps = new URLSearchParams(location.hash.split('?')[1] ?? '');
-    if (ps.has('fa')) { ps.delete('fa'); history.replaceState(null, '', `#/mygm?${ps}`); }
+    if (ps.has('fa')) { ps.delete('fa'); history.replaceState(null, '', `${mygmBase()}?${ps}`); }
     renderBreakdown(body, ps).catch(() => {});
   });
   const heroEl = $('#bk-hero', body);
@@ -4824,7 +4830,7 @@ async function renderInjuries(body, params, me) {
   const cur = DATA.seasons.at(-1);
   // A name opens his 2K breakdown card in the NBA team view of his NBA team (owner, Oct 26 2026), with ?from=inj
   // so the card page shows "Back to Injury Report"; the report remembers where you were scrolled.
-  const cardLink = p => `#/mygm?${new URLSearchParams({ tab: 'rosters', from: 'inj', list: 'nba', nba: p.team, p: p.pid })}`;
+  const cardLink = p => `${mygmBase()}?${new URLSearchParams({ tab: 'rosters', from: 'inj', list: 'nba', nba: p.team, p: p.pid })}`;
   const tabs = ''; // its own Test features tab now (was a list in the 2K breakdown)
   body.innerHTML = `<div class="gm-page bk-page">${tabs}<div class="loading">Pulling the injury report from Sleeper…</div></div>`;
   const all = await get('/v1/players/nba', {});
@@ -5466,8 +5472,8 @@ async function renderDepth(body, params) {
     }
   }
   // A name opens his 2K card with a "Back to Depth Chart" link (back / backl, owner Oct 30 2026) to this same view.
-  const dcBack = { back: `#/mygm?${new URLSearchParams(fantasyView ? { tab: 'depth', view: 'fantasy', team: me } : { tab: 'depth', view: 'nba', nba })}`, backl: 'Depth Chart' };
-  const cardLink = p => `#/mygm?${new URLSearchParams(fantasyView ? { tab: 'rosters', team: me, p: p.pid, ...dcBack } : { tab: 'rosters', list: 'nba', nba, p: p.pid, ...dcBack })}`;
+  const dcBack = { back: `${mygmBase()}?${new URLSearchParams(fantasyView ? { tab: 'depth', view: 'fantasy', team: me } : { tab: 'depth', view: 'nba', nba })}`, backl: 'Depth Chart' };
+  const cardLink = p => `${mygmBase()}?${new URLSearchParams(fantasyView ? { tab: 'rosters', team: me, p: p.pid, ...dcBack } : { tab: 'rosters', list: 'nba', nba, p: p.pid, ...dcBack })}`;
 
   const row = (p, i, pos, o = {}) => {
     const e = espn?.[p.pid];
@@ -5596,7 +5602,7 @@ async function renderDepth(body, params) {
             <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>${pick}</span></label>
         ${fantasyView ? `<button type="button" class="btn dc-auto">Auto-generate best depth chart</button>
           <label class="dc-check"><input type="checkbox" data-hidetaxi${hideTaxi() ? ' checked' : ''}> Hide taxi <small>(${players.filter(p => p.slot === 'TX').length})</small></label>` : ''}
-        <a class="bk-gotoa dc-adv" href="#/commish?${new URLSearchParams({ tab: 'advanced', view: 'teams', ...(fantasyView ? { kind: 'fantasy', ...(me === COMMISH ? {} : { team: me }) } : { kind: 'nba', nba }), back: `#/mygm?tab=depth&view=${view}${fantasyView ? (me === COMMISH ? '' : `&team=${me}`) : `&nba=${nba}`}`, backl: 'Depth Chart' })}">${fantasyView ? 'Who carried the team' : 'Usage tree'} in Advanced Stats →</a>
+        <a class="bk-gotoa dc-adv" href="#/commish?${new URLSearchParams({ tab: 'advanced', view: 'teams', ...(fantasyView ? { kind: 'fantasy', ...(me === COMMISH ? {} : { team: me }) } : { kind: 'nba', nba }), back: `${mygmBase()}?tab=depth&view=${view}${fantasyView ? (me === COMMISH ? '' : `&team=${me}`) : `&nba=${nba}`}`, backl: 'Depth Chart' })}">${fantasyView ? 'Who carried the team' : 'Usage tree'} in Advanced Stats →</a>
       </div>
       ${fantasyView
     ? `<p class="dc-status">${chart.saved ? `<b>Your custom order</b> · saved ${esc(savedAt)} (follows you to your other devices when signed in)` :'<b>Automatic order</b> (by role)'}. Drag a player to reorder or move him to another position (phones: press and hold, then drag), or tap ⋮.</p>
@@ -5762,11 +5768,11 @@ async function renderDepth(body, params) {
       return;
     }
     if (!e.target.matches('.dc-pick')) return;
-    location.hash = `#/mygm?${new URLSearchParams({ tab: 'depth', view, ...(fantasyView ? { team: e.target.value } : { nba: e.target.value }) })}`;
+    location.hash = `${mygmBase()}?${new URLSearchParams({ tab: 'depth', view, ...(fantasyView ? { team: e.target.value } : { nba: e.target.value }) })}`;
   });
   page.addEventListener('click', e => {
     const v = e.target.closest('[data-view]');
-    if (v) { location.hash = `#/mygm?${new URLSearchParams({ tab: 'depth', view: v.dataset.view, ...(v.dataset.view === 'fantasy' ? { team: me } : { nba }) })}`; return; }
+    if (v) { location.hash = `${mygmBase()}?${new URLSearchParams({ tab: 'depth', view: v.dataset.view, ...(v.dataset.view === 'fantasy' ? { team: me } : { nba }) })}`; return; }
     // Customize categories: color, order, delete, add, reset (the name / short fields save on 'change' above).
     const catSum = e.target.closest('.dc-cats > summary');
     if (catSum) { DC.catsOpen = !catSum.parentElement.open; return; }
@@ -11307,7 +11313,7 @@ function render() {
   const { page, sub, params } = route();
   clearInterval(HYPE_TIMER);
   // Leaving the section locks it again, except for a trip that carries a way back into it (2K Transactions links).
-  if (page !== 'commish' && page !== 'mygm' && !params.get('ret')?.startsWith('#/commish')) { COMMISH_OPEN = false; cmFlag(false); }
+  if (page !== 'commish' && page !== 'mygm' && page !== 'mygmplus' && !params.get('ret')?.startsWith('#/commish')) { COMMISH_OPEN = false; cmFlag(false); }
   $('#dk-tip')?.classList.remove('on');
   renderSidebar(page);
   const main = $('#main');
@@ -11318,7 +11324,7 @@ function render() {
   else if (page === 'awards') renderAwards(main);
   else if (page === 'players') renderPlayers(main, params);
   else if (page === 'commish') renderCommish(main, params);
-  else if (page === 'mygm') renderMyGM(main, params);
+  else if (page === 'mygm' || page === 'mygmplus') renderMyGM(main, params); // MyGM+ = the same tabs, full features (Nov 9 2026)
   else if (page === 'records') renderRecordBook(main, sub, params);
   else if (page === 'power') renderPower(main, params);
   else if (page === 'standings') renderStandings(main, params);

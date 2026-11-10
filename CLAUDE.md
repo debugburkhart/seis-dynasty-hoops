@@ -1222,6 +1222,26 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   top edge on the open tab; Beta tag only on the open tab), .mygm-page gets bottom padding, and .back-float / .bk-tray sit
   above it (body:has(.mg-nav)). New icons in ICONS: contract (page with a $), whistle. Solid navy in light mode, so theme.js
   leaves it as is in dark. Checked 320 (dark) / 597 / 1280 px, no page overflow.
+## MyGM+ (#/mygmplus; owner, Nov 9 2026)
+- The commish's FULL-FEATURED copy of MyGM ("more fleshed out and more info than the normal MyGM which is planning to be
+  released to all users and will have a lot of things hidden, for example how other teams line up their depth chart
+  categories"). For now it is an exact copy: renderMyGM serves both pages with the same MYGM_TABS / MYGM_SHOW renderers;
+  MyGM (#/mygm) is the one to be trimmed before it goes live. HIDDEN (owner: "inside the Commish tab, it needs to be hidden
+  from view from the average viewer"), then the same day: "Show it the same way MyGM and Commish are shown on the left" =
+  a sidebar-style button, then "no show same but inside Commish": FINAL = NO sidebar button and NO office tab group; one
+  button .cm-plus (the sidebar's dashed gold .commish-btn on a navy strip) at the top of the Commissioner's office, above the
+  tab groups. (Earlier the same day: a 4th group "MyGM+" in the Commissioner's office tab
+  bar, removed; GROUPS still accept [id, text, href] links and TABS filters them out.) Same passcode +
+  session flag as the office (page 'mygmplus' keeps COMMISH_OPEN like commish / mygm; inOffice includes it). Header eyebrow
+  "← Commissioner's office · full features".
+- test-features.js exports isMyGMPlus() (location.hash starts with #/mygmplus) and mygmBase() ('#/mygmplus' | '#/mygm'):
+  every internal MyGM link (app.js, advstats-ui.js, contracts-2k.js, contracts-ui.js) is `${mygmBase()}?tab=...`, so it stays
+  on the page that's open. Old #/commish?tab=breakdown|coach|depth|contracts links still forward to #/mygm. Saved settings
+  (gm-* keys) are shared by both pages. TO DIFFER LATER: check isMyGMPlus() inside a tab's renderer (e.g. show other teams'
+  depth chart categories only in MyGM+).
+- Checked Nov 9 2026: lock screen "MyGM+", office group with 6 links, every tab renders, links stay in #/mygmplus, #/mygm
+  unchanged, leaving to Home locks, 402 px no overflow.
+
 ## Test features (commish office, owner Oct 25 2026)
 - Third tab group in the commish office ("My GM", "League office", "Test features"): where brand-new
   features are born and tested, early access for the owner only (the office is passcode-gated).

@@ -39,3 +39,9 @@ export function betaCard(title, body, opts = {}) {
       ${body}
     </section>`;
 }
+
+// MyGM+ (owner, Nov 9 2026): the commish's full-featured copy of MyGM (#/mygmplus). MyGM (#/mygm) will be trimmed for
+// release to every manager; both run the same tabs. Links inside the tabs use mygmBase() so they stay on the page
+// that's open. isMyGMPlus() lets a tab show extra things only in MyGM+ later.
+export const isMyGMPlus = () => location.hash.startsWith('#/mygmplus');
+export const mygmBase = () => (isMyGMPlus() ? '#/mygmplus' : '#/mygm');
