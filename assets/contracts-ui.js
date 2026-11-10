@@ -11,7 +11,7 @@
 // adds }, gm-ct-guess { pid: price } (prices for players whose next real deal isn't signed), gm-ct-block-{owner} [pid], gm-ct-view, gm-ct-team.
 
 import { get } from './commish.js';
-import { betaCard, mygmBase } from './test-features.js';
+import { betaCard } from './test-features.js';
 import { loadBreakdown } from './breakdown.js';
 import { money } from './contracts.js';
 import { howItWorks } from './contracts-how.js';
@@ -72,7 +72,7 @@ export async function renderContracts(body, params, h) {
   const guesses = () => gmLoad('gm-ct-guess', {});
   const league = () => buildLeague({ rosters, all, file, info, deals: deals(), guesses: guesses(), rookies, txs: DATA.transactions ?? [], service, cur: season });
   const tn = o => `${esc(teamName(o, cur.season))} <small>(${esc(name(o))})</small>`;
-  const here = () => `${mygmBase()}?tab=contracts&view=${S.view}&team=${S.team}`;
+  const here = () => `#/commish?tab=contracts&view=${S.view}&team=${S.team}`; // a Test feature again (Nov 9 2026)
   const back = () => `&back=${encodeURIComponent(here())}&backl=${encodeURIComponent('Contracts')}`;
   // Names open the 2K-style contract card (owner, Nov 8 2026); the card links on to the 2K breakdown + Advanced stats.
   const card2k = (pid, label) => `<button type="button" class="cx-name" data-ccard="${pid}" title="Contract card">${esc(label)}</button>`;

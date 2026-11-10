@@ -251,7 +251,6 @@ function renderSidebar(page) {
       `).join('')}
     </nav>
     <a class="commish-btn${page === 'commish' ? ' active' : ''}" href="#/commish">${icon('lock')}<span>Commish</span></a>
-    <a class="commish-btn mygm-btn${page === 'mygm' ? ' active' : ''}" href="#/mygm">${icon('clipboard')}<span>MyGM</span><span class="gm-beta">Beta</span></a>
     <div class="sidebar-foot">
       ${themeSwitch()}
       <div class="sync-box" data-sync="side"></div>
@@ -2441,7 +2440,7 @@ function renderCommish(main, params) {
         </div>
       </div>
       <!-- MyGM+ (owner, Nov 9 2026: shown like the sidebar's Commish / MyGM buttons, but only inside the office) -->
-      <div class="cm-plus"><a class="commish-btn mygm-btn" href="#/mygmplus">${icon('clipboard')}<span>MyGM+</span><span class="gm-beta">Beta</span></a></div>
+      <div class="cm-plus"><a class="commish-btn mygm-btn" href="#/mygm">${icon('clipboard')}<span>MyGM</span><span class="gm-beta">Beta</span></a><a class="commish-btn mygm-btn" href="#/mygmplus">${icon('clipboard')}<span>MyGM+</span><span class="gm-beta">Beta</span></a></div>
       <div class="cm-groups">
         ${GROUPS.map(([label, tabs]) => `
           <div class="cm-group-tabs">
@@ -2471,9 +2470,9 @@ function renderCommish(main, params) {
 // tabs: Report Cards (a team's lock + draft report cards) and Trophy Room (a team's accomplishments, team + players).
 // [id, label, short label (phone bar), icon]. Nav (owner, Nov 8 2026: "C on desktop, D on phones"): a 2K-style navy menu
 // bar with big icons on desktop, a bottom tab bar pinned to the screen on phones (.mg-nav in styles.css).
-const MYGM_TABS = [['contracts', 'Contracts', 'Cap', 'contract'], ['rosters', 'Rosters', 'Rosters', 'users'], ['coach', 'Assistant Coach', 'Coach', 'whistle'], ['depth', 'Depth Chart', 'Depth', 'list'], ['cards', 'Report Cards', 'Grades', 'cap'], ['trophies', 'Trophy Room', 'Trophies', 'trophy']];
+// Contracts moved back to Test features (owner, Nov 9 2026: "we won't worry about it now"): #/commish?tab=contracts.
+const MYGM_TABS = [['rosters', 'Rosters', 'Rosters', 'users'], ['coach', 'Assistant Coach', 'Coach', 'whistle'], ['depth', 'Depth Chart', 'Depth', 'list'], ['cards', 'Report Cards', 'Grades', 'cap'], ['trophies', 'Trophy Room', 'Trophies', 'trophy']];
 const MYGM_SHOW = {
-  contracts: (body, params) => renderContractsPage(body, params),
   rosters: (body, params) => renderBreakdown(body, params),
   coach: (body, params) => renderCoach(body, params),
   depth: (body, params) => renderDepth(body, params),
@@ -2481,18 +2480,55 @@ const MYGM_SHOW = {
   trophies: (body, params) => renderTrophyRoom(body, params),
 };
 // Office tab ids that live in MyGM now (old ids kept: 'breakdown' = Rosters), and a link to any office / MyGM tab.
-const MYGM_IDS = { contracts: 'contracts', breakdown: 'rosters', rosters: 'rosters', coach: 'coach', depth: 'depth', cards: 'cards', trophies: 'trophies' };
+const MYGM_IDS = { breakdown: 'rosters', rosters: 'rosters', coach: 'coach', depth: 'depth', cards: 'cards', trophies: 'trophies' };
 const officeHash = (tab, rest = {}) => (MYGM_IDS[tab]
   ? `${mygmBase()}?${new URLSearchParams({ tab: MYGM_IDS[tab], ...rest })}`
   : `#/commish?${new URLSearchParams({ ...(tab === 'brief' ? {} : { tab }), ...rest })}`);
 // The office and MyGM share the same body (#cm-body) and session lock: pages built for one work in both.
 const inOffice = () => ['commish', 'mygm', 'mygmplus'].includes(route().page);
-function renderMyGM(main, params) {
+// MyGM LOGIN (owner, Nov 9 2026: "a single manager will be logged in under their account using google ... each manager
+// able to save their own ... no bleed over ... you would have to be logged in to use it"): MyGM needs a Google sign-in
+// whose account the commish linked to a team (members/{uid}, the same claim + approval as Weekly Props / Trade Court; no
+// passcode). MYGM_ME = that team: every tab opens on it and the team pickers are replaced by its name (ownTeamOnly).
+// Settings stay per account (sync.js: users/{uid}/prefs; a different account on the same browser starts clean).
+// MyGM+ keeps the commish passcode and every team.
+let MYGM_ME = null;
+let MYGM_AUTH_OFF = null;
+const ownTeamOnly = () => route().page === 'mygm' && Boolean(MYGM_ME);
+async function renderMyGM(main, params) {
   // MyGM+ (#/mygmplus, owner Nov 9 2026) = the commish's full-featured copy: same tabs and renderers (isMyGMPlus() lets a tab
-  // show more there later); MyGM (#/mygm) is the one to be trimmed down for every manager.
+  // show more there later); MyGM (#/mygm) is the managers' page.
   const plus = isMyGMPlus();
   const title = plus ? 'MyGM+' : 'MyGM';
-  if (!COMMISH_OPEN) {
+  if (!plus) {
+    MYGM_ME = null;
+    main.innerHTML = '<div class="page"><div class="loading">Checking your sign-in…</div></div>';
+    let acct = { user: null };
+    let err = '';
+    try { acct = await propsAccount(); } catch (e) { err = e.message; }
+    if (route().page !== 'mygm') return;
+    // Signing in or out (or switching accounts) redraws MyGM: the gate, or the new account's team.
+    MYGM_AUTH_OFF?.();
+    MYGM_AUTH_OFF = acct.fb ? (await import('./sync.js')).onAuth(() => { if (route().page === 'mygm') renderMyGM(main, route().params); }) : null;
+    if (!acct.owner) {
+      const season = DATA.seasons.at(-1).season;
+      main.innerHTML = `
+        <div class="page">
+          <section class="card cm-lock mg-gate">
+            <div class="page-icon">${icon('clipboard')}</div>
+            <h1>MyGM</h1>
+            <p class="card-sub">Your team’s depth chart, roster tools and coach.</p>
+            ${err ? `<p class="gm-alert">Couldn’t reach the sign-in server: ${esc(err)}</p>` : memberBox(acct, season, 'Managers only.', () => '')}
+          </section>
+        </div>`;
+      paintSync(main);
+      if (acct.fb) bindMemberBox(main, acct);
+      return;
+    }
+    MYGM_ME = acct.owner;
+    params = new URLSearchParams(params);
+    params.set('team', acct.owner); // own team only
+  } else if (!COMMISH_OPEN) {
     main.innerHTML = `
       <div class="page">
         <section class="card cm-lock">
@@ -2514,13 +2550,14 @@ function renderMyGM(main, params) {
     $('#cm-code', main).focus();
     return;
   }
+  if (params.get('tab') === 'contracts') { const q = new URLSearchParams(params); location.replace(`#/commish?${q}`); return; } // old link: Contracts is a Test feature again
   const tab = MYGM_TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : MYGM_TABS[0][0];
   clearInterval(GM_TIMER);
   main.innerHTML = `
     <div class="page page-wide mygm-page">
       <div class="page-head">
         <div class="page-icon">${icon('clipboard')}</div>
-        <div><div class="eyebrow">${plus ? '<a href="#/commish">← Commissioner’s office</a> · full features' : 'Commish only · Beta'}</div><h1>${title}</h1></div>
+        <div><div class="eyebrow">${plus ? '<a href="#/commish">← Commissioner’s office</a> · full features' : `${esc(teamName(MYGM_ME, DATA.seasons.at(-1).season))} · Beta`}</div><h1>${title}</h1></div>${plus ? '' : '<div class="sync-box sync-office mg-acct" data-sync="office"></div>'}
       </div>
       <nav class="mg-nav" aria-label="${title} sections">
         ${MYGM_TABS.map(([id, text, short, ic]) => `<a class="${tab === id ? 'on' : ''}" href="${mygmBase()}?tab=${id}"${tab === id ? ' aria-current="page"' : ''}>${icon(ic)}<span class="mg-nl">${text}</span><span class="mg-ns">${short}</span><span class="gm-beta">Beta</span></a>`).join('')}
@@ -2528,6 +2565,7 @@ function renderMyGM(main, params) {
       <div id="cm-body" class="tf-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
     </div>`;
   const body = $('#cm-body', main);
+  if (!plus) paintSync(main); // the account box (Sign out) in the header
   CM_REDRAW = () => MYGM_SHOW[tab](body, params).catch(() => {}); // a synced setting from another device redraws the tab
   MYGM_SHOW[tab](body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this page: ${esc(err.message)}</p></section>`;
@@ -3187,6 +3225,7 @@ async function savePick(season, week, pid, o, k, d, p, { quiet = false } = {}) {
 // lock still counts for his old team), else the team that has him now. Only when this browser is signed in.
 async function coachPick(season, week, pid, mark, boxes) {
   if (!localStorage.getItem('sync-uid')) return false;
+  if (route().page === 'mygm' && MYGM_ME !== COMMISH) return false; // managers never write the commish's lock picks
   const cur = DATA.seasons.at(-1);
   const [rows, rosters] = await Promise.all([
     sleeper(`/league/${cur.leagueId}/matchups/${week}`).catch(() => []),
@@ -5597,9 +5636,9 @@ async function renderDepth(body, params) {
     $('#dc-top', body).innerHTML = betaCard('Depth Chart', `
       <div class="st-tabs dc-view" role="tablist">${[['fantasy', 'Fantasy teams'], ['nba', 'NBA teams']].map(([id, label]) => `<button type="button" role="tab" data-view="${id}" class="${view === id ? 'on' : ''}">${label}</button>`).join('')}</div>
       <div class="dc-controls">
-        <label class="hy-pick dc-picker"><span class="hy-pick-label">${fantasyView ? 'Team' : 'NBA team'}</span>
+        ${fantasyView && ownTeamOnly() ? `<div class="hy-pick dc-picker mg-own"><span class="hy-pick-label">Team</span><b>${esc(teamName(me, cur.season))}</b></div>` : `<label class="hy-pick dc-picker"><span class="hy-pick-label">${fantasyView ? 'Team' : 'NBA team'}</span>
           <span class="ed-select"><span class="hy-pick-val">${esc(fantasyView ? teamName(me, cur.season) : nbaTeamName(nba))}</span>
-            <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>${pick}</span></label>
+            <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>${pick}</span></label>`}
         ${fantasyView ? `<button type="button" class="btn dc-auto">Auto-generate best depth chart</button>
           <label class="dc-check"><input type="checkbox" data-hidetaxi${hideTaxi() ? ' checked' : ''}> Hide taxi <small>(${players.filter(p => p.slot === 'TX').length})</small></label>` : ''}
         <a class="bk-gotoa dc-adv" href="#/commish?${new URLSearchParams({ tab: 'advanced', view: 'teams', ...(fantasyView ? { kind: 'fantasy', ...(me === COMMISH ? {} : { team: me }) } : { kind: 'nba', nba }), back: `${mygmBase()}?tab=depth&view=${view}${fantasyView ? (me === COMMISH ? '' : `&team=${me}`) : `&nba=${nba}`}`, backl: 'Depth Chart' })}">${fantasyView ? 'Who carried the team' : 'Usage tree'} in Advanced Stats →</a>
@@ -6084,6 +6123,8 @@ const gmSave = (key, value) => {
 };
 
 function gmTeamPick(me, season, tab) {
+  // MyGM (managers, Nov 9 2026): their own team only, so its name instead of a picker.
+  if (ownTeamOnly()) return `<div class="hy-pick cm-pick mg-own"><span class="hy-pick-label">Team</span><b>${esc(teamName(me, season))}</b></div>`;
   const cur = DATA.seasons.at(-1);
   return `
     <label class="hy-pick cm-pick">

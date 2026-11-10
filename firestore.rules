@@ -6,7 +6,8 @@ rules_version = '2';
 // (the commish's own sign-in id); never publish these rules with the placeholder.
 //
 // users/{uid}              profile (name, photo)
-// users/{uid}/prefs/{key}  one saved site setting per document (see CLAUDE.md "Cross-device sync")
+// users/{uid}/prefs/{key}  one saved site setting per document (see CLAUDE.md "Cross-device sync"); the commish may
+//                          get (not list, not write) depth chart / tag / note keys of any account (MyGM+)
 // claims/{uid}             "I'm this team" requests (Weekly Props), waiting for the commish
 // members/{uid}            { owner, t }: account -> Sleeper team, written by the commish only
 // props/{season-week}      { lockAt }: the week's first tip-off (created by the first manager to open it)
@@ -26,7 +27,15 @@ service cloud.firestore {
       allow read, write: if signedIn() && request.auth.uid == uid;
 
       match /prefs/{key} {
-        allow read, delete: if signedIn() && request.auth.uid == uid;
+        // MyGM+ (owner, Nov 9 2026): the commish may READ (never write) a manager's depth chart (gm-dc-*), tags and notes;
+        // everything else (Assistant Coach what-ifs / lock marks / mode, ...) stays private to that account.
+        function commishCanRead() {
+          return isCommish() && (key.matches('gm-dc-.*')
+            || key in ['gm-tags', 'gm-tag-colors', 'gm-tag-order', 'gm-autotag-order', 'gm-notes']);
+        }
+        allow get: if (signedIn() && request.auth.uid == uid) || commishCanRead();
+        allow list: if signedIn() && request.auth.uid == uid;
+        allow delete: if signedIn() && request.auth.uid == uid;
         allow create, update: if signedIn() && request.auth.uid == uid
           && request.resource.data.keys().hasOnly(['v', 't', 'dev'])
           && request.resource.data.t is int

@@ -6,9 +6,10 @@
 // or offline. Signed in, every save of a SYNCED key is also written to users/{uid}/prefs/{key}
 // as { v: JSON text, t: time saved (ms), dev: device id }; a live listener copies newer values
 // from other devices into localStorage and calls onChange so the open page redraws.
-// Newest save wins per key (t). The first sign-in on a device merges what it already had:
-// lock marks / what-ifs / trade block are combined, other keys take the newer one and the
-// replaced local value is kept in localStorage sync-backup.
+// Newest save wins per key (t). The first sign-in on a device that never had an account merges
+// what it already had: lock marks / what-ifs / trade block are combined, other keys take the newer
+// one and the replaced local value is kept in localStorage sync-backup. A device that last had a
+// DIFFERENT account starts clean instead (Nov 9 2026: no bleed-over between managers).
 //
 // The Firebase SDK is only downloaded once someone taps Sign in (then on every visit from that
 // browser while signed in), so other visitors load nothing extra. The config below is public by
@@ -211,9 +212,15 @@ function apply(key, d) {
 
 // First server snapshot after sign-in: send what only this device has (or has newer), take what's
 // newer in the account. The first time this browser meets this account, combine instead.
+// ONE ACCOUNT PER BROWSER COPY (owner, Nov 9 2026: "I wouldn't want any bleed over to other users"): a browser that was
+// already used by a DIFFERENT account starts clean (every synced key, its times and sync-backup removed, then the new
+// account's own values come in): nothing is merged across accounts. Only a browser that never had an account (MERGED_KEY
+// empty: the settings were made here signed out) still merges into the first account that signs in.
 function reconcile(uid, snap, changed) {
   const remote = new Map(snap.docs.map(d => [d.id, d.data()]));
-  const firstMerge = ls.get(MERGED_KEY) !== uid;
+  const prev = ls.get(MERGED_KEY);
+  if (prev && prev !== uid) wipeLocal(changed);
+  const firstMerge = !prev;
   const m = meta();
   const local = [];
   try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (isSynced(k)) local.push(k); } } catch { /* blocked */ }
@@ -233,6 +240,14 @@ function reconcile(uid, snap, changed) {
   }
   for (const [key, r] of remote) if (!local.includes(key) && apply(key, r)) changed.push(key);
   put(MERGED_KEY, uid);
+}
+
+function wipeLocal(changed) {
+  const keys = [];
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (isSynced(k)) keys.push(k); } } catch { /* blocked */ }
+  for (const k of keys) { ls.del(k); changed.push(k); }
+  ls.del(META_KEY);
+  ls.del('sync-backup');
 }
 
 // Two saved values of one key -> one, without losing marks from either device.

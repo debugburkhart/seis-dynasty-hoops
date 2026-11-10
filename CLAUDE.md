@@ -1231,7 +1231,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   a sidebar-style button, then "no show same but inside Commish": FINAL = NO sidebar button and NO office tab group; one
   button .cm-plus (the sidebar's dashed gold .commish-btn on a navy strip) at the top of the Commissioner's office, above the
   tab groups. (Earlier the same day: a 4th group "MyGM+" in the Commissioner's office tab
-  bar, removed; GROUPS still accept [id, text, href] links and TABS filters them out.) Same passcode +
+  bar, removed; GROUPS still accept [id, text, href] links and TABS filters them out. Since MYGM LOGIN the MyGM button sits next
+  to it.) Same passcode +
   session flag as the office (page 'mygmplus' keeps COMMISH_OPEN like commish / mygm; inOffice includes it). Header eyebrow
   "← Commissioner's office · full features".
 - test-features.js exports isMyGMPlus() (location.hash starts with #/mygmplus) and mygmBase() ('#/mygmplus' | '#/mygm'):
@@ -1240,6 +1241,36 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (gm-* keys) are shared by both pages. TO DIFFER LATER: check isMyGMPlus() inside a tab's renderer (e.g. show other teams'
   depth chart categories only in MyGM+).
 - Checked Nov 9 2026: lock screen "MyGM+", office group with 6 links, every tab renders, links stay in #/mygmplus, #/mygm
+- CONTRACTS OUT (owner, Nov 9 2026: "Move contracts out of MyGM and MyGM+ and put it back into test features ... we won't
+  worry about it now"): TEST_FEATURES entry 'contracts' (label "Contract Sandbox") again; removed from MYGM_TABS / MYGM_SHOW /
+  MYGM_IDS; #/mygm(plus)?tab=contracts forwards to #/commish?tab=contracts; contracts-ui here() = #/commish?tab=contracts.
+  MyGM / MyGM+ now: Rosters (default), Assistant Coach, Depth Chart, Report Cards, Trophy Room.
+- PLAN FOR MANAGER LOGINS (owner, Nov 9 2026; agreed in talk; STEPS 1-3 BUILT the same day, see MYGM LOGIN below): MyGM becomes the
+  managers' page: Google sign-in REQUIRED + an approved claim (members/{uid}, same as Props / Trade Court), locked to their own
+  team; each manager's settings private in users/{uid}/prefs (already); fix the shared-device bleed (localStorage is per
+  browser and the first connect of an account MERGES what's local: scope local copies per account, no merge across
+  accounts); coach lock picks (coachPick -> Firestore locks) off for managers. Things hidden in MyGM are only hidden on screen
+  when they come from public data. MyGM+ (commish): Firestore rules let isCommish() READ (never write) other managers' prefs
+  for DEPTH CHART (gm-dc-*), TAGS (gm-tags, gm-tag-colors, gm-tag-order, gm-autotag-order) and NOTES (gm-notes) only; NOT
+  Assistant Coach keys (gm-whatif-*, gm-locks-*, gm-mode) or anything else; shown read-only per team (manager's chart / tags /
+  notes, auto when none saved). MyGM+ stays an extension of the commish's OWN MyGM (same saved settings, changes show in
+  both). NO notice to the league on the site (owner tells them in person).
+- MYGM LOGIN (built Nov 9 2026, owner "Yes, build it"; while he tests, BOTH buttons live INSIDE the Commish office:
+  .cm-plus strip "MyGM" + "MyGM+", no sidebar buttons at all): renderMyGM is async. #/mygm = NO passcode; propsAccount()
+  (Google user + members/{uid} owner + claims/{uid}); no linked team = gate card (.mg-gate, memberBox "Managers only.":
+  Sign in with Google / claim form / waiting for approval; claims approved in Commish -> League office -> Props). Linked =
+  MYGM_ME (that owner), params team forced to it (a ?team= in the URL is ignored), ownTeamOnly() makes gmTeamPick and the
+  Depth Chart's fantasy team picker a plain name (.mg-own); header eyebrow = team name + the account box (.mg-acct, Sign
+  out). Sign in / out / switching accounts redraws MyGM (MYGM_AUTH_OFF onAuth). coachPick never writes for a non-commish
+  MyGM user. #/mygmplus keeps the passcode and every team. sync.js reconcile: a browser whose sync-merged is a DIFFERENT
+  uid wipes every synced key + sync-meta + sync-backup first (wipeLocal), then takes the new account's values; only a
+  browser that never had an account merges (as before). firestore.rules prefs: get = own account OR isCommish() for keys
+  gm-dc-* / gm-tags / gm-tag-colors / gm-tag-order / gm-autotag-order / gm-notes (commishCanRead); list + write own only.
+  NEEDS: owner uploads firestore.rules (repo root) + Commish -> Props -> Copy rules -> paste -> Publish. NOT BUILT YET
+  (step 4): MyGM+ showing each manager's chart / tags / notes (read them with getDoc users/{uid}/prefs/{key}, uid from
+  members). Tested Nov 9 2026 in the preview: gate signed out; with a stubbed linked owner (temporary hook, removed) every
+  tab locked to that team even with ?team=Parma; MyGM+ keeps pickers; reconcile: other account -> wiped, fresh browser ->
+  merged, same account -> untouched. Real Google sign-in not tested here.
   unchanged, leaving to Home locks, 402 px no overflow.
 
 ## Test features (commish office, owner Oct 25 2026)
