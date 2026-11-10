@@ -1923,6 +1923,17 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   chart rows no longer show .dc-slot after the name; the left rank box (.dc-rank) IS the tag: .st (Starting 9: gold, navy text)
   / .bn (everyone else: navy, gold text), tooltip "Starting 9 · PG1 on the depth chart". NBA view keeps .first. Designations /
   Cut List rows keep the .dc-slot tag after the name (their left box is the group order, not the spot); coach unchanged.
+  AUTO CATEGORIES REBUILT (owner, Nov 9 2026: Starting 9 logic kept, "build as proposed" for the rest; REPLACES the rank-based
+  Rotation top 125 / Development age 25 / Hold rank 150 rules above): autoDesigs(players, ranks, { dyn }) with dyn =
+  desigDynasty() (dynastyValues at FULL health, cached 5 min; null = fallbacks: Development by age only, Hold by FP/G rank
+  DESIG_HOLD_RANK 150). IR = Sleeper IR; Starting 9 unchanged; Rotation = the same 9-slot bestFit again over everyone left but
+  taxi / IR (Out players count), valued by dynasty v[0] (in-season projection blended with games played), FP/G if missing;
+  Development = taxi + age <= DESIG_YOUNG 24 with prospect grade DESIG_GRADE C or better; Hold = full-health dynasty score <
+  DESIG_HOLD_SCORE 15 (Depth / Stash / Replaceable); Stream = the rest. teamDesigs (coach) passes dyn too. Auto-generate's
+  confirm now adds "Your own categories stay, but the players in them will be uncategorized: Trade Bait (3)" for categories
+  the manager added (DESIG_DEFAULT ids are the standard ones). Checked Parma: Rotation 9 (Harden, Fox, VanVleet, McCollum,
+  Eason, Robinson, Ingram, Hachimura, Collins), Development 13 taxi + Risacher, Hold Pritchard / da Silva / Coulibaly /
+  Portis, Stream 0, IR 3; opponent 9 S9 + 9 ROT on the coach; warning text right.
   ASSISTANT COACH EDGE STRIPS (owner, Oct 30 2026; first an outline, then the owner asked for "a thick colored area"
   on the outside): every player on the Lock-in coach board (starters, bench, IR; both sides) gets a strip on his OUTER
   edge (left for you, right for the opponent: dgBar() is the first child and .mb-r is row-reverse) in HIS team's

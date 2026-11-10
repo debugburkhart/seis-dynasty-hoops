@@ -5181,30 +5181,58 @@ const DESIG_MAX = 9; // Starting 9
 // Legal roster limit (owner, Oct 29 2026): 23 = Sleeper's 9 starting spots + 14 bench. Counted here = starters + bench
 // + IR (owner chose to count IR: those players come back onto the roster), taxi left out.
 const ROSTER_LIMIT = 23;
-// Automatic designations (owner, Oct 30 2026), used for a team until you change one of its designations:
-// IR = in a Sleeper IR spot; Starting 9 = best healthy lineup (not IR / taxi / Out) for Sleeper's 9 slots by FP/G
-// (bestFit, slot eligibility from fantasy_positions); then by league rank in FP/G (fpgRanks in breakdown.js):
-// Rotation = top DESIG_ROT, Development = DESIG_YOUNG or younger outside it, Hold = older with rank DESIG_HOLD or
-// worse (or no rank yet), Stream = everyone else. The Auto-generate button resets a team to these.
-const DESIG_ROT = 125, DESIG_HOLD = 150, DESIG_YOUNG = 25;
+// Automatic designations, used for a team until you change one of its designations. Owner's rules (Oct 30 2026, the
+// non-Starting-9 categories rebuilt Nov 9 2026 "build as proposed", to follow the category descriptions):
+//   IR          = in a Sleeper IR spot.
+//   Starting 9  = best healthy lineup (not IR / taxi / Out) for Sleeper's 9 slots by FP/G this season (bestFit, slot
+//                 eligibility from fantasy_positions). Unchanged.
+//   Rotation    = the team's NEXT unit: the same 9-slot best fit again over everyone left who isn't on taxi or IR (Out
+//                 players count as healthy here), valued by this season's in-season value (dynasty.js v[0]: the preseason
+//                 projection blended with games played, so a hot week early on doesn't decide it; FP/G if missing).
+//   Development = taxi players, plus anyone DESIG_YOUNG (24) or younger with a prospect grade of DESIG_GRADE (C) or better.
+//   Hold        = a dynasty score (full health) under DESIG_HOLD_SCORE 15 = tiers Depth / Stash / Replaceable.
+//   Stream      = everyone else (healthy-ish vets with some value who didn't make the next unit).
+// dyn = { pid: dynasty player } at FULL health (desigDynasty) or null; without it Development falls back to age only and
+// Hold to league rank in FP/G (DESIG_HOLD_RANK) as before. A rule whose category the manager deleted leaves those
+// players uncategorized. The Auto-generate button resets a team to these.
+const DESIG_YOUNG = 24, DESIG_GRADE = 'C', DESIG_HOLD_SCORE = 15, DESIG_HOLD_RANK = 150;
+const DESIG_GRADES = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F'];
 const DC_SLOTS = ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'UTIL', 'UTIL'];
-// healthy = the Healthy chart (owner, Nov 9 2026): nobody is injured or on IR, so everyone but taxi can be a starter.
-// A rule whose category the manager deleted leaves those players uncategorized.
-function autoDesigs(players, ranks, { healthy = false } = {}) {
+// Full-health dynasty values for the designations (cached 5 min; failure = null and the fallbacks above).
+let DESIG_DYN = null;
+async function desigDynasty() {
+  if (DESIG_DYN && Date.now() - DESIG_DYN.at < 300_000) return DESIG_DYN.players;
+  try {
+    const f = await loadDynastyFeeds();
+    DESIG_DYN = { at: Date.now(), players: dynastyValues(DATA, f, { fullInjured: true }).players };
+  } catch { DESIG_DYN = { at: Date.now(), players: null }; }
+  return DESIG_DYN.players;
+}
+// healthy = everyone treated as healthy (kept for the helpers; the page has one chart now).
+function autoDesigs(players, ranks, { healthy = false, dyn = null } = {}) {
   const ids = new Set(dcCats().map(c => c.id));
   const d = {};
-  if (!healthy) for (const p of players) if (p.slot === 'IR') d[p.pid] = 'ir';
+  const set = (pid, k) => { d[pid] = ids.has(k) ? k : 'none'; }; // 'none' = decided, category deleted (removed below)
+  if (!healthy) for (const p of players) if (p.slot === 'IR') set(p.pid, 'ir');
   const fpg = p => (p.tot?.gp ? p.avg.fp : 0);
-  const pool = players.filter(p => !d[p.pid] && p.slot !== 'TX' && (healthy || !injBad(p.injury)));
-  // + 0.001 so a player without a game yet still fills an otherwise empty slot.
-  const { slotOf } = bestFit(DC_SLOTS.length, pool.length, (c, s) => (slotFits(DC_SLOTS[s], pool[c].pos) ? fpg(pool[c]) + 0.001 : null));
-  slotOf.forEach((s, c) => { if (s >= 0) d[pool[c].pid] = 'start'; });
+  const fit = (pool, val) => bestFit(DC_SLOTS.length, pool.length, (c, s) => (slotFits(DC_SLOTS[s], pool[c].pos) ? val(pool[c]) + 0.001 : null)).slotOf;
+  // Starting 9 (+ 0.001 so a player without a game yet still fills an otherwise empty slot).
+  const pool9 = players.filter(p => !d[p.pid] && p.slot !== 'TX' && (healthy || !injBad(p.injury)));
+  fit(pool9, fpg).forEach((s, c) => { if (s >= 0) set(pool9[c].pid, 'start'); });
+  // Rotation: the next unit.
+  const value = p => dyn?.[p.pid]?.v?.[0] ?? fpg(p);
+  const poolR = players.filter(p => !d[p.pid] && p.slot !== 'TX' && p.slot !== 'IR');
+  fit(poolR, value).forEach((s, c) => { if (s >= 0) set(poolR[c].pid, 'rot'); });
+  const gradeOk = g => g && DESIG_GRADES.indexOf(g) >= 0 && DESIG_GRADES.indexOf(g) <= DESIG_GRADES.indexOf(DESIG_GRADE);
   for (const p of players) {
     if (d[p.pid]) continue;
-    const rk = ranks?.[p.pid] ?? Infinity;
-    const k = rk <= DESIG_ROT ? 'rot' : p.age != null && p.age <= DESIG_YOUNG ? 'dev' : rk >= DESIG_HOLD ? 'hold' : 'stream';
-    if (ids.has(k)) d[p.pid] = k;
+    const dp = dyn?.[p.pid];
+    const young = p.age != null && p.age <= DESIG_YOUNG;
+    const dev = p.slot === 'TX' || (young && (dyn ? gradeOk(dp?.prospect?.grade) : true));
+    const hold = dyn ? (dp?.score ?? 0) < DESIG_HOLD_SCORE : (ranks?.[p.pid] ?? Infinity) >= DESIG_HOLD_RANK;
+    set(p.pid, dev ? 'dev' : hold ? 'hold' : 'stream');
   }
+  for (const pid of Object.keys(d)) if (d[pid] === 'none') delete d[pid];
   return d;
 }
 // A saved designation set the manager made himself (older saves without the flag count when they hold any).
@@ -5238,8 +5266,8 @@ async function teamDesigs(owner) {
   }
   const hit = DESIG_CACHE[owner];
   if (hit && Date.now() - hit.at < 300_000) return hit.d;
-  const [bk, ranks] = await Promise.all([loadBreakdown(DATA, { list: 'team', owner, season: cur.season }), fpgRanks(DATA, cur.season)]);
-  const d = bk ? autoDesigs(bk.players, ranks) : {};
+  const [bk, ranks, dyn] = await Promise.all([loadBreakdown(DATA, { list: 'team', owner, season: cur.season }), fpgRanks(DATA, cur.season), desigDynasty()]);
+  const d = bk ? autoDesigs(bk.players, ranks, { dyn }) : {};
   DESIG_CACHE[owner] = { at: Date.now(), d };
   return d;
 }
@@ -5371,7 +5399,7 @@ async function renderDepth(body, params) {
   // cut = the Cut List (owner, Oct 29 2026): ordered [pid], a red "Cut" tag on top of any designation tint.
   // rawDesig = what's saved; desig = the same with d = your designations once you've changed any (custom), else the
   // automatic ones (AUTO_D, worked out once per page from this season's FP/G and league ranks).
-  const AUTO_D = fantasyView ? autoDesigs(players, ranks, { healthy }) : {};
+  const AUTO_D = fantasyView ? autoDesigs(players, ranks, { healthy, dyn: await desigDynasty() }) : {};
   const rawDesig = () => ({ d: {}, order: {}, cut: [], ...gmLoad(dkey, null) });
   // Current chart: apply the IR rule to today's IR spots once per visit (saved only on a set the manager made).
   if (fantasyView && !healthy) {
@@ -5622,9 +5650,7 @@ async function renderDepth(body, params) {
       </section>`;
     });
     const none = players.filter(p => !desigOf(p.pid) && !(hideTaxi() && p.slot === 'TX')).sort((a, b) => at(a.pid) - at(b.pid));
-    const autoText = healthy
-      ? `<b>Automatic designations</b> (they update with stats until you change one), with everyone assumed healthy: Starting 9 = best lineup by FP/G (taxi left out); then by league rank in FP/G: Rotation = top ${DESIG_ROT}, Development = ${DESIG_YOUNG} or younger outside it, Hold = older than ${DESIG_YOUNG} and ranked ${DESIG_HOLD}+ (or not ranked yet), Stream = the rest.`
-      : `<b>Automatic designations</b> (they update with stats and injuries until you change one): Starting 9 = best healthy lineup by FP/G; IR = Sleeper IR; then by league rank in FP/G: Rotation = top ${DESIG_ROT}, Development = ${DESIG_YOUNG} or younger outside it, Hold = older than ${DESIG_YOUNG} and ranked ${DESIG_HOLD}+ (or not ranked yet), Stream = the rest.`;
+    const autoText = `<b>Automatic designations</b> (they update with stats and injuries until you change one): <b>IR</b> = Sleeper IR; <b>Starting 9</b> = best healthy lineup by FP/G; <b>Rotation</b> = your next unit: the same best lineup again from everyone left (not taxi; Out players count), valued by this season's projection blended with games played; <b>Development</b> = taxi players, plus anyone ${DESIG_YOUNG} or younger with a prospect grade of ${DESIG_GRADE} or better; <b>Hold</b> = a dynasty score under ${DESIG_HOLD_SCORE} at full health (Depth, Stash, Replaceable); <b>Stream</b> = everyone else.`;
     box.innerHTML = betaCard('Designations', `
       <p class="dc-status">${dcCustom(rawDesig()) ? `<b>Your designations</b> (you changed one, so this team keeps yours; Auto-generate at the top resets them).${healthy ? '' : ' Sleeper IR players are put in IR automatically; when one comes off IR he’s left uncategorized for you to place.'}` : autoText}</p>
       <p class="dc-help">Categories: ${cats.map(c => `<b class="dc-dg dg dgc-${c.color}">${esc(c.name)}</b>`).join(' ')}. Set one with ⋮ on any player (here or in the chart above); tap it again to clear it. Drag players to order each group (phones: press and hold, then drag); that order stays in its group and doesn’t change the depth chart.</p>
@@ -5774,7 +5800,12 @@ async function renderDepth(body, params) {
     if (e.target.closest('.dc-auto')) {
       // Resets this team's depth chart order AND designations to automatic (owner, Oct 30 2026); the Cut List stays.
       const R = rawDesig();
-      if ((gmLoad(key, null) || dcCustom(R)) && !confirm(`Replace your depth chart order and designations for ${teamName(me, cur.season)} with the automatic ones? (Your Cut List stays.)`)) return;
+      // The warning names what's lost (owner, Nov 9 2026): auto only fills the standard categories, so players in a
+      // category the manager added end up uncategorized (the categories themselves, names / colors, stay).
+      const stdIds = new Set(DESIG_DEFAULT.map(c => c.id));
+      const lost = dcCats().filter(c => !stdIds.has(c.id)).map(c => [c.name, players.filter(p => desigOf(p.pid) === c.id).length]).filter(([, n]) => n);
+      const lostTxt = lost.length ? `\n\nYour own categories stay, but the players in them will be uncategorized: ${lost.map(([nm, n]) => `${nm} (${n})`).join(', ')}.` : '';
+      if ((gmLoad(key, null) || dcCustom(R)) && !confirm(`Replace your depth chart order and designations for ${teamName(me, cur.season)} with the automatic ones? Your Cut List stays.${lostTxt}`)) return;
       gmSave(key, null);
       gmSave(dkey, { ...R, at: Date.now(), d: {}, order: {}, custom: false });
       delete DESIG_CACHE[me];
