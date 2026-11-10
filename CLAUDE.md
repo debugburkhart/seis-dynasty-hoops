@@ -1857,22 +1857,22 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Designations group head (.dc-ddesc), edited in Customize categories (data-cat-desc input; Starting 9's is fixed like
   its name); saves without desc get the default by id. MyGM is commish-only today; per-login
   keys mean other managers' settings stay theirs once they get access.
-  LINEUP-SLOT COLUMNS (owner, Nov 9 2026: "add G, F, and UTIL UTIL"; chose "Starting 9 by slot"): the FANTASY chart (Current
-  + Healthy) has 9 columns = Sleeper lineup slots DC_SLOT_COLS PG SG G SF PF F C U1 U2 (U1 / U2 shown "UTIL", dcColLabel;
-  slot name for fits dcColSlot); the NBA view keeps ESPN's 5 (DEPTH_POS). dcAuto({ slots: true }) puts the Starting 9 into the
-  slots by bestFit on FP/G (top of each slot column = the lineup; returns slotOf), everyone else under his main position;
-  borrowing for empty PG..C columns never takes a slotted starter. dcChart(players, saved, auto, keys): an OLD 5-column
-  save (no G key) keeps its order but gets the auto slot starters placed on top of the 9 slot columns first; the Current
-  IR rewrite only writes keys the save already has. ⋮ Move to lists all 9 (UTIL 1 / UTIL 2; outlined = he fits that slot).
-  "Can also play" only under PG..C. Glance rows + Healthy reminder ("Healthy: UTIL1") use the labels. SLOT TAG (owner, same
-  day: "starting 9 players that are #1 in the position add a X"): slotTag(pid) = navy/gold .dc-slot chip with the column
-  label when a Starting 9 player is first in a column (chart rows + Designations / Cut List rows; not the glance table,
-  whose row already says it). Checked Nov 9 2026: Parma auto = PG LeBron, SG Booker, G Dosunmu, SF Porter Jr., PF Markkanen,
-  F Adebayo, C Sengun, UTIL Murray / Anunoby; move to UTIL 2 saved under U2; old save upgraded on display; Healthy chart
-  slots; 402 px no overflow. ASSISTANT COACH TOO (owner, same day): teamSlotTops(owner, d) in app.js = that team's Current
-  chart (saved order over the auto slot chart, IR last) -> { pid: label } for Starting 9 players first in a column (cached 5
-  min, keyed on the save time + starters); renderCoach slotC(side, pid) puts .dc-slot.mb-stag after the name inside .mb-name b
-  (both teams; .mb-slot was already the board's middle slot column). Checked: 9 tags per side = the Depth Chart.
+  LINEUP TAGS (owner, Nov 9 2026; he first asked for G / F / UTIL / UTIL COLUMNS, then the same day: "remove the F, G, UTIL,
+  UTIL from positions ... the #1 in each position gets the starting X tag ... eligible players (designated as starting 9
+  ... but isn't #1) you can select G or UTIL"): the fantasy chart keeps PG / SG / SF / PF / C. dcAuto fits the Starting 9 to
+  Sleeper's 9 lineup slots (DC_LINEUP, bestFit on FP/G): a PG..C slot player leads that column, G / F / UTIL ones sit under
+  their main position and come back as auto.flex. dcLineupTags(cols, starts, byId, picks, autoFlex) -> tops (Starting 9
+  player first in a column = that position) + flex (other Starting 9 players: G = PG/SG, F = SF/PF, UTIL = anyone; limits
+  DC_FLEX 1 G, 1 F, 2 UTIL; invalid picks just don't show). Picks per team + chart: gm-dc-flex-{owner} / gm-dc-hflex-{owner}
+  = { at, f: { pid: slot } } (synced via 'gm-dc-'); no save = auto.flex; "Auto-generate" clears it. UI: navy/gold .dc-slot
+  tag by the name (chart rows + Designations / Cut List rows; slotTag reads DC.tags, set in fantasyChart after the IR move);
+  "Lineup slot" G / F / UTIL buttons (.dc-flexset / .dc-flexbtn, flexBtns + setFlex, data-flex) in the ⋮ menu of Starting 9
+  players who aren't #1 (can't-play or full = disabled with a reason; tap the picked one again = clear). ASSISTANT COACH:
+  teamSlotTops(owner, d) = the same tags from that team's Current chart + flex picks (cached 5 min, keyed on chart / flex
+  save times + starters); renderCoach slotC(side, pid) puts .dc-slot.mb-stag after the name inside .mb-name b, both teams
+  (.mb-slot is the board's middle slot column, not this). Checked Nov 9 2026: Parma auto = PG LeBron, SG Booker, SF Porter
+  Jr., PF Markkanen, C Sengun + Murray UTIL, Dosunmu G, Anunoby UTIL, Adebayo F; G one at a time, F disabled for guards, no
+  buttons for a #1; coach shows the same 8-9 tags per side; 402 px no overflow.
   ASSISTANT COACH EDGE STRIPS (owner, Oct 30 2026; first an outline, then the owner asked for "a thick colored area"
   on the outside): every player on the Lock-in coach board (starters, bench, IR; both sides) gets a strip on his OUTER
   edge (left for you, right for the opponent: dgBar() is the first child and .mb-r is row-reverse) in HIS team's

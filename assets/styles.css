@@ -3718,6 +3718,12 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .dg-btn small { font-weight: 600; opacity: .8; }
 .dg-btn.on { background: var(--dg-c); color: #fff; }
 .dg-btn:disabled { opacity: .4; cursor: not-allowed; }
+/* Lineup slot picks (G / F / UTIL) for Starting 9 players not first in a column (owner, Nov 9 2026). */
+.dc-flexset { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 6px 0 0 39px; }
+.dc-flexset > span { font-size: 11px; color: var(--muted); }
+.dc-flexbtn { padding: 3px 11px; border: 1px solid var(--navy-800); border-radius: 99px; background: #fff; color: var(--navy-800); font: 800 11px/1.3 var(--font); cursor: pointer; }
+.dc-flexbtn.on { background: var(--navy-800); color: #f2c14e; }
+.dc-flexbtn:disabled { opacity: .4; cursor: not-allowed; }
 .dc-dcard { margin-top: 14px; }
 .dc-dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; align-items: start; }
 .dc-dgroup { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: #fcfbf8; overflow: hidden; }
@@ -3746,7 +3752,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 }
 @media (max-width: 560px) {
   .dc-dgrid { grid-template-columns: 1fr; }
-  .dc-dgset, .dc-undes .dc-dgset { padding-left: 0; }
+  .dc-dgset, .dc-undes .dc-dgset, .dc-flexset { padding-left: 0; }
 }
 /* Depth Chart roster limit line (limitLine in renderDepth): starters + bench + IR vs 23, taxi not counted. */
 .dc-limit { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding: 9px 12px; border: 1px solid var(--line); border-left: 4px solid #2b8a4b; border-radius: 10px; background: #f3faf5; }

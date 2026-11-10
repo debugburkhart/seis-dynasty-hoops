@@ -5237,80 +5237,91 @@ async function teamDesigs(owner) {
   DESIG_CACHE[owner] = { at: Date.now(), d };
   return d;
 }
-// Any team's Starting 9 players who sit first in a Current Depth Chart column -> that slot's label (owner, Nov 9 2026:
-// "include the X position tag for starters next to the players name in the assistant coach"). Same chart the Depth
-// Chart page draws: the team's saved order (gm-dc-chart-{owner}) over the automatic slot chart, IR players at the bottom.
+// LINEUP TAGS (owner, Nov 9 2026; replaces the 9 slot columns he tried the same day): the chart keeps the 5 positions.
+// A Starting 9 player first in his column gets that position as a tag (PG / SG / SF / PF / C); every other Starting 9
+// player can be given one of the flex slots G (a PG or SG), F (an SF or PF) or UTIL (anyone), as many as Sleeper's
+// lineup has (DC_FLEX: 1 G, 1 F, 2 UTIL). Picks are saved per team and chart: gm-dc-flex-{owner} / gm-dc-hflex-{owner}
+// = { at, f: { pid: 'G' | 'F' | 'UTIL' } }; with no save the automatic ones are used (dcAuto's best fit of the
+// Starting 9 over the 9 lineup slots). Picks that stop being valid (not Starting 9 any more, now first in a column,
+// slot full) just don't show.
+const DC_FLEX = { G: 1, F: 1, UTIL: 2 };
+const DC_LINEUP = ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'UTIL', 'UTIL'];
+const flexFits = (slot, pos) => slot === 'UTIL' || slotFits(slot, pos);
+// cols = the chart as drawn (IR already at the bottom on Current), starts = Starting 9 pids, picks = saved { pid: slot }
+// or null (use auto). Returns { tops: { pid: 'PG' }, flex: { pid: 'G' }, used: { G: n, F: n, UTIL: n } }.
+function dcLineupTags(cols, starts, byId, picks, autoFlex) {
+  const tops = {};
+  for (const pos of DEPTH_POS) { const pid = cols[pos]?.[0]; if (pid && starts.has(pid)) tops[pid] = pos; }
+  const flex = {};
+  const used = { G: 0, F: 0, UTIL: 0 };
+  for (const [pid, s] of Object.entries(picks ?? autoFlex ?? {})) {
+    if (!starts.has(pid) || tops[pid] || !byId[pid] || !DC_FLEX[s] || used[s] >= DC_FLEX[s] || !flexFits(s, byId[pid].pos)) continue;
+    flex[pid] = s;
+    used[s]++;
+  }
+  return { tops, flex, used };
+}
+// Any team's lineup tags on its CURRENT chart, for the Assistant Coach (owner, Nov 9 2026): { pid: 'PG' | 'G' | 'UTIL' }.
 const SLOT_TOP_CACHE = {};
 async function teamSlotTops(owner, d) {
   const saved = gmLoad(`gm-dc-chart-${owner}`, null);
-  const sig = JSON.stringify([saved?.at ?? 0, Object.keys(d ?? {}).filter(pid => d[pid] === 'start').sort()]);
+  const picks = gmLoad(`gm-dc-flex-${owner}`, null);
+  const sig = JSON.stringify([saved?.at ?? 0, picks?.at ?? 0, Object.keys(d ?? {}).filter(pid => d[pid] === 'start').sort()]);
   const hit = SLOT_TOP_CACHE[owner];
   if (hit && hit.sig === sig && Date.now() - hit.at < 300_000) return hit.tops;
   const cur = DATA.seasons.at(-1);
   const bk = await loadBreakdown(DATA, { list: 'team', owner, season: cur.season });
   const players = bk?.players ?? [];
   const starts = new Set(Object.keys(d ?? {}).filter(pid => d[pid] === 'start'));
-  const { cols } = dcChart(players, saved, dcAuto(players, () => null, starts, { slots: true }), DC_SLOT_COLS);
+  const auto = dcAuto(players, () => null, starts);
+  const { cols } = dcChart(players, saved, auto);
   const byId = Object.fromEntries(players.map(p => [p.pid, p]));
-  const tops = {};
-  for (const c of DC_SLOT_COLS) {
-    const list = [...cols[c].filter(pid => byId[pid]?.slot !== 'IR'), ...cols[c].filter(pid => byId[pid]?.slot === 'IR')];
-    if (list[0] && starts.has(list[0])) tops[list[0]] = dcColLabel(c);
-  }
+  for (const pos of DEPTH_POS) cols[pos] = [...cols[pos].filter(pid => byId[pid]?.slot !== 'IR'), ...cols[pos].filter(pid => byId[pid]?.slot === 'IR')];
+  const t = dcLineupTags(cols, starts, byId, picks?.f ?? null, auto.flex);
+  const tops = { ...t.tops, ...t.flex };
   SLOT_TOP_CACHE[owner] = { at: Date.now(), sig, tops };
   return tops;
 }
 const dcHome = p => (DEPTH_POS.includes(p.mainPos) ? p.mainPos : p.pos.find(x => DEPTH_POS.includes(x)) ?? 'SF');
 // starts = the team's Starting 9 (designations), which lead each column (Oct 30 2026; was Sleeper's current starters).
 // Current chart: Sleeper IR players at the very bottom of their column (below taxi); Healthy: no injury bands at all.
-// LINEUP-SLOT COLUMNS (owner, Nov 9 2026: "add G, F, and UTIL UTIL"): the fantasy chart's columns are Sleeper's 9 lineup
-// slots (DC_SLOT_COLS; the two UTILs are keyed U1 / U2). slots = true puts the Starting 9 into those slots by the best fit
-// (bestFit on their FP/G, the same as the auto Starting 9), so the top of each column is the lineup; everyone else goes
-// under his main position (PG / SG / SF / PF / C). The NBA view keeps ESPN's 5 positions (DEPTH_POS).
-const DC_SLOT_COLS = ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'U1', 'U2'];
-const dcColLabel = c => (c === 'U1' || c === 'U2' ? 'UTIL' : c);
-const dcColSlot = c => (c === 'U1' || c === 'U2' ? 'UTIL' : c); // the Sleeper slot name (for fits)
-function dcAuto(players, dynOf, starts = null, { healthy = false, slots = false } = {}) {
+// The Starting 9 are fitted to the 9 lineup slots (bestFit on FP/G, like the auto Starting 9): the one in the PG slot
+// leads the PG column (and so on), the ones in G / F / UTIL go under their main position and come back as `flex`.
+function dcAuto(players, dynOf, starts = null, { healthy = false } = {}) {
   const isStart = p => (starts ? starts.has(p.pid) : p.order >= 0);
   const band = p => (healthy ? (p.slot === 'TX' ? 4 : isStart(p) ? 0 : p.tot.gp ? 1 : 2)
     : p.slot === 'IR' ? 5 : p.slot === 'TX' ? 4 : injBad(p.injury) ? 3 : isStart(p) ? 0 : p.tot.gp ? 1 : 2);
   const fpg = p => (p.tot.gp ? p.avg.fp : 0);
   const ranked = [...players].sort((a, b) => band(a) - band(b) || (band(a) === 2 ? 0 : fpg(b) - fpg(a)) || (dynOf(b.pid) ?? 0) - (dynOf(a.pid) ?? 0));
-  const keys = slots ? DC_SLOT_COLS : DEPTH_POS;
-  const cols = Object.fromEntries(keys.map(pos => [pos, []]));
-  const slotOfPid = {};
-  if (slots) {
-    const lineup = ranked.filter(p => isStart(p) && p.slot !== 'TX');
-    const { slotOf } = bestFit(DC_SLOT_COLS.length, lineup.length, (c, s) => (slotFits(dcColSlot(DC_SLOT_COLS[s]), lineup[c].pos) ? fpg(lineup[c]) + 0.001 : null));
-    slotOf.forEach((s, c) => { if (s >= 0) slotOfPid[lineup[c].pid] = DC_SLOT_COLS[s]; });
-  }
-  for (const p of ranked) cols[slotOfPid[p.pid] ?? dcHome(p)].push(p.pid);
+  const cols = Object.fromEntries(DEPTH_POS.map(pos => [pos, []]));
+  const lead = {}; // pid -> the column he leads
+  const flex = {}; // pid -> G / F / UTIL
+  const lineup = ranked.filter(p => isStart(p) && p.slot !== 'TX');
+  const { slotOf } = bestFit(DC_LINEUP.length, lineup.length, (c, s) => (slotFits(DC_LINEUP[s], lineup[c].pos) ? fpg(lineup[c]) + 0.001 : null));
+  slotOf.forEach((s, c) => { if (s < 0) return; const slot = DC_LINEUP[s]; if (DEPTH_POS.includes(slot)) lead[lineup[c].pid] = slot; else flex[lineup[c].pid] = slot; });
+  for (const pos of DEPTH_POS) { const pid = Object.keys(lead).find(x => lead[x] === pos); if (pid) cols[pos].push(pid); }
+  for (const p of ranked) if (!lead[p.pid]) cols[dcHome(p)].push(p.pid);
   const moved = {}; // pid -> the column he was borrowed from
-  const colOf = pid => keys.find(x => cols[x].includes(pid));
+  const colOf = pid => DEPTH_POS.find(x => cols[x].includes(pid));
   for (const pos of DEPTH_POS) {
     if (cols[pos].length) continue;
-    const cand = ranked.find(p => p.slot !== 'TX' && !moved[p.pid] && !slotOfPid[p.pid] && p.pos.includes(pos) && cols[colOf(p.pid)].length >= 2 && cols[colOf(p.pid)][0] !== p.pid);
+    const cand = ranked.find(p => p.slot !== 'TX' && !moved[p.pid] && !lead[p.pid] && p.pos.includes(pos) && cols[colOf(p.pid)].length >= 2 && cols[colOf(p.pid)][0] !== p.pid);
     if (!cand) continue;
     const from = colOf(cand.pid);
     cols[from] = cols[from].filter(x => x !== cand.pid);
     cols[pos].push(cand.pid);
     moved[cand.pid] = from;
   }
-  return { cols, moved, slotOf: slotOfPid };
+  return { cols, moved, flex };
 }
 // The chart shown: your saved order where there is one, everyone else from the automatic chart.
-// keys = the columns (DC_SLOT_COLS on the fantasy view). A saved order from before the slot columns (no G key) keeps
-// its order, but the automatic Starting 9 slots are placed on top of the 9 slot columns first.
-function dcChart(players, saved, auto, keys = DEPTH_POS) {
+function dcChart(players, saved, auto) {
   const ids = new Set(players.map(p => p.pid));
   const placed = new Set();
   const fresh = new Set();
   const cols = {};
-  const legacy = saved?.cols && keys.includes('G') && !('G' in saved.cols);
-  for (const pos of keys) cols[pos] = [];
-  if (legacy) for (const [pid, c] of Object.entries(auto.slotOf ?? {})) if (ids.has(pid) && !placed.has(pid)) { cols[c].push(pid); placed.add(pid); }
-  for (const pos of keys) cols[pos].push(...(saved?.cols?.[pos] ?? []).filter(pid => ids.has(pid) && !placed.has(pid) && placed.add(pid)));
-  for (const pos of keys) for (const pid of auto.cols[pos] ?? []) if (!placed.has(pid)) { cols[pos].push(pid); placed.add(pid); if (saved) fresh.add(pid); }
+  for (const pos of DEPTH_POS) cols[pos] = (saved?.cols?.[pos] ?? []).filter(pid => ids.has(pid) && !placed.has(pid) && placed.add(pid));
+  for (const pos of DEPTH_POS) for (const pid of auto.cols[pos] ?? []) if (!placed.has(pid)) { cols[pos].push(pid); placed.add(pid); if (saved) fresh.add(pid); }
   return { cols, fresh };
 }
 async function renderDepth(body, params) {
@@ -5321,7 +5332,6 @@ async function renderDepth(body, params) {
   gmSave('gm-dc-view', view);
   if (view === 'nba') gmSave('gm-dc-nba', nba);
   const fantasyView = view === 'fantasy';
-  const COLS = fantasyView ? DC_SLOT_COLS : DEPTH_POS; // fantasy: the 9 lineup slots (owner, Nov 9 2026); NBA: ESPN's 5
   body.innerHTML = `<div class="loading">Pulling ${fantasyView ? 'the roster' : 'ESPN’s depth chart'} and stats…</div>`;
   const all = await get('/v1/players/nba', {});
   const [bk, dyn, espn, lgsRaw, depth, ranks, live] = await Promise.all([
@@ -5375,14 +5385,32 @@ async function renderDepth(body, params) {
   const desigOf = pid => { if (!fantasyView) return null; const k = desig().d[pid]; return k && dcCatOf(k) ? k : null; };
   const dgCls = pid => { const c = dgClass(desigOf(pid)); return c ? ` ${c}` : ''; };
   const dgLabel = k => esc(dcCatOf(k)?.name ?? '');
-  // Starting 9 players at the top of a column get that slot as a tag (owner, Nov 9 2026: "for starting 9 players that are
-  // #1 in the position add a 'X'"): fantasy view only; read from DC.cols (the chart as drawn).
-  const slotTop = pid => {
-    if (!fantasyView || desigOf(pid) !== 'start') return null;
-    const c = COLS.find(x => DC.cols?.[x]?.[0] === pid);
-    return c ? dcColLabel(c) : null;
+  // LINEUP TAGS (owner, Nov 9 2026): the Starting 9 player first in a column = that position's tag; other Starting 9
+  // players can take G / F / UTIL (flexBtns in the ⋮ menu). DC.tags is filled by fantasyChart (dcLineupTags).
+  const fkey = `gm-dc-${healthy ? 'h' : ''}flex-${me}`;
+  const flexPicks = () => gmLoad(fkey, null)?.f ?? null;
+  const slotTag = pid => {
+    if (!fantasyView) return '';
+    const top = DC.tags?.tops[pid];
+    const fx = DC.tags?.flex[pid];
+    return top ? `<i class="dc-slot" title="Starting 9 · first in the ${top} column">${top}</i>`
+      : fx ? `<i class="dc-slot" title="Starting 9 · plays the ${fx} slot">${fx}</i>` : '';
   };
-  const slotTag = pid => { const s = slotTop(pid); return s ? `<i class="dc-slot" title="Starting 9 · first in the ${s} column">${s}</i>` : ''; };
+  const flexBtns = pid => {
+    if (!fantasyView || desigOf(pid) !== 'start' || DC.tags?.tops[pid]) return '';
+    const cur = DC.tags?.flex[pid];
+    return `<span class="dc-flexset"><span>Lineup slot</span>${Object.keys(DC_FLEX).map(s => {
+      const fits = flexFits(s, byId[pid].pos);
+      const full = cur !== s && (DC.tags?.used[s] ?? 0) >= DC_FLEX[s];
+      const why = !fits ? `He can't play ${s}` : full ? `${s} is taken (${DC_FLEX[s]} of ${DC_FLEX[s]}): clear it on the other player first` : '';
+      return `<button type="button" class="dc-flexbtn${cur === s ? ' on' : ''}" data-flex="${s}" data-pid="${pid}" aria-pressed="${cur === s}"${why ? ` disabled title="${why}"` : ''}>${s}</button>`;
+    }).join('')}</span>`;
+  };
+  const setFlex = (pid, s) => {
+    const f = { ...(flexPicks() ?? DC.tags?.flex ?? {}) };
+    if (f[pid] === s) delete f[pid]; else f[pid] = s;
+    gmSave(fkey, { at: Date.now(), f });
+  };
   const startCount = () => Object.entries(desig().d).filter(([pid, k]) => k === 'start' && byId[pid]).length;
   // The designation buttons (in a player's ⋮ menu, above and below). Tap the current one again = no designation.
   const desigBtns = pid => {
@@ -5404,14 +5432,14 @@ async function renderDepth(body, params) {
   };
   const key = `gm-dc-${healthy ? 'h' : ''}chart-${me}`;
   const startsOf = d => new Set(Object.entries(d).filter(([, k]) => k === 'start').map(([pid]) => pid));
-  const auto = dcAuto(players, dynOf, startsOf(desig().d), { healthy, slots: fantasyView });
+  const auto = dcAuto(players, dynOf, startsOf(desig().d), { healthy });
   // Current chart: Sleeper IR players drop to the bottom of their column in the saved order too (once per visit), and
   // stay there after they come off IR until the manager moves them.
   if (fantasyView && !healthy) {
     const saved = gmLoad(key, null);
     if (saved?.cols) {
       let moved = false;
-      const cols = Object.fromEntries(COLS.filter(pos => pos in saved.cols).map(pos => { // only the keys the save has (an old 5-column save stays old)
+      const cols = Object.fromEntries(DEPTH_POS.map(pos => {
         const list = (saved.cols[pos] ?? []).filter(pid => byId[pid]);
         const ir = list.filter(pid => byId[pid].slot === 'IR');
         const next = [...list.filter(pid => byId[pid].slot !== 'IR'), ...ir];
@@ -5426,9 +5454,9 @@ async function renderDepth(body, params) {
     if (!fantasyView || healthy) return {};
     const H = { d: {}, ...gmLoad(hdkey, null) };
     const hd = dcCustom(H) ? H.d : autoDesigs(players, ranks, { healthy: true });
-    const { cols } = dcChart(players, gmLoad(`gm-dc-hchart-${me}`, null), dcAuto(players, dynOf, startsOf(hd), { healthy: true, slots: true }), COLS);
+    const { cols } = dcChart(players, gmLoad(`gm-dc-hchart-${me}`, null), dcAuto(players, dynOf, startsOf(hd), { healthy: true }));
     const out = {};
-    for (const pos of COLS) cols[pos].forEach((pid, i) => { out[pid] = { spot: `${dcColLabel(pos)}${i + 1}`, k: hd[pid] && dcCatOf(hd[pid]) ? hd[pid] : null }; });
+    for (const pos of DEPTH_POS) cols[pos].forEach((pid, i) => { out[pid] = { spot: `${pos}${i + 1}`, k: hd[pid] && dcCatOf(hd[pid]) ? hd[pid] : null }; });
     return out;
   })();
   // A name opens his 2K card with a "Back to Depth Chart" link (back / backl, owner Oct 30 2026) to this same view.
@@ -5457,7 +5485,7 @@ async function renderDepth(body, params) {
     const open = fantasyView && DC.menu === p.pid;
     const dk = desigOf(p.pid);
     return `<div class="dc-row${p.slot === 'TX' ? ' tx' : ''}${injury && (injBad(injury) || e?.ofs) ? ' hurt' : ''}${open ? ' open' : ''}${dgCls(p.pid)}" data-dc="${p.pid}">
-      <span class="dc-rank${i === 0 ? ' first' : ''}">${dcColLabel(pos)}${i + 1}</span>
+      <span class="dc-rank${i === 0 ? ' first' : ''}">${pos}${i + 1}</span>
       <img class="dc-photo" src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy" draggable="false" onerror="this.style.visibility='hidden'">
       <span class="dc-main">
         <span class="dc-name"><a href="${cardLink(p)}" draggable="false">${esc(p.name)}</a>${o.fresh ? '<i class="dc-new">New</i>' : ''}${o.from ? `<i class="dc-from" title="Borrowed from ${o.from}: he can also play ${pos}">from ${o.from}</i>` : ''}${dk ? `<i class="dc-dg ${dgClass(dk)}">${dgLabel(dk)}</i>` : ''}${slotTag(p.pid)}${cutTag(p.pid)}</span>
@@ -5468,31 +5496,31 @@ async function renderDepth(body, params) {
       </span>
       ${fantasyView ? `<button type="button" class="dc-menu" data-menu="${p.pid}" aria-label="Move ${esc(p.name)}" aria-expanded="${open}">⋮</button>` : ''}
       ${open ? `<span class="dc-move"><button type="button" data-mv="up">↑ Up</button><button type="button" data-mv="down">↓ Down</button>
-        <span>Move to</span>${COLS.filter(x => x !== pos).map(x => `<button type="button" data-mv="${x}"${slotFits(dcColSlot(x), p.pos) && x[0] !== 'U' ? ' class="fits"' : ''}>${x === 'U1' ? 'UTIL 1' : x === 'U2' ? 'UTIL 2' : x}</button>`).join('')}</span>${desigBtns(p.pid)}` : ''}
+        <span>Move to</span>${DEPTH_POS.filter(x => x !== pos).map(x => `<button type="button" data-mv="${x}"${p.pos.includes(x) ? ' class="fits"' : ''}>${x}</button>`).join('')}</span>${flexBtns(p.pid)}${desigBtns(p.pid)}` : ''}
     </div>`;
   };
   const column = (pos, list, extra = '') => `<section class="dc-col" data-pos="${pos}">
-      <div class="dc-head"><b>${dcColLabel(pos)}</b><small>${DC_WORD[pos]}</small><span>${list.length}</span></div>
+      <div class="dc-head"><b>${pos}</b><small>${DC_WORD[pos]}</small><span>${list.length}</span></div>
       <div class="dc-list">${list.join('')}${fantasyView ? `<div class="dc-end" data-dc="end:${pos}">${list.length ? 'Drop here' : 'Nobody here · drop a player'}</div>` : list.length ? '' : '<p class="dc-none">Nobody listed.</p>'}</div>
       ${extra}
     </section>`;
 
   const fantasyChart = () => {
     const saved = gmLoad(key, null);
-    const { cols, fresh } = dcChart(players, saved, auto, COLS);
+    const { cols, fresh } = dcChart(players, saved, auto);
     // Current chart: Sleeper IR players always sit at the very bottom (also below players added since the last save).
-    if (!healthy) for (const pos of COLS) cols[pos] = [...cols[pos].filter(pid => byId[pid].slot !== 'IR'), ...cols[pos].filter(pid => byId[pid].slot === 'IR')];
+    if (!healthy) for (const pos of DEPTH_POS) cols[pos] = [...cols[pos].filter(pid => byId[pid].slot !== 'IR'), ...cols[pos].filter(pid => byId[pid].slot === 'IR')];
     // Players in other columns who can also play this one (Sleeper's fantasy positions), taxi left out.
     const also = pos => {
-      if (!DEPTH_POS.includes(pos)) return ''; // G, F and UTIL take whole groups: no list
-      const list = COLS.filter(x => x !== pos).flatMap(x => cols[x].map(pid => [byId[pid], dcColLabel(x)])).filter(([p]) => p.slot !== 'TX' && p.pos.includes(pos));
+      const list = DEPTH_POS.filter(x => x !== pos).flatMap(x => cols[x].map(pid => [byId[pid], x])).filter(([p]) => p.slot !== 'TX' && p.pos.includes(pos));
       return list.length ? `<p class="dc-also">Can also play ${pos}: ${list.map(([p, x]) => `${esc(p.name)} <small>(${x})</small>`).join(', ')}</p>` : '';
     };
     // "Hide taxi" (owner, Oct 29 2026; gm-dc-hidetaxi, synced): taxi rows aren't drawn but keep their place in the order.
     const shown = pid => !(hideTaxi() && byId[pid].slot === 'TX');
     DC.cols = cols;
-    const html = COLS.map(pos => column(pos, cols[pos].filter(shown).map((pid, i) => row(byId[pid], i, pos, { fresh: fresh.has(pid), from: !saved && auto.moved[pid] })), also(pos))).join('');
-    return { html, saved, cols, lines: Object.fromEntries(COLS.map(pos => [pos, cols[pos].filter(shown).map(pid => byId[pid])])) };
+    DC.tags = dcLineupTags(cols, new Set([...startsOf(desig().d)].filter(pid => byId[pid] && desigOf(pid) === 'start')), byId, flexPicks(), auto.flex);
+    const html = DEPTH_POS.map(pos => column(pos, cols[pos].filter(shown).map((pid, i) => row(byId[pid], i, pos, { fresh: fresh.has(pid), from: !saved && auto.moved[pid] })), also(pos))).join('');
+    return { html, saved, cols, lines: Object.fromEntries(DEPTH_POS.map(pos => [pos, cols[pos].filter(shown).map(pid => byId[pid])])) };
   };
   const nbaChart = () => {
     if (!depth) return { html: '<p class="empty">Couldn’t read ESPN’s depth chart right now. Try again in a few minutes.</p>', listed: new Set(), lines: null };
@@ -5513,7 +5541,7 @@ async function renderDepth(body, params) {
   const short = p => (p.first && p.last ? `${p.first[0]}. ${p.last}` : p.name);
   const glance = lines => {
     if (!lines) return '';
-    const most = Math.max(1, ...COLS.map(pos => lines[pos]?.length ?? 0));
+    const most = Math.max(1, ...DEPTH_POS.map(pos => lines[pos]?.length ?? 0));
     const cell = (p, pos, i) => {
       const e = espn?.[p.pid];
       const injury = p.injury ?? (e ? ({ 'Day-To-Day': 'DTD' }[e.status] ?? e.status) : null);
@@ -5524,7 +5552,7 @@ async function renderDepth(body, params) {
     };
     return `<div class="dc-glance-wrap"><table class="dc-glance">
       <thead><tr><th scope="col" aria-label="Position"></th>${Array.from({ length: most }, (_, i) => `<th scope="col">${ordinal(i + 1)}</th>`).join('')}</tr></thead>
-      <tbody>${COLS.map(pos => `<tr><th scope="row">${dcColLabel(pos)}</th>${(lines[pos] ?? []).map((p, i) => cell(p, pos, i)).join('')}${'<td></td>'.repeat(most - (lines[pos]?.length ?? 0))}</tr>`).join('')}</tbody>
+      <tbody>${DEPTH_POS.map(pos => `<tr><th scope="row">${pos}</th>${(lines[pos] ?? []).map((p, i) => cell(p, pos, i)).join('')}${'<td></td>'.repeat(most - (lines[pos]?.length ?? 0))}</tr>`).join('')}</tbody>
     </table></div>
     <p class="dc-glance-note">L = locked points this season (weeks locked in parentheses)${fantasyView ? '' : ' (any fantasy team)'}. Tap a name for his full row.</p>`;
   };
@@ -5603,7 +5631,7 @@ async function renderDepth(body, params) {
     if (!box) return;
     if (!fantasyView) { box.innerHTML = ''; return; }
     const D = desig();
-    const chartOrder = COLS.flatMap(pos => DC.cols?.[pos] ?? []);
+    const chartOrder = DEPTH_POS.flatMap(pos => DC.cols?.[pos] ?? []);
     const at = pid => { const i = chartOrder.indexOf(pid); return i < 0 ? 1e6 : i; };
     const cats = dcCats();
     const groups = cats.map(c => {
@@ -5664,7 +5692,7 @@ async function renderDepth(body, params) {
   const domCols = () => {
     const cols = Object.fromEntries([...body.querySelectorAll('.dc-col')].map(c => [c.dataset.pos, [...c.querySelectorAll('.dc-row[data-dc]')].map(r => r.dataset.dc)]));
     if (fantasyView && hideTaxi()) {
-      for (const pos of COLS) {
+      for (const pos of DEPTH_POS) {
         let at = 0;
         for (const pid of DC.cols?.[pos] ?? []) {
           if (byId[pid]?.slot === 'TX') cols[pos].splice(at++, 0, pid);
@@ -5770,6 +5798,7 @@ async function renderDepth(body, params) {
       const R = rawDesig();
       if ((gmLoad(key, null) || dcCustom(R)) && !confirm(`Replace your ${healthy ? 'Healthy' : 'Current'} depth chart order and designations for ${teamName(me, cur.season)} with the automatic ones? (Your Cut List stays.)`)) return;
       gmSave(key, null);
+      gmSave(fkey, null); // lineup slot picks back to automatic too
       gmSave(dkey, { ...R, at: Date.now(), d: {}, order: {}, custom: false });
       delete DESIG_CACHE[me];
       DC.menu = null;
@@ -5789,6 +5818,8 @@ async function renderDepth(body, params) {
       }
       return;
     }
+    const fx = e.target.closest('[data-flex]');
+    if (fx) { setFlex(fx.dataset.pid, fx.dataset.flex); draw(); return; }
     const dg = e.target.closest('[data-desig]');
     if (dg) { setDesig(dg.dataset.pid, dg.dataset.desig); draw(); return; }
     const ct = e.target.closest('[data-cut]');
@@ -5812,7 +5843,7 @@ async function renderDepth(body, params) {
     if (mv) {
       const pid = mv.closest('[data-dc]').dataset.dc;
       const cols = domCols();
-      const pos = COLS.find(x => cols[x].includes(pid));
+      const pos = DEPTH_POS.find(x => cols[x].includes(pid));
       const list = cols[pos];
       const i = list.indexOf(pid);
       if (mv.dataset.mv === 'up' || mv.dataset.mv === 'down') {
