@@ -4720,3 +4720,4 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .mg-own b { font: 800 14px/1.2 var(--display); color: var(--navy-900); }
 .mygm-page .page-head .mg-acct { margin-left: auto; }
 .mg-gate .pr-me { margin-top: 12px; text-align: left; }
+.bk-dynx b { font-size: 26px; }

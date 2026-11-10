@@ -1271,6 +1271,28 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   members). Tested Nov 9 2026 in the preview: gate signed out; with a stubbed linked owner (temporary hook, removed) every
   tab locked to that team even with ?team=Parma; MyGM+ keeps pickers; reconcile: other account -> wiped, fresh browser ->
   merged, same account -> untouched. Real Google sign-in not tested here.
+  ROSTERS PICKER (owner, Nov 9 2026: "On roster, have it default to the team who's logged in but also allow for a drop down
+  menu of other league teams"): in MyGM the Rosters tab keeps a valid ?team= and the full gmTeamPick select (tab
+  'breakdown'), opening on MYGM_ME; every other tab stays own-team only. Checked: opens on the signed-in team, picking
+  Parma works, Depth Chart with ?team=Parma still shows the own team.
+  ROSTERS TRIM (owner, Nov 9 2026, MyGM only via bkTrim() = page mygm; MyGM+ unchanged): no Dyn column (bkCols drops BK_DYN),
+  the Dynasty badge is a plain "X" (.bk-dynx, "what it needs to be" decided later), no slot / tier line (.bk-title +
+  tierTag) in the bio, no "Dynasty N at full health" note, no Dynasty score row in Compare, no "Top 100 prospect" auto tag
+  (autoTagsOf), so it never shows in the Tags filter / column either. Dynasty riser / faller auto tags hidden too (owner: "Yes,
+  hide them"). USAGE hidden too ("hide all usage mentions too"): bkCols drops BK_USG (Averages + Shooting), no "Role ...
+  (N% usage)" line (.bk-role), no Usage row in Compare. That Compare row had lost its numbers on the live site (text was
+  `% · `); fixed for MyGM+ (= "26.7% · Co-Star / Lead Scorer"). The table's fine print (.bk-foot) now explains Wks Lk, LGS and
+  Lk% (both pages; owner asked); "Dyn = dynasty score today" only in MyGM+.
+  HIDE TAGS COLUMN (owner, Nov 9 2026, both pages: "I find them distracting at times"): checkbox "Hide tags column" in the
+  Tags filter row (.bk-hidetags, gm-bk-hidetags, synced via 'gm-bk-'); bkCols drops BK_TAGCOL; filter row + card tags stay; a
+  sort on Tags falls back to the view's default.
+  MYGM SWEEP (owner, Nov 9 2026: "check all views and remove anything we've been removing"; bkTrim() = page mygm, used beyond
+  Rosters): every Rosters view (Averages / Totals / Shooting x Team / Waiver / League / NBA, Career, all Season by season
+  switches) checked clean; Compare also drops the Slot row ("Starter · PG"). Depth Chart: no "Dyn N + tier" on rows, no
+  "Starter · X" slot text on chart / Designations / Cut List rows, no Dynasty sort on the Cut List, auto-category help
+  without "dynasty score" / "prospect grade" wording. Assistant Coach: no dynasty tier tags. Report Cards / Trophy Room had
+  none. MyGM+ unchanged (39 tier tags, slot text, Dyn). Checked: MyGM Team + League lists clean; MyGM+ still Dynasty 97, Dyn column, "Starter · PG slot",
+  tier, Top 100.
   unchanged, leaving to Home locks, 402 px no overflow.
 
 ## Test features (commish office, owner Oct 25 2026)
