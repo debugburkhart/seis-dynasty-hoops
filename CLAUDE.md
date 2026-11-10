@@ -1826,6 +1826,53 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   BOTH the chart order and the designations (custom: false, order cleared, Cut List kept) and re-renders; the auto
   chart's first band = the Starting 9 (dcAuto starts set) instead of Sleeper's current starters. Checked Oct 30 2026:
   all 8 teams get 9 starters; Parma's 43 players all match the rules; Starting 9 = top 9 healthy by FP/G.
+  CUSTOM CATEGORIES + CURRENT / HEALTHY (owner, Nov 9 2026: "it'll eventually be used by every manager for their own
+  needs"). (1) CATEGORIES PER LOGIN: gm-dc-cats = { at, cats: [{ id, name, short, color }] } (gmSave, synced via 'gm-dc-'
+  = per Google account; nobody's choice reaches another manager); DESIG_DEFAULT (the old six) = what everyone sees first.
+  dcCats() validates (max DESIG_LIMIT 8; Starting 9 always first, name "Starting 9" / short "S9" fixed, color free; IR
+  always present: DESIG_FIXED start + ir can't be deleted because the Current chart needs IR). color = index into
+  DC_COLORS (12) = .dgc-0..11 in styles.css (--dg-bg / --dg-c; .dg marks a tinted element; replaced the old fixed
+  .dg-start... classes, so dark mode converts every choice). dcCatOf / dgClass helpers; a saved designation whose
+  category was deleted counts as none; autoDesigs only assigns categories that still exist. "Customize categories"
+  fold at the top of the Designations card (catEditor: name 20 chars + short 4 (edge strip), 12 color dots, ↑↓, Delete,
+  + Add category (disabled at 8), Reset to the standard set; DC.catsOpen keeps it open; saveCats clears DESIG_CACHE).
+  Assistant Coach strips, key line and bench order use the same list (dgCats in renderCoach). (2) TWO CHARTS on the
+  fantasy view (.dc-modes switch, ?chart=current|healthy, last pick gm-dc-mode): CURRENT = gm-dc-chart-{owner} +
+  gm-dc-desig-{owner} (unchanged keys; teamDesigs / the coach read it); HEALTHY = gm-dc-hchart-{owner} + gm-dc-hdesig-
+  {owner}, same tools (order, designations, Cut List, auto button = resets that chart only), autoDesigs / dcAuto with {
+  healthy: true } = no IR / injury bands, injured players can be in the auto Starting 9. (3) CURRENT IR RULE: dcAuto band
+  5 = Sleeper IR at the very bottom (below taxi); fantasyChart also moves IR players to the end of each column, and the
+  saved order is rewritten once per visit; a custom designation set runs dcIrSync(D, irPids, onTeam): IR-spot players ->
+  'ir' (remembered in D.autoIr), an autoIr player off IR -> uncategorized (left where he is in the order); teamDesigs
+  applies the same rule read-only from live rosters (reserve). Automatic sets just follow autoDesigs. (4) Every Current
+  row shows "Healthy: PG2 · Rotation" (.dc-hl, healthySpot from the Healthy chart's saved order / auto). Tested Nov 9 2026
+  (live data, preview): IR players to the bottom (Haliburton, Banchero, Nurkic), a custom set (Haliburton rot -> IR,
+  Booker auto-IR off IR -> uncategorized, Murray kept), add / rename "Trade Bait" + short TB, recolor Starting 9, delete
+  Hold (players uncategorized), limit 8, coach strip "TB" + key, Healthy move saved only to gm-dc-hchart (Current saves
+  unchanged), Current rows "Healthy: PG1"; 320 / 402 + dark mode, no console errors. DESCRIPTIONS (owner, Nov 9 2026):
+  each category has desc (DESIG_DESC_MAX 120; owner's defaults in DESIG_DEFAULT: Starting 9 "Players you lean on week in
+  and week out", Rotation "...get starts when your starters aren't playing", Stream "...spot starts, not expecting much",
+  Development "Rostering these players for their upside", Hold "...aren't playing well enough to be traded or started,
+  could be dropped", IR "These players are injured, syncs automatically with Sleeper"); shown italic under each
+  Designations group head (.dc-ddesc), edited in Customize categories (data-cat-desc input; Starting 9's is fixed like
+  its name); saves without desc get the default by id. MyGM is commish-only today; per-login
+  keys mean other managers' settings stay theirs once they get access.
+  LINEUP-SLOT COLUMNS (owner, Nov 9 2026: "add G, F, and UTIL UTIL"; chose "Starting 9 by slot"): the FANTASY chart (Current
+  + Healthy) has 9 columns = Sleeper lineup slots DC_SLOT_COLS PG SG G SF PF F C U1 U2 (U1 / U2 shown "UTIL", dcColLabel;
+  slot name for fits dcColSlot); the NBA view keeps ESPN's 5 (DEPTH_POS). dcAuto({ slots: true }) puts the Starting 9 into the
+  slots by bestFit on FP/G (top of each slot column = the lineup; returns slotOf), everyone else under his main position;
+  borrowing for empty PG..C columns never takes a slotted starter. dcChart(players, saved, auto, keys): an OLD 5-column
+  save (no G key) keeps its order but gets the auto slot starters placed on top of the 9 slot columns first; the Current
+  IR rewrite only writes keys the save already has. ⋮ Move to lists all 9 (UTIL 1 / UTIL 2; outlined = he fits that slot).
+  "Can also play" only under PG..C. Glance rows + Healthy reminder ("Healthy: UTIL1") use the labels. SLOT TAG (owner, same
+  day: "starting 9 players that are #1 in the position add a X"): slotTag(pid) = navy/gold .dc-slot chip with the column
+  label when a Starting 9 player is first in a column (chart rows + Designations / Cut List rows; not the glance table,
+  whose row already says it). Checked Nov 9 2026: Parma auto = PG LeBron, SG Booker, G Dosunmu, SF Porter Jr., PF Markkanen,
+  F Adebayo, C Sengun, UTIL Murray / Anunoby; move to UTIL 2 saved under U2; old save upgraded on display; Healthy chart
+  slots; 402 px no overflow. ASSISTANT COACH TOO (owner, same day): teamSlotTops(owner, d) in app.js = that team's Current
+  chart (saved order over the auto slot chart, IR last) -> { pid: label } for Starting 9 players first in a column (cached 5
+  min, keyed on the save time + starters); renderCoach slotC(side, pid) puts .dc-slot.mb-stag after the name inside .mb-name b
+  (both teams; .mb-slot was already the board's middle slot column). Checked: 9 tags per side = the Depth Chart.
   ASSISTANT COACH EDGE STRIPS (owner, Oct 30 2026; first an outline, then the owner asked for "a thick colored area"
   on the outside): every player on the Lock-in coach board (starters, bench, IR; both sides) gets a strip on his OUTER
   edge (left for you, right for the opponent: dgBar() is the first child and .mb-r is row-reverse) in HIS team's
@@ -1833,7 +1880,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   .mb-dgbar writing-mode vertical-rl + text-orientation upright, 17px wide, 13px at <= 360px; .mb-p.mb-dg drops the
   outer padding so it sits flush). teamDesigs(owner) = saved custom set or autoDesigs from loadBreakdown + fpgRanks,
   cached 5 min in DESIG_CACHE; key line .mb-dgkey ("Edge strip = Depth Chart designation", S9 Starting 9 ...).
-  Checked 320 / 402. BENCH ORDER (owner, Nov 2 2026): the board's Bench section (both sides) is sorted by designation
+  Checked 320 / 402. The key line .mb-dgkey under the board was REMOVED (owner, Nov 9 2026). BENCH ORDER (owner, Nov 2 2026): the board's Bench section (both sides) is sorted by designation
   (DESIG order S9, ROT, STR, DEV, HOLD, IR, none last), then the player's place in that group's Designations-card drag order (gm-dc-desig-{owner}
   .order), then league FP/G rank (fpgRanks; unranked last) = benchSort() in renderCoach. IR section unchanged. Checked
   Nov 2 2026: Parma S9 Murray / Booker / Adebayo / VanVleet, ROT, DEV, STR, HOLD; a saved Rotation order (Pritchard

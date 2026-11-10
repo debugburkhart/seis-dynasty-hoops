@@ -3658,17 +3658,58 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 @media (max-width: 560px) {
   .dc-chip { width: 104px; }
 }
-/* Depth Chart designations (owner, Oct 29 2026): blue Starting 9, yellow Rotation, purple Development, green Stream,
-   red IR. Each class sets the tint (--dg-bg) and its strong color (--dg-c). */
-.dg-start { --dg-bg: #e7effc; --dg-c: #2f63c7; }
-.dg-rot { --dg-bg: #fdf4d6; --dg-c: #c08a12; }
-.dg-dev { --dg-bg: #f1e9fb; --dg-c: #7a4cc4; }
-.dg-stream { --dg-bg: #e4f4e8; --dg-c: #2b8a4b; }
-.dg-hold { --dg-bg: #fdeedd; --dg-c: #d9681a; }
-.dg-ir { --dg-bg: #fde6e4; --dg-c: #c2372b; }
-.dc-row.dg-start, .dc-row.dg-rot, .dc-row.dg-dev, .dc-row.dg-stream, .dc-row.dg-hold, .dc-row.dg-ir,
-.dc-drow.dg-start, .dc-drow.dg-rot, .dc-drow.dg-dev, .dc-drow.dg-stream, .dc-drow.dg-hold, .dc-drow.dg-ir { background: var(--dg-bg); box-shadow: inset 4px 0 0 var(--dg-c); opacity: 1; }
-.dc-chip.dg-start, .dc-chip.dg-rot, .dc-chip.dg-dev, .dc-chip.dg-stream, .dc-chip.dg-hold, .dc-chip.dg-ir { background: var(--dg-bg); border-color: var(--dg-c); box-shadow: inset 3px 0 0 var(--dg-c); opacity: 1; }
+/* Depth Chart category colors (owner, Nov 9 2026: each manager picks per category; DC_COLORS in app.js names them in
+   this order). Each class sets the tint (--dg-bg) and its strong color (--dg-c); .dg marks a tinted element. Defaults:
+   Starting 9 blue, Rotation yellow, Stream green, Development purple, Hold orange, IR red. */
+.dgc-0 { --dg-bg: #e7effc; --dg-c: #2f63c7; }
+.dgc-1 { --dg-bg: #fdf4d6; --dg-c: #c08a12; }
+.dgc-2 { --dg-bg: #e4f4e8; --dg-c: #2b8a4b; }
+.dgc-3 { --dg-bg: #f1e9fb; --dg-c: #7a4cc4; }
+.dgc-4 { --dg-bg: #fdeedd; --dg-c: #d9681a; }
+.dgc-5 { --dg-bg: #fde6e4; --dg-c: #c2372b; }
+.dgc-6 { --dg-bg: #dff3f2; --dg-c: #1d8a87; }
+.dgc-7 { --dg-bg: #fce8f1; --dg-c: #c2407e; }
+.dgc-8 { --dg-bg: #e3e8f2; --dg-c: #22427e; }
+.dgc-9 { --dg-bg: #f1e8df; --dg-c: #8a5a35; }
+.dgc-10 { --dg-bg: #eef6d8; --dg-c: #6b8f12; }
+.dgc-11 { --dg-bg: #eceef1; --dg-c: #66707f; }
+.dc-row.dg, .dc-drow.dg { background: var(--dg-bg); box-shadow: inset 4px 0 0 var(--dg-c); opacity: 1; }
+.dc-chip.dg { background: var(--dg-bg); border-color: var(--dg-c); box-shadow: inset 3px 0 0 var(--dg-c); opacity: 1; }
+/* Current / Healthy switch + the "Healthy: PG2" reminder + Customize categories (Nov 9 2026). */
+.dc-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-width: 520px; margin: 10px 0 4px; }
+.dc-modes button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
+.dc-modes button b { font: 800 14px/1.2 var(--display); }
+.dc-modes button small { font-size: 11px; color: var(--muted); line-height: 1.3; }
+.dc-modes button.on { border-color: var(--navy-800); background: var(--navy-800); color: #fff; }
+.dc-modes button.on b { color: var(--gold); }
+.dc-modes button.on small { color: #c9d4e6; }
+.dc-hl { color: var(--navy-700) !important; }
+.dc-hl b { color: var(--navy-900); }
+.dc-hl .dc-dg { margin-left: 2px; }
+.dc-cats { margin: 4px 0 12px; border: 1px solid var(--line); border-radius: 10px; background: #fcfbf8; }
+.dc-cats > summary { padding: 9px 12px; font-weight: 700; cursor: pointer; }
+.dc-cats > summary small { color: var(--muted); font-weight: 600; }
+.dc-cats > .dc-help { margin: 0 12px 8px; }
+.dc-catlist { display: flex; flex-direction: column; gap: 6px; padding: 0 8px; }
+.dc-cat { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) auto; align-items: center; gap: 8px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.dc-catname { display: flex; gap: 5px; min-width: 0; align-items: baseline; }
+.dc-catname b { font-size: 13px; }
+.dc-catname small { font-size: 11px; color: var(--muted); }
+.dc-catname input { min-width: 0; flex: 1; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; font: 600 13px/1.2 var(--font); color: var(--ink); background: #fff; }
+.dc-catname input.dc-catshort { flex: 0 0 58px; text-transform: uppercase; }
+.dc-sws { display: flex; flex-wrap: wrap; gap: 4px; }
+.dc-sw { width: 20px; height: 20px; padding: 0; border: 2px solid #fff; border-radius: 50%; background: var(--dg-c); box-shadow: 0 0 0 1px var(--line); cursor: pointer; }
+.dc-sw.on { box-shadow: 0 0 0 2px var(--navy-900); }
+.dc-catbtns { display: flex; gap: 4px; }
+.dc-catbtns button { padding: 4px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--navy-700); font: 700 12px/1.2 var(--font); cursor: pointer; }
+.dc-catbtns button:disabled { opacity: .35; cursor: default; }
+.dc-catbtns .dc-catdel { color: #b3261e; border-color: #f1c9c4; }
+.dc-catfoot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px 12px; }
+.dc-catreset { border: 0; background: none; color: var(--muted); font: 600 12px/1.2 var(--font); text-decoration: underline; cursor: pointer; }
+@media (max-width: 700px) {
+  .dc-cat { grid-template-columns: 1fr auto; }
+  .dc-cat .dc-sws { grid-column: 1 / -1; grid-row: 2; }
+}
 .dc-dg { display: inline-block; margin-left: 5px; padding: 0 6px; border-radius: 4px; background: var(--dg-c); color: #fff; font: 800 9px/1.6 var(--font); font-style: normal; text-transform: uppercase; letter-spacing: .03em; vertical-align: 1px; white-space: nowrap; }
 .dc-help .dc-dg { margin: 0 2px; font-size: 10px; }
 .dc-dgset { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 6px 0 0 39px; }
@@ -3722,6 +3763,9 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 /* Cut tag + Cut List (owner, Oct 29 2026): solid red tag on top of any designation tint. */
 .dc-cut { display: inline-block; margin-left: 5px; padding: 0 6px; border-radius: 4px; background: #c2372b; color: #fff; font: 800 9px/1.6 var(--font); font-style: normal; text-transform: uppercase; letter-spacing: .03em; vertical-align: 1px; white-space: nowrap; }
 .dc-help .dc-cut { margin: 0 2px; font-size: 10px; }
+/* Starting 9 player at the top of a slot column: that slot as a navy tag with gold text (owner, Nov 9 2026). */
+.dc-slot { display: inline-block; margin-left: 5px; padding: 0 6px; border-radius: 4px; background: var(--navy-800); color: #f2c14e; font: 800 9px/1.6 var(--font); font-style: normal; text-transform: uppercase; letter-spacing: .03em; vertical-align: 1px; white-space: nowrap; }
+.mb-name b .mb-stag { margin-left: 4px; vertical-align: 1px; font-size: 9px; }
 .dc-cutbtn { padding: 3px 9px; border: 1px solid #c2372b; border-radius: 99px; background: #fff; color: #c2372b; font: 800 11px/1.3 var(--font); cursor: pointer; }
 .dc-cutbtn.on { background: #c2372b; color: #fff; }
 .dc-chip.cut { outline: 2px solid #c2372b; outline-offset: -2px; }
@@ -3747,9 +3791,6 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
   .mb-dgbar { width: 13px; font-size: 8px; letter-spacing: -1.5px; }
   .mb-p.mb-dg { gap: 5px; }
 }
-.mb-dgkey { margin: -2px 0 8px; font-size: 11px; color: var(--muted); line-height: 1.9; }
-.mb-dgkey a { color: var(--navy-700); font-weight: 700; }
-.mb-dgkey .dc-dg { margin: 0 1px; }
 
 /* 2K card: Transactions (owner, Oct 31 2026). */
 .bk-tx-sum { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
@@ -4671,3 +4712,8 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
   .mg-nav a.on .gm-beta { display: block; top: -9px; right: auto; left: 50%; transform: translateX(-50%); }
   body:has(.mg-nav) .back-float, body:has(.mg-nav) .bk-tray { bottom: calc(68px + env(safe-area-inset-bottom)); }
 }
+/* Category descriptions (owner, Nov 9 2026): under each Designations group head + an input in Customize categories. */
+.dc-ddesc { margin: 0; padding: 6px 10px 2px; font-size: 11.5px; line-height: 1.35; color: var(--muted); font-style: italic; }
+.dc-cat .dc-catdesc, .dc-cat .dc-catdesc-fixed { grid-column: 1 / -1; }
+.dc-catdesc { min-width: 0; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; font: 500 12px/1.3 var(--font); color: var(--ink); background: #fff; }
+.dc-catdesc-fixed { font-size: 12px; color: var(--muted); font-style: italic; }
