@@ -3583,6 +3583,10 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .dc-row.dragging { box-shadow: 0 6px 18px rgba(11,29,61,.25); outline: 2px solid var(--gold); position: relative; z-index: 2; }
 .dc-rank { flex: none; min-width: 32px; padding: 2px 4px; border-radius: 5px; background: #e8eef6; color: var(--navy-700); font: 800 10px/1.3 var(--display); text-align: center; }
 .dc-rank.first { background: var(--gold); color: var(--navy-900); }
+/* Fantasy chart (owner, Nov 9 2026): the rank box IS the spot tag, in the Assistant Coach colors: Starting 9 = gold box, navy
+   text; everyone else = navy box, gold text (the tag after the name is gone here). */
+.dc-rank.st { background: #f2c14e; color: var(--navy-800); }
+.dc-rank.bn { background: var(--navy-800); color: #f2c14e; }
 .dc-photo { flex: none; width: 34px; height: 26px; object-fit: cover; object-position: center top; border-radius: 5px; background: #f2efe7; }
 .dc-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .dc-name { font-weight: 700; font-size: 13px; line-height: 1.25; overflow-wrap: anywhere; }
@@ -3753,10 +3757,9 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 /* Cut tag + Cut List (owner, Oct 29 2026): solid red tag on top of any designation tint. */
 .dc-cut { display: inline-block; margin-left: 5px; padding: 0 6px; border-radius: 4px; background: #c2372b; color: #fff; font: 800 9px/1.6 var(--font); font-style: normal; text-transform: uppercase; letter-spacing: .03em; vertical-align: 1px; white-space: nowrap; }
 .dc-help .dc-cut { margin: 0 2px; font-size: 10px; }
-/* Starting 9 player at the top of a slot column: that slot as a navy tag with gold text (owner, Nov 9 2026). */
-.dc-slot { display: inline-block; margin-left: 5px; padding: 0 6px; border-radius: 4px; background: var(--navy-800); color: #f2c14e; font: 800 9px/1.6 var(--font); font-style: normal; text-transform: uppercase; letter-spacing: .03em; vertical-align: 1px; white-space: nowrap; }
-/* Everyone else gets his spot too, in the inverse colors (owner, Nov 9 2026). */
-.dc-slot.alt { background: #f2c14e; color: var(--navy-800); }
+.dc-slot { display: inline-block; margin-left: 5px; padding: 0 6px; border-radius: 4px; background: #f2c14e; color: var(--navy-800); font: 800 9px/1.6 var(--font); font-style: normal; text-transform: uppercase; letter-spacing: .03em; vertical-align: 1px; white-space: nowrap; }
+/* Starting 9 = gold tag, navy text (like the chart's gold #1 rank); everyone else = navy tag, gold text (owner, Nov 9 2026). */
+.dc-slot.alt { background: var(--navy-800); color: #f2c14e; }
 .mb-name b .mb-stag { margin-left: 4px; vertical-align: 1px; font-size: 9px; }
 .dc-cutbtn { padding: 3px 9px; border: 1px solid #c2372b; border-radius: 99px; background: #fff; color: #c2372b; font: 800 11px/1.3 var(--font); cursor: pointer; }
 .dc-cutbtn.on { background: #c2372b; color: #fff; }

@@ -5252,7 +5252,7 @@ const DC_LINEUP = ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'UTIL', 'UTIL'];
 function dcStarterTags(cols, starts) {
   const tags = {};
   // Every player gets his spot (owner, Nov 9 2026: "include the tag on all other players" in the inverse colors); starts
-  // decides the color only (navy + gold = Starting 9, gold + navy = everyone else).
+  // decides the color only (gold tag = Starting 9, navy tag = everyone else; owner swapped them Nov 9 2026).
   for (const pos of DEPTH_POS) (cols[pos] ?? []).forEach((pid, i) => { tags[pid] = `${pos}${i + 1}`; });
   return tags;
 }
@@ -5463,10 +5463,10 @@ async function renderDepth(body, params) {
     const open = fantasyView && DC.menu === p.pid;
     const dk = desigOf(p.pid);
     return `<div class="dc-row${p.slot === 'TX' ? ' tx' : ''}${injury && (injBad(injury) || e?.ofs) ? ' hurt' : ''}${open ? ' open' : ''}${dgCls(p.pid)}" data-dc="${p.pid}">
-      <span class="dc-rank${i === 0 ? ' first' : ''}">${pos}${i + 1}</span>
+      <span class="dc-rank${fantasyView ? (desigOf(p.pid) === 'start' ? ' st' : ' bn') : i === 0 ? ' first' : ''}"${fantasyView ? ` title="${desigOf(p.pid) === 'start' ? 'Starting 9 · ' : ''}${pos}${i + 1} on the depth chart"` : ''}>${pos}${i + 1}</span>
       <img class="dc-photo" src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy" draggable="false" onerror="this.style.visibility='hidden'">
       <span class="dc-main">
-        <span class="dc-name"><a href="${cardLink(p)}" draggable="false">${esc(p.name)}</a>${o.fresh ? '<i class="dc-new">New</i>' : ''}${o.from ? `<i class="dc-from" title="Borrowed from ${o.from}: he can also play ${pos}">from ${o.from}</i>` : ''}${dk ? `<i class="dc-dg ${dgClass(dk)}">${dgLabel(dk)}</i>` : ''}${slotTag(p.pid)}${cutTag(p.pid)}</span>
+        <span class="dc-name"><a href="${cardLink(p)}" draggable="false">${esc(p.name)}</a>${o.fresh ? '<i class="dc-new">New</i>' : ''}${o.from ? `<i class="dc-from" title="Borrowed from ${o.from}: he can also play ${pos}">from ${o.from}</i>` : ''}${dk ? `<i class="dc-dg ${dgClass(dk)}">${dgLabel(dk)}</i>` : ''}${cutTag(p.pid)}</span>
         <small>${esc(where)} · ${role}</small>
         <small class="dc-stats">${stats} · ${lockText} · ${lgsText}${d != null ? ` · Dyn <b>${d}</b> ${tierTag(d)}` : ''}</small>
         ${injury || e ? `<span class="dc-inj">${injury ? `<span class="inj-pill${injBad(injury) || e?.ofs ? ' bad' : ''}">${esc(injury)}</span>` : ''}${estChip(e, 'inj-est')}</span>` : ''}
@@ -6554,7 +6554,7 @@ async function renderCoach(body, params) {
   const [topMe, topOpp] = await Promise.all([teamSlotTops(w.me, dgMe).catch(() => ({})), opp ? teamSlotTops(opp, dgOpp).catch(() => ({})) : {}]);
   const slotC = (side, pid) => {
     const s = (side === 'l' ? topMe : topOpp)?.[pid];
-    const st = (side === 'l' ? dgMe : dgOpp)?.[pid] === 'start'; // Starting 9 = navy + gold, everyone else the inverse
+    const st = (side === 'l' ? dgMe : dgOpp)?.[pid] === 'start'; // Starting 9 = gold tag, everyone else navy
     return s ? ` <span class="dc-slot mb-stag${st ? '' : ' alt'}" title="${st ? 'Starting 9 · ' : ''}${s} on the Depth Chart">${s}</span>` : '';
   };
   const dgKey = (side, pid) => { const k = (side === 'l' ? dgMe : dgOpp)?.[pid]; return k && dcCatOf(k, dgCats) ? k : null; };

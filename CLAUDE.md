@@ -1917,6 +1917,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   navy); same on the Assistant Coach (slotC checks dgMe / dgOpp for start), bench + IR + taxi too. Checked: Parma 39 / 39
   tagged, tag = the row number everywhere, 9 navy; coach week 4: Harden PG3 / Fox PG4 (in Sleeper's lineup, not Starting 9)
   gold, Booker SG1 navy.
+  COLORS SWAPPED (owner, same day: "that will more closely follow what we see in Depth chart"): Starting 9 = GOLD tag with navy
+  text (.dc-slot, like the chart's gold #1 rank), everyone else = NAVY tag with gold text (.dc-slot.alt).
+  ONE TAG ON THE CHART (owner, Nov 9 2026: "In depth chart we only need the 1 POSX tag ... put it up in the top left"): fantasy
+  chart rows no longer show .dc-slot after the name; the left rank box (.dc-rank) IS the tag: .st (Starting 9: gold, navy text)
+  / .bn (everyone else: navy, gold text), tooltip "Starting 9 · PG1 on the depth chart". NBA view keeps .first. Designations /
+  Cut List rows keep the .dc-slot tag after the name (their left box is the group order, not the spot); coach unchanged.
   ASSISTANT COACH EDGE STRIPS (owner, Oct 30 2026; first an outline, then the owner asked for "a thick colored area"
   on the outside): every player on the Lock-in coach board (starters, bench, IR; both sides) gets a strip on his OUTER
   edge (left for you, right for the opponent: dgBar() is the first child and .mb-r is row-reverse) in HIS team's
