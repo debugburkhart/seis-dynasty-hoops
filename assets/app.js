@@ -5332,7 +5332,18 @@ function dcChart(players, saved, auto) {
   const byId = Object.fromEntries(players.map(p => [p.pid, p]));
   // A saved spot in a column he can't play (an old save, or his Sleeper positions changed) is dropped: auto places him.
   for (const pos of DEPTH_POS) cols[pos] = (saved?.cols?.[pos] ?? []).filter(pid => ids.has(pid) && !placed.has(pid) && dcCan(byId[pid], pos) && placed.add(pid));
-  for (const pos of DEPTH_POS) for (const pid of auto.cols[pos] ?? []) if (!placed.has(pid)) { cols[pos].push(pid); placed.add(pid); if (saved) fresh.add(pid); }
+  // Players saved under the removed G / F / U1 / U2 columns (Nov 9 2026) go back to their home column right under its #1
+  // (they were Starting 9 flex players), not to the bottom.
+  for (const k of Object.keys(saved?.cols ?? {})) if (!DEPTH_POS.includes(k)) for (const pid of saved.cols[k]) {
+    if (!ids.has(pid) || placed.has(pid)) continue;
+    const home = dcHome(byId[pid]);
+    cols[home].splice(Math.min(1, cols[home].length), 0, pid);
+    placed.add(pid);
+  }
+  // "New" = not anywhere in the save (owner, Nov 9 2026: Starting 9 players showed "New" because the save from the short-lived
+  // G / F / UTIL columns had them under G, F, U1, U2, or a spot he can't play was dropped: those aren't new players).
+  const known = new Set(Object.values(saved?.cols ?? {}).flat());
+  for (const pos of DEPTH_POS) for (const pid of auto.cols[pos] ?? []) if (!placed.has(pid)) { cols[pos].push(pid); placed.add(pid); if (saved && !known.has(pid)) fresh.add(pid); }
   return { cols, fresh };
 }
 async function renderDepth(body, params) {

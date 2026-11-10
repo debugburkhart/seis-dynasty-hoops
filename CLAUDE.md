@@ -1901,6 +1901,9 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   refuses a drop in any other column, and dcChart drops a saved spot he can't play (auto puts him home). Checked: 0.7 s
   touch tap on G works, G Dosunmu -> Murray in one tap, UTIL takeover, PG/SG Murray: Move to = SG only, drag onto C refused,
   drag onto SG works, an old save with him at C shows him at PG.
+  "NEW" TAGS ON STARTERS (owner, Nov 9 2026): a save made while the G / F / UTIL columns were live kept the flex starters
+  under G, F, U1, U2; with those columns gone they were placed by auto = bottom of the column + "New". dcChart now puts players
+  from unknown saved keys into their home column right under its #1, and "New" (fresh) = a player not anywhere in the save.
   ASSISTANT COACH EDGE STRIPS (owner, Oct 30 2026; first an outline, then the owner asked for "a thick colored area"
   on the outside): every player on the Lock-in coach board (starters, bench, IR; both sides) gets a strip on his OUTER
   edge (left for you, right for the opponent: dgBar() is the first child and .mb-r is row-reverse) in HIS team's
