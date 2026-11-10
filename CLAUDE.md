@@ -1904,6 +1904,19 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   "NEW" TAGS ON STARTERS (owner, Nov 9 2026): a save made while the G / F / UTIL columns were live kept the flex starters
   under G, F, U1, U2; with those columns gone they were placed by auto = bottom of the column + "New". dcChart now puts players
   from unknown saved keys into their home column right under its #1, and "New" (fresh) = a player not anywhere in the save.
+  STARTER TAGS, FINAL (owner, Nov 9 2026: "just put PG1 or PG2 or POSX for all starters, take the picking out of it
+  completely, show that tag on assistant coach"): REPLACES the LINEUP TAGS G / F / UTIL picks above (flexBtns, setFlex,
+  DC_FLEX, dcLineupTags, .dc-flex* and gm-dc-flex- saves are gone; old saves ignored). dcStarterTags(cols, starts) = every
+  Starting 9 player's spot in his column (PG1, PG2, C1 ...; IR at the bottom first); shown as the .dc-slot tag on chart rows
+  + Designations / Cut List rows (DC.tags, set in fantasyChart) and on the Assistant Coach for both teams (teamSlotTops, cached
+  on chart save time + starters). dcAuto still fits the Starting 9 to the 9 Sleeper slots so slot players lead their column.
+  Checked: Parma PG1 LeBron, PG2 Murray, SG1 Booker, SG2 Dosunmu, SF1 Porter Jr., PF1 Markkanen, PF2 Anunoby, C1 Sengun, C2
+  Adebayo; opponent PG3 Peterson etc. on the coach.
+  ALL PLAYERS TAGGED (owner, Nov 9 2026: "In an inverse color of yellow and blue, include the tag on all other players"):
+  dcStarterTags now tags EVERY player with his spot; Starting 9 = navy + gold .dc-slot, everyone else .dc-slot.alt (gold +
+  navy); same on the Assistant Coach (slotC checks dgMe / dgOpp for start), bench + IR + taxi too. Checked: Parma 39 / 39
+  tagged, tag = the row number everywhere, 9 navy; coach week 4: Harden PG3 / Fox PG4 (in Sleeper's lineup, not Starting 9)
+  gold, Booker SG1 navy.
   ASSISTANT COACH EDGE STRIPS (owner, Oct 30 2026; first an outline, then the owner asked for "a thick colored area"
   on the outside): every player on the Lock-in coach board (starters, bench, IR; both sides) gets a strip on his OUTER
   edge (left for you, right for the opponent: dgBar() is the first child and .mb-r is row-reverse) in HIS team's
