@@ -1873,6 +1873,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (.mb-slot is the board's middle slot column, not this). Checked Nov 9 2026: Parma auto = PG LeBron, SG Booker, SF Porter
   Jr., PF Markkanen, C Sengun + Murray UTIL, Dosunmu G, Anunoby UTIL, Adebayo F; G one at a time, F disabled for guards, no
   buttons for a #1; coach shows the same 8-9 tags per side; 402 px no overflow.
+  HIDE TAXI FIX (owner bug report, Nov 9 2026, "hide taxi doesn't work on Healthy"): the checkbox only hid chart rows and the
+  "Not designated" fold; taxi players still filled the Designations groups (13 in Development) on both charts. Now txHidden()
+  in renderDepth also hides them in every Designations group (count = shown players) and the Cut List; drags there save with
+  keepHidden(keys, full, hidden) (module helper), which puts hidden taxi players back after the player above them.
   ASSISTANT COACH EDGE STRIPS (owner, Oct 30 2026; first an outline, then the owner asked for "a thick colored area"
   on the outside): every player on the Lock-in coach board (starters, bench, IR; both sides) gets a strip on his OUTER
   edge (left for you, right for the opponent: dgBar() is the first child and .mb-r is row-reverse) in HIS team's

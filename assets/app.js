@@ -5132,6 +5132,9 @@ async function renderInjuries(body, params, me) {
 const DC_WORD = { PG: 'Point guard', SG: 'Shooting guard', G: 'Guard (PG or SG)', SF: 'Small forward', PF: 'Power forward', F: 'Forward (SF or PF)', C: 'Center', U1: 'Utility (anyone)', U2: 'Utility (anyone)' };
 const DC = { menu: null, dmenu: null, undes: false, catsOpen: false, cols: null };
 const hideTaxi = () => gmLoad('gm-dc-hidetaxi', false);
+// Hide taxi + a drag in a list that hides them: put each hidden taxi player back right after the player who was above him
+// in the full list (same rule as the chart's domCols), so hiding never loses an order (owner's bug report, Nov 9 2026).
+const keepHidden = (keys, full, hidden) => { const out = [...keys]; let at = 0; for (const pid of full) { if (hidden(pid) && !out.includes(pid)) out.splice(at++, 0, pid); else if (out.includes(pid)) at = out.indexOf(pid) + 1; } return out; };
 // Designations (owner, Oct 29 2026): the manager's own label per player and team: Starting 9 (blue, at most 9),
 // Rotation (yellow), Stream (green), Development (purple), Hold (orange, added Oct 29 2026), IR (red), in this order
 // (phones list them top to bottom; IR stays last; Stream moved above Development, owner Nov 2 2026).
@@ -5431,6 +5434,7 @@ async function renderDepth(body, params) {
     gmSave(dkey, { ...D, at: Date.now(), d, order, custom: true }); // from now on this team keeps your version
   };
   const key = `gm-dc-${healthy ? 'h' : ''}chart-${me}`;
+  const txHidden = pid => hideTaxi() && byId[pid]?.slot === 'TX'; // taxi rows not drawn while Hide taxi is on
   const startsOf = d => new Set(Object.entries(d).filter(([, k]) => k === 'start').map(([pid]) => pid));
   const auto = dcAuto(players, dynOf, startsOf(desig().d), { healthy });
   // Current chart: Sleeper IR players drop to the bottom of their column in the saved order too (once per visit), and
@@ -5639,7 +5643,7 @@ async function renderDepth(body, params) {
       const label = esc(c.name);
       const ids = players.filter(p => D.d[p.pid] === k).map(p => p.pid);
       const saved = (D.order?.[k] ?? []).filter(pid => ids.includes(pid));
-      const list = [...saved, ...ids.filter(pid => !saved.includes(pid)).sort((a, b) => at(a) - at(b))];
+      const list = [...saved, ...ids.filter(pid => !saved.includes(pid)).sort((a, b) => at(a) - at(b))].filter(pid => !txHidden(pid)); // Hide taxi applies here too
       return `<section class="dc-dgroup dg dgc-${c.color}" data-g="${esc(k)}">
         <div class="dc-dhead"><b>${label}</b><span>${k === 'start' ? `${list.length} / ${DESIG_MAX}` : list.length}</span></div>
         ${c.desc ? `<p class="dc-ddesc">${esc(c.desc)}</p>` : ''}
@@ -5679,7 +5683,7 @@ async function renderDepth(body, params) {
     const box = $('#dc-cut', body);
     if (!box) return;
     if (!fantasyView) { box.innerHTML = ''; return; }
-    const list = cutIds().map(pid => byId[pid]);
+    const list = cutIds().filter(pid => !txHidden(pid)).map(pid => byId[pid]); // Hide taxi applies here too
     const counted = list.filter(p => p.slot !== 'TX').length;
     box.innerHTML = betaCard('✂ Cut List', `
       <p class="dc-help">Players you’re thinking of cutting. Tag one with ⋮ → <b class="dc-cut">✂ Cut</b> anywhere on this page; the tag sits on top of his designation color. Drag to put them in the order you’d cut them (phones: press and hold, then drag), or sort once with a button below, lowest first.</p>
@@ -5722,14 +5726,16 @@ async function renderDepth(body, params) {
       const g = body.querySelector(`.dc-dgroup .dc-drow[data-dp="${keys[0]}"]`)?.dataset.g;
       if (!g) return;
       const D = rawDesig();
-      gmSave(dkey, { ...D, at: Date.now(), order: { ...D.order, [g]: keys } });
+      const full = [...(D.order?.[g] ?? []), ...players.filter(p => D.d[p.pid] === g && !(D.order?.[g] ?? []).includes(p.pid)).map(p => p.pid)];
+      gmSave(dkey, { ...D, at: Date.now(), order: { ...D.order, [g]: keepHidden(keys, full, txHidden) } });
       DC.dmenu = null;
       drawDesig();
     }, (a, b) => a.dataset.g === b.dataset.g, { vertical: true });
     // Cut List order: saved as D.cut itself.
     dragSort($('#dc-cut', body), '.dc-cutlist .dc-drow', el => el.dataset.dp, keys => {
       const D = rawDesig();
-      gmSave(dkey, { ...D, at: Date.now(), cut: [...keys, ...D.cut.filter(pid => !keys.includes(pid))] });
+      const kept = keepHidden(keys, D.cut, txHidden);
+      gmSave(dkey, { ...D, at: Date.now(), cut: [...kept, ...D.cut.filter(pid => !kept.includes(pid))] });
       DC.dmenu = null;
       drawCut();
     }, () => true, { vertical: true });
