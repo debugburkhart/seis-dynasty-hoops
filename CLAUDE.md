@@ -1877,6 +1877,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   "Not designated" fold; taxi players still filled the Designations groups (13 in Development) on both charts. Now txHidden()
   in renderDepth also hides them in every Designations group (count = shown players) and the Cut List; drags there save with
   keepHidden(keys, full, hidden) (module helper), which puts hidden taxi players back after the player above them.
+  "HEALTHY" RENAMED "SEASON" + PULL (owner, Nov 9 2026): the second chart is labeled Season everywhere (switch, titles, help,
+  "Season: PG2" reminder on Current rows); ?chart=season (old ?chart=healthy and a saved gm-dc-mode "healthy" still open it);
+  storage keys unchanged (gm-dc-hchart- / -hdesig- / -hflex-), code still says healthy. Current has a "Pull healthy order from
+  Season" button (.dc-pull): Current order = the Season chart's columns (seasonCols, built with the "Season: PG2" reminder)
+  with IR / injBad / ESPN out-for-season players moved after the healthy ones in each column, so the next player moves up
+  (Season PG1 Haliburton on IR -> Murray PG1); confirm when a custom Current order exists; designations, Cut List and lineup
+  slot picks untouched. Checked: Parma Haliburton / Banchero / Nurkic skipped.
   ASSISTANT COACH EDGE STRIPS (owner, Oct 30 2026; first an outline, then the owner asked for "a thick colored area"
   on the outside): every player on the Lock-in coach board (starters, bench, IR; both sides) gets a strip on his OUTER
   edge (left for you, right for the opponent: dgBar() is the first child and .mb-r is row-reverse) in HIS team's

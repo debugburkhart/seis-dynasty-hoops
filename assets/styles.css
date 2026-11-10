@@ -3629,7 +3629,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 }
 @media (max-width: 560px) {
   .dc-grid { grid-template-columns: 1fr; }
-  .dc-auto { flex: 1 1 100%; justify-content: center; }
+  .dc-auto, .dc-pull { flex: 1 1 100%; justify-content: center; }
   .dc-picker { flex: 1 1 100%; }
   .dc-picker .ed-select { max-width: none; flex: 1; min-width: 0; justify-content: space-between; }
 }

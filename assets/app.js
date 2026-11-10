@@ -5360,9 +5360,11 @@ async function renderDepth(body, params) {
   // TWO CHARTS (owner, Nov 9 2026), fantasy view: "Current" (the one the Assistant Coach reads: gm-dc-chart-{owner} +
   // gm-dc-desig-{owner}) and "Healthy" (a planner: everyone assumed healthy, same tools, its own saves gm-dc-hchart-
   // {owner} + gm-dc-hdesig-{owner}). ?chart=current|healthy, last pick in gm-dc-mode.
-  const chartMode = ['current', 'healthy'].includes(params.get('chart')) ? params.get('chart') : gmLoad('gm-dc-mode', 'current');
+  // "Healthy" was renamed "Season" (owner, Nov 9 2026); ?chart=healthy and old saved modes still open it. Keys stay gm-dc-h*.
+  const modeRaw = params.get('chart') ?? gmLoad('gm-dc-mode', 'current');
+  const chartMode = ['season', 'healthy'].includes(modeRaw) ? 'season' : 'current';
   if (fantasyView) gmSave('gm-dc-mode', chartMode);
-  const healthy = fantasyView && chartMode === 'healthy';
+  const healthy = fantasyView && chartMode === 'season'; // the Season chart (was Healthy): everyone assumed healthy
   const dkey = `gm-dc-${healthy ? 'h' : ''}desig-${me}`;
   const hdkey = `gm-dc-hdesig-${me}`;
   // cut = the Cut List (owner, Oct 29 2026): ordered [pid], a red "Cut" tag on top of any designation tint.
@@ -5453,12 +5455,14 @@ async function renderDepth(body, params) {
       if (moved) gmSave(key, { ...saved, at: Date.now(), cols });
     }
   }
-  // "Healthy: PG2 · Rotation" on every Current row (owner: a reminder of the role he plays when everyone's healthy).
+  // "Season: PG2 · Rotation" on every Current row (owner: a reminder of the role he plays when everyone's healthy).
+  let seasonCols = null; // the Season chart's columns, for "Pull healthy order from Season"
   const healthySpot = (() => {
     if (!fantasyView || healthy) return {};
     const H = { d: {}, ...gmLoad(hdkey, null) };
     const hd = dcCustom(H) ? H.d : autoDesigs(players, ranks, { healthy: true });
     const { cols } = dcChart(players, gmLoad(`gm-dc-hchart-${me}`, null), dcAuto(players, dynOf, startsOf(hd), { healthy: true }));
+    seasonCols = cols;
     const out = {};
     for (const pos of DEPTH_POS) cols[pos].forEach((pid, i) => { out[pid] = { spot: `${pos}${i + 1}`, k: hd[pid] && dcCatOf(hd[pid]) ? hd[pid] : null }; });
     return out;
@@ -5494,7 +5498,7 @@ async function renderDepth(body, params) {
       <span class="dc-main">
         <span class="dc-name"><a href="${cardLink(p)}" draggable="false">${esc(p.name)}</a>${o.fresh ? '<i class="dc-new">New</i>' : ''}${o.from ? `<i class="dc-from" title="Borrowed from ${o.from}: he can also play ${pos}">from ${o.from}</i>` : ''}${dk ? `<i class="dc-dg ${dgClass(dk)}">${dgLabel(dk)}</i>` : ''}${slotTag(p.pid)}${cutTag(p.pid)}</span>
         <small>${esc(where)} · ${role}</small>
-        ${healthySpot[p.pid] ? `<small class="dc-hl" title="Where he sits on your Healthy chart">Healthy: <b>${healthySpot[p.pid].spot}</b>${healthySpot[p.pid].k ? ` · <i class="dc-dg ${dgClass(healthySpot[p.pid].k)}">${dgLabel(healthySpot[p.pid].k)}</i>` : ''}</small>` : ''}
+        ${healthySpot[p.pid] ? `<small class="dc-hl" title="Where he sits on your Season chart">Season: <b>${healthySpot[p.pid].spot}</b>${healthySpot[p.pid].k ? ` · <i class="dc-dg ${dgClass(healthySpot[p.pid].k)}">${dgLabel(healthySpot[p.pid].k)}</i>` : ''}</small>` : ''}
         <small class="dc-stats">${stats} · ${lockText} · ${lgsText}${d != null ? ` · Dyn <b>${d}</b> ${tierTag(d)}` : ''}</small>
         ${injury || e ? `<span class="dc-inj">${injury ? `<span class="inj-pill${injBad(injury) || e?.ofs ? ' bad' : ''}">${esc(injury)}</span>` : ''}${estChip(e, 'inj-est')}</span>` : ''}
       </span>
@@ -5589,23 +5593,23 @@ async function renderDepth(body, params) {
     const savedAt = chart.saved?.at ? new Date(chart.saved.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
     $('#dc-top', body).innerHTML = betaCard('Depth Chart', `
       <div class="st-tabs dc-view" role="tablist">${[['fantasy', 'Fantasy teams'], ['nba', 'NBA teams']].map(([id, label]) => `<button type="button" role="tab" data-view="${id}" class="${view === id ? 'on' : ''}">${label}</button>`).join('')}</div>
-      ${fantasyView ? `<div class="dc-modes" role="tablist" aria-label="Which chart">${[['current', 'Current', 'today’s roster: the Assistant Coach uses it'], ['healthy', 'Healthy', 'planner: everyone healthy']].map(([id, label, sub]) => `<button type="button" role="tab" data-chart="${id}" class="${chartMode === id ? 'on' : ''}" aria-selected="${chartMode === id}"><b>${label}</b><small>${sub}</small></button>`).join('')}</div>` : ''}
+      ${fantasyView ? `<div class="dc-modes" role="tablist" aria-label="Which chart">${[['current', 'Current', 'today’s roster: the Assistant Coach uses it'], ['season', 'Season', 'planner: everyone healthy']].map(([id, label, sub]) => `<button type="button" role="tab" data-chart="${id}" class="${chartMode === id ? 'on' : ''}" aria-selected="${chartMode === id}"><b>${label}</b><small>${sub}</small></button>`).join('')}</div>` : ''}
       <div class="dc-controls">
         <label class="hy-pick dc-picker"><span class="hy-pick-label">${fantasyView ? 'Team' : 'NBA team'}</span>
           <span class="ed-select"><span class="hy-pick-val">${esc(fantasyView ? teamName(me, cur.season) : nbaTeamName(nba))}</span>
             <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>${pick}</span></label>
-        ${fantasyView ? `<button type="button" class="btn dc-auto">Auto-generate best depth chart</button>
+        ${fantasyView ? `<button type="button" class="btn dc-auto">Auto-generate best depth chart</button>${healthy ? '' : '<button type="button" class="btn dc-pull" title="Copy the Season order, skipping injured players">Pull healthy order from Season</button>'}
           <label class="dc-check"><input type="checkbox" data-hidetaxi${hideTaxi() ? ' checked' : ''}> Hide taxi <small>(${players.filter(p => p.slot === 'TX').length})</small></label>` : ''}
         <a class="bk-gotoa dc-adv" href="#/commish?${new URLSearchParams({ tab: 'advanced', view: 'teams', ...(fantasyView ? { kind: 'fantasy', ...(me === COMMISH ? {} : { team: me }) } : { kind: 'nba', nba }), back: `#/mygm?tab=depth&view=${view}${fantasyView ? (me === COMMISH ? '' : `&team=${me}`) : `&nba=${nba}`}`, backl: 'Depth Chart' })}">${fantasyView ? 'Who carried the team' : 'Usage tree'} in Advanced Stats →</a>
       </div>
       ${fantasyView
     ? `<p class="dc-status">${chart.saved ? `<b>Your custom order</b> · saved ${esc(savedAt)} (follows you to your other devices when signed in)` :'<b>Automatic order</b> (by role)'}. Drag a player to reorder or move him to another position (phones: press and hold, then drag), or tap ⋮.</p>
          <p class="dc-help">${healthy
-    ? 'The <b>Healthy</b> chart is a planner: the same tools, its own order, designations and Cut List, and nobody is treated as injured or on IR. It never changes the Current chart or the Assistant Coach. The button resets this chart only. Automatic order: the Starting 9 first, then the bench by fantasy points per game, players without a game yet (by dynasty score), taxi last.'
-    : 'The <b>Current</b> chart is today’s roster and the one the Assistant Coach uses. Players in a Sleeper IR spot go into IR and drop to the bottom of their column; when one comes off IR he stays there, uncategorized, until you move him. “Healthy: PG2” on each row is where he sits on your Healthy chart. The button resets this chart only (your Cut List stays). Automatic order: the Starting 9 first, then the healthy bench by fantasy points per game, players without a game yet (by dynasty score), Out, taxi, then IR.'} Columns = each player’s main Sleeper position; an empty column borrows the best player who can also play there.</p>`
+    ? 'The <b>Season</b> chart is a planner: the same tools, its own order, designations and Cut List, and nobody is treated as injured or on IR. It never changes the Current chart or the Assistant Coach. The button resets this chart only. Automatic order: the Starting 9 first, then the bench by fantasy points per game, players without a game yet (by dynasty score), taxi last.'
+    : 'The <b>Current</b> chart is today’s roster and the one the Assistant Coach uses. Players in a Sleeper IR spot go into IR and drop to the bottom of their column; when one comes off IR he stays there, uncategorized, until you move him. “Season: PG2” on each row is where he sits on your Season chart. “Pull healthy order from Season” copies the Season order here, skipping anyone on IR or listed Out (the players under him move up), with the injured players after the healthy ones. The button resets this chart only (your Cut List stays). Automatic order: the Starting 9 first, then the healthy bench by fantasy points per game, players without a game yet (by dynasty score), Out, taxi, then IR.'} Columns = each player’s main Sleeper position; an empty column borrows the best player who can also play there.</p>`
     : `<p class="dc-status"><b>ESPN’s official depth chart</b>, read live. ${rostered} of ${players.length} ${esc(nbaTeamName(nba))} players are on fantasy rosters here. Some players are listed at more than one position, as ESPN does.</p>`}
       ${fpNote('game')}`, { cls: 'dc-card', sub: fantasyView ? 'Sleeper, live' : 'ESPN, live' });
-    $('#dc-chart', body).innerHTML = betaCard(fantasyView ? `${esc(teamName(me, cur.season))} · ${healthy ? 'Healthy' : 'Current'}` : `${teamLogo(nba) ? `<img class="dc-logo" src="${teamLogo(nba)}" alt="" onerror="this.remove()">` : ''}${esc(nbaTeamName(nba))}`,
+    $('#dc-chart', body).innerHTML = betaCard(fantasyView ? `${esc(teamName(me, cur.season))} · ${healthy ? 'Season' : 'Current'}` : `${teamLogo(nba) ? `<img class="dc-logo" src="${teamLogo(nba)}" alt="" onerror="this.remove()">` : ''}${esc(nbaTeamName(nba))}`,
       `${fantasyView ? limitLine() : ''}${glance(chart.lines)}
        <div class="dc-grid">${chart.html}</div>
        ${off.length ? `<div class="dc-off"><span class="bk-bar-label">On the roster, not on ESPN’s chart</span>${off.map((p, i) => row(p, i, '')).join('')}</div>` : ''}`,
@@ -5654,7 +5658,7 @@ async function renderDepth(body, params) {
     const autoText = healthy
       ? `<b>Automatic designations</b> (they update with stats until you change one), with everyone assumed healthy: Starting 9 = best lineup by FP/G (taxi left out); then by league rank in FP/G: Rotation = top ${DESIG_ROT}, Development = ${DESIG_YOUNG} or younger outside it, Hold = older than ${DESIG_YOUNG} and ranked ${DESIG_HOLD}+ (or not ranked yet), Stream = the rest.`
       : `<b>Automatic designations</b> (they update with stats and injuries until you change one): Starting 9 = best healthy lineup by FP/G; IR = Sleeper IR; then by league rank in FP/G: Rotation = top ${DESIG_ROT}, Development = ${DESIG_YOUNG} or younger outside it, Hold = older than ${DESIG_YOUNG} and ranked ${DESIG_HOLD}+ (or not ranked yet), Stream = the rest.`;
-    box.innerHTML = betaCard(`Designations · ${healthy ? 'Healthy' : 'Current'}`, `
+    box.innerHTML = betaCard(`Designations · ${healthy ? 'Season' : 'Current'}`, `
       <p class="dc-status">${dcCustom(rawDesig()) ? `<b>Your designations</b> (you changed one, so this team keeps yours; Auto-generate at the top resets them).${healthy ? '' : ' Sleeper IR players are put in IR automatically; when one comes off IR he’s left uncategorized for you to place.'}` : autoText}</p>
       <p class="dc-help">Categories: ${cats.map(c => `<b class="dc-dg dg dgc-${c.color}">${esc(c.name)}</b>`).join(' ')}. Set one with ⋮ on any player (here or in the chart above); tap it again to clear it. Drag players to order each group (phones: press and hold, then drag); that order stays in its group and doesn’t change the depth chart.</p>
       ${catEditor(cats)}
@@ -5799,10 +5803,24 @@ async function renderDepth(body, params) {
       draw();
       return;
     }
+    if (e.target.closest('.dc-pull')) {
+      // Pull healthy order from Season (owner, Nov 9 2026): the Current chart takes the Season chart's order; players on IR
+      // or listed Out (injBad / ESPN out for season) are skipped, so the ones under them move up (Season PG1 on IR -> PG2 is
+      // the new PG1), and go after the healthy players in that column (IR still at the very bottom). Designations, the Cut
+      // List and lineup slot picks are not touched.
+      if (!seasonCols) return;
+      const hurt = pid => { const p = byId[pid]; return p.slot === 'IR' || injBad(p.injury) || Boolean(espn?.[pid]?.ofs); };
+      if (gmLoad(key, null) && !confirm(`Replace your Current depth chart order for ${teamName(me, cur.season)} with the healthy order from your Season chart? (Designations and your Cut List stay.)`)) return;
+      const cols = Object.fromEntries(DEPTH_POS.map(pos => [pos, [...seasonCols[pos].filter(pid => !hurt(pid)), ...seasonCols[pos].filter(hurt)]]));
+      save(cols);
+      DC.menu = null;
+      draw();
+      return;
+    }
     if (e.target.closest('.dc-auto')) {
       // Resets this team's depth chart order AND designations to automatic (owner, Oct 30 2026); the Cut List stays.
       const R = rawDesig();
-      if ((gmLoad(key, null) || dcCustom(R)) && !confirm(`Replace your ${healthy ? 'Healthy' : 'Current'} depth chart order and designations for ${teamName(me, cur.season)} with the automatic ones? (Your Cut List stays.)`)) return;
+      if ((gmLoad(key, null) || dcCustom(R)) && !confirm(`Replace your ${healthy ? 'Season' : 'Current'} depth chart order and designations for ${teamName(me, cur.season)} with the automatic ones? (Your Cut List stays.)`)) return;
       gmSave(key, null);
       gmSave(fkey, null); // lineup slot picks back to automatic too
       gmSave(dkey, { ...R, at: Date.now(), d: {}, order: {}, custom: false });
