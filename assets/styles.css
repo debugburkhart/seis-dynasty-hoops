@@ -4730,3 +4730,53 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .dc-s9kind { display: inline-block; margin-right: 4px; padding: 1px 8px; border-radius: 99px; background: #e8eef6; color: var(--navy-800); font: 800 10.5px/1.6 var(--font); text-transform: uppercase; letter-spacing: .04em; }
 .dc-s9kind.custom { background: #f2c14e; color: var(--navy-900); }
 .mb-s9note b { color: inherit; }
+/* ROSTERS ON A BROWSER (owner, Nov 11 2026: "every column in rosters showing when opened on a browser, there's a lot of empty
+   space"): from 1100px the Rosters tab uses the whole content width (no 1040px cap) and the table is tighter (4-5px cell
+   padding, two-line headers, a narrower Tags column whose chips wrap), so all of a view's columns fit without sideways scrolling. */
+@media (min-width: 1100px) {
+  .mygm-rosters.page-wide { max-width: none; }
+  .mygm-rosters .bk-table { font-size: 11px; }
+  .mygm-rosters .bk-table th { padding: 6px 2px; white-space: normal; line-height: 1.15; vertical-align: bottom; }
+  .mygm-rosters .bk-table td { padding: 6px 2px; }
+  .mygm-rosters .bk-table th.bk-nm, .mygm-rosters .bk-table td.bk-nm { padding-left: 8px; }
+  .mygm-rosters .bk .bk-table td.bk-tagcol { max-width: 96px; min-width: 80px; white-space: normal; }
+  .mygm-rosters .bk .bk-table td.bk-nm { max-width: 136px; overflow: hidden; text-overflow: ellipsis; }
+  .mygm-rosters .bk .bk-table td.bk-own { white-space: normal; min-width: 70px; max-width: 86px; line-height: 1.15; font-size: 10.5px; }
+  .mygm-rosters .bk .bk-table td.bk-tagcol .bk-tag, .mygm-rosters .bk .bk-table td.bk-tagcol .bk-auto { margin-bottom: 2px; }
+}
+/* Smaller laptops (1100-1399px): a bit tighter still, so Averages fits too. */
+@media (min-width: 1100px) and (max-width: 1399px) {
+  .mygm-rosters .bk-table { font-size: 10.5px; }
+  .mygm-rosters .bk-table th { font-size: 9.5px; letter-spacing: .02em; }
+  .mygm-rosters .bk-table td { padding: 5px 1px; }
+  .mygm-rosters .bk .bk-table td.bk-nm { max-width: 118px; }
+  .mygm-rosters .bk .bk-table td.bk-tagcol { max-width: 80px; min-width: 64px; }
+  .mygm-rosters .bk .bk-table td.bk-own { min-width: 56px; max-width: 60px; font-size: 10px; }
+  .mygm-rosters .bk .bk-table .bk-cmpbtn { transform: scale(.85); }
+}
+@media (min-width: 1400px) and (max-width: 1599px) {
+  .mygm-rosters .bk-table td { padding: 6px 1px; }
+  .mygm-rosters .bk .bk-table td.bk-nm { max-width: 126px; }
+  .mygm-rosters .bk .bk-table td.bk-own { max-width: 70px; }
+  .mygm-rosters .bk .bk-table td.bk-tagcol { max-width: 80px; min-width: 68px; }
+}
+/* SLEEPER POSITION COLORS (owner, Nov 11 2026: "color coded the same as sleeper: PG = red, SG = orange, SF = Green, PF = blue,
+   C = pink, match the hues"; picked from his Sleeper screenshot). .pc-{pos} sets --pc; boxes: Starting 9 = filled with the
+   position color + navy text, everyone else = navy box + position-colored text (Sleeper's dark tiles); .pc-txt = colored text.
+   G / F slots blend their two positions, UTIL is grey. */
+.pc-pg { --pc: #ff2a6d; }
+.pc-sg { --pc: #ff9a3c; }
+.pc-sf { --pc: #19cfa8; }
+.pc-pf { --pc: #4fa8ff; }
+.pc-c { --pc: #c96cf2; }
+.pc-g { --pc: #ff6455; }
+.pc-f { --pc: #33bcd4; }
+.pc-util { --pc: #9aa6bb; }
+.pc.dc-slot, .pc.dc-rank.st { background: var(--pc) !important; color: #0b1d3d !important; } /* !important: dark mode re-emits the older gold / navy rules with html.dark in front */
+.pc.dc-slot.alt, .pc.dc-rank.bn { background: #10264f !important; color: var(--pc) !important; }
+.pc-txt { color: var(--pc) !important; font-weight: 800; }
+.dc-head b.pc { color: var(--pc) !important; }
+.mb-slot.pc { color: var(--pc) !important; }
+.mb-name > small { white-space: normal; } /* positions first on this line now (Nov 11 2026): wrap instead of cutting "Locked" off */
+/* Rosters card: position boxes under the jersey number in Sleeper colors (owner, Nov 11 2026), outlined like Sleeper's dark tiles. */
+.bk-tags span.pc { border-color: var(--pc); color: var(--pc); }

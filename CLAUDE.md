@@ -1299,6 +1299,23 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   write not tested (needs sign-in + published rules).
 - POSITIONS ON THE COACH BOARD (owner, Nov 11 2026: "show all positions a player can play"): every board row (starters, bench,
   IR, both sides, MyGM + MyGM+) starts its small line with his Sleeper fantasy positions (r.elig / p.elig, "PG/SG · NOP").
+- ROSTERS FITS A BROWSER (owner, Nov 11 2026: "every column in rosters showing when opened on a browser, there's a lot of empty
+  space"): renderMyGM adds page class mygm-{tab}; from 1100px .mygm-rosters drops the 1040px .page-wide cap (full content width)
+  and the .bk-table gets tighter: 11px text, 2px cell padding, two-line headers, Tags column 80-96px with wrapping chips,
+  name 136px with ellipsis, Fantasy team 70-86px wrapping; 1100-1399px a bit tighter again (10.5px, 1px padding, Tags 64-80,
+  name 118, team 56-60); 1400-1599 padding 1px, Tags 68-80. Checked (scrollWidth = clientWidth): MyGM Team + League x Averages /
+  Totals / Shooting at 1280; MyGM+ (2 more columns: Dyn, USG%) Team, League, Waiver wire at 1440; 1920 fills the width. Phones
+  unchanged.
+- SLEEPER POSITION COLORS (owner, Nov 11 2026: "color coded the same as sleeper: PG = red, SG = orange, SF = Green, PF =
+  blue, C = pink, match the hues" + "do that to assistant coach too"): styles.css .pc-pg #ff2a6d, .pc-sg #ff9a3c, .pc-sf #19cfa8,
+  .pc-pf #4fa8ff, .pc-c #c96cf2 (+ .pc-g #ff6455, .pc-f #33bcd4, .pc-util #9aa6bb for slot labels) set --pc; app.js pcCls(pos /
+  spot) + posTxt(list) (spans: .mb-name b is display block). Boxes: Starting 9 = filled with the position color + navy text, others
+  = navy box + position-colored text (.pc.dc-slot / .pc.dc-rank.st / .bn, !important; theme.js KEEP has .pc so dark mode leaves
+  them alone). Depth Chart: rank boxes, column headers, glance row labels, Designations / Cut List tags, position text on rows.
+  Coach: PosX tags, middle slot labels (PG / G / UTIL ...), position text first on every row's small line (that line now wraps,
+  .mb-name > small white-space normal). Checked light + dark at 402: PG1 #ff2a6d box / navy text, SF4 navy box / green text.
+  Rosters card (owner, same day: "do the same to this area of rosters"): the position boxes under the jersey number (.bk-tags
+  span.pc) = position-colored outline + text on the dark card (number box unchanged).
 - PLAN FOR MANAGER LOGINS (owner, Nov 9 2026; agreed in talk; STEPS 1-3 BUILT the same day, see MYGM LOGIN below): MyGM becomes the
   managers' page: Google sign-in REQUIRED + an approved claim (members/{uid}, same as Props / Trade Court), locked to their own
   team; each manager's settings private in users/{uid}/prefs (already); fix the shared-device bleed (localStorage is per

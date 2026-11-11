@@ -2558,7 +2558,7 @@ async function renderMyGM(main, params) {
   const tab = MYGM_TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : MYGM_TABS[0][0];
   clearInterval(GM_TIMER);
   main.innerHTML = `
-    <div class="page page-wide mygm-page">
+    <div class="page page-wide mygm-page mygm-${tab}">
       <div class="page-head">
         <div class="page-icon">${icon('clipboard')}</div>
         <div><div class="eyebrow">${plus ? '<a href="#/commish">← Commissioner’s office</a> · full features' : `${esc(teamName(MYGM_ME, DATA.seasons.at(-1).season))} · Beta`}</div><h1>${title}</h1></div>${plus ? '' : '<div class="sync-box sync-office mg-acct" data-sync="office"></div>'}
@@ -3948,7 +3948,7 @@ async function renderBreakdown(body, params) {
         </div>
         <div class="bk-head">
           <div class="bk-name">
-            <div class="bk-tags">${p.number != null ? `<span>#${esc(p.number)}</span>` : ''}${p.pos.map(x => `<span>${esc(x)}</span>`).join('')}</div>
+            <div class="bk-tags">${p.number != null ? `<span>#${esc(p.number)}</span>` : ''}${p.pos.map(x => `<span class="${pcCls(x).trim()}">${esc(x)}</span>`).join('')}</div>
             <div><small>${esc(p.first)}</small><h3${(() => { const n = Math.max(...String(p.last || p.name).split(/[\s-]/).map(w => w.length)); return n >= 13 ? ' class="bk-l2"' : n >= 10 ? ' class="bk-l1"' : ''; })()}>${esc(p.last || p.name)}</h3>${nickLine(p)}</div>
           </div>
           <p class="bk-meas">${[p.height && `HT: ${p.height}`, p.weight && `WT: ${p.weight}`, p.age != null && `AGE: ${p.age}`].filter(Boolean).map(esc).join(' / ')}</p>
@@ -5341,6 +5341,9 @@ async function teamDesigs(owner) {
 // which still fits the Starting 9 to Sleeper's 9 slots so the PG-slot player leads the PG column, and so on.
 const DC_LINEUP = ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'UTIL', 'UTIL'];
 // cols = the chart as drawn (IR already at the bottom), starts = Starting 9 pids -> { pid: 'PG2' }.
+// Sleeper position colors (owner, Nov 11 2026): class for a position / spot ("PG", "PG2", "G", "UTIL"), and position text.
+const pcCls = pos => { const k = String(pos ?? '').replace(/\d+$/, '').toLowerCase(); return ['pg', 'sg', 'sf', 'pf', 'c', 'g', 'f', 'util'].includes(k) ? ` pc pc-${k}` : ''; };
+const posTxt = list => (list ?? []).map(p => `<span class="pc-txt${pcCls(p)}">${esc(p)}</span>`).join('/');
 function dcStarterTags(cols, starts) {
   const tags = {};
   // Every player gets his spot (owner, Nov 9 2026: "include the tag on all other players" in the inverse colors); starts
@@ -5536,7 +5539,7 @@ async function renderDepth(body, params) {
   const slotTag = pid => {
     const t = fantasyView ? DC.tags?.[pid] : null;
     const s = desigOf(pid) === 'start';
-    return t ? `<i class="dc-slot${s ? '' : ' alt'}" title="${s ? 'Starting 9 · ' : ''}${t} on the depth chart">${t}</i>` : '';
+    return t ? `<i class="dc-slot${s ? '' : ' alt'}${pcCls(t)}" title="${s ? 'Starting 9 · ' : ''}${t} on the depth chart">${t}</i>` : '';
   };
   const startCount = () => Object.entries(desig().d).filter(([pid, k]) => k === 'start' && byId[pid]).length;
   // The designation buttons (in a player's ⋮ menu, above and below). Tap the current one again = no designation.
@@ -5589,7 +5592,7 @@ async function renderDepth(body, params) {
     const role = fantasyView
       ? (SLOT_WORD[p.slot] ?? `Starter · ${p.slot}`)
       : p.owner ? `${esc(teamName(p.owner, cur.season))} · ${esc(SLOT_WORD[p.slot] ?? 'Starter')}` : 'Free agent';
-    const where = fantasyView ? [p.pos.join('/'), p.team || 'No NBA team'].join(' · ') : p.pos.join('/');
+    const where = fantasyView ? `${posTxt(p.pos)} · ${esc(p.team || 'No NBA team')}` : posTxt(p.pos); // HTML: positions in Sleeper colors
     const stats = p.tot?.gp
       ? `<b>${bkF1(p.avg.fp)}</b> FP/G · ${bkF1(p.avg.min)} min · <span title="NBA games started / games played">GS ${p.tot.gs ?? '—'}/${p.tot.gp}</span>`
       : 'No games yet';
@@ -5603,11 +5606,11 @@ async function renderDepth(body, params) {
     const open = fantasyView && DC.menu === p.pid;
     const dk = desigOf(p.pid);
     return `<div class="dc-row${p.slot === 'TX' ? ' tx' : ''}${injury && (injBad(injury) || e?.ofs) ? ' hurt' : ''}${open ? ' open' : ''}${dgCls(p.pid)}" data-dc="${p.pid}">
-      <span class="dc-rank${fantasyView ? (desigOf(p.pid) === 'start' ? ' st' : ' bn') : i === 0 ? ' first' : ''}"${fantasyView ? ` title="${desigOf(p.pid) === 'start' ? 'Starting 9 · ' : ''}${pos}${i + 1} on the depth chart"` : ''}>${pos}${i + 1}</span>
+      <span class="dc-rank${fantasyView ? (desigOf(p.pid) === 'start' ? ' st' : ' bn') + pcCls(pos) : i === 0 ? ' first' : ''}"${fantasyView ? ` title="${desigOf(p.pid) === 'start' ? 'Starting 9 · ' : ''}${pos}${i + 1} on the depth chart"` : ''}>${pos}${i + 1}</span>
       <img class="dc-photo" src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy" draggable="false" onerror="this.style.visibility='hidden'">
       <span class="dc-main">
         <span class="dc-name"><a href="${cardLink(p)}" draggable="false">${esc(p.name)}</a>${o.fresh ? '<i class="dc-new">New</i>' : ''}${o.from ? `<i class="dc-from" title="Borrowed from ${o.from}: he can also play ${pos}">from ${o.from}</i>` : ''}${dk ? `<i class="dc-dg ${dgClass(dk)}">${dgLabel(dk)}</i>` : ''}${cutTag(p.pid)}</span>
-        <small>${esc(where)}${fantasyView && bkTrim() ? '' : ` · ${role}`}</small>
+        <small>${where}${fantasyView && bkTrim() ? '' : ` · ${role}`}</small>
         <small class="dc-stats">${stats} · ${lockText} · ${lgsText}${d != null && !bkTrim() ? ` · Dyn <b>${d}</b> ${tierTag(d)}` : ''}</small>
         ${injury || e ? `<span class="dc-inj">${injury ? `<span class="inj-pill${injBad(injury) || e?.ofs ? ' bad' : ''}">${esc(injury)}</span>` : ''}${estChip(e, 'inj-est')}</span>` : ''}
       </span>
@@ -5617,7 +5620,7 @@ async function renderDepth(body, params) {
     </div>`;
   };
   const column = (pos, list, extra = '') => `<section class="dc-col" data-pos="${pos}">
-      <div class="dc-head"><b>${pos}</b><small>${DC_WORD[pos]}</small><span>${list.length}</span></div>
+      <div class="dc-head"><b class="${pcCls(pos).trim()}">${pos}</b><small>${DC_WORD[pos]}</small><span>${list.length}</span></div>
       <div class="dc-list">${list.join('')}${fantasyView ? `<div class="dc-end" data-dc="end:${pos}">${list.length ? 'Drop here' : 'Nobody here · drop a player'}</div>` : list.length ? '' : '<p class="dc-none">Nobody listed.</p>'}</div>
       ${extra}
     </section>`;
@@ -5673,7 +5676,7 @@ async function renderDepth(body, params) {
     };
     return `<div class="dc-glance-wrap"><table class="dc-glance">
       <thead><tr><th scope="col" aria-label="Position"></th>${Array.from({ length: most }, (_, i) => `<th scope="col">${ordinal(i + 1)}</th>`).join('')}</tr></thead>
-      <tbody>${DEPTH_POS.map(pos => `<tr><th scope="row">${pos}</th>${(lines[pos] ?? []).map((p, i) => cell(p, pos, i)).join('')}${'<td></td>'.repeat(most - (lines[pos]?.length ?? 0))}</tr>`).join('')}</tbody>
+      <tbody>${DEPTH_POS.map(pos => `<tr><th scope="row" class="${pcCls(pos).trim()}">${pos}</th>${(lines[pos] ?? []).map((p, i) => cell(p, pos, i)).join('')}${'<td></td>'.repeat(most - (lines[pos]?.length ?? 0))}</tr>`).join('')}</tbody>
     </table></div>
     <p class="dc-glance-note">L = locked points this season (weeks locked in parentheses)${fantasyView ? '' : ' (any fantasy team)'}. Tap a name for his full row.</p>`;
   };
@@ -5740,7 +5743,7 @@ async function renderDepth(body, params) {
       ${g ? `<span class="dc-rank">${i + 1}</span>` : ''}
       <img class="dc-photo" src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy" draggable="false" onerror="this.style.visibility='hidden'">
       <span class="dc-main"><span class="dc-name"><a href="${cardLink(p)}" draggable="false">${esc(p.name)}</a>${slotTag(p.pid)}${g === 'cut' && dk ? `<i class="dc-dg ${dgClass(dk)}">${dgLabel(dk)}</i>` : ''}${g === 'cut' ? '' : cutTag(p.pid)}</span>
-        <small>${esc([p.pos.join('/'), p.team || 'No NBA team'].join(' · '))}${bkTrim() ? '' : ` · ${SLOT_WORD[p.slot] ?? `Starter · ${p.slot}`}`}</small>
+        <small>${posTxt(p.pos)} · ${esc(p.team || 'No NBA team')}${bkTrim() ? '' : ` · ${SLOT_WORD[p.slot] ?? `Starter · ${p.slot}`}`}</small>
         <small class="dc-stats">${p.tot?.gp ? `<b>${bkF1(p.avg.fp)}</b> FP/G` : 'No games yet'} · Locked <b>${la ? num(la.pts) : 0}</b>${la ? ` (${la.starts})` : ''}${p.injury ? ` · <i class="dc-dinj">${esc(p.injury)}</i>` : ''}</small></span>
       <button type="button" class="dc-menu" data-dmenu="${mk}" aria-label="Designation for ${esc(p.name)}" aria-expanded="${open}">⋮</button>
       ${open ? desigBtns(p.pid) : ''}
@@ -6723,7 +6726,7 @@ async function renderCoach(body, params) {
     const s = (side === 'l' ? topMe : topOpp)?.[pid];
     const st = (side === 'l' ? dgMe : dgOpp)?.[pid] === 'start'; // Starting 9 = gold tag, everyone else navy
     if (trim && side === 'r' && !st) return ''; // MyGM: the opponent's non-Starting 9 spots stay hidden
-    return s ? ` <span class="dc-slot mb-stag${st ? '' : ' alt'}" title="${st ? 'Starting 9 · ' : ''}${s} on the Depth Chart">${s}</span>` : '';
+    return s ? ` <span class="dc-slot mb-stag${st ? '' : ' alt'}${pcCls(s)}" title="${st ? 'Starting 9 · ' : ''}${s} on the Depth Chart">${s}</span>` : '';
   };
   const dgKey = (side, pid) => { const k = (side === 'l' ? dgMe : dgOpp)?.[pid]; return k && dcCatOf(k, dgCats) ? k : null; };
   const dgc = (side, pid) => { const k = dgKey(side, pid); return k ? ` mb-dg ${dgClass(k, dgCats)}` : ''; };
@@ -6817,9 +6820,9 @@ async function renderCoach(body, params) {
     const isLock = r.call === 'lock' && !r.whatIf && !trim;
     const nextUp = ['wait', 'plan', 'live'].includes(r.call) && !r.whatIf ? nextTip(r.sched.find(g => !g.done && !g.playing)) : '';
     // Every position he can play (owner, Nov 11 2026: "show all positions a player can play on the assistant coach").
-    const meta = [(r.elig ?? []).join('/'), r.team || 'FA', r.call === 'none' ? 'No games' : r.call === 'plan' ? `${r.sched.length} game${r.sched.length === 1 ? '' : 's'}` : isLock ? lockBy() : advice(r) ? '' : label(r), nextUp].filter(Boolean).join(' · ');
+    const meta = [r.team || 'FA', r.call === 'none' ? 'No games' : r.call === 'plan' ? `${r.sched.length} game${r.sched.length === 1 ? '' : 's'}` : isLock ? lockBy() : advice(r) ? '' : label(r), nextUp].filter(Boolean).join(' · ');
     return `<div class="mb-p mb-${side} mb-${r.whatIf ? 'wi' : r.call}${todayGame(r) ? ' mb-on' : ''}${dgc(side, r.pid)}" ${tapAttrs(`${side}-${r.pid}`)}>
-      ${dgBar(side, r.pid)}<span class="mb-name">${nameHtml(r, slotC(side, r.pid))}<span class="mb-tags">${tags(r)}</span><small${isLock ? ' class="mb-lockby"' : nextUp ? ' class="mb-wrap"' : ''}>${esc(meta)}</small></span>
+      ${dgBar(side, r.pid)}<span class="mb-name">${nameHtml(r, slotC(side, r.pid))}<span class="mb-tags">${tags(r)}</span><small${isLock ? ' class="mb-lockby"' : nextUp ? ' class="mb-wrap"' : ''}>${posTxt(r.elig)}${meta ? ` · ${esc(meta)}` : ''}</small></span>
       ${scoreBox(r)}</div>`;
   };
   // Bench and IR players: no score (bench points never count); red + struck out with no games left.
@@ -6827,9 +6830,9 @@ async function renderCoach(body, params) {
     if (!p) return `<div class="mb-p mb-${side}"></div>`;
     const left = gamesLeft(p);
     const nextUp = left ? nextTip((w.slate[p.team] ?? []).find(g => g.status !== 'complete' && (g.date > today || (g.date === today && g.status === 'pre_game')))) : '';
-    const meta = [(p.elig ?? []).join('/'), p.team || 'FA', left ? `${left} game${left === 1 ? '' : 's'} left` : 'No games left', nextUp].filter(Boolean).join(' · ');
+    const meta = [p.team || 'FA', left ? `${left} game${left === 1 ? '' : 's'} left` : 'No games left', nextUp].filter(Boolean).join(' · ');
     return `<div class="mb-p mb-${side} mb-res${left ? '' : ' mb-gone'}${todayGame(p) ? ' mb-on' : ''}${dgc(side, p.pid)}" ${tapAttrs(`${side}-${where}-${p.pid}`)}>
-      ${dgBar(side, p.pid)}<span class="mb-name">${nameHtml(p, slotC(side, p.pid))}<span class="mb-tags">${tags(p)}</span><small${nextUp ? ' class="mb-wrap"' : ''}>${esc(meta)}</small></span></div>`;
+      ${dgBar(side, p.pid)}<span class="mb-name">${nameHtml(p, slotC(side, p.pid))}<span class="mb-tags">${tags(p)}</span><small${nextUp ? ' class="mb-wrap"' : ''}>${posTxt(p.elig)}${meta ? ` · ${esc(meta)}` : ''}</small></span></div>`;
   };
   // The card a tapped bench/IR player opens: his week's games and what he could still add.
   const reserveCard = (p, where, mine) => {
@@ -6890,7 +6893,7 @@ async function renderCoach(body, params) {
     ${trim && opp ? `<p class="mb-key mb-s9note"><span class="dc-s9kind${oppS9?.custom ? ' custom' : ''}">${oppS9?.custom ? 'Custom Starting 9' : 'Automatic Starting 9'}</span> on their side: ${s9Note(oppS9, teamName(opp, w.season))}</p>` : ''}
     <div class="mb-rows">${coach.rows.map((r, i) => {
       const o = oppRows[i];
-      return `<div class="mb-row">${who(r, 'l')}<span class="mb-slot">${esc(r.slot)}</span>${who(o, 'r')}</div>
+      return `<div class="mb-row">${who(r, 'l')}<span class="mb-slot${pcCls(r.slot)}">${esc(r.slot)}</span>${who(o, 'r')}</div>
         ${r.empty ? '' : detail(`l-${r.pid}`, card(r, true, i))}${o && !o.empty ? detail(`r-${o.pid}`, card(o, false, i)) : ''}`;
     }).join('')}</div>
     ${section('Bench', benchSort(coach.team.bench ?? [], 'l'), benchSort(oppTeam?.bench ?? [], 'r'), 'bn')}
