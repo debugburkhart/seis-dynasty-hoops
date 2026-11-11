@@ -4780,3 +4780,6 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .mb-name > small { white-space: normal; } /* positions first on this line now (Nov 11 2026): wrap instead of cutting "Locked" off */
 /* Rosters card: position boxes under the jersey number in Sleeper colors (owner, Nov 11 2026), outlined like Sleeper's dark tiles. */
 .bk-tags span.pc { border-color: var(--pc) !important; color: var(--pc) !important; } /* !important: dark mode re-emits .bk-tags span with html.dark in front */
+/* Rosters: Depth Chart designation tag left of the name + its own column (owner, Nov 11 2026). */
+.bk-dsg { display: inline-block; min-width: 24px; margin-right: 5px; padding: 0 3px; border-radius: 4px; background: var(--dg-c); color: #fff; font: 800 9px/1.6 var(--font); letter-spacing: .02em; text-align: center; vertical-align: 1px; }
+.bk .bk-table td.bk-dsgcol { text-align: center; }

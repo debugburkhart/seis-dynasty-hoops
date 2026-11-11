@@ -1321,6 +1321,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   screenshot: coach tags for non-Starting 9 players unreadable): the filled rule also matched .alt and its dark-mode copy (KEEP
   writes html.dark + the rule) out-ranked the .alt rule, so .alt text turned navy on navy; now .pc.dc-slot:not(.alt) for the
   filled one, and .alt / .bn boxes get a 1px inset outline in the position color. Checked dark: 33 / 33 coach .alt tags colored.
+- DESIGNATION ON ROSTERS (owner, Nov 11 2026: "show the depth chart designation as a short tag (using the same 3 letter) to the
+  left of the player name and add a column for it" ... "in roster"): renderBreakdown fills BK.dsg(p) for every team in the list
+  (teamDesigs = same as the coach strips; MyGM: another manager's players = Starting 9 only, from his shared s9 record or the
+  automatic one; free agents none). dsgTag(k) = .bk-dsg chip (category short label on its --dg-c color) in the name cell after
+  the compare +, and column BK_DSG "Dsg" first in Averages / Totals / Shooting (sort = category order, S9 first). Checked:
+  MyGM+ Parma S9 / ROT / HLD / DEV / IR, Dsg sort S9 x9 then ROT; MyGM League list other teams S9 only, own team all, ~4 s.
 - PLAN FOR MANAGER LOGINS (owner, Nov 9 2026; agreed in talk; STEPS 1-3 BUILT the same day, see MYGM LOGIN below): MyGM becomes the
   managers' page: Google sign-in REQUIRED + an approved claim (members/{uid}, same as Props / Trade Court), locked to their own
   team; each manager's settings private in users/{uid}/prefs (already); fix the shared-device bleed (localStorage is per

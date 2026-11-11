@@ -3249,7 +3249,7 @@ async function coachPick(season, week, pid, mark, boxes) {
 // game log. Three lists (owner, Oct 25 2026): one team's roster, the waiver wire (free agents) and
 // the whole league (every rostered player, with his fantasy team). Basic NBA stats and fantasy
 // points, plus the dynasty score (badge + column, owner asked). No grades or other site models.
-const BK = { pid: null, view: 'avg', sort: null, dir: -1, logAll: false, list: 'team', q: '', limit: 50, group: 'all', tag: null, tagOpen: false, dyn: () => null, locked: () => null, lgs: () => null, cmpOpen: false, espn: {} };
+const BK = { dsg: () => null, pid: null, view: 'avg', sort: null, dir: -1, logAll: false, list: 'team', q: '', limit: 50, group: 'all', tag: null, tagOpen: false, dyn: () => null, locked: () => null, lgs: () => null, cmpOpen: false, espn: {} };
 // Injury report on the 2K card (owner, Oct 26 2026): a round medical-cross button after the injury tags toggles a
 // small panel with ESPN's report paragraph (same note as the Injury Report tab), hurt date, estimate and Sleeper's
 // status. Open/closed is kept in BK.injOpen while you browse players.
@@ -3580,6 +3580,12 @@ const AUTO_ICON = '<svg class="bk-bolt" viewBox="0 0 10 14" aria-hidden="true"><
 const autoChip = (tag, why, label) => `<span class="bk-tag bk-auto ${AUTO_CLS[tag] ?? 'au-opt'}" title="Auto tag${why ? `: ${esc(why)}` : ''}">${AUTO_ICON}${esc(label ?? tag)}</span>`;
 // Tags column: auto tags first, then his own; sorting puts tagged players first, grouped by their first tag
 // (auto tags in AUTO_TAGS order, then custom tags A-Z).
+// DEPTH CHART DESIGNATION on Rosters (owner, Nov 11 2026: "show the depth chart designation as a short tag (using the same 3
+// letter) to the left of the player name and add a column for it"): BK.dsg(p) = his team's designation (teamDesigs, the same
+// as the Assistant Coach's strips); in MyGM another manager's players show Starting 9 only (their shared s9 record, else the
+// automatic one), like everywhere else. Tag = the category's short label in its color; column "Dsg" sorts by category order.
+const dsgTag = k => { const c = k ? dcCatOf(k) : null; return c ? `<span class="bk-dsg dg dgc-${c.color}" title="Depth Chart: ${esc(c.name)}">${esc(c.short)}</span>` : ''; };
+const BK_DSG = ['dsg', 'Dsg', p => { const k = BK.dsg(p); const i = dcCats().findIndex(c => c.id === k); return k && i >= 0 ? 100 - i : -1; }, p => dsgTag(BK.dsg(p)), { html: true, cls: 'bk-dsgcol' }];
 const BK_TAGCOL = ['tags', 'Tags', p => { const t = tagsAll(p); if (!t.length) return -1; const order = [...autoOrder(), ...allTags()]; return 1000 - Math.min(...t.map(x => order.indexOf(x))); }, p => [...autoTagsOf(p).map(x => autoChip(...x)), ...tagsOf(p.pid).map(t => tagChip(t))].join('') || '—', { cls: 'bk-tagcol', html: true }];
 const BK_PAGE = 50;
 let BK_AWARDS = null; // playerAwards(DATA, fo), once per visit
@@ -3623,7 +3629,7 @@ const BK_LGS = ['lgs', 'LGS', p => BK.lgs(p.pid)?.n ?? -1, p => (BK.lgs(p.pid) ?
 const BK_LKPCT = ['lkpct', 'Lk%', p => BK.lkPct(p.pid) ?? -1, p => (BK.lkPct(p.pid) == null ? '—' : `${BK.lkPct(p.pid)}%`)];
 const BK_VIEWS = {
   avg: { label: 'Averages', sort: 'fpg', cols: [
-    BK_TAGCOL, BK_OWN, BK_SLOT,
+    BK_DSG, BK_TAGCOL, BK_OWN, BK_SLOT,
     ['pos', 'Pos', p => p.pos.join('/'), p => posTxt(p.pos), { html: true }], // Sleeper position colors (owner, Nov 11 2026)
     ['nba', 'NBA', p => p.team || 'zz', p => p.team || 'FA'],
     ['age', 'Age', p => p.age ?? 0, p => p.age ?? '—'],
@@ -3652,7 +3658,7 @@ const BK_VIEWS = {
     ['pm', '+/-', p => (p.tot.gp ? p.avg.pm : -99), p => (p.tot.gp ? `${p.avg.pm > 0 ? '+' : ''}${bkF1(p.avg.pm)}` : '—')],
   ] },
   tot: { label: 'Totals', sort: 'fp', cols: [
-    BK_TAGCOL, BK_OWN, BK_SLOT, BK_DYN, BK_LOCK, BK_STARTS, BK_LGS, BK_LKPCT, BK_RANK, BK_PRANK, BK_ROS,
+    BK_DSG, BK_TAGCOL, BK_OWN, BK_SLOT, BK_DYN, BK_LOCK, BK_STARTS, BK_LGS, BK_LKPCT, BK_RANK, BK_PRANK, BK_ROS,
     ['gp', 'GP', p => p.tot.gp, p => p.tot.gp],
     BK_GS,
     ['fp', 'FP', p => p.tot.fp, p => num(p.tot.fp)],
@@ -3670,7 +3676,7 @@ const BK_VIEWS = {
     ['td', 'TD', p => p.tot.td, p => p.tot.td],
   ] },
   shoot: { label: 'Shooting', sort: 'ts', cols: [
-    BK_TAGCOL,
+    BK_DSG, BK_TAGCOL,
     ['fg', 'FGM-A', p => p.tot.fgm, p => bkMa(p.tot.fgm, p.tot.fga)],
     ['fgp', 'FG%', p => p.tot.fgp ?? -1, p => bkPct(p.tot.fgp)],
     ['tp', '3PM-A', p => p.tot.tpm, p => bkMa(p.tot.tpm, p.tot.tpa)],
@@ -3736,6 +3742,21 @@ async function renderBreakdown(body, params) {
   const DL = withLiveWeeks(DATA, BK_LIVE);
   lgsData = withLockLgs(withLiveLgs(lgsData, BK_LIVE), DL); // + a lock is a start (Lk% never over 100%)
   BK.espn = espnOut ?? {}; // ESPN injury estimates (return date, out for season) by pid
+  // Depth Chart designations per player (BK.dsg, see BK_DSG): every team in this list, cached by teamDesigs / loadSharedS9.
+  {
+    const owners = [...new Set(bk.players.map(p => p.owner).filter(Boolean))];
+    const limited = route().page === 'mygm' && MYGM_ME;
+    const startOnly = d => Object.fromEntries(Object.entries(d ?? {}).filter(([, k]) => k === 'start'));
+    const maps = await Promise.all(owners.map(async o => {
+      if (limited && o !== MYGM_ME) {
+        const sh = await loadSharedS9(o);
+        return [o, sh ? Object.fromEntries(Object.keys(sh.s).map(pid => [pid, 'start'])) : startOnly(await teamDesigs(o).catch(() => ({})))];
+      }
+      return [o, await teamDesigs(o).catch(() => ({}))];
+    }));
+    const by = Object.fromEntries(maps);
+    BK.dsg = p => { const k = p?.owner ? by[p.owner]?.[p.pid] : null; return k && dcCatOf(k) ? k : null; };
+  }
   await autoDynasty(dyn?.v ?? null); // taxi / contract / riser-faller / Top 100 prospect auto tags
   // Season-banner awards per player (same rules as the Awards page), worked out once per visit.
   BK_AWARDS ??= playerAwards(DATA, frontOffice(DATA));
@@ -3991,7 +4012,7 @@ async function renderBreakdown(body, params) {
     });
   };
   const table = rows => `<thead><tr><th class="bk-nm"><span class="bk-rk">#</span>Name</th>${cols().map(([k, label, , , o]) => `<th data-k="${k}" class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}" aria-sort="${k === BK.sort ? (BK.dir < 0 ? 'descending' : 'ascending') : 'none'}">${k === BK.sort ? (BK.dir < 0 ? '▼' : '▲') : ''}${label}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map((p, i) => `<tr data-pid="${p.pid}" class="${p.pid === BK.pid ? 'on' : ''}${p.slot === 'IR' || p.slot === 'TX' ? ' bk-res' : ''}" tabindex="0"><td class="bk-nm"><span class="bk-rk">${i + 1}</span>${cmpBtn(p.pid)}<span>${esc(p.first ? `${p.first[0]}. ${p.last}` : p.name)}</span>${secMark(p)}${noteOf(p.pid) ? `<i class="bk-hasnote" title="${esc(noteOf(p.pid))}">✎</i>` : ''}${p.injury ? `<i class="bk-dot${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}" title="${esc(p.injury)}"></i>` : ''}</td>${cols().map(([k, , , cell, o]) => `<td class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}">${o?.html ? cell(p) : esc(cell(p))}</td>`).join('')}</tr>`).join('') || `<tr><td class="bk-nm" colspan="${cols().length + 1}">No player by that name.</td></tr>`}</tbody>`;
+    <tbody>${rows.map((p, i) => `<tr data-pid="${p.pid}" class="${p.pid === BK.pid ? 'on' : ''}${p.slot === 'IR' || p.slot === 'TX' ? ' bk-res' : ''}" tabindex="0"><td class="bk-nm"><span class="bk-rk">${i + 1}</span>${cmpBtn(p.pid)}${dsgTag(BK.dsg(p))}<span>${esc(p.first ? `${p.first[0]}. ${p.last}` : p.name)}</span>${secMark(p)}${noteOf(p.pid) ? `<i class="bk-hasnote" title="${esc(noteOf(p.pid))}">✎</i>` : ''}${p.injury ? `<i class="bk-dot${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}" title="${esc(p.injury)}"></i>` : ''}</td>${cols().map(([k, , , cell, o]) => `<td class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}">${o?.html ? cell(p) : esc(cell(p))}</td>`).join('')}</tr>`).join('') || `<tr><td class="bk-nm" colspan="${cols().length + 1}">No player by that name.</td></tr>`}</tbody>`;
 
   // Season by season (owner, Oct 26 2026): "NBA" = one row per NBA season (as before); "League" = one row per
   // stretch on a fantasy team in that season (games in weeks a team had him, Front Office stints, same rule as
