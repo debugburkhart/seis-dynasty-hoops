@@ -1256,7 +1256,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   short HOLD -> HLD, old saves read HLD; Customize categories input maxlength 3). (2) Coach edge strips (.mb-dgbar): 18px / 15px
   at <= 360px, 9px letters, no negative letter-spacing, white-space nowrap: the owner saw strips of different widths on
   rows WITHOUT a "Today" chip; those rows are shorter, so a 4-letter label wrapped into a 2nd vertical column. Now every
-  strip is the same width (checked 51 strips at 402 and 320, none clipped). (3) Coach PosX tag sits UNDER the name
+  strip is the same width (checked 51 strips at 402 and 320, none clipped). STRIP HEIGHT (owner's iPhone screenshot after upload:
+  strips ended short of the row edges by different amounts): .mb-row was align-items center, so the shorter side of a row
+  (no Today chip) sat centered and its strip only spanned that side; now align-items stretch (.mb-slot align-self center),
+  every strip = row height - 1px border (51 / 51 checked at 402). (3) Coach PosX tag sits UNDER the name
   (nameHtml puts .mb-stag after the <b>, inline-block) instead of inside the ellipsis-cut name line; long tier tags (.tier
   in .mb-name) capped to the name column. (4) MyGM bottom tab bar on curved iPhones: index.html viewport adds
   viewport-fit=cover so env(safe-area-*) is real; .mg-nav padding 4px max(14px, inset-right) max(8px, inset-bottom)
@@ -1271,6 +1274,31 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   the coach is doing (fillTrack skips without its card) / How the coach decides cards. KEPT (not asked): Starting pipeline
   (it shows lock bars / calls too), Bench players to start, odds, expected finals, Locked + soft locks. Checked: MyGM 0 Wait /
   bar / Lock by, cards Week / Starting pipeline / Bench players; MyGM+ unchanged (Wait x10, 6 cards, modes).
+- OTHER TEAMS IN MyGM (owner, Nov 11 2026; MyGM only, MyGM+ unchanged): (1) COACH: the opponent's designations are filtered to
+  Starting 9 (dgOpp = start only; dgOppAll kept), so his strips show S9 or nothing, his PosX tags only on Starting 9 (slotC), and
+  his bench is in plain FP/G rank order (no saved group order). (2) DEPTH CHART: the team picker works again in MyGM (renderMyGM
+  keeps a valid ?team= on rosters + depth); another manager's team = foreign in renderDepth: automatic chart (his saved order
+  is never read), designations = AUTO_D Starting 9 only, no Designations / Cut List cards (incl. Customize categories), no ⋮
+  menus, drags or Auto-generate, roster box = just "N / 23" (red when over), status line says his own setup is private. NOTE:
+  managers' real Starting 9 / charts are private in Firestore, so other teams always show the AUTOMATIC Starting 9 from public
+  stats, not what that manager picked. Checked with a stubbed login: opponent strips S9 + none, 9 tags; Murray's Meat Market
+  chart = only Starting 9 tints, 24 / 23 red, 0 menus, no cut / desig cards; own chart unchanged (6 groups, menus).
+- SHARED STARTING 9 (owner, Nov 11 2026: "Yes, share real S9" + "make it clear if it's a custom s9 or an automatic sorted
+  one"; REPLACES the NOTE above for teams that shared): public Firestore record s9/{owner} = { owner, s: { pid: spot like PG1 },
+  c (custom = dcCustom of his designations), t }. publishS9(owner, spots, custom) writes it (signed-in browsers only, only
+  when changed: localStorage s9-pub-{owner}) whenever the viewer's OWN team (ownTeamHere: MyGM = MYGM_ME, else COMMISH) is
+  drawn on the Depth Chart (fantasyChart, DC.tags of the Starting 9) or the Assistant Coach (dgMe starts + topMe spots).
+  loadSharedS9(owner) reads it by Firestore REST (S9_URL, no sign-in, cached 2 min; 403 / 404 / offline = null = automatic).
+  Used in MyGM: coach opponent (oppS9 -> dgOpp start set + topOpp spots) with a note pill "Custom Starting 9" (gold
+  .dc-s9kind.custom) / "Automatic Starting 9" + s9Note text; Depth Chart of another team (sharedS9 -> desig start set,
+  sharedCols places those players at their spots via dcChart, fresh cleared) + the same pill and "Shared {date}". MyGM+
+  unchanged (still automatic for other teams). firestore.rules: match /s9/{owner}: read true; create/update by that team's
+  linked member or the commish, fields owner/s (map <= 12)/c (bool)/t (= request.time); delete commish. NEEDS the rules
+  re-published. Tested with a fetch stub: Murray's Meat Market custom set (Clingan out, Klay Thompson SF1, Durant SF2) shows
+  on the coach + the depth chart (SF1 Klay, SF2 Durant, SF3 C. Johnson), no record = "Automatic ... not shared yet"; a real
+  write not tested (needs sign-in + published rules).
+- POSITIONS ON THE COACH BOARD (owner, Nov 11 2026: "show all positions a player can play"): every board row (starters, bench,
+  IR, both sides, MyGM + MyGM+) starts its small line with his Sleeper fantasy positions (r.elig / p.elig, "PG/SG · NOP").
 - PLAN FOR MANAGER LOGINS (owner, Nov 9 2026; agreed in talk; STEPS 1-3 BUILT the same day, see MYGM LOGIN below): MyGM becomes the
   managers' page: Google sign-in REQUIRED + an approved claim (members/{uid}, same as Props / Trade Court), locked to their own
   team; each manager's settings private in users/{uid}/prefs (already); fix the shared-device bleed (localStorage is per

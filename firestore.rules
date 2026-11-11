@@ -15,6 +15,7 @@ rules_version = '2';
 //   status/{uid}           { owner, n, t }: how many picks, for "who has picked" before the lock
 // court/{season}/votes/{caseKey}_{uid}  { k, owner, w, m, t }: Trade Court votes (anyone may read)
 // locks/{season_week_pid}  { s, w, pid, o, k, d, p, src, t }: the commish's Dev Dashboard lock picks (anyone may read)
+// s9/{owner}               { owner, s: { pid: spot }, c, t }: a team's shared Starting 9 (anyone may read; its manager writes)
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -117,6 +118,19 @@ service cloud.firestore {
         && request.resource.data.k in ['lock', 'last', 'zero']
         && request.resource.data.src == 'you'
         && request.resource.data.p is number
+        && request.resource.data.t == request.time;
+      allow delete: if isCommish();
+    }
+
+    // Shared Starting 9 (owner, Nov 11 2026): s9/{owner} = { owner, s: { pid: spot }, c: custom?, t }. Anyone may read it (other
+    // managers' MyGM views); only that team's linked manager (or the commish) writes it. Nothing else of a depth chart is shared.
+    match /s9/{owner} {
+      allow read: if true;
+      allow create, update: if ((isMember() && myTeam() == owner) || isCommish())
+        && request.resource.data.keys().hasOnly(['owner', 's', 'c', 't'])
+        && request.resource.data.owner == owner
+        && request.resource.data.s is map && request.resource.data.s.size() <= 12
+        && request.resource.data.c is bool
         && request.resource.data.t == request.time;
       allow delete: if isCommish();
     }

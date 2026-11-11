@@ -2054,8 +2054,8 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .mb-key { margin: 6px 0 8px; font-size: 11px; color: var(--muted); text-align: center; }
 .mb-key span { color: var(--gold-ink); }
 .mb-rows { display: grid; border-top: 1px solid var(--line); }
-.mb-row { display: grid; grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr); align-items: center; min-height: 50px; border-bottom: 1px solid var(--line); }
-.mb-slot { text-align: center; font: 800 10.5px/1 var(--display); letter-spacing: .06em; color: var(--brass); }
+.mb-row { display: grid; grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr); align-items: stretch; min-height: 50px; border-bottom: 1px solid var(--line); } /* stretch (owner, Nov 11 2026): both sides fill the row, so every edge strip runs the full row height */
+.mb-slot { align-self: center; text-align: center; font: 800 10.5px/1 var(--display); letter-spacing: .06em; color: var(--brass); }
 .mb-p { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 6px 0; }
 .mb-p.mb-r { flex-direction: row-reverse; text-align: right; }
 .mb-name { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.2; }
@@ -4726,3 +4726,7 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .bk-dynx b { font-size: 26px; }
 /* Coach board: a long tier tag ("High-end starter") stays inside the name column instead of running under the score box. */
 .mb-name .tier { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
+/* Shared Starting 9 label (owner, Nov 11 2026: "make it clear if it's a custom s9 or an automatic sorted one"). */
+.dc-s9kind { display: inline-block; margin-right: 4px; padding: 1px 8px; border-radius: 99px; background: #e8eef6; color: var(--navy-800); font: 800 10.5px/1.6 var(--font); text-transform: uppercase; letter-spacing: .04em; }
+.dc-s9kind.custom { background: #f2c14e; color: var(--navy-900); }
+.mb-s9note b { color: inherit; }
