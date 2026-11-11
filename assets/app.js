@@ -2454,7 +2454,7 @@ function renderCommish(main, params) {
     </div>`;
   const body = $('#cm-body', main);
   paintSync(main);
-  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth, devdash: renderDevDash, defense: renderDefensePage,tradetree: renderTradeTree, lockcard: renderLockCard, advanced: renderAdvancedPage, contracts: renderContractsPage, sleeper: renderSleeperPage }[tab];
+  const show = { brief: renderBriefing, coach: renderCoach, dynasty: renderDynasty, prospects: renderProspects, draftscout: renderDraftScout, tracker: renderTracker, trades: renderTrades, managers: renderManagers, scout: renderScouting, waivers: renderWaivers, playoffs: renderPlayoffs, recap: renderRecap, picks: renderPicks, races: renderRaces, hype: renderEarlyHype, wager: renderWagerAdmin, props: renderPropsAdmin, health: renderHealth, breakdown: renderBreakdown, injuries: renderInjuryReport, reports: renderReports, depth: renderDepth, devdash: renderDevDash, defense: renderDefensePage,tradetree: renderTradeTree, lockcard: renderLockCard, advanced: renderAdvancedPage, cards: renderReportCards, contracts: renderContractsPage, sleeper: renderSleeperPage }[tab];
   CM_REDRAW = () => show(body, params).catch(() => {});
   show(body, params).catch(err => {
     body.innerHTML = `<section class="card"><p class="empty">Couldn’t load this report: ${esc(err.message)}</p></section>`;
@@ -2471,16 +2471,16 @@ function renderCommish(main, params) {
 // [id, label, short label (phone bar), icon]. Nav (owner, Nov 8 2026: "C on desktop, D on phones"): a 2K-style navy menu
 // bar with big icons on desktop, a bottom tab bar pinned to the screen on phones (.mg-nav in styles.css).
 // Contracts moved back to Test features (owner, Nov 9 2026: "we won't worry about it now"): #/commish?tab=contracts.
-const MYGM_TABS = [['rosters', 'Rosters', 'Rosters', 'users'], ['coach', 'Assistant Coach', 'Coach', 'whistle'], ['depth', 'Depth Chart', 'Depth', 'list'], ['cards', 'Report Cards', 'Grades', 'cap'], ['trophies', 'Trophy Room', 'Trophies', 'trophy']];
+const MYGM_TABS = [['rosters', 'Rosters', 'Rosters', 'users'], ['coach', 'Assistant Coach', 'Coach', 'whistle'], ['depth', 'Depth Chart', 'Depth', 'list'], ['advanced', 'Advanced Stats', 'Stats', 'gauge'], ['trophies', 'Trophy Room', 'Trophies', 'trophy']];
 const MYGM_SHOW = {
   rosters: (body, params) => renderBreakdown(body, params),
   coach: (body, params) => renderCoach(body, params),
   depth: (body, params) => renderDepth(body, params),
-  cards: (body, params) => renderReportCards(body, params),
+  advanced: (body, params) => renderAdvancedPage(body, params), // swapped in for Report Cards (owner, Nov 11 2026)
   trophies: (body, params) => renderTrophyRoom(body, params),
 };
 // Office tab ids that live in MyGM now (old ids kept: 'breakdown' = Rosters), and a link to any office / MyGM tab.
-const MYGM_IDS = { breakdown: 'rosters', rosters: 'rosters', coach: 'coach', depth: 'depth', cards: 'cards', trophies: 'trophies' };
+const MYGM_IDS = { breakdown: 'rosters', rosters: 'rosters', coach: 'coach', depth: 'depth', advanced: 'advanced', trophies: 'trophies' };
 const officeHash = (tab, rest = {}) => (MYGM_IDS[tab]
   ? `${mygmBase()}?${new URLSearchParams({ tab: MYGM_IDS[tab], ...rest })}`
   : `#/commish?${new URLSearchParams({ ...(tab === 'brief' ? {} : { tab }), ...rest })}`);
@@ -3717,7 +3717,7 @@ async function renderBreakdown(body, params) {
     const arrows = [
       NBA_TEAM_CODES.includes(p.team) && !(list === 'nba' && nbaTeam === p.team) ? `<a class="bk-gotoa" href="${to({ list: 'nba', nba: p.team })}">View on NBA team (${esc(p.team)}) →</a>` : '',
       list !== 'league' ? `<a class="bk-gotoa" href="${to({ list: 'league', ...(p.owner ? {} : { fa: '1' }) })}">View in League →</a>` : '',
-      `<a class="bk-gotoa" href="#/commish?${new URLSearchParams({ tab: 'advanced', p: p.pid, ...here })}">Advanced stats →</a>`
+      `<a class="bk-gotoa" href="${mygmBase()}?${new URLSearchParams({ tab: 'advanced', p: p.pid, ...here })}">Advanced stats →</a>`
     ].filter(Boolean);
     return arrows.length ? `<div class="bk-goto">${arrows.join('')}</div>` : '';
   };
@@ -4273,7 +4273,7 @@ async function renderBreakdown(body, params) {
           <small>${esc([p.team || 'FA', p.pos.join('/')].join(' · '))}</small>
           <span class="bk-cmph-acts">${byPid[p.pid] ? `<button type="button" data-cmpopen="${p.pid}">Card</button>` : ''}<button type="button" data-cmp="${p.pid}">Remove</button></span></div></th>`).join('')}</tr></thead>
         <tbody>${rows}</tbody></table></div>
-      <p class="bk-foot">Gold = best of the group in that row (lower is better for age, ranks and turnovers). Stats: ${esc(period)}${season === 'career' ? ' (every league season, any team)' : ''}; Locked = starters’ points that counted for any team. “Card” opens his player card when he’s in the list below.</p><a class="bk-gotoa bk-cmpadv" href="#/commish?${new URLSearchParams({ tab: 'advanced', ...(season === 'career' ? { season } : season !== cur.season ? { season } : {}), back: link({}), backl: 'Compare' })}">Chart these players in Advanced Stats →</a>${fpNote('game')}`,
+      <p class="bk-foot">Gold = best of the group in that row (lower is better for age, ranks and turnovers). Stats: ${esc(period)}${season === 'career' ? ' (every league season, any team)' : ''}; Locked = starters’ points that counted for any team. “Card” opens his player card when he’s in the list below.</p><a class="bk-gotoa bk-cmpadv" href="${mygmBase()}?${new URLSearchParams({ tab: 'advanced', ...(season === 'career' ? { season } : season !== cur.season ? { season } : {}), back: link({}), backl: 'Compare' })}">Chart these players in Advanced Stats →</a>${fpNote('game')}`,
       { cls: 'bk-cmpcard', sub: `${ps.length} players · ${esc(period)}` });
   };
   const afterCmp = msg => { draw(); drawTray(msg); renderCompare(); };
@@ -5217,10 +5217,12 @@ const DESIG_DEFAULT = [
   { id: 'rot', name: 'Rotation', short: 'ROT', color: 1, desc: 'Players that get starts when your starters aren’t playing' },
   { id: 'stream', name: 'Stream', short: 'STR', color: 2, desc: 'Players that get spot starts, not expecting much' },
   { id: 'dev', name: 'Development', short: 'DEV', color: 3, desc: 'Rostering these players for their upside' },
-  { id: 'hold', name: 'Hold', short: 'HOLD', color: 4, desc: 'Players that aren’t playing well enough to be traded or started, could be dropped' },
+  { id: 'hold', name: 'Hold', short: 'HLD', color: 4, desc: 'Players that aren’t playing well enough to be traded or started, could be dropped' },
   { id: 'ir', name: 'IR', short: 'IR', color: 5, desc: 'These players are injured, syncs automatically with Sleeper' },
 ];
 const DESIG_DESC_MAX = 120;
+const DESIG_SHORT_MAX = 3; // short label (Assistant Coach edge strip) at most 3 letters, so every strip looks the same (owner, Nov 11 2026)
+const dcShort = c => (c.short === 'HOLD' ? 'HLD' : String(c.short || c.name || '').slice(0, DESIG_SHORT_MAX).toUpperCase());
 const DESIG_LIMIT = 8;
 const DESIG_FIXED = new Set(['start', 'ir']); // can't be deleted (Starting 9 can't be renamed either)
 const DC_COLORS = ['Blue', 'Yellow', 'Green', 'Purple', 'Orange', 'Red', 'Teal', 'Pink', 'Navy', 'Brown', 'Lime', 'Gray'];
@@ -5228,7 +5230,7 @@ function dcCats() {
   const saved = gmLoad('gm-dc-cats', null)?.cats;
   const list = Array.isArray(saved) && saved.length ? saved.filter(c => c?.id && c.name).slice(0, DESIG_LIMIT) : DESIG_DEFAULT;
   // Saves from before descriptions existed get the default one for a standard category.
-  const out = list.map(c => ({ ...c, color: Number.isInteger(c.color) && c.color >= 0 && c.color < DC_COLORS.length ? c.color : 11, desc: typeof c.desc === 'string' ? c.desc : DESIG_DEFAULT.find(d => d.id === c.id)?.desc ?? '' }));
+  const out = list.map(c => ({ ...c, short: dcShort(c), color: Number.isInteger(c.color) && c.color >= 0 && c.color < DC_COLORS.length ? c.color : 11, desc: typeof c.desc === 'string' ? c.desc : DESIG_DEFAULT.find(d => d.id === c.id)?.desc ?? '' }));
   // Starting 9 is always there, first, with its own name; IR is always there.
   const start = out.find(c => c.id === 'start');
   const rest = out.filter(c => c.id !== 'start');
@@ -5657,7 +5659,7 @@ async function renderDepth(body, params) {
             <svg class="caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3"/></svg>${pick}</span></label>`}
         ${fantasyView ? `<button type="button" class="btn dc-auto">Auto-generate best depth chart</button>
           <label class="dc-check"><input type="checkbox" data-hidetaxi${hideTaxi() ? ' checked' : ''}> Hide taxi <small>(${players.filter(p => p.slot === 'TX').length})</small></label>` : ''}
-        <a class="bk-gotoa dc-adv" href="#/commish?${new URLSearchParams({ tab: 'advanced', view: 'teams', ...(fantasyView ? { kind: 'fantasy', ...(me === COMMISH ? {} : { team: me }) } : { kind: 'nba', nba }), back: `${mygmBase()}?tab=depth&view=${view}${fantasyView ? (me === COMMISH ? '' : `&team=${me}`) : `&nba=${nba}`}`, backl: 'Depth Chart' })}">${fantasyView ? 'Who carried the team' : 'Usage tree'} in Advanced Stats →</a>
+        <a class="bk-gotoa dc-adv" href="${mygmBase()}?${new URLSearchParams({ tab: 'advanced', view: 'teams', ...(fantasyView ? { kind: 'fantasy', ...(me === COMMISH ? {} : { team: me }) } : { kind: 'nba', nba }), back: `${mygmBase()}?tab=depth&view=${view}${fantasyView ? (me === COMMISH ? '' : `&team=${me}`) : `&nba=${nba}`}`, backl: 'Depth Chart' })}">${fantasyView ? 'Who carried the team' : 'Usage tree'} in Advanced Stats →</a>
       </div>
       ${fantasyView
     ? `<p class="dc-status">${chart.saved ? `<b>Your custom order</b> · saved ${esc(savedAt)} (follows you to your other devices when signed in)` :'<b>Automatic order</b> (by role)'}. Drag a player to reorder or move him to another position (phones: press and hold, then drag), or tap ⋮.</p>
@@ -5728,7 +5730,7 @@ async function renderDepth(body, params) {
   const catEditor = cats => `<details class="dc-cats"${DC.catsOpen ? ' open' : ''}><summary>Customize categories <small>${cats.length} / ${DESIG_LIMIT}</small></summary>
       <p class="dc-help">Rename, recolor, reorder, describe or add categories (up to ${DESIG_LIMIT}). They’re yours: saved for your sign-in on every device, and every other manager starts from the standard set. Starting 9 keeps its name (you can change its color); IR can’t be deleted because the Current chart puts Sleeper IR players there. The short label (up to 4 letters) shows on the Assistant Coach’s edge strip. Deleting a category leaves its players uncategorized.</p>
       <div class="dc-catlist">${cats.map((c, i) => `<div class="dc-cat" data-cat="${esc(c.id)}">
-        <span class="dc-catname">${c.id === 'start' ? `<b>Starting 9</b><small>S9 · fixed</small>` : `<input type="text" maxlength="20" value="${esc(c.name)}" data-cat-name aria-label="Category name"><input type="text" maxlength="4" value="${esc(c.short)}" data-cat-short aria-label="Short label (edge strip)" class="dc-catshort">`}</span>
+        <span class="dc-catname">${c.id === 'start' ? `<b>Starting 9</b><small>S9 · fixed</small>` : `<input type="text" maxlength="20" value="${esc(c.name)}" data-cat-name aria-label="Category name"><input type="text" maxlength="${DESIG_SHORT_MAX}" value="${esc(c.short)}" data-cat-short aria-label="Short label (edge strip)" class="dc-catshort">`}</span>
         ${c.id === 'start' ? `<small class="dc-catdesc-fixed">${esc(c.desc)}</small>` : `<input type="text" maxlength="${DESIG_DESC_MAX}" value="${esc(c.desc)}" data-cat-desc class="dc-catdesc" aria-label="Description" placeholder="Short description (optional)">`}
         <span class="dc-sws" role="group" aria-label="Color">${DC_COLORS.map((nm, n) => `<button type="button" class="dc-sw dgc-${n}${c.color === n ? ' on' : ''}" data-cat-color="${n}" title="${nm}" aria-label="${nm}" aria-pressed="${c.color === n}"></button>`).join('')}</span>
         <span class="dc-catbtns">${c.id === 'start' ? '' : `<button type="button" data-cat-move="-1"${i <= 1 ? ' disabled' : ''} aria-label="Move up">↑</button><button type="button" data-cat-move="1"${i === cats.length - 1 ? ' disabled' : ''} aria-label="Move down">↓</button>`}${DESIG_FIXED.has(c.id) ? '' : '<button type="button" class="dc-catdel" data-cat-del>Delete</button>'}</span>
@@ -5812,13 +5814,13 @@ async function renderDepth(body, params) {
       const id = catField.closest('[data-cat]').dataset.cat;
       const isName = catField.matches('[data-cat-name]');
       const isDesc = catField.matches('[data-cat-desc]');
-      const text = catField.value.trim().slice(0, isDesc ? DESIG_DESC_MAX : isName ? 20 : 4);
+      const text = catField.value.trim().slice(0, isDesc ? DESIG_DESC_MAX : isName ? 20 : DESIG_SHORT_MAX);
       const cats = dcCats();
       const c = cats.find(x => x.id === id);
       if (!c || c.id === 'start') return;
       if (isDesc) c.desc = text;
       else if (isName && text) c.name = text;
-      else if (!isName) c.short = (text || c.name.slice(0, 4)).toUpperCase();
+      else if (!isName) c.short = (text || c.name.slice(0, DESIG_SHORT_MAX)).toUpperCase();
       saveCats(cats);
       DC.catsOpen = true;
       draw();
@@ -6588,9 +6590,15 @@ async function renderCoach(body, params) {
     bindTeamPick(body);
     return;
   }
+  // MYGM COACH TRIM (owner, Nov 11 2026, MyGM only; MyGM+ keeps everything): no lock advice (Lock / Wait / Held calls, "Lock by",
+  // "Lock now", the coach's reasoning text, coach modes) and no "Their best lineup" / "How the coach is doing" / "How the coach
+  // decides" cards. Locked, soft locks, scores, odds and what-ifs stay.
+  const trim = bkTrim();
+  const ADVICE = ['lock', 'wait', 'held'];
+  const advice = r => trim && !r.soft && !r.whatIf && ADVICE.includes(r.call);
   const count = c => coach.rows.filter(r => r.call === c && !r.soft).length;
   const softN = coach.rows.filter(r => r.soft).length;
-  const summary = [[count('lock'), 'to lock'], [count('live'), 'playing now'], [count('wait'), 'waiting'], [count('locked'), 'locked'], [softN, 'soft locked'], [count('final'), 'done'], [count('plan'), 'not started']].filter(([n]) => n);
+  const summary = [...(trim ? [[count('lock') + count('wait') + count('held'), 'not locked']] : [[count('lock'), 'to lock']]), [count('live'), 'playing now'], ...(trim ? [] : [[count('wait'), 'waiting']]), [count('locked'), 'locked'], [softN, 'soft locked'], [count('final'), 'done'], [count('plan'), 'not started']].filter(([n]) => n);
   // Matchup factor chip on upcoming games (owner, Nov 4 2026; assets/matchup.js): only when it moves his expected score 1.5%+.
   const muOf = (pos, opp) => (pos && opp ? gameFactor(pos, opp) : { f: 1 });
   const muPct = m => { const d = Math.round((m.f - 1) * 100); return `${d > 0 ? '+' : '−'}${Math.abs(d)}%`; };
@@ -6618,25 +6626,25 @@ async function renderCoach(body, params) {
   };
   // Soft lock (owner, Nov 8 2026): his last game of the week has tipped, he isn't locked: counts as locked (score in the
   // locked total) but can still be moved off the lineup. r.soft from gm.js coachCall (calls 'held', or 'live' on his last game).
-  const label = r => (r.whatIf ? 'What-if' : r.soft ? 'Soft lock' : CALL_LABEL[r.call]);
+  const label = r => (r.whatIf ? 'What-if' : r.soft ? 'Soft lock' : advice(r) ? 'Not locked' : trim && r.call === 'plan' ? 'Not started' : CALL_LABEL[r.call]);
   // What-if button: lock him in the coach's math only, in the slot it suggests (else where he is).
   const whatIfBtn = (r, i, mine) => {
     if (r.whatIf) return `<button class="gm-whatif on" type="button" data-pid="${esc(r.pid)}">Undo what-if</button>`;
     if (!['lock', 'wait'].includes(r.call)) return '';
     const last = r.sched.filter(g => g.done && g.pts != null).at(-1);
     if (!last) return '';
-    return `<button class="gm-whatif" type="button" data-pid="${esc(r.pid)}" data-date="${esc(last.date)}" data-slot="${r.lockSlotIdx ?? i}">What if ${mine ? 'I lock' : 'they lock'} him${r.lockSlot ? ` in ${esc(r.lockSlot)}` : ''}?</button>`;
+    return `<button class="gm-whatif" type="button" data-pid="${esc(r.pid)}" data-date="${esc(last.date)}" data-slot="${r.lockSlotIdx ?? i}">What if ${mine ? 'I lock' : 'they lock'} him${r.lockSlot && !trim ? ` in ${esc(r.lockSlot)}` : ''}?</button>`;
   };
   // A starter's lock card (opened from the board). mine = false: the opponent's (button says "They locked him").
   const card = (r, mine = true, i = 0) => (r.empty ? `<div class="gm-call gm-none"><div class="gm-call-top"><span class="cm-slot">${esc(r.slot)}</span><b>Empty spot</b></div></div>` : `
-    <div class="gm-call gm-${r.call}${r.soft ? ' gm-soft' : ''}${r.whatIf ? ' gm-whatif-card' : ''}">
+    <div class="gm-call gm-${advice(r) ? 'plan' : r.call}${r.soft ? ' gm-soft' : ''}${r.whatIf ? ' gm-whatif-card' : ''}">
       <div class="gm-call-top">
         <span class="cm-slot">${esc(r.slot)}</span>
         <div class="gm-who"><b>${esc(r.name)}</b> ${injuryTag(r)}<small>${esc([r.pos, r.team || 'No team', r.perGame ? `about ${num(r.perGame * LOCK_CAL)} a game` : ''].filter(Boolean).join(' · '))}</small></div>
         <span class="gm-badge">${label(r)}</span>
       </div>
       ${r.sched.length ? `<div class="gm-games">${r.sched.map(g => game(r, g)).join('')}</div>` : ''}
-      <p class="gm-text">${esc(r.text)}</p>
+      ${trim && !r.soft && !r.whatIf && !['locked', 'final', 'none'].includes(r.call) ? '' : `<p class="gm-text">${esc(r.text)}</p>`}
       ${["locked", "final"].includes(r.call) || r.soft ? "" : muLine(r.pos, r.sched)}
       <div class="gm-btns">${whatIfBtn(r, i, mine)}</div>
     </div>`);
@@ -6669,7 +6677,7 @@ async function renderCoach(body, params) {
     return [...list].sort((a, b) => group(a.pid) - group(b.pid) || inGroup(a.pid) - inGroup(b.pid) || rank(a.pid) - rank(b.pid));
   };
   // The strip itself: a thick bar on the board's OUTER edge (first child; .mb-r is row-reverse, so it lands on the right).
-  const dgBar = (side, pid) => { const k = dgKey(side, pid); if (!k) return ''; const c = dcCatOf(k, dgCats); return `<span class="mb-dgbar dgc-${c.color}" title="Depth Chart: ${esc(c.name)}">${esc(c.short || c.name.slice(0, 4))}</span>`; };
+  const dgBar = (side, pid) => { const k = dgKey(side, pid); if (!k) return ''; const c = dcCatOf(k, dgCats); return `<span class="mb-dgbar dgc-${c.color}" title="Depth Chart: ${esc(c.name)}">${esc(c.short)}</span>`; };
   // The opponent's lineup as the coach assumes it: their best healthy players (fromBench = moved in).
   const oppRow = r => {
     if (r.empty) return `<li><span>Empty spot<small>${esc(r.slot)} · nobody healthy with games left to fill it</small></span><b class="gm-badge-s gm-none">0</b></li>`;
@@ -6721,7 +6729,8 @@ async function renderCoach(body, params) {
     const g = todayGame(p);
     return `${p.traded ? '<span class="mb-traded" title="Traded away mid-week after his lock: Sleeper keeps him in this lineup and his points count for this team">Traded · counts here</span>' : ''}${tier(p)}${p.injury ? injuryTag(p) : ''}${g ? `<span class="mb-today">${['in_progress', 'in_game'].includes(g.status) ? 'Live' : 'Today'} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${!['complete', 'in_progress', 'in_game'].includes(g.status) && tipShort(g) ? ` · <span class="mb-tip">${tipShort(g)}</span>` : ''}</span>` : ''}`;
   };
-  const nameHtml = (p, tag = '') => `<b><span class="mb-full">${esc(p.name)}</span><span class="mb-short">${esc(short(p.name))}</span>${tag}</b>`;
+  // PosX tag under the name (owner, Nov 11 2026: on phones it was cut off at the end of the name line).
+  const nameHtml = (p, tag = '') => `<b><span class="mb-full">${esc(p.name)}</span><span class="mb-short">${esc(short(p.name))}</span></b>${tag}`;
   // A tappable player: key = side + pid, opens his card (data-for) below the row.
   const tapAttrs = key => `role="button" tabindex="0" data-key="${esc(key)}" aria-expanded="${MB_OPEN.has(key)}"`;
   // Next game's tip-off for players who aren't locked ("Next Fri 8:30pm"); a game later today is
@@ -6742,9 +6751,9 @@ async function renderCoach(body, params) {
       const day = next.date === today ? 'today' : `on ${shortDay(next.date)}`;
       return t ? `Lock by ${t} ${day}` : `Lock before ${next.date === today ? 'tonight' : shortDay(next.date)}`;
     };
-    const isLock = r.call === 'lock' && !r.whatIf;
+    const isLock = r.call === 'lock' && !r.whatIf && !trim;
     const nextUp = ['wait', 'plan', 'live'].includes(r.call) && !r.whatIf ? nextTip(r.sched.find(g => !g.done && !g.playing)) : '';
-    const meta = [r.team || 'FA', r.call === 'none' ? 'No games' : r.call === 'plan' ? `${r.sched.length} game${r.sched.length === 1 ? '' : 's'}` : isLock ? lockBy() : label(r), nextUp].filter(Boolean).join(' · ');
+    const meta = [r.team || 'FA', r.call === 'none' ? 'No games' : r.call === 'plan' ? `${r.sched.length} game${r.sched.length === 1 ? '' : 's'}` : isLock ? lockBy() : advice(r) ? '' : label(r), nextUp].filter(Boolean).join(' · ');
     return `<div class="mb-p mb-${side} mb-${r.whatIf ? 'wi' : r.call}${todayGame(r) ? ' mb-on' : ''}${dgc(side, r.pid)}" ${tapAttrs(`${side}-${r.pid}`)}>
       ${dgBar(side, r.pid)}<span class="mb-name">${nameHtml(r, slotC(side, r.pid))}<span class="mb-tags">${tags(r)}</span><small${isLock ? ' class="mb-lockby"' : nextUp ? ' class="mb-wrap"' : ''}>${esc(meta)}</small></span>
       ${scoreBox(r)}</div>`;
@@ -6825,12 +6834,12 @@ async function renderCoach(body, params) {
   body.innerHTML = `<div class="gm-page">
     <div class="cm-pickers gm-tools">
       ${gmTeamPick(w.me, w.season, 'coach')}
-      <div class="st-stage gm-risk" role="group" aria-label="Coach mode">${riskBtns}</div>
+      ${trim ? '' : `<div class="st-stage gm-risk" role="group" aria-label="Coach mode">${riskBtns}</div>`}
     </div>
     <section class="card gm-head">
       <div class="card-head"><h2>Week ${w.week}</h2><span class="card-sub">${w.started ? `updated ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'before tip-off'}</span></div>
       <div class="gm-counts">${summary.map(([n, t]) => `<span><b>${n}</b> ${t}</span>`).join('')}</div>
-      ${coach.calls.length ? `<p class="gm-alert">Lock now: ${coach.calls.map(r => `<b>${esc(r.name)}</b> (${num(r.score)}${r.lockSlot ? ` in ${esc(r.lockSlot)}` : ''})`).join(', ')}.</p>` : ''}
+      ${coach.calls.length && !trim ? `<p class="gm-alert">Lock now: ${coach.calls.map(r => `<b>${esc(r.name)}</b> (${num(r.score)}${r.lockSlot ? ` in ${esc(r.lockSlot)}` : ''})`).join(', ')}.</p>` : ''}
       ${whatIfBanner(w)}
       ${board}
       ${opp || w.medianOn ? gmOdds(w, coach.now) : ''}
@@ -6843,22 +6852,22 @@ async function renderCoach(body, params) {
         <p class="cm-rule">Only his games after you move him in count, and a locked starter can’t come out. Benching a starter loses his score.</p>
         ${swapList(w, coach.swaps)}
       </section>
-      ${opp ? `<section class="card">
+      ${opp && !trim ? `<section class="card">
         <div class="card-head"><h2>Their best lineup</h2><span class="card-sub">${esc(teamName(opp, w.season))}</span></div>
         <p class="cm-rule">The coach assumes they’ll play smart: their best healthy players from here on, not just today’s lineup. Locked players stay, anyone listed Out or Doubtful keeps only what he already has, and healthy bench players with games left move in. In the simulation they also lock with the same spot-aware bars as yours, and their games score like real managers’ did in past seasons.</p>
         <ol class="aw-race">${coach.oppBest.lineup.map(oppRow).join('')}</ol>
         ${benchedOpp.length ? `<p class="cm-rule">Assumed out of their lineup: ${benchedOpp.map(r => `${esc(r.name)}${r.injury ? ` (${esc(r.injury)})` : ''}`).join(', ')}.</p>` : ''}
       </section>` : ''}
     </div>
-    ${ctCard()}
-    <section class="card">
+    ${trim ? '' : ctCard()}
+    ${trim ? '' : `<section class="card">
       <div class="card-head"><h2>How the coach decides</h2></div>
       <p class="cm-rule">Each starter counts one game a week: the one you lock, or else his last game. <b>Play to win</b> (Beta, recalibrated Oct 2026: see the test below) plays out the rest of the week a few thousand times, every team’s remaining games, both ways (lock his score now, or keep playing), and picks whichever gives the better chance of beating your opponent plus the chance of beating the league median. It knows which of their players are already locked or done, and assumes every other team plays smart too: its best healthy players from here on (not just today’s lineup), planned the same way as yours. Ahead, it locks more to protect the lead; behind, it waits for a bigger night.</p>
       <p class="cm-rule">The coach plans your <b>whole roster against the 9 spots</b>, not each player alone. A lock takes a spot for good, so a score’s lock bar is what that spot is worth: his own games left, or any bench player who fits it and still plays. A depth player’s 25 isn’t a lock while a better bench player with games left could use the spot; a 45 is. Late in the week, as the better players run out of games, the bars come back down. When it says lock, it names the spot: the one the fewest other players could use, so the open spots stay with the players still to play. Bench tips say when to move a bench player in (before his first game) and whether the starter he replaces gets a game first.</p>
       <p class="cm-rule"><b>Safe</b>, <b>Balanced</b> and <b>Bold</b> ignore the matchup and chase points: after each game they compare his score with a <b>lock bar</b>, what waiting is worth on average. Balanced scores the most points; Safe locks more often, Bold chases big games.</p>
       <p class="cm-rule">Tested on two full regular seasons, 2024–25 and 2025–26 (every team-week, against opponents’ real scores; wins = head-to-head plus median, out of 336). The real locked scores come from this site’s saved records, because Sleeper’s own data for old weeks has lost many locks. Settings were fitted on 2024–25 and checked on 2025–26. Play to win won 161 and 145 when spots with no game that day are filled with a bench player who plays (Balanced: 155 and 143), and 152 and 137 with the lineup set once (Balanced: 145 and 135), with the same points. Before the Oct 2026 recalibration it won 151 and 143: its simulation had other teams about 20 a week too strong. The spot-aware bars beat plain bars by 4–5 wins when spots are filled day by day. Each test week starts from the lineup the projections picked, so managers’ real seasons aren’t a fair comparison: their final lineups include news and moves the test can’t see.</p>
       <p class="cm-rule">“About N a game” is Sleeper’s projection for this week under league scoring, for games he’s expected to play, plus 4% (the test’s best fit). <b>Locks come from Sleeper’s own lock data</b> (the Sleeper Insider’s live locks, every team, read each time this page loads), so locks show up on their own, for you and your opponent; there’s nothing to mark. A locked game’s points follow Sleeper’s box score for it. <b>Soft lock</b> = a player on his last game of the week (playing it or done) who isn’t locked: that game is the one that counts, so his score is in the locked total and he counts as locked, but he can still be moved off the lineup before the week ends (then it’s gone). Soft locks never touch the 2K breakdown; only real locks do. <b>What if I lock him?</b> tries a lock in the coach’s math only. If Sleeper’s lock data can’t be read, the coach falls back to your old marks and Dev Dashboard picks.</p>
-    </section></div>`;
+    </section>`}</div>`;
 
   bindTeamPick(body);
   fillTrack(body, w).catch(() => {});

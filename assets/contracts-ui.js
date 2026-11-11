@@ -77,7 +77,7 @@ export async function renderContracts(body, params, h) {
   // Names open the 2K-style contract card (owner, Nov 8 2026); the card links on to the 2K breakdown + Advanced stats.
   const card2k = (pid, label) => `<button type="button" class="cx-name" data-ccard="${pid}" title="Contract card">${esc(label)}</button>`;
   const k2 = () => ({ S, DATA, esc, name, teamName, cur, season, info, all, file, guesses, back, f1 });
-  const adv = pid => `<a class="cx-adv" href="#/commish?tab=advanced&p=${pid}${back()}" title="Advanced stats">Adv</a>`;
+  const adv = pid => `<a class="cx-adv" href="#/mygmplus?tab=advanced&p=${pid}${back()}" title="Advanced stats">Adv</a>`;
   const who = r => `${esc([r.pos, r.team || 'no NBA team', r.age != null ? `age ${r.age}` : ''].filter(Boolean).join(' · '))}${r.fpg != null ? ` · ${f1(r.fpg)} FP/G` : ''}${r.slot === 'ir' ? ' · <b class="cx-ir">IR</b>' : r.slot === 'taxi' ? ' · taxi' : ''}${r.tradedTaxi ? ' · <b class="cx-trd" title="Traded off a taxi squad: Sleeper puts him on the active roster until his new team moves him, so he still counts as taxi (no call-up, no cap hit)">traded off taxi: still taxi</b>' : ''}${r.traded ? ` · <b class="cx-trd" title="His contract came with him in a trade">traded in</b> (signed by ${esc(name(r.signer))})` : ''}`;
   // NBA years + service (owner, Nov 8 2026: "note each player's NBA years so it's clear why they're at what they're at"):
   // service = his NBA seasons in cycles of 8 (every 8th season ends with free agency), on a roster or not.

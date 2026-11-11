@@ -75,7 +75,7 @@ export async function renderAdvanced(body, params, h) {
   // Used once: drop ?p= from the address so a later redraw doesn't add him back after he's removed.
   if (addP || params.get('ps')) {
     const q = new URLSearchParams(params); q.delete('p'); q.delete('ps');
-    try { history.replaceState(null, '', `#/commish?${q}`); } catch { /* fine */ }
+    try { history.replaceState(null, '', `${mygmBase()}?${q}`); } catch { /* fine */ }
   }
 
   body.innerHTML = betaCard('Advanced Stats', '<p class="cm-rule">Adding up box scores…</p>');
@@ -119,7 +119,7 @@ export async function renderAdvanced(body, params, h) {
   let P = await loadPlayers();
   if (!body.isConnected) return;
 
-  const link = (q = {}) => `#/commish?${new URLSearchParams(Object.entries({ tab: 'advanced', season: season === cur.season ? '' : season, ...q, back: params.get('back') ?? '', backl: params.get('backl') ?? '' }).filter(([, v]) => v !== '' && v != null))}`;
+  const link = (q = {}) => `${mygmBase()}?${new URLSearchParams(Object.entries({ tab: 'advanced', season: season === cur.season ? '' : season, ...q, back: params.get('back') ?? '', backl: params.get('backl') ?? '' }).filter(([, v]) => v !== '' && v != null))}`;
   const seg = (key, list, val) => `<div class="dvp-seg as-seg" role="group">${list.map(([v, label]) => `<button type="button" class="ct-chip${String(val) === String(v) ? ' on' : ''}" data-o="${key}" data-v="${v}">${esc(label)}</button>`).join('')}</div>`;
   const tipLine = '<p class="as-tip" aria-live="polite">Tap a dot, bar or box for its numbers.</p>';
   const legend = () => `<div class="as-legend">${P.map(p => `<span><i style="background:${p.color}"></i>${esc(p.short)}</span>`).join('')}</div>`;

@@ -3760,7 +3760,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .dc-slot { display: inline-block; margin-left: 5px; padding: 0 6px; border-radius: 4px; background: #f2c14e; color: var(--navy-800); font: 800 9px/1.6 var(--font); font-style: normal; text-transform: uppercase; letter-spacing: .03em; vertical-align: 1px; white-space: nowrap; }
 /* Starting 9 = gold tag, navy text (like the chart's gold #1 rank); everyone else = navy tag, gold text (owner, Nov 9 2026). */
 .dc-slot.alt { background: var(--navy-800); color: #f2c14e; }
-.mb-name b .mb-stag { margin-left: 4px; vertical-align: 1px; font-size: 9px; }
+.mb-name .mb-stag { display: inline-block; margin: 2px 0 1px; vertical-align: top; font-size: 9px; line-height: 1.5; } /* PosX under the name */
 .dc-cutbtn { padding: 3px 9px; border: 1px solid #c2372b; border-radius: 99px; background: #fff; color: #c2372b; font: 800 11px/1.3 var(--font); cursor: pointer; }
 .dc-cutbtn.on { background: #c2372b; color: #fff; }
 .dc-chip.cut { outline: 2px solid #c2372b; outline-offset: -2px; }
@@ -3778,12 +3778,12 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .dc-limit-after.over { color: #b3261e !important; }
 /* Assistant Coach board: a thick strip in his team's Depth Chart designation color on each player's OUTER edge, with the
    short label stacked letter by letter (owner, Oct 30 2026; replaced an outline). */
-.mb-dgbar { flex: none; align-self: stretch; display: flex; align-items: center; justify-content: center; width: 17px; margin: -6px 0; border-radius: 6px 0 0 6px; background: var(--dg-c); color: #fff; font: 800 9.5px/1.05 var(--font); writing-mode: vertical-rl; text-orientation: upright; letter-spacing: -1px; }
+.mb-dgbar { flex: none; align-self: stretch; display: flex; align-items: center; justify-content: center; width: 18px; margin: -6px 0; padding: 4px 0; border-radius: 6px 0 0 6px; background: var(--dg-c); color: #fff; font: 800 9px/1.2 var(--font); writing-mode: vertical-rl; text-orientation: upright; letter-spacing: 0; text-transform: uppercase; white-space: nowrap; overflow: hidden; } /* never wraps into a 2nd column (rows without a Today chip are shorter); max 3 letters (Nov 11 2026): same width + spacing on every strip */
 .mb-r .mb-dgbar { border-radius: 0 6px 6px 0; }
 .mb-p.mb-dg.mb-l { padding-left: 0; }
 .mb-p.mb-dg.mb-r { padding-right: 0; }
 @media (max-width: 360px) {
-  .mb-dgbar { width: 13px; font-size: 8px; letter-spacing: -1.5px; }
+  .mb-dgbar { width: 15px; font-size: 8px; }
   .mb-p.mb-dg { gap: 5px; }
 }
 
@@ -4696,8 +4696,11 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .mg-nav a:hover { color: #fff; }
 .mg-nav a.on { color: #f4c24f; border-bottom-color: #f4c24f; }
 @media (max-width: 699px) {
-  .mygm-page { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
-  .mg-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; margin: 0; padding: 4px 2px calc(4px + env(safe-area-inset-bottom)); gap: 0; border-radius: 0; border-top: 1px solid #22427e; }
+  .mygm-page { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+  /* Curved iPhone screens (owner, Nov 11 2026: tabs cut off at the edges): viewport-fit=cover (index.html) makes env() real, so
+     the bar runs flush to the bottom edge while its tabs stay inside the safe area: side padding clears the rounded corners,
+     bottom padding clears the home indicator. */
+  .mg-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; margin: 0; padding: 4px max(14px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); gap: 0; border-radius: 0; border-top: 1px solid #22427e; }
   .mg-nav a { padding: 5px 0 4px; gap: 2px; border-bottom: 0; border-top: 3px solid transparent; }
   .mg-nav a.on { border-top-color: #f4c24f; border-bottom: 0; }
   .mg-nav a .ic { width: 22px; height: 22px; }
@@ -4705,7 +4708,7 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
   .mg-nav .mg-ns { display: block; font: 700 10.5px/1.1 var(--font); }
   .mg-nav .gm-beta { display: none; }
   .mg-nav a.on .gm-beta { display: block; top: -9px; right: auto; left: 50%; transform: translateX(-50%); }
-  body:has(.mg-nav) .back-float, body:has(.mg-nav) .bk-tray { bottom: calc(68px + env(safe-area-inset-bottom)); }
+  body:has(.mg-nav) .back-float, body:has(.mg-nav) .bk-tray { bottom: calc(72px + env(safe-area-inset-bottom)); }
 }
 /* Category descriptions (owner, Nov 9 2026): under each Designations group head + an input in Customize categories. */
 .dc-ddesc { margin: 0; padding: 6px 10px 2px; font-size: 11.5px; line-height: 1.35; color: var(--muted); font-style: italic; }
@@ -4721,3 +4724,5 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .mygm-page .page-head .mg-acct { margin-left: auto; }
 .mg-gate .pr-me { margin-top: 12px; text-align: left; }
 .bk-dynx b { font-size: 26px; }
+/* Coach board: a long tier tag ("High-end starter") stays inside the name column instead of running under the score box. */
+.mb-name .tier { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }

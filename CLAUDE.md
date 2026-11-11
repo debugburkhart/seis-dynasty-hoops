@@ -1244,7 +1244,33 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
 - CONTRACTS OUT (owner, Nov 9 2026: "Move contracts out of MyGM and MyGM+ and put it back into test features ... we won't
   worry about it now"): TEST_FEATURES entry 'contracts' (label "Contract Sandbox") again; removed from MYGM_TABS / MYGM_SHOW /
   MYGM_IDS; #/mygm(plus)?tab=contracts forwards to #/commish?tab=contracts; contracts-ui here() = #/commish?tab=contracts.
-  MyGM / MyGM+ now: Rosters (default), Assistant Coach, Depth Chart, Report Cards, Trophy Room.
+  MyGM / MyGM+ now: Rosters (default), Assistant Coach, Depth Chart, Advanced Stats, Trophy Room.
+- REPORT CARDS <-> ADVANCED STATS (owner, Nov 11 2026: "swap the report card section in MyGM (and MyGM+) with Advanced
+  stats"): MYGM_TABS entry [advanced, Advanced Stats, short Stats, icon gauge] in Report Cards' place; MYGM_SHOW.advanced =
+  renderAdvancedPage; MYGM_IDS advanced (so #/commish?tab=advanced forwards to #/mygm). Report Cards = a Test feature again
+  (TEST_FEATURES cards; renderCommish show.cards = renderReportCards; its team picker / links use officeHash -> #/commish).
+  Advanced Stats links now use mygmBase(): 2K card "Advanced stats", Compare "Chart these players", Depth Chart .dc-adv,
+  advstats-ui link() + its replaceState; Contract Sandbox (a commish page) links go to #/mygmplus?tab=advanced. NOT DONE (ask):
+  Advanced Stats in MyGM still shows usage (charts, usage tree); owner Nov 11 2026: "I think usage can stay" (he'll look).
+- PHONE POLISH (owner, Nov 11 2026): (1) category short labels max DESIG_SHORT_MAX 3 letters (dcShort in dcCats; default Hold
+  short HOLD -> HLD, old saves read HLD; Customize categories input maxlength 3). (2) Coach edge strips (.mb-dgbar): 18px / 15px
+  at <= 360px, 9px letters, no negative letter-spacing, white-space nowrap: the owner saw strips of different widths on
+  rows WITHOUT a "Today" chip; those rows are shorter, so a 4-letter label wrapped into a 2nd vertical column. Now every
+  strip is the same width (checked 51 strips at 402 and 320, none clipped). (3) Coach PosX tag sits UNDER the name
+  (nameHtml puts .mb-stag after the <b>, inline-block) instead of inside the ellipsis-cut name line; long tier tags (.tier
+  in .mb-name) capped to the name column. (4) MyGM bottom tab bar on curved iPhones: index.html viewport adds
+  viewport-fit=cover so env(safe-area-*) is real; .mg-nav padding 4px max(14px, inset-right) max(8px, inset-bottom)
+  max(14px, inset-left) = flush to the bottom edge, tabs clear of the rounded corners and home indicator; page bottom
+  padding 80px, floating back pill / compare tray 72px. Real iPhone not tested (the preview has no insets).
+- MYGM COACH TRIM (owner, Nov 11 2026: "Get rid of ... the logic that tells you whether to lock a player or not, remove the
+  corresponding wait, hold lines ... Locked can stay ... the \"Their best lineup\", \"how the coach is doing\", \"how the coach
+  decides\""; MyGM only via trim = bkTrim() in renderCoach, advice(r) = lock / wait / held calls that are not soft / what-if):
+  labels "Not locked" (cards) / nothing (board rows), "Not started" instead of Plan, no "Lock by" lines, no call text on cards
+  except Locked / Done / No games / soft / what-if (the texts carry lock bars), counts "N not locked" instead of to lock +
+  waiting, no "Lock now" alert, no coach mode buttons, What-if button without the suggested slot, no Their best lineup / How
+  the coach is doing (fillTrack skips without its card) / How the coach decides cards. KEPT (not asked): Starting pipeline
+  (it shows lock bars / calls too), Bench players to start, odds, expected finals, Locked + soft locks. Checked: MyGM 0 Wait /
+  bar / Lock by, cards Week / Starting pipeline / Bench players; MyGM+ unchanged (Wait x10, 6 cards, modes).
 - PLAN FOR MANAGER LOGINS (owner, Nov 9 2026; agreed in talk; STEPS 1-3 BUILT the same day, see MYGM LOGIN below): MyGM becomes the
   managers' page: Google sign-in REQUIRED + an approved claim (members/{uid}, same as Props / Trade Court), locked to their own
   team; each manager's settings private in users/{uid}/prefs (already); fix the shared-device bleed (localStorage is per

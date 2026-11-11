@@ -17,8 +17,9 @@ export const TEST_FEATURES = [
   { id: 'lockcard', label: 'Lock Report Card', since: '2026-11-02' },
   // Trade Trees (owner, Nov 2 2026): a trade's every branch (what each team got, then what that became), by locked points.
   { id: 'tradetree', label: 'Trade Trees', since: '2026-11-02' },
-  // Advanced Stats (owner, Nov 4 2026): charts comparing players and NBA / fantasy teams in depth (advstats.js + advstats-ui.js).
-  { id: 'advanced', label: 'Advanced Stats', since: '2026-11-04' },
+  // Advanced Stats (owner, Nov 4 2026) moved to MyGM / MyGM+ Nov 11 2026 (swapped with Report Cards).
+  // Report Cards (owner, Nov 8 2026, MyGM tab until Nov 11 2026, swapped with Advanced Stats, which moved to MyGM).
+  { id: 'cards', label: 'Report Cards', since: '2026-11-08' },
   // Sleeper Insider (owner, Nov 8 2026): Sleeper's private GraphQL API, read-only, his own token in this browser only.
   { id: 'sleeper', label: 'Sleeper Insider', since: '2026-11-08' },
   // Contract Sandbox (owner, Nov 7 2026): was MyGM's first tab Nov 8-9 2026, moved back here ("we won't worry about it now").
