@@ -1308,7 +1308,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   unchanged.
 - SLEEPER POSITION COLORS (owner, Nov 11 2026: "color coded the same as sleeper: PG = red, SG = orange, SF = Green, PF =
   blue, C = pink, match the hues" + "do that to assistant coach too"): styles.css .pc-pg #ff2a6d, .pc-sg #ff9a3c, .pc-sf #19cfa8,
-  .pc-pf #4fa8ff, .pc-c #c96cf2 (+ .pc-g #ff6455, .pc-f #33bcd4, .pc-util #9aa6bb for slot labels) set --pc; app.js pcCls(pos /
+  .pc-pf #4fa8ff, .pc-c #c96cf2 (+ .pc-g #ff6455, .pc-f #33bcd4, .pc-util #8c61f5 = Sleeper's UTIL violet, owner's screenshot, for slot labels) set --pc; app.js pcCls(pos /
   spot) + posTxt(list) (spans: .mb-name b is display block). Boxes: Starting 9 = filled with the position color + navy text, others
   = navy box + position-colored text (.pc.dc-slot / .pc.dc-rank.st / .bn, !important; theme.js KEEP has .pc so dark mode leaves
   them alone). Depth Chart: rank boxes, column headers, glance row labels, Designations / Cut List tags, position text on rows.
