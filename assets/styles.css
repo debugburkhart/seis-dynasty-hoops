@@ -4772,11 +4772,11 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .pc-g { --pc: #ff6455; }
 .pc-f { --pc: #33bcd4; }
 .pc-util { --pc: #9aa6bb; }
-.pc.dc-slot, .pc.dc-rank.st { background: var(--pc) !important; color: #0b1d3d !important; } /* !important: dark mode re-emits the older gold / navy rules with html.dark in front */
-.pc.dc-slot.alt, .pc.dc-rank.bn { background: #10264f !important; color: var(--pc) !important; }
+.pc.dc-slot:not(.alt), .pc.dc-rank.st { background: var(--pc) !important; color: #0b1d3d !important; } /* !important: dark mode re-emits the older gold / navy rules with html.dark in front */
+.pc.dc-slot.alt, .pc.dc-rank.bn { background: #10264f !important; color: var(--pc) !important; box-shadow: inset 0 0 0 1px var(--pc); }
 .pc-txt { color: var(--pc) !important; font-weight: 800; }
 .dc-head b.pc { color: var(--pc) !important; }
 .mb-slot.pc { color: var(--pc) !important; }
 .mb-name > small { white-space: normal; } /* positions first on this line now (Nov 11 2026): wrap instead of cutting "Locked" off */
 /* Rosters card: position boxes under the jersey number in Sleeper colors (owner, Nov 11 2026), outlined like Sleeper's dark tiles. */
-.bk-tags span.pc { border-color: var(--pc); color: var(--pc); }
+.bk-tags span.pc { border-color: var(--pc) !important; color: var(--pc) !important; } /* !important: dark mode re-emits .bk-tags span with html.dark in front */

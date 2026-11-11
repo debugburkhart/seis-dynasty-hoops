@@ -3624,7 +3624,7 @@ const BK_LKPCT = ['lkpct', 'Lk%', p => BK.lkPct(p.pid) ?? -1, p => (BK.lkPct(p.p
 const BK_VIEWS = {
   avg: { label: 'Averages', sort: 'fpg', cols: [
     BK_TAGCOL, BK_OWN, BK_SLOT,
-    ['pos', 'Pos', p => p.pos.join('/'), p => p.pos.join('/')],
+    ['pos', 'Pos', p => p.pos.join('/'), p => posTxt(p.pos), { html: true }], // Sleeper position colors (owner, Nov 11 2026)
     ['nba', 'NBA', p => p.team || 'zz', p => p.team || 'FA'],
     ['age', 'Age', p => p.age ?? 0, p => p.age ?? '—'],
     BK_DYN,

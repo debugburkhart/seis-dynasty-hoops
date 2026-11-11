@@ -1315,7 +1315,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Coach: PosX tags, middle slot labels (PG / G / UTIL ...), position text first on every row's small line (that line now wraps,
   .mb-name > small white-space normal). Checked light + dark at 402: PG1 #ff2a6d box / navy text, SF4 navy box / green text.
   Rosters card (owner, same day: "do the same to this area of rosters"): the position boxes under the jersey number (.bk-tags
-  span.pc) = position-colored outline + text on the dark card (number box unchanged).
+  span.pc, !important: dark mode's copy of .bk-tags span (html.dark in front) out-ranked it, owner saw plain boxes) = position-
+  colored outline + text on the dark card (number box unchanged).
+  Rosters table "Pos" column (owner, same day) = posTxt (html cell), every list / view that has it. DARK MODE FIX (owner's
+  screenshot: coach tags for non-Starting 9 players unreadable): the filled rule also matched .alt and its dark-mode copy (KEEP
+  writes html.dark + the rule) out-ranked the .alt rule, so .alt text turned navy on navy; now .pc.dc-slot:not(.alt) for the
+  filled one, and .alt / .bn boxes get a 1px inset outline in the position color. Checked dark: 33 / 33 coach .alt tags colored.
 - PLAN FOR MANAGER LOGINS (owner, Nov 9 2026; agreed in talk; STEPS 1-3 BUILT the same day, see MYGM LOGIN below): MyGM becomes the
   managers' page: Google sign-in REQUIRED + an approved claim (members/{uid}, same as Props / Trade Court), locked to their own
   team; each manager's settings private in users/{uid}/prefs (already); fix the shared-device bleed (localStorage is per
