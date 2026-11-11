@@ -1,7 +1,0 @@
-Finished weeks the site couldn't settle for sure from Sleeper's official standings:
-
-2026 week 3 bigdaddyburk (official score 329): the starters' games add up to 329 in 2 different ways. The site used the most likely one; pick these players on the Dev Dashboard (Commish, Test features).
-   LeBron James: 31 used, could be 29 (games:  29, 11-02 30, 11-04 33, 11-06 18, 11-08 31)
-   Michael Porter Jr.: 27 used, could be 29 (games: 11-02 29, 11-04 35, 11-07 34, 11-08 27)
-
-Pick those players on the Dev Dashboard (Commish office, Test features, Dev Dashboard): your pick is final and the next run uses it. (assets/corrections.js "players" still works too.)
