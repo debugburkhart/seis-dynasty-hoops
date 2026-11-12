@@ -1376,7 +1376,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   'breakdown'), opening on MYGM_ME; every other tab stays own-team only. Checked: opens on the signed-in team, picking
   Parma works, Depth Chart with ?team=Parma still shows the own team.
   ROSTERS TRIM (owner, Nov 9 2026, MyGM only via bkTrim() = page mygm; MyGM+ unchanged): no Dyn column (bkCols drops BK_DYN),
-  the Dynasty badge is a plain "X" (.bk-dynx, "what it needs to be" decided later), no slot / tier line (.bk-title +
+  the gold Dynasty hexagon shows LEAGUE RANK instead (owner, Nov 11 2026: .bk-rankb "Rank / 7 C / 18 OVR", position + overall; the "League rank" bio line is hidden in MyGM; was a plain "X"), no slot / tier line (.bk-title +
   tierTag) in the bio, no "Dynasty N at full health" note, no Dynasty score row in Compare, no "Top 100 prospect" auto tag
   (autoTagsOf), so it never shows in the Tags filter / column either. Dynasty riser / faller auto tags hidden too (owner: "Yes,
   hide them"). USAGE hidden too ("hide all usage mentions too"): bkCols drops BK_USG (Averages + Shooting), no "Role ...
@@ -2409,6 +2409,21 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   backFloat(params) = a fixed navy pill at the bottom (#back-float, .back-float) on ANY page with ret, removed on the
   next render; leaving the commish keeps it unlocked when ret points back into it; the 2K page saves scrollY in
   sessionStorage bk-scroll on those taps and txs() restores it. Tested Oct 31 2026: Rivalry trade + Trade Court case.
+  AVG LOCK (owner, Nov 11 2026): BK_AVGLK "Avg Lk" = locked points ÷ weeks locked (bkAvgLock; same team / period as
+  Locked) in Averages + Totals (after Locked; not Shooting, owner); bio line .bk-avglk "Avg lock 49.3
+  per week locked (148 over 3 weeks)" under the LGS line; fine print explains it.
+  LOCKED BADGE (owner, Nov 11 2026): the blue hexagon's small line says "N wks" / "1 wk" (weeks locked), was "N st".
+  HEADSHOT LOGO (owner, Nov 11 2026, like Sleeper's player card; Rosters card only): .bk-photo has his NBA team logo
+  (teamLogo, img.bk-plogo) faded behind the headshot (img.bk-pimg on top), opacity .26, 112% wide, nudged up-left.
+  TEAM-COLOR BIO (owner, Nov 11 2026, kept after seeing the preview): NBA_COLORS in app.js (30 primary colors;
+  BKN / SAS dark grey) -> draw() sets --tm + class bk-tmc on #bk-hero; `.bk .bk-hero.bk-tmc` = team color fading into
+  navy (needs the 3-class selector: theme.js's html.dark copy of .bk-hero beat a 2-class rule). No team = navy as before.
+  Logos washed out on their own color (Jazz / Raptors / Rockets, owner): on .bk-tmc the faded headshot logo is a white
+  watermark (filter brightness(0) invert(1), opacity .2) and the small .bk-team logo gets a 1px white drop-shadow outline.
+  LEAGUE TEAM LOGO (owner, Nov 11 2026): Team list card title starts with the fantasy team's league logo (.bk-tlogo, round
+  26px). leagueLogo(owner) in app.js = Sleeper /v1/league/{id}/users metadata.avatar (the logo uploaded for this league,
+  read live), else his profile avatar (bigtrey5456 has no league logo on Nov 11 2026). That title row is centered
+  (owner: the logo sat too low): .card-head:has(.bk-tlogo) align-items center + the h2 a flex row.
   CARD TOP (owner, Oct 26 2026): .bk-top = .bk-id (headshot, FP/G ring right under it) beside .bk-head (#number +
   positions, first/LAST name, HT/WT/AGE, league rank, Sleeper %); the rest (.bk-info) below. One column up to
   1199px; from 1200px the top sits left (max 440px) and .bk-info right. Long last names shrink (h3.bk-l1 10-12
