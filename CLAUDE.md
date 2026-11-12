@@ -593,7 +593,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   odds (167 / 162 real team-weeks, playerWeeks starters, coach lock policy simulated): predicted final sd flat 26 / 25 vs
   real 29 / 27; level 27 / 27 (z sd 1.15 -> 1.10, 1.08 -> 1.03; 80% range holds 75 -> 76%, 80 -> 81%).
   BUILT (Nov 4 2026): `assets/matchup.js` (no DOM): data/matchup.json { version, at, season, sk, weeks: { w: { 'DEF|G':
-  [actual, projected, dates] } } } (nightly updateMatchups, current season, finished weeks kept, current week re-read;
+  [actual, projected, dates] } } } (nightly updateMatchups, current season, every week re-read every night since Nov 12 2026, a failed week keeps last night's copy;
   ~15 KB at week 3); matchupTable() -> per DEF|G ratio vs the league ratio (edge), games; matchupFactor(table, opp, pos)
   = 1 + COEF 0.33 x edge clipped +-CLIP 0.12 (max +-4%), only with MIN_GAMES 8+ (same group rule as defense.js pos5).
   gm.js MODEL { spread: 'level', matchups }: simSpread(pg) (SPREAD_BY_PROJ, interpolated) for gameDist's simulation sd
@@ -1567,7 +1567,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   AGAINST; per team-game row [date, game_id, def, off, then per PG..C: fp, min, starters' fp, starters' min]; starters =
   Sleeper schedule home/away .starters (NBA starting five; "Starters only" switch). Nightly update.mjs -> updateDefense ->
   data/defense.json { version DEFENSE_VERSION, at, seasons: { s: { weeks (finished weeks), through, sk (scoring key; a
-  change rebuilds), rows } } } (current week re-read each night); pages: loadDefense() = saved file + weeks after it live
+  change rebuilds), rows } } } (rebuilt from week 1 every night since Nov 12 2026; a failed read keeps last night's table); pages: loadDefense() = saved file + weeks after it live
   (finished games, keyed game|def so no doubles), cached 2 min; no file = built from week 1. defenseTable(def, { split,
   window, who, metric: game | 36 (FP per 36 min at that position) }) -> per team per column v, rank (1 = allows the MOST =
   softest), diff vs the league average (average of the 30 teams). Grade (GRADE_CUTS on the rounded percent): A +12%+, B
@@ -1598,7 +1598,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   through, complete, tg: { 'date|TEAM': TG [opp, home, fp, pts, reb, ast, stl, blk, to, fga, fta, oreb, min, tpm, fgm, ftm,
   PG..C fp] }, pt: { 'pid|TEAM': PT [gp, min, fp, pts, reb, ast, stl, blk, to, fga, fta, tpm, fgm, ftm, gs] }, pos } } }.
   Past seasons built once (maxPast 2 a night: first nights 2025 + 2024, then 2023; ~250 KB a season; no GS for past
-  seasons; home flags from the schedule); the current season saves FINISHED weeks only (complete schedule games; gs = Sleeper
+  seasons; home flags from the schedule); the current season (rebuilt from week 1 every night since Nov 12 2026) saves FINISHED weeks only (complete schedule games; gs = Sleeper
   schedule starting fives) and pages add later weeks live (loadAdv, cached 2 min). No file yet = current season built in the
   browser from week 1; past seasons say "arrive with the next nightly update" (usage / shares / rest / team views need them).
   A week of Sleeper box scores is ~1.7 MB, so pages never read a past season's weeks. Player cards: Game by game (dots +
@@ -2745,7 +2745,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   finished seasons built once and kept, ~8 s each; the season in progress sums its FINISHED weeks = Sleeper
   state week - 1, REBUILT FROM WEEK 1 EVERY NIGHT since Nov 12 2026 (owner: LeBron's table said 302 Total FP, his
   games 304: a technical foul Sleeper removed later stayed in the once-added week; 12 players differed by later stat
-  corrections; a failed rebuild keeps last night's table). Sleeper's own season total (312 for LeBron) adds phantom
+  corrections; a failed rebuild keeps last night's table). SHARED DOWNLOADS (owner, same day, "fix all three and have them share downloads"): `assets/weekcache.js` (no DOM; in the import map) boxWeek(s, w) / projWeek(s, w) = one read per week (filtered, no All-Star rows; rows are SHARED, never change them), memo for the whole Node run (MAX 40 weeks, update.mjs clearWeekCache() after NBA starts), 2 min in a browser, a failed read throws and is not remembered. Used by breakdown.js weekRows, defense.js, advstats.js, matchup.js weekSums. defense.json, adv-stats.json (current season) and matchup.json (every week) are now ALSO rebuilt from week 1 every night (a failed read keeps last night's data). Tested Nov 12 2026: all four builders = 4 box-score + 4 projection reads, 2.2 s; the only stale game found = LeBron Nov 8 tf (279 -> 281) in defense / adv / matchup; a stubbed HTTP 500 kept all three files. Sleeper's own season total (312 for LeBron) adds phantom
   40 / 50-pt, 15-ast, 20-reb bonuses (the season-total feed bug), never used here). The page (seasonTable) adds the weeks after the saved ones live (the current week, 1
   request), cached 2 min; with no saved file it builds every week itself (~6 s a season). Verified Oct 25
   2026: table = game logs exactly (Sengun / Banchero 2025-26 GP, pts, FP, +/-; Wembanyama 2026 3 GP 60 pts

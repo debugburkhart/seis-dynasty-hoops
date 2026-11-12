@@ -6,6 +6,7 @@
 
 import { get } from './commish.js';
 import { ALL_STARS_FROM, exhibitionRow } from './config.js';
+import { boxWeek } from './weekcache.js';
 import { ALL_STAR_POSITIONS } from './corrections.js';
 import { allFantasy, allStars, championshipMvp, mvpRace, playerOfTheYear, rookieClass } from './awards.js';
 import { draftOfYear } from './draft.js';
@@ -133,11 +134,7 @@ export const STAT_KEYS = ['gp', 'min', 'pts', 'reb', 'oreb', 'dreb', 'ast', 'stl
 export const STATS_VERSION = 3; // 2: All-Star Game rows dropped (Oct 26 2026); 3: team totals for usage (Oct 27 2026)
 const API = 'https://api.sleeper.com';
 // One week of box scores; a failed read throws (a missing week must never be saved as zeros).
-async function weekRows(season, week) {
-  const res = await fetch(`${API}/stats/nba/${season}/${week}?season_type=regular&t=${Date.now()}`);
-  if (!res.ok) throw new Error(`Sleeper box scores ${season} week ${week}: HTTP ${res.status}`);
-  return ((await res.json()) ?? []).filter(r => !exhibitionRow(r)); // no All-Star Game (config.js)
-}
+const weekRows = boxWeek; // shared with defense / advstats / matchup (weekcache.js)
 const r2 = x => Math.round(x * 100) / 100;
 function addRows(table, rows) {
   // Team totals per game (every player of that team in that game): what usage rate compares a player with.

@@ -7,7 +7,7 @@
 // typical effect +-1.5%, at most +-4%. No DOM here; the nightly job saves data/matchup.json (updateMatchups).
 
 import { get } from './commish.js';
-import { exhibitionRow } from './config.js';
+import { boxWeek, projWeek } from './weekcache.js';
 
 export const MATCHUP_VERSION = 1;
 export const COEF = 0.33;
@@ -21,14 +21,10 @@ const r1 = x => Math.round(x * 10) / 10;
 // Same position rule as defense.js pos5 (main position; a bare G / F goes by his first fantasy position).
 const groupOf = player => GROUP[player?.position] ?? GROUP[(player?.fantasy_positions ?? [])[0]] ?? null;
 
-async function rows(path) {
-  const res = await fetch(`${API}${path}${path.includes('?') ? '&' : '?'}t=${Date.now()}`);
-  if (!res.ok) throw new Error(`Sleeper ${path}: HTTP ${res.status}`);
-  return ((await res.json()) ?? []).filter(r => !exhibitionRow(r));
-}
 // One week: { 'DEF|G': [actual, projected, dates...] } over played games with a projection > 0.
+// Box scores + projections come from weekcache.js (one download per week, shared with the other builders).
 async function weekSums(season, week, scoring) {
-  const [box, proj] = await Promise.all([rows(`/stats/nba/${season}/${week}?season_type=regular`), rows(`/projections/nba/${season}/${week}?season_type=regular`)]);
+  const [box, proj] = await Promise.all([boxWeek(season, week), projWeek(season, week)]);
   const act = {};
   for (const b of box) if (/^\d+$/.test(b.player_id) && played(b.stats)) act[`${b.player_id}|${b.date}`] = fantasy(b.stats, scoring);
   const out = {};
@@ -46,7 +42,8 @@ async function weekSums(season, week, scoring) {
 }
 
 // Nightly (scripts/update.mjs): data/matchup.json { version, at, season, sk, weeks: { w: sums } }, the season in progress.
-// Finished weeks are kept; the current week is re-read every night (its played games so far).
+// Every week is re-read every night (owner, Nov 12 2026: Sleeper corrects box scores days later); a failed read keeps
+// last night's copy of that week (a week never read before is left out until the next night).
 export async function updateMatchups(DATA, prev, { log = () => {} } = {}) {
   const state = await (await fetch(`${API}/v1/state/nba?t=${Date.now()}`)).json();
   const cur = DATA.seasons.at(-1);
@@ -56,7 +53,12 @@ export async function updateMatchups(DATA, prev, { log = () => {} } = {}) {
   const out = { version: MATCHUP_VERSION, at: new Date().toISOString(), season: cur.season, sk, weeks: {} };
   if (state?.season !== cur.season || state.season_type !== 'regular') { out.weeks = keep; return out; }
   const now = Number(state.week) || 1;
-  for (let w = 1; w <= now; w++) out.weeks[w] = w < now && keep[w] ? keep[w] : await weekSums(cur.season, w, scoring);
+  let kept = 0;
+  for (let w = 1; w <= now; w++) {
+    try { out.weeks[w] = await weekSums(cur.season, w, scoring); }
+    catch (e) { if (keep[w]) { out.weeks[w] = keep[w]; kept++; } log(`Matchups ${cur.season} week ${w}: ${e.message}; ${keep[w] ? "kept last night's copy" : 'left out'}.`); }
+  }
+  if (kept) log(`Matchups ${cur.season}: ${kept} week(s) from last night.`);
   const t = matchupTable(out);
   log(`Matchups ${cur.season}: weeks 1-${now}, ${Object.keys(t.teams).length} defenses (${t.ready} with ${MIN_GAMES}+ games).`);
   return out;

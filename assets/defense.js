@@ -7,6 +7,7 @@
 
 import { get } from './commish.js';
 import { exhibitionRow } from './config.js';
+import { boxWeek } from './weekcache.js';
 import { fantasy, minutes } from './breakdown.js';
 
 export const DEFENSE_VERSION = 1;
@@ -29,11 +30,7 @@ export function pos5(player) {
 }
 export const posKey = (pos, split) => (pos ? (split === 3 ? GROUP3[pos] : pos) : null);
 
-async function weekRows(season, week) {
-  const res = await fetch(`${API}/stats/nba/${season}/${week}?season_type=regular&t=${Date.now()}`);
-  if (!res.ok) throw new Error(`Sleeper box scores ${season} week ${week}: HTTP ${res.status}`);
-  return ((await res.json()) ?? []).filter(r => !exhibitionRow(r));
-}
+const weekRows = boxWeek; // shared with defense / advstats / matchup (weekcache.js)
 const played = s => !!(s && (s.gp || s.sp || s.min));
 
 // One row per FINISHED game per defending team: [date, gameId, def, off, ...for PG SG SF PF C: fp, min, starters' fp,
@@ -79,7 +76,7 @@ function scheduleMap(schedule) { return Object.fromEntries((schedule ?? []).map(
 
 // Nightly (scripts/update.mjs): data/defense.json { version, at, seasons: { season: { weeks (fully finished weeks
 // saved), through, sk (scoring key: a scoring change rebuilds), rows } } }, the season in progress only (owner: this
-// season only). Finished weeks are kept; the current week is re-read every night (its finished games).
+// season only). Rebuilt from week 1 every night (see updateDefense).
 export async function updateDefense(DATA, prev, { log = () => {} } = {}) {
   const state = await (await fetch(`${API}/v1/state/nba?t=${Date.now()}`)).json();
   const season = DATA.seasons.at(-1).season;
@@ -92,15 +89,21 @@ export async function updateDefense(DATA, prev, { log = () => {} } = {}) {
   const scoring = await scoringFor(DATA, season);
   const sk = scoringKey(scoring);
   const old = prev?.version === DEFENSE_VERSION && prev.seasons?.[season]?.sk === sk ? prev.seasons[season] : null;
-  const block = old ? { ...old, rows: [...old.rows] } : { weeks: 0, through: null, sk, rows: [] };
   const last = state.season_type === 'regular' ? Number(state.week) || 1 : 30;
   const games = scheduleMap(await get(`/schedule/nba/regular/${season}`, []));
   const maxWeek = Math.max(0, ...Object.values(games).map(g => g.week ?? 0));
   const to = Math.min(last, maxWeek || last);
-  await addWeeks(block, season, block.weeks + 1, to, games, scoring);
-  block.weeks = state.season_type === 'regular' ? Math.max(block.weeks, to - 1) : to;
-  out.seasons[season] = block;
-  log(`Defense vs position ${season}: ${block.rows.length} team-games through ${block.through} (weeks 1-${block.weeks} final).`);
+  // Rebuilt from week 1 every night (owner, Nov 12 2026: Sleeper corrects box scores days later, so weeks saved once
+  // went stale); downloads shared through weekcache.js. A failed read keeps last night's table.
+  try {
+    const block = await addWeeks({ weeks: 0, through: null, sk, rows: [] }, season, 1, to, games, scoring);
+    block.weeks = state.season_type === 'regular' ? Math.max(0, to - 1) : to;
+    out.seasons[season] = block;
+    log(`Defense vs position ${season}: weeks 1-${to} rebuilt, ${block.rows.length} team-games through ${block.through} (weeks 1-${block.weeks} final).`);
+  } catch (e) {
+    if (old) out.seasons[season] = old;
+    log(`Defense vs position ${season}: rebuild failed (${e.message}); ${old ? "kept last night's table" : 'nothing saved'}.`);
+  }
   return out;
 }
 

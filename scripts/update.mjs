@@ -416,8 +416,8 @@ try {
 
 // Season stat tables (2K breakdown, commish Test features, Oct 2026): every NBA player's season
 // totals added up from per-game box scores, for every league season -> data/season-stats.json
-// (assets/breakdown.js). Finished seasons are built once; the season in progress adds its newly
-// finished weeks (the page adds the current week live). Never stops the update.
+// (assets/breakdown.js). Finished seasons are built once; the season in progress is rebuilt from
+// week 1 each night (the page adds the current week live). Never stops the update.
 try {
   const { updateSeasonStats } = await import('../assets/breakdown.js');
   const stats = await updateSeasonStats(data, await readJson('data/season-stats.json'), { log: m => console.log(m) });
@@ -438,7 +438,7 @@ try {
 
 // Advanced Stats (Test features, owner Nov 4 2026): every NBA team-game's totals + every player's totals per NBA team,
 // per league season -> data/adv-stats.json (assets/advstats.js). Past seasons built once (2 a night until done); the
-// season in progress adds its finished weeks. Never stops the update.
+// season in progress is rebuilt from week 1 each night (finished weeks). Never stops the update.
 try {
   const { updateAdvStats } = await import('../assets/advstats.js');
   const adv = await updateAdvStats(data, await readJson('data/adv-stats.json'), { log: m => console.log(m) });
@@ -456,6 +456,13 @@ try {
 } catch (e) {
   console.log(`NBA starts skipped: ${e.message}`);
 }
+// Matchups, season stats, defense, advanced stats and NBA starts share one download per week of box scores
+// (assets/weekcache.js, owner Nov 12 2026); free that memory now.
+try {
+  const { clearWeekCache, weekCacheSize } = await import('../assets/weekcache.js');
+  console.log(`Shared weekly downloads: ${weekCacheSize()} kept for this run, cleared.`);
+  clearWeekCache();
+} catch {}
 
 // Trade talk auto tag (2K breakdown, owner Oct 26 2026): every rostered / NBA player's Sleeper news checked for
 // trade-talk wording -> data/trade-talk.json (assets/breakdown.js). Never stops the update.

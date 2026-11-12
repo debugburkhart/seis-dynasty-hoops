@@ -6,6 +6,7 @@
 
 import { get } from './commish.js';
 import { exhibitionRow } from './config.js';
+import { boxWeek } from './weekcache.js';
 import { fantasy, minutes, totalOf } from './breakdown.js';
 import { pos5 } from './defense.js';
 
@@ -20,11 +21,7 @@ const r1 = x => Math.round(x * 10) / 10;
 const played = s => !!(s && (s.gp || s.sp || s.min));
 const num = (s, k) => Number(s?.[k]) || 0;
 
-async function weekRows(season, week) {
-  const res = await fetch(`${API}/stats/nba/${season}/${week}?season_type=regular&t=${Date.now()}`);
-  if (!res.ok) throw new Error(`Sleeper box scores ${season} week ${week}: HTTP ${res.status}`);
-  return ((await res.json()) ?? []).filter(r => !exhibitionRow(r));
-}
+const weekRows = boxWeek; // shared with defense / advstats / matchup (weekcache.js)
 async function scoringFor(DATA, season) {
   const s = DATA.seasons.find(x => x.season === season);
   return s ? (await get(`/v1/league/${s.leagueId}`, {}))?.scoring_settings ?? {} : {};
@@ -79,7 +76,7 @@ async function addWeeks(block, season, from, to, scoring, info) {
 
 // Nightly: data/adv-stats.json { version, at, seasons: { season: { sk, weeks, through, complete, tg, pt, pos } } }.
 // Finished seasons are built once (home flags from the schedule; no GS) and kept; the season in progress re-reads
-// its current week every night (finished games only) on top of the finished weeks.
+// its finished weeks from week 1 every night (Sleeper corrects box scores later; finished games only).
 export async function updateAdvStats(DATA, prev, { log = () => {}, maxPast = 2 } = {}) {
   const state = await (await fetch(`${API}/v1/state/nba?t=${Date.now()}`)).json();
   const out = { version: ADV_VERSION, at: new Date().toISOString(), seasons: {} };
@@ -105,10 +102,16 @@ export async function updateAdvStats(DATA, prev, { log = () => {}, maxPast = 2 }
     const last = state.season_type === 'regular' ? Math.min(Number(state.week) || 1, info.maxWeek || 99) : info.maxWeek;
     // Only FINISHED weeks are saved (kept night to night); pages add the current week live.
     const finished = state.season_type === 'regular' ? last - 1 : last;
-    const base = was && was.weeks <= finished ? copyBlock(was) : { sk, weeks: 0, through: null, tg: {}, pt: {}, pos: {} };
-    const fin = await addWeeks(base, season, base.weeks + 1, finished, scoring, info);
-    out.seasons[season] = { ...fin, complete: false };
-    log(`Advanced stats ${season}: ${Object.keys(fin.tg).length} team-games through ${fin.through} (weeks 1-${fin.weeks} final).`);
+    // Rebuilt from week 1 every night (owner, Nov 12 2026: Sleeper corrects box scores days later); downloads shared
+    // through weekcache.js. A failed read keeps last night's block.
+    try {
+      const fin = await addWeeks({ sk, weeks: 0, through: null, tg: {}, pt: {}, pos: {} }, season, 1, finished, scoring, info);
+      out.seasons[season] = { ...fin, complete: false };
+      log(`Advanced stats ${season}: weeks 1-${fin.weeks} rebuilt, ${Object.keys(fin.tg).length} team-games through ${fin.through}.`);
+    } catch (e) {
+      if (was) out.seasons[season] = was;
+      log(`Advanced stats ${season}: rebuild failed (${e.message}); ${was ? "kept last night's block" : 'nothing saved'}.`);
+    }
   }
   return out;
 }
