@@ -2915,7 +2915,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 /* NBA team logo faded behind the headshot (owner, Nov 11 2026, like Sleeper's player card) */
 .bk-photo { position: relative; }
 .bk-photo img.bk-pimg { position: relative; z-index: 1; }
-.bk-photo img.bk-plogo { position: absolute; left: -6%; top: -18%; width: 112%; height: auto; aspect-ratio: 1; object-fit: contain; opacity: .26; z-index: 0; pointer-events: none; }
+.bk-photo img.bk-plogo { position: absolute; left: -12%; top: 8%; width: auto; height: 84%; aspect-ratio: 1; object-fit: contain; opacity: .85; z-index: 0; pointer-events: none; }
 .bk-ring { flex: none; width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 4px;
   background: conic-gradient(var(--gold) calc(var(--p) * 360deg), rgba(255,255,255,.14) 0); }
 .bk-ring > div { width: 78px; height: 78px; border-radius: 50%; background: var(--navy-950); display: grid; place-content: center; text-align: center; }
@@ -4802,6 +4802,8 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .bk .card-head h2:has(.bk-tlogo) { display: flex; align-items: center; gap: 6px; }
 .bk .card-head h2 .bk-tlogo { flex: none; width: 26px; height: 26px; margin-right: 2px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,.25); }
 /* Logos on team-color cards (owner, Nov 11 2026: Jazz / Raptors / Rockets logos washed out on their own color):
-   the faded headshot logo turns into a white watermark, and the small logo by the team name gets a thin white outline. */
-.bk .bk-hero.bk-tmc .bk-photo img.bk-plogo { filter: brightness(0) invert(1); opacity: .2; }
+   the small logo by the team name gets a thin white outline (the faded headshot logo keeps its own colors, owner). */
 .bk .bk-hero.bk-tmc .bk-team img { filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff); }
+/* Headshot logo on team-color cards (owner, Nov 11 2026: "they look like white shadows, add color and detail back"):
+   strong enough to show the logo's own colors and lines over the matching background. */
+.bk .bk-hero.bk-tmc .bk-photo img.bk-plogo { opacity: .85; }

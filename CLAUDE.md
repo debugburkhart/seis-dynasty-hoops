@@ -2414,12 +2414,14 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   per week locked (148 over 3 weeks)" under the LGS line; fine print explains it.
   LOCKED BADGE (owner, Nov 11 2026): the blue hexagon's small line says "N wks" / "1 wk" (weeks locked), was "N st".
   HEADSHOT LOGO (owner, Nov 11 2026, like Sleeper's player card; Rosters card only): .bk-photo has his NBA team logo
-  (teamLogo, img.bk-plogo) faded behind the headshot (img.bk-pimg on top), opacity .26, 112% wide, nudged up-left.
+  (teamLogo, img.bk-plogo) behind the headshot (img.bk-pimg on top), MATCHED TO SLEEPER'S CARD (owner's screenshot): opacity .85,
+  height 84% of the photo, square, left -12% (cut off on the left, over his left shoulder), top 8%; same on every card.
   TEAM-COLOR BIO (owner, Nov 11 2026, kept after seeing the preview): NBA_COLORS in app.js (30 primary colors;
   BKN / SAS dark grey) -> draw() sets --tm + class bk-tmc on #bk-hero; `.bk .bk-hero.bk-tmc` = team color fading into
   navy (needs the 3-class selector: theme.js's html.dark copy of .bk-hero beat a 2-class rule). No team = navy as before.
-  Logos washed out on their own color (Jazz / Raptors / Rockets, owner): on .bk-tmc the faded headshot logo is a white
-  watermark (filter brightness(0) invert(1), opacity .2) and the small .bk-team logo gets a 1px white drop-shadow outline.
+  Logos washed out on their own color (Jazz / Raptors / Rockets, owner): the small .bk-team logo gets a 1px white
+  drop-shadow outline on .bk-tmc. Headshot logo: a white watermark, .26-.55 opacity and
+  a left offset were all tried; final = the Sleeper match above (.85, no filters, both card kinds).
   LEAGUE TEAM LOGO (owner, Nov 11 2026): Team list card title starts with the fantasy team's league logo (.bk-tlogo, round
   26px). leagueLogo(owner) in app.js = Sleeper /v1/league/{id}/users metadata.avatar (the logo uploaded for this league,
   read live), else his profile avatar (bigtrey5456 has no league logo on Nov 11 2026). That title row is centered
