@@ -2957,7 +2957,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-dnp td { color: var(--muted); font-style: italic; }
 .bk-dnp td[colspan] { text-align: left; }
 .bk .bk-table th { color: #9fb0cc; border-bottom-color: rgba(255,255,255,.12); cursor: pointer; user-select: none; }
-.bk .bk-table th.bk-nm { cursor: default; }
+.bk .bk-table th.bk-nm { cursor: pointer; }
 .bk .bk-table td { color: #e8edf6; border-bottom-color: rgba(255,255,255,.06); }
 .bk .bk-table .bk-nm { background: var(--navy-950); }
 .bk .bk-table .bk-rk { color: #e8b84a; }
@@ -3060,6 +3060,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-bolt { width: 7px; height: 10px; fill: currentColor; flex: none; }
 .au-inj { background: #d9534f; color: #fff; }
 .au-talk { background: var(--gold); color: var(--navy-950); }
+.au-block { background: #c0642a; color: #fff; } /* On the trade block (Sleeper), owner Nov 11 2026 */
 .au-traded { background: #5d82c9; color: #fff; }
 .au-nba { background: #8a5cd6; color: #fff; }
 .au-pick { background: #3f6fb0; color: #fff; }
@@ -3077,6 +3078,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-autof .bk-bolt { margin-right: 4px; vertical-align: -1px; }
 .bk-autof.au-inj .bk-bolt { color: #ff8a86; }
 .bk-autof.au-talk .bk-bolt { color: var(--gold); }
+.bk-autof.au-block .bk-bolt { color: #ffab73; }
 .bk-autof.au-traded .bk-bolt { color: #8ec5ff; }
 .bk-autof.au-nba .bk-bolt { color: #c9a8ff; }
 .bk-autof.au-pick .bk-bolt { color: #8eb4ec; }
@@ -3156,6 +3158,9 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk .bk-table tr.on .bk-cmpbtn.on { background: var(--navy-950); color: var(--gold); }
 .bk-herocmp { margin-left: auto; padding: 4px 11px; border: 1px solid rgba(255,255,255,.35); border-radius: 99px; background: none; color: #fff; font: 700 11.5px/1.2 var(--font); letter-spacing: 0; text-transform: none; cursor: pointer; }
 .bk-herocmp.on { background: var(--gold); border-color: var(--gold); color: var(--navy-950); }
+/* Watchlist + Compare buttons on the card (owner, Nov 11 2026) */
+.bk-heroacts { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
+.bk-heroacts .bk-herocmp { margin-left: 0; white-space: nowrap; }
 .bk-tray { position: sticky; bottom: 10px; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 12px; border-radius: 12px; background: var(--navy-900); color: #fff; box-shadow: 0 8px 24px rgba(7,20,43,.35); }
 .bk-tray[hidden] { display: none; }
 .bk-tray-label { font: 800 11px/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--gold); }
@@ -4782,4 +4787,3 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .bk-tags span.pc { border-color: var(--pc) !important; color: var(--pc) !important; } /* !important: dark mode re-emits .bk-tags span with html.dark in front */
 /* Rosters: Depth Chart designation tag left of the name + its own column (owner, Nov 11 2026). */
 .bk-dsg { display: inline-block; min-width: 24px; margin-right: 5px; padding: 0 3px; border-radius: 4px; background: var(--dg-c); color: #fff; font: 800 9px/1.6 var(--font); letter-spacing: .02em; text-align: center; vertical-align: 1px; }
-.bk .bk-table td.bk-dsgcol { text-align: center; }

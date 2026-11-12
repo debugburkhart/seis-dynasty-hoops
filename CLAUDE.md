@@ -1327,6 +1327,24 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   automatic one; free agents none). dsgTag(k) = .bk-dsg chip (category short label on its --dg-c color) in the name cell after
   the compare +, and column BK_DSG "Dsg" first in Averages / Totals / Shooting (sort = category order, S9 first). Checked:
   MyGM+ Parma S9 / ROT / HLD / DEV / IR, Dsg sort S9 x9 then ROT; MyGM League list other teams S9 only, own team all, ~4 s.
+  NO DSG COLUMN (owner, same day: "remove the dsg column, but when you click on the name, have it sort like dsg column would"):
+  BK_DSG stays in the views with { hide: true } = sort key only (table draws shownCols()); the Name header has data-k="dsg"
+  (gold + arrow when sorted, tap again = reverse; ties by FP/G). Name was never sortable before (no alphabetical sort).
+- WATCHLIST (owner, Nov 11 2026; both pages): 5th Rosters list "Watchlist" (?list=watch, BK_LISTS; tab shows the count) =
+  loadBreakdown { list: 'pick', pids } of gm-bk-watch = [pid] (watchList / toggleWatch / watchBtn in app.js; synced via
+  'gm-bk-', so per Google account; no limit; rostered or free agents; Career allowed like League; Fantasy team column).
+  Card: "+ Watchlist" / "✓ Watching" (.bk-herowatch, data-watch) left of "+ Compare" in .bk-heroacts (stack at 320 px).
+  On the Watchlist list, removing one re-renders the list; empty = a card saying how to add players. Tested in the preview.
+- TRADE BLOCK (owner, Nov 11 2026; both pages; "everything has to go through Sleeper", so NO button to add one here): breakdown.js
+  leagueTradeBlock(DATA) = sleeperpriv.js league_players (no login) + live rosters -> { pid: { owner, at } }, only players
+  STILL on the roster whose roster_id is settings.otb (Sleeper never clears the flag after a trade: Nov 11 2026 32 flagged,
+  14 stale); null on failure; cached 2 min. renderBreakdown loads it into BK_BLOCK every visit. (1) Auto tag "On the trade
+  block" (AUTO_TAGS 2nd, .au-block orange, tooltip "{team} ({manager}) put him on the trade block in Sleeper {date}") on
+  every Rosters list + filter row. (2) 6th list "Trade Block" (?list=block, tab count) = loadBreakdown pick of those pids,
+  Fantasy team column = who's shopping him; empty / Sleeper-down cards. Tested Nov 11 2026: 20 players (bigtrey5456 5,
+  BenDoverPlz123 14, simeoncampbell7 1), League list filter count 20.
+- LGS NOTE (owner, Nov 11 2026): every LGS explanation (Rosters fine print, card tooltip, Season by season header) says
+  tracking started midway through week 2 of 2026-27 (Oct 29); before that only each starter's locked game counts.
 - PLAN FOR MANAGER LOGINS (owner, Nov 9 2026; agreed in talk; STEPS 1-3 BUILT the same day, see MYGM LOGIN below): MyGM becomes the
   managers' page: Google sign-in REQUIRED + an approved claim (members/{uid}, same as Props / Trade Court), locked to their own
   team; each manager's settings private in users/{uid}/prefs (already); fix the shared-device bleed (localStorage is per

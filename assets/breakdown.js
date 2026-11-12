@@ -13,6 +13,7 @@ import { normName } from './scout.js';
 import { weekBoxes } from './locks.js';
 import { CANDIDATES as SLP_QUERIES, countedGame, gql, locksFromLegs } from './sleeperpriv.js';
 const LOCKS_QUERY = SLP_QUERIES.find(c => c.id === 'locks').query;
+const BLOCK_QUERY = SLP_QUERIES.find(c => c.id === 'block').query;
 
 export const fantasy = (stats, scoring) => Object.entries(scoring).reduce((sum, [k, v]) => sum + (Number(stats?.[k]) || 0) * v, 0);
 // Minutes: `min`, or seconds played / 60 (older rows have only `sp`).
@@ -437,7 +438,7 @@ export async function playerNews(pid) {
 // Recently traded comes as TWO tags so they're never confused (owner, Oct 26 2026): "League trade" = traded
 // between fantasy teams here, "NBA trade" = a real NBA trade (ESPN), both within TRADED_DAYS.
 // Order = order in the filter row and the Tags column sort (owner's second batch Oct 26 2026 after #3 option).
-export const AUTO_TAGS = ['Injured', 'Trade talk', 'League trade', 'NBA trade', 'League pickup', 'Trending add',
+export const AUTO_TAGS = ['Injured', 'On the trade block', 'Trade talk','League trade', 'NBA trade', 'League pickup', 'Trending add',
   '#1 option', '#2 option', '#3 option', '4-game week', '2-game week', 'Hot', 'Cold', 'Minutes up',
   'Rookie', 'Last taxi season', 'Contract year', 'Extension next summer', 'Dynasty riser', 'Dynasty faller', 'Top 100 prospect', 'Made Taxi POTW'];
 export const TRADE_TALK_DAYS = 30; // "Trade talk" = a trade-talk news item published in the last 30 days
@@ -812,6 +813,33 @@ export function lockedTotals(DATA, { season = 'career', owner = null } = {}) {
 }
 
 // LIVE LOCKS (owner, Nov 8 2026: "update the 2K breakdown as soon as a lock hits", no waiting for the week to end).
+// TRADE BLOCK (owner, Nov 11 2026): Sleeper's own trade block, read live (sleeperpriv.js league_players, NO login,
+// unofficial). Managers set it in the Sleeper app only (no button on the site). Sleeper never clears the flag when a
+// listed player is traded away, so only players STILL on the roster that listed them count. -> { pid: { owner, at } }
+// (at = ms listed), or null when Sleeper doesn't answer. Cached 2 minutes.
+let BLOCK = null;
+export async function leagueTradeBlock(DATA) {
+  if (BLOCK && Date.now() - BLOCK.at < 120_000) return BLOCK.v;
+  const cur = DATA.seasons.at(-1);
+  const [res, rosters] = await Promise.all([
+    gql(BLOCK_QUERY, { leagueId: cur.leagueId }),
+    get(`/v1/league/${cur.leagueId}/rosters`, null),
+  ]);
+  const rows = res.data?.league_players;
+  if (!Array.isArray(rows) || !Array.isArray(rosters)) return null;
+  const byRid = Object.fromEntries(rosters.map(r => [r.roster_id, r]));
+  const v = {};
+  for (const r of rows) {
+    const rid = Number(r?.settings?.otb);
+    const pid = String(r?.player_id ?? '');
+    const ro = byRid[rid];
+    if (!rid || !ro?.owner_id || !(ro.players ?? []).includes(pid)) continue; // stale flag: he left that roster
+    v[pid] = { owner: ro.owner_id, at: Number(r.settings.otb_added_at) || null };
+  }
+  BLOCK = { v, at: Date.now() };
+  return v;
+}
+
 // Sleeper's own lock data (sleeperpriv.js: matchup_legs_raw starters_games, NO login, unofficial) for the week being
 // played: every starter already locked -> { s, w, t: 'R', o, pid, p, date, live: true }, the same shape as
 // DATA.playerWeeks (o = the team whose MATCHUP lineup has him, p = that game's box score under league scoring). A
