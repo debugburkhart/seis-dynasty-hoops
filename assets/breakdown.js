@@ -177,7 +177,10 @@ function doneWeeks(state, season) {
 
 // Nightly (scripts/update.mjs): data/season-stats.json { version, at, seasons: { season: { keys, weeks,
 // through, complete, players: { pid: [STAT_KEYS values] } } } } for every league season. Finished
-// seasons are built once and kept; the season in progress adds its newly finished weeks.
+// seasons are built once and kept. The season in progress is REBUILT FROM WEEK 1 EVERY NIGHT (owner, Nov 12 2026):
+// Sleeper corrects box scores days later (LeBron's removed technical foul: the table said 302, his games 304; 12
+// players differed), and a week added once kept the old numbers forever. A season is rebuilt one last time when it
+// finishes, then frozen. A failed read keeps last night's table for that season.
 export async function updateSeasonStats(DATA, prev, { log = () => {} } = {}) {
   const state = await (await fetch(`${API}/v1/state/nba?t=${Date.now()}`)).json();
   const old = prev?.version === STATS_VERSION ? prev.seasons ?? {} : {};
@@ -187,11 +190,14 @@ export async function updateSeasonStats(DATA, prev, { log = () => {} } = {}) {
     const { weeks, complete } = doneWeeks(state, season);
     if (was?.complete) { out.seasons[season] = was; continue; }
     if (!complete && weeks === 0) continue;
-    const keep = was && (weeks == null || was.weeks <= weeks) ? was : null;
-    if (keep && weeks != null && keep.weeks === weeks) { out.seasons[season] = { ...keep, complete }; continue; }
-    const t = await sumWeeks(season, keep, (keep?.weeks ?? 0) + 1, weeks);
-    out.seasons[season] = { ...t, complete };
-    log(`Season stats ${season}: weeks 1-${t.weeks} (${Object.keys(t.players).length} players, through ${t.through})${complete ? ', final' : ''}.`);
+    try {
+      const t = await sumWeeks(season, null, 1, weeks);
+      out.seasons[season] = { ...t, complete };
+      log(`Season stats ${season}: weeks 1-${t.weeks} rebuilt (${Object.keys(t.players).length} players, through ${t.through})${complete ? ', final' : ''}.`);
+    } catch (e) {
+      if (was) out.seasons[season] = was;
+      log(`Season stats ${season}: rebuild failed (${e.message}); kept last night's table.`);
+    }
   }
   return out;
 }

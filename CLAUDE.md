@@ -2743,7 +2743,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   are right). Nightly update.mjs -> updateSeasonStats -> data/season-stats.json { version (STATS_VERSION),
   at, seasons: { s: { keys, weeks, through, complete, players: { pid: [values] } } } } (~50 KB a season;
   finished seasons built once and kept, ~8 s each; the season in progress sums its FINISHED weeks = Sleeper
-  state week - 1). The page (seasonTable) adds the weeks after the saved ones live (the current week, 1
+  state week - 1, REBUILT FROM WEEK 1 EVERY NIGHT since Nov 12 2026 (owner: LeBron's table said 302 Total FP, his
+  games 304: a technical foul Sleeper removed later stayed in the once-added week; 12 players differed by later stat
+  corrections; a failed rebuild keeps last night's table). Sleeper's own season total (312 for LeBron) adds phantom
+  40 / 50-pt, 15-ast, 20-reb bonuses (the season-total feed bug), never used here). The page (seasonTable) adds the weeks after the saved ones live (the current week, 1
   request), cached 2 min; with no saved file it builds every week itself (~6 s a season). Verified Oct 25
   2026: table = game logs exactly (Sengun / Banchero 2025-26 GP, pts, FP, +/-; Wembanyama 2026 3 GP 60 pts
   122 FP +33). The player card's Season by season + Game log use the per-player game log
