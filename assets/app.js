@@ -3322,6 +3322,10 @@ const estChip = (e, cls = 'bk-est') => { const r = returnEstimate(e); return r ?
 // Position row (owner, Nov 11 2026): buttons All + the 5 positions, dropdown = Guards / Forwards groups (BK_POS_GRP).
 const BK_POS = [['all', 'All'], ['PG', 'PG'], ['SG', 'SG'], ['SF', 'SF'], ['PF', 'PF'], ['C', 'C']];
 const BK_POS_GRP = [['G', 'Guards'], ['F', 'Forwards']];
+// A player's positions with Sleeper's PRIMARY (main) position first, then the rest PG, SG, SF, PF, C (owner, Nov 11 2026:
+// Sleeper's fantasy_positions list comes in no useful order, e.g. LeBron PF/PG/SF).
+const BK_POS_ORDER = ['PG', 'SG', 'SF', 'PF', 'C'];
+const bkPosOrder = p => { const l = [...new Set(p.pos ?? [])].sort((a, b) => BK_POS_ORDER.indexOf(a) - BK_POS_ORDER.indexOf(b)); return p.mainPos && l.includes(p.mainPos) ? [p.mainPos, ...l.filter(x => x !== p.mainPos)] : l; };
 const bkGroups = p => posGroups({ pos: p.mainPos, fpos: p.pos });
 // Exact positions (owner, Nov 11 2026): a dropdown next to the group buttons; main = Sleeper's main position, secondary =
 // his fantasy_positions (centers stay the Centers button).
@@ -3691,7 +3695,7 @@ const BK_LKPCT = ['lkpct', 'Lk%', p => BK.lkPct(p.pid) ?? -1, p => (BK.lkPct(p.p
 const BK_VIEWS = {
   avg: { label: 'Averages', sort: 'fpg', cols: [
     BK_DSG, BK_TAGCOL, BK_OWN, BK_SLOT,
-    ['pos', 'Pos', p => p.pos.join('/'), p => posTxt(p.pos), { html: true }], // Sleeper position colors (owner, Nov 11 2026)
+    ['pos', 'Pos', p => bkPosOrder(p).join('/'), p => posTxt(bkPosOrder(p)), { html: true }], // Sleeper position colors (owner, Nov 11 2026)
     ['nba', 'NBA', p => p.team || 'zz', p => p.team || 'FA'],
     ['age', 'Age', p => p.age ?? 0, p => p.age ?? '—'],
     BK_DYN,
@@ -3920,7 +3924,7 @@ async function renderBreakdown(body, params) {
     ${betaCard('Badge colors', `<div class="bk-medals">
       <p><span class="bk-mchip gold">Gold</span><span class="bk-mchip silver">Silver</span><span class="bk-mchip bronze">Bronze</span><span class="bk-mchip none">No medal</span> Each badge on the player card is colored by where he ranks.</p>
       <p><b>Avg rank, Total rank</b> (by position): gold ${MEDAL_POS[0] === 1 ? '1' : `1–${MEDAL_POS[0]}`}, silver ${MEDAL_POS[0] + 1}–${MEDAL_POS[1]}, bronze ${MEDAL_POS[1] + 1}–${MEDAL_POS[2]} at his position.</p>
-      <p><b>Total FP</b> (league-wide): gold 1–${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}–${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}–${MEDAL_LG[2]} among all NBA players by total fantasy points.</p>
+      <p><b>FP/G, Total FP</b> (league-wide): gold 1–${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}–${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}–${MEDAL_LG[2]} among all NBA players by fantasy points per game (players with at least 40% of the most games played) and by total fantasy points.</p>
       <p><b>Locked, Avg lock</b> (league-wide, any team): ${MEDAL_PCT_TXT} of players whose score counted for a fantasy team in this period. Avg lock needs ${MEDAL_AVGLK_MIN}+ weeks locked. The numbers on the Team list are that team's, but the color always compares the whole league.</p>
       <p>Same period as the page (${esc(period)}).</p>
     </div>`, { id: 'bk-medals-card' })}
@@ -4046,10 +4050,9 @@ async function renderBreakdown(body, params) {
   };
 
   const hero = p => {
-    const ring = Math.max(0, Math.min(1, bk.top ? p.avg.fp / bk.top : 0));
     const logo = teamLogo(p.team);
     const slot = SLOT_WORD[p.slot] ?? `Starter · ${p.slot} slot`;
-    const bio = [p.college || p.country, p.exp != null ? (p.exp === 0 ? 'Rookie' : `${p.exp + 1}${['st', 'nd', 'rd'][p.exp] ?? 'th'} NBA season`) : '', p.birth ? `born ${new Date(`${p.birth}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''].filter(Boolean);
+    const bio = [p.college || p.country, p.exp != null ? (p.exp === 0 ? 'Rookie' : `${p.exp + 1}${['st', 'nd', 'rd'][p.exp] ?? 'th'} NBA season`) : '', p.birth ? `born ${new Date(`${p.birth}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : '']; // [school, NBA season, born]; positions fixed (owner, Nov 11 2026: season + born go under HT / WT)
     const espnInj = BK.espn[p.pid];
     const inj = (p.injury ? `<span class="bk-inj${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}">${esc(p.injury)}${p.injuryPart ? ` · ${esc(p.injuryPart)}` : ''}${p.injuryNote ? ` (${esc(p.injuryNote)})` : ''}</span>` : '')
       + (p.injury || espnInj ? estChip(espnInj) : '');
@@ -4060,17 +4063,16 @@ async function renderBreakdown(body, params) {
         <!-- Headshot on top next to number + positions, FP/G ring right under it (owner, Oct 26 2026). -->
         <div class="bk-id">
           <div class="bk-photo">${logo ? `<img class="bk-plogo" src="${logo}" alt="" aria-hidden="true" onerror="this.remove()">` : ''}<img class="bk-pimg" src="${playerPhoto(DATA, p.pid)}" alt="${esc(p.name)}" onerror="this.remove()"></div>
-          <div class="bk-ring" style="--p:${ring.toFixed(3)}" title="Fantasy points per game, ${esc(period)}; the ring fills toward the NBA's best FP/G this season"><div><small>FP/G</small><b>${p.tot.gp ? bkF1(p.avg.fp) : '—'}</b></div></div>
         </div>
         <div class="bk-head">
           <div class="bk-name">
-            <div class="bk-tags">${p.number != null ? `<span>#${esc(p.number)}</span>` : ''}${p.pos.map(x => `<span class="${pcCls(x).trim()}">${esc(x)}</span>`).join('')}</div>
+            <div class="bk-tags">${p.number != null ? `<span>#${esc(p.number)}</span>` : ''}${bkPosOrder(p).map(x => `<span class="${pcCls(x).trim()}">${esc(x)}</span>`).join('')}</div>
             <div><small>${esc(p.first)}</small><h3${(() => { const n = Math.max(...String(p.last || p.name).split(/[\s-]/).map(w => w.length)); return n >= 13 ? ' class="bk-l2"' : n >= 10 ? ' class="bk-l1"' : ''; })()}>${esc(p.last || p.name)}</h3>${nickLine(p)}</div>
           </div>
           <p class="bk-meas">${[p.height && `HT: ${p.height}`, p.weight && `WT: ${p.weight}`, p.age != null && `AGE: ${p.age}`].filter(Boolean).map(esc).join(' / ')}</p>
+          ${bio.slice(1).some(Boolean) ? `<p class="bk-meas bk-meas2">${bio.slice(1).filter(Boolean).map(esc).join(' · ')}</p>` : ''}
           ${p.owned != null ? `<p class="bk-share" title="Share of Sleeper NBA dynasty leagues where he is on a roster / in a starting lineup this week (the numbers the Sleeper app shows in this league)"><span class="ct-label">Sleeper</span> Rostered <b>${bkShare(p.owned)}</b> · Started <b>${bkShare(p.started)}</b> of dynasty leagues</p>` : ''}
           ${p.tot.usg != null && !bkTrim() ? `<p class="bk-share bk-role" title="Usage rate: the share of his team's plays he finished (shot, free-throw trip or turnover) while on the floor, ${esc(period)}. Under 20% Role Player / Connector · 20-23% Average Starter · 24-29% Co-Star / Lead Scorer · 30-35% Primary Creator / Superstar · 35%+ Ultra-High Usage"><span class="ct-label">Role</span> <b>${esc(usgRole(p.tot.usg))}</b> (${p.tot.usg.toFixed(1)}% usage${p.tot.gp < 5 ? `, ${p.tot.gp} game${p.tot.gp === 1 ? '' : 's'}` : ''})</p>` : ''}
-          ${BK.lgs(p.pid) ? (() => { const c = BK.lgs(p.pid); return `<p class="bk-share bk-lgs" title="League Games Started: games where a fantasy team${list === 'team' ? ' (this one)' : ''} had him in a starting slot when his NBA game tipped off (one per game, any slot; his games after his lock that week don't count). Out of the games he played while on a roster here, taxi / IR left out. Unsure = moved in or out right around tip-off. Tracking started midway through week 2 (Oct 29); weeks 1-2 before that count only the game each starter was locked on. Lock per start = weeks locked ÷ LGS."><span class="ct-label">League Games Started</span> <b>${c.n}</b> of ${c.seen} game${c.seen === 1 ? '' : 's'}${c.u ? ` <small>(${c.u} unsure)</small>` : ''} · Locked <b>${BK.lkWeeks(p.pid)}</b> week${BK.lkWeeks(p.pid) === 1 ? '' : 's'}${BK.lkPct(p.pid) != null ? ` · <b>${BK.lkPct(p.pid)}%</b> lock per start` : ''}${BK_LIVE?.rows.some(r => r.pid === p.pid) ? ` <small class="bk-livelk" title="Sleeper shows him locked in week ${BK_LIVE.week} (still being played): that lock already counts in his locked points, weeks locked and LGS">· incl. week ${BK_LIVE.week} lock (live)</small>` : ''}</p>`; })() : ''}
           ${!bkTrim() && dyn && dynOf(p.pid) != null ? `<p class="bk-share bk-dynl" title="Dynasty score today (0-100, same as the Dynasty tab)"><span class="ct-label">Dynasty</span> <b>${dynOf(p.pid)}</b> score</p>` : ''}
         </div>
       </div>
@@ -4081,24 +4083,32 @@ async function renderBreakdown(body, params) {
             // overall), navy Locked + silver Total FP below. MyGM+ adds the gold Dynasty score first in the top row.
             const rs = esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season));
             const rank = (label, pos, ovr, why) => { const m = medalByRank(pos, MEDAL_POS); return `<div class="bk-total bk-rankb bk-m-${m}" title="${why} · ${MEDAL_WORD[m]}: by position rank (gold 1-${MEDAL_POS[0]}, silver ${MEDAL_POS[0] + 1}-${MEDAL_POS[1]}, bronze ${MEDAL_POS[1] + 1}-${MEDAL_POS[2]})"><small>${label}</small><b>${pos ? `${pos} ${esc(p.mainPos)}` : '—'}</b><small>${ovr ? `${ovr} OVR` : 'OVR —'}</small></div>`; };
+            // FP/G hexagon (owner, Nov 11 2026: replaced the FP/G ring under the headshot), medal by league-wide FP/G rank.
+            const fm = medalByRank(p.rankAvgOvr, MEDAL_LG);
+            const fpg = `<div class="bk-total bk-fpgb bk-m-${fm}" title="Fantasy points per game, ${esc(period)} · ${MEDAL_WORD[fm]}: league-wide rank by FP/G (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]}; players with at least 40% of the most games played)"><small>FP/G</small><b>${p.tot.gp ? bkF1(p.avg.fp) : '—'}</b><small>${p.rankAvgOvr ? `${p.rankAvgOvr} OVR` : `${p.tot.gp} GP`}</small></div>`;
+            const avgLk = `<div class="bk-total bk-lock bk-avgb bk-m-${BK.medal.av(p.pid)}" title="Average locked points per week his score counted (${list === 'team' ? 'for this team' : 'any team'}, ${esc(period)}) · ${MEDAL_WORD[BK.medal.av(p.pid)]}: league-wide average lock (any team, ${MEDAL_AVGLK_MIN}+ weeks locked), ${MEDAL_PCT_TXT}"><small>Avg lock</small><b>${bkAvgLock(p.pid) == null ? '—' : bkF1(bkAvgLock(p.pid))}</b><small>Per wk</small></div>`;
             const top = [
-              `<div class="bk-total bk-lock bk-avgb bk-m-${BK.medal.av(p.pid)}" title="Average locked points per week his score counted (${list === 'team' ? 'for this team' : 'any team'}, ${esc(period)}) · ${MEDAL_WORD[BK.medal.av(p.pid)]}: league-wide average lock (any team, ${MEDAL_AVGLK_MIN}+ weeks locked), ${MEDAL_PCT_TXT}"><small>Avg lock</small><b>${bkAvgLock(p.pid) == null ? '—' : bkF1(bkAvgLock(p.pid))}</b><small>Per wk</small></div>`,
+              fpg,
               rank('Avg', p.rankAvgPos, p.rankAvgOvr, `League rank by fantasy points PER GAME, ${rs} (players with at least 40% of the most games played), among ${esc(p.mainPos)}s and among all NBA players`),
               rank('Total', p.rankPos, p.rankOvr, `League rank by TOTAL fantasy points under our league scoring, ${rs}, among ${esc(p.mainPos)}s and among all NBA players`),
             ].filter(Boolean);
-            return `<div class="bk-hexes"><div class="bk-hexrow">${top.join('')}</div><div class="bk-hexrow">${lockBadge(p)}<div class="bk-total bk-m-${medalByRank(p.rankOvr, MEDAL_LG)}" title="Total fantasy points, ${esc(period)} · ${MEDAL_WORD[medalByRank(p.rankOvr, MEDAL_LG)]}: league-wide rank by total FP (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]})"><small>Total</small><b>${bkBadgeNum(p.tot.fp)}</b><small>FP</small></div></div></div>`;
+            // PYRAMID (owner, Nov 11 2026): Avg lock alone on top, Locked + Total FP in the middle, FP/G + Avg + Total ranks as the base.
+            return `<div class="bk-hexes"><div class="bk-hexrow">${avgLk}</div><div class="bk-hexrow">${lockBadge(p)}<div class="bk-total bk-m-${medalByRank(p.rankOvr, MEDAL_LG)}" title="Total fantasy points, ${esc(period)} · ${MEDAL_WORD[medalByRank(p.rankOvr, MEDAL_LG)]}: league-wide rank by total FP (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]})"><small>Total FP</small><b>${bkBadgeNum(p.tot.fp)}</b><small>${p.tot.gp} GP</small></div></div><div class="bk-hexrow">${top.join('')}</div></div>`;
           })()}
-          <div>${bkTrim() ? '' : `<b class="bk-title">${esc(slot)}</b>${dynOf(p.pid) != null ? tierTag(dynOf(p.pid)) : ''}`}${list !== 'team' && p.owner ? `<small class="bk-owner">${esc(teamName(p.owner, cur.season))} (${esc(name(p.owner))})</small>` : ''}<small>${bio.map(esc).join(' · ')}</small>${dynNote(p.pid)}</div>
+          <div class="bk-side">
+          <div class="bk-who">${bkTrim() ? '' : `<b class="bk-title">${esc(slot)}</b>${dynOf(p.pid) != null ? tierTag(dynOf(p.pid)) : ''}`}${list !== 'team' && p.owner ? `<small class="bk-owner">${esc(teamName(p.owner, cur.season))} (${esc(name(p.owner))})</small>` : ''}${bio[0] ? `<small>${esc(bio[0])}</small>` : ''}${dynNote(p.pid)}</div>
+            ${BK.lgs(p.pid) ? (() => { const c = BK.lgs(p.pid); return `<p class="bk-share bk-lgs" title="League Games Started: games where a fantasy team${list === 'team' ? ' (this one)' : ''} had him in a starting slot when his NBA game tipped off (one per game, any slot; his games after his lock that week don't count). Out of the games he played while on a roster here, taxi / IR left out. Unsure = moved in or out right around tip-off. Tracking started midway through week 2 (Oct 29); weeks 1-2 before that count only the game each starter was locked on. Lock per start = weeks locked ÷ LGS."><span class="ct-label">League Games Started</span> <b>${c.n}</b> of ${c.seen} game${c.seen === 1 ? '' : 's'}${c.u ? ` <small>(${c.u} unsure)</small>` : ''} · Locked <b>${BK.lkWeeks(p.pid)}</b> week${BK.lkWeeks(p.pid) === 1 ? '' : 's'}${BK.lkPct(p.pid) != null ? ` · <b>${BK.lkPct(p.pid)}%</b> lock per start` : ''}${BK_LIVE?.rows.some(r => r.pid === p.pid) ? ` <small class="bk-livelk" title="Sleeper shows him locked in week ${BK_LIVE.week} (still being played): that lock already counts in his locked points, weeks locked and LGS">· incl. week ${BK_LIVE.week} lock (live)</small>` : ''}</p>`; })() : ''}
+          <div class="bk-statline">${[['PTS', p.avg.pts], ['REB', p.avg.reb], ['AST', p.avg.ast], ['STL', p.avg.stl], ['BLK', p.avg.blk], ['MIN', p.avg.min]].map(([k, x]) => `<span><b>${p.tot.gp ? bkF1(x) : '—'}</b><small>${k}</small></span>`).join('')}<span><b>${p.tot.gp}</b><small>GP</small></span></div>
+          </div>
         </div>
         <div class="bk-note">
           <textarea class="bk-notein" rows="2" maxlength="1000" placeholder="Your notes on ${esc(p.first || p.name)}… (only you see these)" aria-label="Notes on ${esc(p.name)}">${esc(noteOf(p.pid))}</textarea>
           <small class="bk-notesaved" aria-live="polite"></small>
         </div>
-        <div class="bk-statline">${[['PTS', p.avg.pts], ['REB', p.avg.reb], ['AST', p.avg.ast], ['STL', p.avg.stl], ['BLK', p.avg.blk], ['MIN', p.avg.min]].map(([k, x]) => `<span><b>${p.tot.gp ? bkF1(x) : '—'}</b><small>${k}</small></span>`).join('')}<span><b>${p.tot.gp}</b><small>GP</small></span></div>
         ${draftLines(p)}
+        ${contractLine({ pid: p.pid, team: p.team, nbaSeasons: p.exp })}
         ${awardLine(p)}
         ${tagRow(p)}
-        ${contractLine({ pid: p.pid, team: p.team, nbaSeasons: p.exp })}
         ${inj ? `<div class="bk-injline">${inj}</div>` : ''}
         ${newsBlock(p)}
       </div>`;

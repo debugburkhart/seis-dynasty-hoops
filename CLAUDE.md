@@ -2418,6 +2418,13 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   pages, owner: MyGM+ "looks the exact same as MyGM") = "Avg lock" hexagon (.bk-avgb, bkAvgLock "49.3 per wk"; the old Avg
   lock bio line is gone). MyGM+ shows the Dynasty score as a bio line instead (.bk-dynl "Dynasty 56 score", under the LGS
   line). Bottom = Locked then Total FP (owner swapped them). The "League rank" bio line is gone on both pages. CSS: .bk-arch > div:not(.bk-total):not(.bk-hexes) keeps the bio-text rules off it.
+  CARD LAYOUT (owner, Nov 11 2026): FP/G is a hexagon now (.bk-fpgb; the FP/G ring under the headshot is gone; medal by
+  league-wide FP/G rank rankAvgOvr, MEDAL_LG; small line = OVR rank). PYRAMID (owner, same day): row 1 Avg lock; row 2 Locked,
+  Total FP; row 3 FP/G, Avg rank, Total rank; tiled as a honeycomb (4px gaps everywhere: .bk-hexrow + .bk-hexrow margin-top
+  -8.7px, -7.3px at <= 360px for the smaller hexagons; recompute if .bk-total size changes). Total FP hexagon label reads
+  "TOTAL FP" on top (owner), number below, games played ("10 GP") at the bottom. Beside it (.bk-side): .bk-who (slot, team, school), the LGS line, then the per-game
+  stat line (moved out of the head / below the notes; .bk-who small = old bio-text rule). "Nth NBA season · born ..." under HT / WT (.bk-meas2; college /
+  country stays under the slot title). Contract line moved above Awards. Badge colors card lists FP/G with Total FP.
   HEXAGON MEDALS (owner, Nov 11 2026; both pages; MEDAL_* constants in app.js): each hexagon is .bk-m-gold / -silver /
   -bronze / -none (slate). Avg rank + Total rank by POSITION rank 1-5 / 6-15 / 16-30 (MEDAL_POS); Total FP by league-wide
   overall rank by total FP 1-25 / 26-75 / 76-150 (MEDAL_LG); Locked + Avg lock by league-wide percentile among players locked
@@ -2439,6 +2446,8 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   26px). leagueLogo(owner) in app.js = Sleeper /v1/league/{id}/users metadata.avatar (the logo uploaded for this league,
   read live), else his profile avatar (bigtrey5456 has no league logo on Nov 11 2026). That title row is centered
   (owner: the logo sat too low): .card-head:has(.bk-tlogo) align-items center + the h2 a flex row.
+  POSITION ORDER (owner, Nov 11 2026): bkPosOrder(p) = Sleeper's main position first, then the rest PG, SG, SF, PF, C; used by
+  the Rosters Pos column (text + sort) and the colored position boxes in the card bio (Booker SG/PG, LeBron PF/PG/SF).
   EXACT POSITIONS (owner, Nov 11 2026; layout changed the same day): Position row = buttons All, PG, SG, SF, PF, C (BK_POS)
   + a Guards / Forwards dropdown (BK_POS_GRP, .bk-posxsel, gold edge when picked; values G / F)
   with counts; an exact position (BK_EXACT) = Sleeper main position, + secondary = fantasy_positions when

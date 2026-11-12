@@ -2938,7 +2938,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-title { display: block; font: 900 22px/1.1 var(--display); font-stretch: 92%; }
 .bk-arch .tier { display: inline-block; margin-top: 4px; }
 .bk-arch small.bk-dynnote { color: var(--gold); }
-.bk-arch > div:not(.bk-total):not(.bk-hexes) small { display: block; margin-top: 3px; font-size: 12px; color: #b9c4da; }
+.bk-who small { display: block; margin-top: 3px; font-size: 12px; color: #b9c4da; }
 .bk-statline { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 14px; }
 .bk-statline span { display: flex; flex-direction: column; }
 .bk-statline b { font: 900 17px/1.1 var(--display); }
@@ -3024,7 +3024,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-pager:empty { display: none; }
 .bk-page-more { padding: 6px 12px; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; background: rgba(255,255,255,.06); color: #fff; font: 700 12px/1.2 var(--font); cursor: pointer; }
 .bk-page-more small { color: #9fb0cc; font-weight: 600; }
-.bk-arch > div:not(.bk-total):not(.bk-hexes) small.bk-owner { color: #fff; font-weight: 700; }
+.bk-who small.bk-owner { color: #fff; font-weight: 700; }
 @media (max-width: 700px) {
   .bk-bar { flex-wrap: wrap; }
   .bk-search { width: 100%; margin-left: 0; }
@@ -3131,7 +3131,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk .bk-table tr.on td.bk-lockcol { color: var(--navy-950); }
 @media (max-width: 480px) {
   .bk-arch { flex-wrap: wrap; }
-  .bk-arch > div:not(.bk-total):not(.bk-hexes) { flex-basis: 100%; }
+  .bk-side { flex-basis: 100%; }
 }
 /* 2K breakdown: Sleeper nickname, roster share line, notes box, note mark, Ros% column. */
 .bk-nick { display: block; margin-top: 3px; font: italic 700 13px/1.2 var(--font); color: var(--gold); }
@@ -4809,8 +4809,12 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .bk .bk-hero.bk-tmc .bk-photo img.bk-plogo { opacity: .85; }
 /* Hexagon stack on the Rosters card (owner's sketch, Nov 11 2026): gold ranks on top, Locked + Total FP below; MyGM+
    puts Dynasty first in the top row (3 over 2, honeycomb style). */
-.bk-hexes { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.bk-hexrow { display: flex; justify-content: center; gap: 6px; }
+.bk-hexes { flex: none; display: flex; flex-direction: column; align-items: center; gap: 0; }
+.bk-hexrow { display: flex; justify-content: center; gap: 4px; }
+/* Honeycomb (owner, Nov 11 2026: "flush together"): rows tuck into each other so every neighbor, side or diagonal, is the
+   same 4px apart. Step between rows = 0.82h - slope x g/2 + g / cos(edge angle) for the 64x68 hexagon (-8.7px), 54x60 (-7.3px). */
+.bk-hexrow + .bk-hexrow { margin-top: -8.7px; }
+@media (max-width: 360px) { .bk-hexrow + .bk-hexrow { margin-top: -7.3px; } }
 /* Hexagon medals (owner, Nov 11 2026): gold / silver / bronze / slate by rank (see MEDAL_* in app.js). Three classes so
    they beat .bk-dyn / .bk-lock; selectors start with .bk-total so theme.js KEEP leaves them alone in dark mode. */
 .bk-total.bk-m-gold { background: linear-gradient(#ffe39a, var(--brass)); color: var(--navy-950); }
@@ -4833,3 +4837,11 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .bk-posxsel { appearance: none; -webkit-appearance: none; border: 1px solid rgba(255,255,255,.25); border-radius: 6px; padding: 6px 26px 6px 10px; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5l3-3' fill='none' stroke='%23e2b04a' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 8px center / 12px; color: #d6deec; font: 700 12.5px/1 var(--display); cursor: pointer; }
 .bk-posxsel.on { border: 2px solid var(--gold); color: #fff; }
 .bk-posxsel option { color: var(--navy-950); background: #fff; }
+/* NBA season + birth date under HT / WT (owner, Nov 11 2026) */
+.bk-meas.bk-meas2 { margin-top: 2px; font-size: 11.5px; letter-spacing: .02em; text-transform: none; color: #b9c4da; }
+.bk-meas:has(+ .bk-meas2) { margin-bottom: 2px; }
+/* Text beside the badge pyramid (owner, Nov 11 2026): who he is (slot, team, school), then the lock line next to the lock
+   badges, then the per-game line next to the production badges. */
+.bk-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.bk-side .bk-lgs { margin: 0; }
+.bk-side .bk-statline { margin: 0; }
