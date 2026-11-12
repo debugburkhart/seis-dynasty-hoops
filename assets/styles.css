@@ -3130,7 +3130,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk .bk-table td.bk-lockcol:not(.srt) { color: #b9dcff; font-weight: 700; }
 .bk .bk-table tr.on td.bk-lockcol { color: var(--navy-950); }
 @media (max-width: 480px) {
-  .bk-arch { flex-wrap: wrap; }
+  .bk-arch { flex-wrap: wrap; justify-content: center; } /* phones: pyramid centered (owner, Nov 11 2026) */
   .bk-side { flex-basis: 100%; }
 }
 /* 2K breakdown: Sleeper nickname, roster share line, notes box, note mark, Ros% column. */
@@ -3405,7 +3405,12 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-head .bk-tags { padding-top: 4px; }
 .bk-hero { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 1200px) {
-  .bk-hero { align-items: start; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); }
+  .bk-hero { align-items: start; grid-template-columns: minmax(0, 440px) minmax(0, 1fr); grid-template-rows: auto auto auto 1fr; }
+  /* Owner's layout (Nov 11 2026): left column = photo + bio, then everything else (games started, per-game line, notes,
+     draft, contract, awards, tags, news); right column = the badge pyramid where it was. */
+  .bk-hero > .bk-top { grid-column: 1; grid-row: 3; }
+  .bk-hero > .bk-arch { grid-column: 2; grid-row: 3 / 5; align-self: start; }
+  .bk-hero > .bk-info { grid-column: 1; grid-row: 4; }
 }
 @media (max-width: 700px) {
   .bk-top .bk-photo { width: 120px; }

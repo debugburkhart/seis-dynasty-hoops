@@ -2421,7 +2421,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   CARD LAYOUT (owner, Nov 11 2026): FP/G is a hexagon now (.bk-fpgb; the FP/G ring under the headshot is gone; medal by
   league-wide FP/G rank rankAvgOvr, MEDAL_LG; small line = OVR rank). PYRAMID (owner, same day): row 1 Avg lock; row 2 Locked,
   Total FP; row 3 FP/G, Avg rank, Total rank; tiled as a honeycomb (4px gaps everywhere: .bk-hexrow + .bk-hexrow margin-top
-  -8.7px, -7.3px at <= 360px for the smaller hexagons; recompute if .bk-total size changes). Total FP hexagon label reads
+  -8.7px, -7.3px at <= 360px for the smaller hexagons; recompute if .bk-total size changes). CARD BLOCKS (owner's browser
+  sketch, same day): #bk-hero children = .bk-team, .bk-goto, .bk-top (photo + bio), .bk-arch (pyramid + .bk-who slot title),
+  .bk-info (LGS line, per-game line, notes, draft, contract, awards, tags, news). From 1200px: left column = .bk-top then
+  .bk-info, right column = .bk-arch (rows 3-4); narrower = stacked in that order; at <= 480px the pyramid is centered. Total FP hexagon label reads
   "TOTAL FP" on top (owner), number below, games played ("10 GP") at the bottom. Beside it (.bk-side): .bk-who (slot, team, school), the LGS line, then the per-game
   stat line (moved out of the head / below the notes; .bk-who small = old bio-text rule). "Nth NBA season · born ..." under HT / WT (.bk-meas2; college /
   country stays under the slot title). Contract line moved above Awards. Badge colors card lists FP/G with Total FP.
