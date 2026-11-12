@@ -773,16 +773,26 @@ export async function leagueRanks(DATA, season) {
   if (hit && Date.now() - hit.at < 120_000) return hit.ranks;
   const [table, scoring, all] = await Promise.all([seasonTable(season), scoringFor(DATA, season), get('/v1/players/nba', {})]);
   const rows = Object.entries(table.players)
-    .map(([pid, row]) => ({ pid, fp: Math.round(lineFromTable(row, table.keys, scoring).fp * 10) / 10, pos: all?.[pid]?.position ?? DATA.players?.[pid]?.pos ?? '' }))
+    .map(([pid, row]) => { const l = lineFromTable(row, table.keys, scoring); return { pid, fp: Math.round(l.fp * 10) / 10, gp: l.gp ?? 0, fpg: l.gp ? Math.round(l.fp / l.gp * 10) / 10 : 0, pos: all?.[pid]?.position ?? DATA.players?.[pid]?.pos ?? '' }; })
     .filter(r => r.fp > 0)
     .sort((a, b) => b.fp - a.fp);
   const ranks = {};
-  const rankIn = list => list.forEach((r, i) => { const prev = list[i - 1]; r.rk = prev && prev.fp === r.fp ? prev.rk : i + 1; });
+  const rankIn = (list, k = 'fp') => list.forEach((r, i) => { const prev = list[i - 1]; r.rk = prev && prev[k] === r[k] ? prev.rk : i + 1; });
   rankIn(rows);
-  for (const r of rows) ranks[r.pid] = { ovr: r.rk, pos: null, fp: r.fp };
+  for (const r of rows) ranks[r.pid] = { ovr: r.rk, pos: null, fp: r.fp, avgOvr: null, avgPos: null };
   const byPos = {};
   for (const r of rows) if (r.pos) (byPos[r.pos] ??= []).push({ ...r });
   for (const list of Object.values(byPos)) { rankIn(list); for (const r of list) ranks[r.pid].pos = r.rk; }
+  // Average ranks (owner, Nov 11 2026): by FP/G among players with FPG_MIN_SHARE of the most games played (same rule as
+  // fpgRanks), overall and at his position; players under the cutoff get none.
+  const most = Math.max(0, ...rows.map(r => r.gp));
+  const need = Math.max(1, Math.round(most * FPG_MIN_SHARE));
+  const avg = rows.filter(r => r.gp >= need).map(r => ({ ...r })).sort((a, b) => b.fpg - a.fpg);
+  rankIn(avg, 'fpg');
+  for (const r of avg) ranks[r.pid].avgOvr = r.rk;
+  const avgPos = {};
+  for (const r of avg) if (r.pos) (avgPos[r.pos] ??= []).push({ ...r });
+  for (const list of Object.values(avgPos)) { rankIn(list, 'fpg'); for (const r of list) ranks[r.pid].avgPos = r.rk; }
   RANKS[season] = { at: Date.now(), ranks };
   return ranks;
 }
@@ -1114,6 +1124,7 @@ export async function loadBreakdown(DATA, { list = 'team', owner, season: statSe
       // Roster % / start % across all Sleeper leagues this week (null = not in Sleeper's list).
       owned: research?.[pid]?.owned ?? null, started: research?.[pid]?.started ?? null,
       rankOvr: ranks[pid]?.ovr ?? null, rankPos: ranks[pid]?.pos ?? null,
+      rankAvgOvr: ranks[pid]?.avgOvr ?? null, rankAvgPos: ranks[pid]?.avgPos ?? null,
       // His current team's nickname for him, then other teams' (older owners).
       nick: (at && nicks[pid]?.[at.owner]) || null,
       nickOthers: Object.entries(nicks[pid] ?? {}).filter(([o]) => o !== at?.owner).map(([o, n]) => ({ owner: o, n })),

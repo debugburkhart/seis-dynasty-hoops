@@ -3319,9 +3319,14 @@ const estChip = (e, cls = 'bk-est') => { const r = returnEstimate(e); return r ?
 // Position filter (owner, Oct 25 2026), all 3 lists: main Sleeper position's group (PG/SG/G = guard, SF/PF/F =
 // forward, C), plus players who can also play there (fantasy_positions) when "Include secondary positions" is
 // on; those rows get a small "2nd" mark. Saved like the Dynasty tab's filters (gm-bk-pos, gm-bk-sec; synced).
-const BK_POS = [['all', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']];
+// Position row (owner, Nov 11 2026): buttons All + the 5 positions, dropdown = Guards / Forwards groups (BK_POS_GRP).
+const BK_POS = [['all', 'All'], ['PG', 'PG'], ['SG', 'SG'], ['SF', 'SF'], ['PF', 'PF'], ['C', 'C']];
+const BK_POS_GRP = [['G', 'Guards'], ['F', 'Forwards']];
 const bkGroups = p => posGroups({ pos: p.mainPos, fpos: p.pos });
-const bkPosOk = (p, pos, sec) => pos === 'all' || bkGroups(p).main === pos || (sec && bkGroups(p).sec.includes(pos));
+// Exact positions (owner, Nov 11 2026): a dropdown next to the group buttons; main = Sleeper's main position, secondary =
+// his fantasy_positions (centers stay the Centers button).
+const BK_EXACT = ['PG', 'SG', 'SF', 'PF'];
+const bkPosOk = (p, pos, sec) => pos === 'all' || (BK_EXACT.includes(pos) ? p.mainPos === pos || (sec && (p.pos ?? []).includes(pos)) : bkGroups(p).main === pos || (sec && bkGroups(p).sec.includes(pos)));
 // Team list filter (owner, Oct 25 2026): the whole roster, everyone but taxi (starters, bench, IR), or taxi only.
 const BK_GROUPS = [['all', 'Full team', () => true], ['active', 'Rostered', p => p.slot !== 'TX'], ['taxi', 'Taxi', p => p.slot === 'TX']];
 // Custom player tags (owner, Oct 25 2026): his own words, any player (team, waiver wire, league).
@@ -3647,10 +3652,31 @@ const slotRank = p => SLOT_ORDER.indexOf(p.slot) * 100 + Math.max(0, p.order);
 const bkAvg = k => [p => (p.tot.gp ? p.avg[k] : -1), p => (p.tot.gp ? bkF1(p.avg[k]) : '—')];
 // Table columns per view: [key, label, value for sorting, cell text, { only / not: list id, cls }].
 const BK_OWN = ['own', 'Fantasy team', p => (p.owner ? teamName(p.owner, DATA.seasons.at(-1).season) : '~'), p => (p.owner ? teamName(p.owner, DATA.seasons.at(-1).season) : 'Free agent'), { only: ['league', 'nba', 'watch', 'block'], cls: 'bk-own' }];
-const BK_SLOT = ['slot', 'Slot', p => -slotRank(p), p => p.slot, { not: 'fa' }];
+const BK_SLOT = ['slot', 'Slot', p => -slotRank(p), p => p.slot, { only: 'team' }]; // Team list only (owner, Nov 11 2026: not useful on the other lists)
 const BK_DYN = ['dyn', 'Dyn', p => BK.dyn(p.pid) ?? -1, p => BK.dyn(p.pid) ?? '—', { cls: 'bk-dyncol' }];
 // Locked points + starts (BK.locked, set per render: this team's on Team, any team elsewhere).
 const BK_LOCK = ['locked', 'Locked', p => BK.locked(p.pid)?.pts ?? -1, p => (BK.locked(p.pid) ? num(BK.locked(p.pid).pts) : '—'), { cls: 'bk-lockcol' }];
+// HEXAGON MEDALS (owner, Nov 11 2026): each Rosters-card hexagon is gold / silver / bronze / slate by where he ranks.
+// Avg rank + Total rank: by POSITION rank (1-5 / 6-15 / 16-30); Total FP: league-wide overall rank by total FP
+// (1-25 / 26-75 / 76-150); Locked + Avg lock: league-wide percentile among players locked this period by ANY team (top 10% /
+// 30% / 60%); Avg lock needs MEDAL_AVGLK_MIN weeks locked. Dynasty (MyGM+) stays gold.
+const MEDAL_POS = [5, 15, 30];
+const MEDAL_LG = [25, 75, 150];
+const MEDAL_PCT = [0.10, 0.30, 0.60];
+const MEDAL_AVGLK_MIN = 2;
+const MEDALS = ['gold', 'silver', 'bronze'];
+const MEDAL_WORD = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze', none: 'No medal' };
+const MEDAL_PCT_TXT = `gold top ${MEDAL_PCT[0] * 100}%, silver top ${MEDAL_PCT[1] * 100}%, bronze top ${MEDAL_PCT[2] * 100}%`;
+const medalByRank = (r, cuts) => (r ? MEDALS[cuts.findIndex(c => r <= c)] ?? 'none' : 'none');
+const medalByPct = f => (f == null ? 'none' : MEDALS[MEDAL_PCT.findIndex(c => f < c)] ?? 'none');
+// [[pid, value]] -> { pid: share of the pool ranked above him (0 = best; ties share the better spot) }.
+function pctPlaces(list) {
+  const s = [...list].sort((a, b) => b[1] - a[1]);
+  const out = {};
+  let place = 0;
+  s.forEach(([pid, v], i) => { if (!i || s[i - 1][1] !== v) place = i; out[pid] = place / s.length; });
+  return out;
+}
 // Avg lock (owner, Nov 11 2026): locked points per week locked (same period / team as Locked), every view.
 const bkAvgLock = pid => { const l = BK.locked(pid); return l?.starts ? l.pts / l.starts : null; };
 const BK_AVGLK = ['avglk', 'Avg Lk', p => bkAvgLock(p.pid) ?? -1, p => (bkAvgLock(p.pid) == null ? '—' : bkF1(bkAvgLock(p.pid))), { cls: 'bk-lockcol' }];
@@ -3814,6 +3840,13 @@ async function renderBreakdown(body, params) {
   // Locked points (owner, Oct 25 2026): this team's only on Team, any team on League / Waiver wire; the
   // chosen season or every season in Career. From DATA.playerWeeks (finished weeks).
   const locked = lockedTotals(DL, { season, owner: list === 'team' ? me : null });
+  // Hexagon medals for the lock stats: league-wide (any team), same period, so a player split by a trade isn't penalized.
+  {
+    const all = Object.entries(lockedTotals(DL, { season, owner: null }));
+    const lk = pctPlaces(all.filter(([, r]) => r.pts > 0).map(([pid, r]) => [pid, r.pts]));
+    const av = pctPlaces(all.filter(([, r]) => r.starts >= MEDAL_AVGLK_MIN).map(([pid, r]) => [pid, r.pts / r.starts]));
+    BK.medal = { lk: pid => medalByPct(lk[pid]), av: pid => medalByPct(av[pid]), lkN: Object.keys(lk).length, avN: Object.keys(av).length };
+  }
   BK.locked = pid => locked[pid] ?? null;
   // League Games Started: this team's only on Team (like Locked), any team elsewhere; the chosen season or Career.
   const lgsC = lgsCounts(lgsData, season, list === 'team' ? me : null);
@@ -3884,6 +3917,13 @@ async function renderBreakdown(body, params) {
     ${betaCard('Season by season', '<div id="bk-years"><p class="empty">Loading…</p></div>', { id: 'bk-years-card', sub: 'Regular season · NBA or by league team' })}
     ${betaCard('Game log', '<div id="bk-log"><p class="empty">Loading…</p></div>', { id: 'bk-log-card', sub: bkSeason(logSeason) })}
     ${betaCard('Transactions', '<div id="bk-tx"><p class="empty">Loading…</p></div>', { id: 'bk-tx-card', sub: 'Every league move he was part of, newest first' })}
+    ${betaCard('Badge colors', `<div class="bk-medals">
+      <p><span class="bk-mchip gold">Gold</span><span class="bk-mchip silver">Silver</span><span class="bk-mchip bronze">Bronze</span><span class="bk-mchip none">No medal</span> Each badge on the player card is colored by where he ranks.</p>
+      <p><b>Avg rank, Total rank</b> (by position): gold ${MEDAL_POS[0] === 1 ? '1' : `1–${MEDAL_POS[0]}`}, silver ${MEDAL_POS[0] + 1}–${MEDAL_POS[1]}, bronze ${MEDAL_POS[1] + 1}–${MEDAL_POS[2]} at his position.</p>
+      <p><b>Total FP</b> (league-wide): gold 1–${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}–${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}–${MEDAL_LG[2]} among all NBA players by total fantasy points.</p>
+      <p><b>Locked, Avg lock</b> (league-wide, any team): ${MEDAL_PCT_TXT} of players whose score counted for a fantasy team in this period. Avg lock needs ${MEDAL_AVGLK_MIN}+ weeks locked. The numbers on the Team list are that team's, but the color always compares the whole league.</p>
+      <p>Same period as the page (${esc(period)}).</p>
+    </div>`, { id: 'bk-medals-card' })}
     <div class="bk-tray" id="bk-tray" hidden></div>
   </div>`;
   for (const pl of bk.players) BK_NAMES[pl.pid] = pl.name;
@@ -3894,7 +3934,8 @@ async function renderBreakdown(body, params) {
   const lockBadge = p => {
     const l = BK.locked(p.pid);
     const why = `Locked points: his starters' points that counted${list === 'team' ? ` for ${teamName(me, cur.season)}` : ' (any team)'}, ${period}${l ? ` · ${l.starts} starts, ${num(l.pts / l.starts)} per start` : ' · none yet'}`;
-    return `<div class="bk-total bk-lock" title="${esc(why)}"><small>Locked</small><b>${l ? bkBadgeNum(l.pts) : '—'}</b><small>${l ? `${l.starts} wk${l.starts === 1 ? '' : 's'}` : 'Pts'}</small></div>`;
+    const m = BK.medal.lk(p.pid);
+    return `<div class="bk-total bk-lock bk-m-${m}" title="${esc(`${why} · ${MEDAL_WORD[m]}: league-wide locked points (any team), ${MEDAL_PCT_TXT}`)}"><small>Locked</small><b>${l ? bkBadgeNum(l.pts) : '—'}</b><small>${l ? `${l.starts} wk${l.starts === 1 ? '' : 's'}` : 'Pts'}</small></div>`;
   };
   // Awards (owner, Oct 25 2026): championship rings (on the champion's roster in championship week, not
   // on taxi), then individual awards, then teams (All-Star, All-Fantasy, All-Rookie), newest first.
@@ -3958,11 +3999,13 @@ async function renderBreakdown(body, params) {
     const pool = bk.players.filter(keep);
     return `<div class="bk-bar bk-bar2 bk-posbar"><span class="bk-bar-label">Position</span>
       <div class="bk-views bk-posf" role="tablist">${BK_POS.map(([id, label]) => `<button type="button" data-pos="${id}" class="${pos === id ? 'on' : ''}">${label} <small>${pool.filter(p => bkPosOk(p, id, sec)).length}</small></button>`).join('')}</div>
+      <select class="bk-posxsel${BK_POS_GRP.some(([g]) => g === pos) ? ' on' : ''}" aria-label="Position group"><option value="">Guards / Forwards</option>${BK_POS_GRP.map(([g, label]) => `<option value="${g}"${pos === g ? ' selected' : ''}>${label} (${pool.filter(p => bkPosOk(p, g, sec)).length})</option>`).join('')}</select>
       <label class="bk-check"><input type="checkbox" class="bk-sec"${sec ? ' checked' : ''}> Include secondary positions</label></div>`;
   };
   // "2nd" mark: in this position view only through a secondary position.
   const secMark = p => {
     const pos = gmLoad('gm-bk-pos', 'all');
+    if (BK_EXACT.includes(pos)) return p.mainPos !== pos ? `<i class="bk-2nd" title="Secondary position: ${pos}">2nd</i>` : '';
     return pos !== 'all' && bkGroups(p).main !== pos ? `<i class="bk-2nd" title="Secondary position: ${POS_WORD[pos][0]}">2nd</i>` : '';
   };
   // Tag filter row: All + auto tags (only those someone in this list has, or the one picked) + his own tags, each
@@ -4025,18 +4068,26 @@ async function renderBreakdown(body, params) {
             <div><small>${esc(p.first)}</small><h3${(() => { const n = Math.max(...String(p.last || p.name).split(/[\s-]/).map(w => w.length)); return n >= 13 ? ' class="bk-l2"' : n >= 10 ? ' class="bk-l1"' : ''; })()}>${esc(p.last || p.name)}</h3>${nickLine(p)}</div>
           </div>
           <p class="bk-meas">${[p.height && `HT: ${p.height}`, p.weight && `WT: ${p.weight}`, p.age != null && `AGE: ${p.age}`].filter(Boolean).map(esc).join(' / ')}</p>
-          ${p.rankOvr && !bkTrim() ? `<p class="bk-share" title="Rank by total fantasy points under our league scoring, ${esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season))}: among all NBA players and among ${esc(p.mainPos)}s"><span class="ct-label">League rank</span> <b>${p.rankPos ?? '—'} ${esc(p.mainPos)}</b> · <b>${p.rankOvr} OVR</b> <small>(${esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season))})</small></p>` : ''}
           ${p.owned != null ? `<p class="bk-share" title="Share of Sleeper NBA dynasty leagues where he is on a roster / in a starting lineup this week (the numbers the Sleeper app shows in this league)"><span class="ct-label">Sleeper</span> Rostered <b>${bkShare(p.owned)}</b> · Started <b>${bkShare(p.started)}</b> of dynasty leagues</p>` : ''}
           ${p.tot.usg != null && !bkTrim() ? `<p class="bk-share bk-role" title="Usage rate: the share of his team's plays he finished (shot, free-throw trip or turnover) while on the floor, ${esc(period)}. Under 20% Role Player / Connector · 20-23% Average Starter · 24-29% Co-Star / Lead Scorer · 30-35% Primary Creator / Superstar · 35%+ Ultra-High Usage"><span class="ct-label">Role</span> <b>${esc(usgRole(p.tot.usg))}</b> (${p.tot.usg.toFixed(1)}% usage${p.tot.gp < 5 ? `, ${p.tot.gp} game${p.tot.gp === 1 ? '' : 's'}` : ''})</p>` : ''}
           ${BK.lgs(p.pid) ? (() => { const c = BK.lgs(p.pid); return `<p class="bk-share bk-lgs" title="League Games Started: games where a fantasy team${list === 'team' ? ' (this one)' : ''} had him in a starting slot when his NBA game tipped off (one per game, any slot; his games after his lock that week don't count). Out of the games he played while on a roster here, taxi / IR left out. Unsure = moved in or out right around tip-off. Tracking started midway through week 2 (Oct 29); weeks 1-2 before that count only the game each starter was locked on. Lock per start = weeks locked ÷ LGS."><span class="ct-label">League Games Started</span> <b>${c.n}</b> of ${c.seen} game${c.seen === 1 ? '' : 's'}${c.u ? ` <small>(${c.u} unsure)</small>` : ''} · Locked <b>${BK.lkWeeks(p.pid)}</b> week${BK.lkWeeks(p.pid) === 1 ? '' : 's'}${BK.lkPct(p.pid) != null ? ` · <b>${BK.lkPct(p.pid)}%</b> lock per start` : ''}${BK_LIVE?.rows.some(r => r.pid === p.pid) ? ` <small class="bk-livelk" title="Sleeper shows him locked in week ${BK_LIVE.week} (still being played): that lock already counts in his locked points, weeks locked and LGS">· incl. week ${BK_LIVE.week} lock (live)</small>` : ''}</p>`; })() : ''}
-          ${bkAvgLock(p.pid) != null ? `<p class="bk-share bk-avglk" title="Average locked points per week his score counted (${list === 'team' ? 'for this team' : 'any team'}, ${esc(period)})"><span class="ct-label">Avg lock</span> <b>${bkF1(bkAvgLock(p.pid))}</b> per week locked <small>(${num(BK.locked(p.pid).pts)} over ${BK.locked(p.pid).starts} week${BK.locked(p.pid).starts === 1 ? '' : 's'})</small></p>` : ''}
+          ${!bkTrim() && dyn && dynOf(p.pid) != null ? `<p class="bk-share bk-dynl" title="Dynasty score today (0-100, same as the Dynasty tab)"><span class="ct-label">Dynasty</span> <b>${dynOf(p.pid)}</b> score</p>` : ''}
         </div>
       </div>
       <div class="bk-info">
         <div class="bk-arch">
-          ${bkTrim() ? `<div class="bk-total bk-dyn bk-rankb" title="League rank: by total fantasy points under our league scoring, ${esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season))}, among ${esc(p.mainPos)}s and among all NBA players"><small>Rank</small><b>${p.rankPos ? `${p.rankPos} ${esc(p.mainPos)}` : '—'}</b><small>${p.rankOvr ? `${p.rankOvr} OVR` : 'OVR —'}</small></div>` : dyn ? `<div class="bk-total bk-dyn" title="Dynasty score today (0-100, same as the Dynasty tab)"><small>Dynasty</small><b>${dynOf(p.pid) ?? '—'}</b><small>Score</small></div>` : ''}
-          <div class="bk-total" title="Total fantasy points, ${esc(period)}"><small>Total</small><b>${bkBadgeNum(p.tot.fp)}</b><small>FP</small></div>
-          ${lockBadge(p)}
+          ${(() => {
+            // HEXAGON STACK (owner's sketch, Nov 11 2026): gold league ranks on top (Avg = by FP/G, Total = by total FP; position +
+            // overall), navy Locked + silver Total FP below. MyGM+ adds the gold Dynasty score first in the top row.
+            const rs = esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season));
+            const rank = (label, pos, ovr, why) => { const m = medalByRank(pos, MEDAL_POS); return `<div class="bk-total bk-rankb bk-m-${m}" title="${why} · ${MEDAL_WORD[m]}: by position rank (gold 1-${MEDAL_POS[0]}, silver ${MEDAL_POS[0] + 1}-${MEDAL_POS[1]}, bronze ${MEDAL_POS[1] + 1}-${MEDAL_POS[2]})"><small>${label}</small><b>${pos ? `${pos} ${esc(p.mainPos)}` : '—'}</b><small>${ovr ? `${ovr} OVR` : 'OVR —'}</small></div>`; };
+            const top = [
+              `<div class="bk-total bk-lock bk-avgb bk-m-${BK.medal.av(p.pid)}" title="Average locked points per week his score counted (${list === 'team' ? 'for this team' : 'any team'}, ${esc(period)}) · ${MEDAL_WORD[BK.medal.av(p.pid)]}: league-wide average lock (any team, ${MEDAL_AVGLK_MIN}+ weeks locked), ${MEDAL_PCT_TXT}"><small>Avg lock</small><b>${bkAvgLock(p.pid) == null ? '—' : bkF1(bkAvgLock(p.pid))}</b><small>Per wk</small></div>`,
+              rank('Avg', p.rankAvgPos, p.rankAvgOvr, `League rank by fantasy points PER GAME, ${rs} (players with at least 40% of the most games played), among ${esc(p.mainPos)}s and among all NBA players`),
+              rank('Total', p.rankPos, p.rankOvr, `League rank by TOTAL fantasy points under our league scoring, ${rs}, among ${esc(p.mainPos)}s and among all NBA players`),
+            ].filter(Boolean);
+            return `<div class="bk-hexes"><div class="bk-hexrow">${top.join('')}</div><div class="bk-hexrow">${lockBadge(p)}<div class="bk-total bk-m-${medalByRank(p.rankOvr, MEDAL_LG)}" title="Total fantasy points, ${esc(period)} · ${MEDAL_WORD[medalByRank(p.rankOvr, MEDAL_LG)]}: league-wide rank by total FP (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]})"><small>Total</small><b>${bkBadgeNum(p.tot.fp)}</b><small>FP</small></div></div></div>`;
+          })()}
           <div>${bkTrim() ? '' : `<b class="bk-title">${esc(slot)}</b>${dynOf(p.pid) != null ? tierTag(dynOf(p.pid)) : ''}`}${list !== 'team' && p.owner ? `<small class="bk-owner">${esc(teamName(p.owner, cur.season))} (${esc(name(p.owner))})</small>` : ''}<small>${bio.map(esc).join(' · ')}</small>${dynNote(p.pid)}</div>
         </div>
         <div class="bk-note">
@@ -4530,6 +4581,7 @@ async function renderBreakdown(body, params) {
     draw();
   });
   posEl.addEventListener('change', e => {
+    if (e.target.matches('.bk-posxsel')) { gmSave('gm-bk-pos', e.target.value || 'all'); BK.limit = BK_PAGE; draw(); return; }
     if (!e.target.matches('.bk-sec')) return;
     gmSave('gm-bk-sec', e.target.checked);
     draw();

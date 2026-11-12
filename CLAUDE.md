@@ -1376,7 +1376,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   'breakdown'), opening on MYGM_ME; every other tab stays own-team only. Checked: opens on the signed-in team, picking
   Parma works, Depth Chart with ?team=Parma still shows the own team.
   ROSTERS TRIM (owner, Nov 9 2026, MyGM only via bkTrim() = page mygm; MyGM+ unchanged): no Dyn column (bkCols drops BK_DYN),
-  the gold Dynasty hexagon shows LEAGUE RANK instead (owner, Nov 11 2026: .bk-rankb "Rank / 7 C / 18 OVR", position + overall; the "League rank" bio line is hidden in MyGM; was a plain "X"), no slot / tier line (.bk-title +
+  no gold Dynasty hexagon (see HEXAGON STACK), no slot / tier line (.bk-title +
   tierTag) in the bio, no "Dynasty N at full health" note, no Dynasty score row in Compare, no "Top 100 prospect" auto tag
   (autoTagsOf), so it never shows in the Tags filter / column either. Dynasty riser / faller auto tags hidden too (owner: "Yes,
   hide them"). USAGE hidden too ("hide all usage mentions too"): bkCols drops BK_USG (Averages + Shooting), no "Role ...
@@ -2412,6 +2412,19 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   AVG LOCK (owner, Nov 11 2026): BK_AVGLK "Avg Lk" = locked points ÷ weeks locked (bkAvgLock; same team / period as
   Locked) in Averages + Totals (after Locked; not Shooting, owner); bio line .bk-avglk "Avg lock 49.3
   per week locked (148 over 3 weeks)" under the LGS line; fine print explains it.
+  HEXAGON STACK (owner's sketch, Nov 11 2026; both pages): .bk-hexes = two .bk-hexrow rows. Top = gold ranks (.bk-rankb):
+  "Avg" = rank by FP/G (leagueRanks avgOvr / avgPos: players with FPG_MIN_SHARE 40% of the most games; p.rankAvgOvr /
+  rankAvgPos) and "Total" = rank by total FP (rankOvr / rankPos), each "N POS" big + "N OVR" small; first in that row (BOTH
+  pages, owner: MyGM+ "looks the exact same as MyGM") = "Avg lock" hexagon (.bk-avgb, bkAvgLock "49.3 per wk"; the old Avg
+  lock bio line is gone). MyGM+ shows the Dynasty score as a bio line instead (.bk-dynl "Dynasty 56 score", under the LGS
+  line). Bottom = Locked then Total FP (owner swapped them). The "League rank" bio line is gone on both pages. CSS: .bk-arch > div:not(.bk-total):not(.bk-hexes) keeps the bio-text rules off it.
+  HEXAGON MEDALS (owner, Nov 11 2026; both pages; MEDAL_* constants in app.js): each hexagon is .bk-m-gold / -silver /
+  -bronze / -none (slate). Avg rank + Total rank by POSITION rank 1-5 / 6-15 / 16-30 (MEDAL_POS); Total FP by league-wide
+  overall rank by total FP 1-25 / 26-75 / 76-150 (MEDAL_LG); Locked + Avg lock by league-wide percentile among players locked
+  this period by ANY team (pctPlaces, BK.medal; top 10 / 30 / 60%, MEDAL_PCT), Avg lock needs MEDAL_AVGLK_MIN 2 weeks; on the
+  Team list the number stays that team's but the color compares the whole league. Tooltips say
+  the medal + cutoffs; "Badge colors" card (#bk-medals-card, was "Hexagon colors") at the bottom of the page explains them. CSS selectors start
+  with .bk-total and .bk-mchip is in theme.js KEEP (a `.bk .bk-total...` rule was turned dark by dark mode: silver went black).
   LOCKED BADGE (owner, Nov 11 2026): the blue hexagon's small line says "N wks" / "1 wk" (weeks locked), was "N st".
   HEADSHOT LOGO (owner, Nov 11 2026, like Sleeper's player card; Rosters card only): .bk-photo has his NBA team logo
   (teamLogo, img.bk-plogo) behind the headshot (img.bk-pimg on top), MATCHED TO SLEEPER'S CARD (owner's screenshot): opacity .85,
@@ -2426,6 +2439,10 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   26px). leagueLogo(owner) in app.js = Sleeper /v1/league/{id}/users metadata.avatar (the logo uploaded for this league,
   read live), else his profile avatar (bigtrey5456 has no league logo on Nov 11 2026). That title row is centered
   (owner: the logo sat too low): .card-head:has(.bk-tlogo) align-items center + the h2 a flex row.
+  EXACT POSITIONS (owner, Nov 11 2026; layout changed the same day): Position row = buttons All, PG, SG, SF, PF, C (BK_POS)
+  + a Guards / Forwards dropdown (BK_POS_GRP, .bk-posxsel, gold edge when picked; values G / F)
+  with counts; an exact position (BK_EXACT) = Sleeper main position, + secondary = fantasy_positions when
+  "Include secondary positions" is on ("2nd" mark); C uses the old Centers group rule. SLOT COLUMN = Team list only (same day).
   CARD TOP (owner, Oct 26 2026): .bk-top = .bk-id (headshot, FP/G ring right under it) beside .bk-head (#number +
   positions, first/LAST name, HT/WT/AGE, league rank, Sleeper %); the rest (.bk-info) below. One column up to
   1199px; from 1200px the top sits left (max 440px) and .bk-info right. Long last names shrink (h3.bk-l1 10-12

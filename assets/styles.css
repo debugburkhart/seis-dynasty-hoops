@@ -2938,7 +2938,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-title { display: block; font: 900 22px/1.1 var(--display); font-stretch: 92%; }
 .bk-arch .tier { display: inline-block; margin-top: 4px; }
 .bk-arch small.bk-dynnote { color: var(--gold); }
-.bk-arch > div:not(.bk-total) small { display: block; margin-top: 3px; font-size: 12px; color: #b9c4da; }
+.bk-arch > div:not(.bk-total):not(.bk-hexes) small { display: block; margin-top: 3px; font-size: 12px; color: #b9c4da; }
 .bk-statline { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 14px; }
 .bk-statline span { display: flex; flex-direction: column; }
 .bk-statline b { font: 900 17px/1.1 var(--display); }
@@ -3024,7 +3024,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk-pager:empty { display: none; }
 .bk-page-more { padding: 6px 12px; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; background: rgba(255,255,255,.06); color: #fff; font: 700 12px/1.2 var(--font); cursor: pointer; }
 .bk-page-more small { color: #9fb0cc; font-weight: 600; }
-.bk-arch > div:not(.bk-total) small.bk-owner { color: #fff; font-weight: 700; }
+.bk-arch > div:not(.bk-total):not(.bk-hexes) small.bk-owner { color: #fff; font-weight: 700; }
 @media (max-width: 700px) {
   .bk-bar { flex-wrap: wrap; }
   .bk-search { width: 100%; margin-left: 0; }
@@ -3131,7 +3131,7 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .bk .bk-table tr.on td.bk-lockcol { color: var(--navy-950); }
 @media (max-width: 480px) {
   .bk-arch { flex-wrap: wrap; }
-  .bk-arch > div:not(.bk-total) { flex-basis: 100%; }
+  .bk-arch > div:not(.bk-total):not(.bk-hexes) { flex-basis: 100%; }
 }
 /* 2K breakdown: Sleeper nickname, roster share line, notes box, note mark, Ros% column. */
 .bk-nick { display: block; margin-top: 3px; font: italic 700 13px/1.2 var(--font); color: var(--gold); }
@@ -4807,3 +4807,29 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 /* Headshot logo on team-color cards (owner, Nov 11 2026: "they look like white shadows, add color and detail back"):
    strong enough to show the logo's own colors and lines over the matching background. */
 .bk .bk-hero.bk-tmc .bk-photo img.bk-plogo { opacity: .85; }
+/* Hexagon stack on the Rosters card (owner's sketch, Nov 11 2026): gold ranks on top, Locked + Total FP below; MyGM+
+   puts Dynasty first in the top row (3 over 2, honeycomb style). */
+.bk-hexes { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.bk-hexrow { display: flex; justify-content: center; gap: 6px; }
+/* Hexagon medals (owner, Nov 11 2026): gold / silver / bronze / slate by rank (see MEDAL_* in app.js). Three classes so
+   they beat .bk-dyn / .bk-lock; selectors start with .bk-total so theme.js KEEP leaves them alone in dark mode. */
+.bk-total.bk-m-gold { background: linear-gradient(#ffe39a, var(--brass)); color: var(--navy-950); }
+.bk-total.bk-m-gold small { color: #5e4206; }
+.bk-total.bk-m-silver { background: linear-gradient(#f4f6fa, #a3aec2); color: var(--navy-950); }
+.bk-total.bk-m-silver small { color: var(--navy-800); }
+.bk-total.bk-m-bronze { background: linear-gradient(#f2c8a0, #a5652f); color: #2a1505; }
+.bk-total.bk-m-bronze small { color: #4d2a0c; }
+.bk-total.bk-m-none { background: linear-gradient(#5c6679, #2f3747); color: #fff; }
+.bk-total.bk-m-none small { color: #c8d0de; }
+/* Key under the page (.bk-medals) */
+.bk-medals { display: grid; gap: 8px; font-size: 12.5px; line-height: 1.45; }
+.bk-medals p { margin: 0; }
+.bk-mchip { display: inline-block; min-width: 54px; margin-right: 4px; padding: 1px 6px; border-radius: 4px; font: 800 10px/1.6 var(--display); letter-spacing: .04em; text-transform: uppercase; text-align: center; }
+.bk-mchip.gold { background: linear-gradient(#ffe39a, var(--brass)); color: var(--navy-950); }
+.bk-mchip.silver { background: linear-gradient(#f4f6fa, #a3aec2); color: var(--navy-950); }
+.bk-mchip.bronze { background: linear-gradient(#f2c8a0, #a5652f); color: #2a1505; }
+.bk-mchip.none { background: linear-gradient(#5c6679, #2f3747); color: #fff; }
+/* Exact position dropdown in the Rosters Position row (owner, Nov 11 2026) */
+.bk-posxsel { appearance: none; -webkit-appearance: none; border: 1px solid rgba(255,255,255,.25); border-radius: 6px; padding: 6px 26px 6px 10px; background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5l3-3' fill='none' stroke='%23e2b04a' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 8px center / 12px; color: #d6deec; font: 700 12.5px/1 var(--display); cursor: pointer; }
+.bk-posxsel.on { border: 2px solid var(--gold); color: #fff; }
+.bk-posxsel option { color: var(--navy-950); background: #fff; }

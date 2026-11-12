@@ -239,7 +239,7 @@ function collectBright(rules, vars) {
 // Containers that are ALREADY dark in light mode (sidebar, the 2K card, fight cards...): rules scoped inside them were
 // designed for a dark background and are left exactly as they are. KEEP = badges drawn on such a card whose
 // selectors don't name it.
-const KEEP = ['.bk-total', '.bk-dyn', '.bk-lock', '.pc']; // .pc = Sleeper position-color boxes (Nov 11 2026): same in both themes
+const KEEP = ['.bk-total', '.bk-dyn', '.bk-lock', '.pc', '.bk-mchip']; // .pc = Sleeper position-color boxes (Nov 11 2026): same in both themes
 let DARK = [];
 function collectDark(rules, vars) {
   for (const r of rules) {
