@@ -3686,6 +3686,63 @@ const BK_SLOT = ['slot', 'Slot', p => -slotRank(p), p => p.slot, { only: 'team' 
 const BK_DYN = ['dyn', 'Dyn', p => BK.dyn(p.pid) ?? -1, p => BK.dyn(p.pid) ?? '—', { cls: 'bk-dyncol' }];
 // Locked points + starts (BK.locked, set per render: this team's on Team, any team elsewhere).
 const BK_LOCK = ['locked', 'Locked', p => BK.locked(p.pid)?.pts ?? -1, p => (BK.locked(p.pid) ? num(BK.locked(p.pid).pts) : '—'), { cls: 'bk-lockcol' }];
+// HEXAGON PAIRS (owner, Nov 11 2026, from his sketch; outlines and two-color bars were tried and scrapped): each pair (FP/G + Avg,
+// Total FP + Total rank, Avg lock + Locked) is "stitched" across the edge it shares by PAIR_STITCHES short, evenly spaced
+// lines that cross the gap at right angles and reach PAIR_IN px into both badges. Lines only, no fill. SVG on top of the
+// badges from their real positions (any screen width); redrawn after every card draw and on resize.
+const PAIR_STITCHES = 1; // owner tried 2, then asked for one in the middle
+const PAIR_GAP = 12; // px between stitches, along the edge
+const PAIR_IN = 5; // px each stitch reaches into each badge
+// Which badge matches the Rosters table's sort column (null = none): one position picked turns FP/G and FP into the rank badges.
+function sortedBadge() {
+  const pos = gmLoad('gm-bk-pos', 'all');
+  const one = BK_EXACT.includes(pos) || pos === 'C';
+  return { fpg: one ? 'avgrk' : 'fpg', fp: one ? 'totrk' : 'totfp', prk: 'totrk', rk: 'totrk', locked: 'locked', avglk: 'avglk' }[BK.sort] ?? null;
+}
+function drawHexPairs(box) {
+  const wrap = box?.querySelector('.bk-hexes');
+  if (!wrap) return;
+  wrap.querySelector('svg.bk-pairs')?.remove();
+  const o = wrap.getBoundingClientRect();
+  const hex = el => {
+    const r = el.getBoundingClientRect();
+    const x = r.left - o.left, y = r.top - o.top, w = r.width, h = r.height;
+    // corners: 0 top, 1 upper-right, 2 lower-right, 3 bottom, 4 lower-left, 5 upper-left
+    return { cx: x + w / 2, cy: y + h / 2, pts: [[x + w / 2, y], [x + w, y + 0.18 * h], [x + w, y + 0.82 * h], [x + w / 2, y + h], [x, y + 0.82 * h], [x, y + 0.18 * h]] };
+  };
+  const mid = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+  const unit = (p, q) => { const d = [q[0] - p[0], q[1] - p[1]], l = Math.hypot(...d) || 1; return [d[0] / l, d[1] / l]; };
+  const at = (p, v, k) => [p[0] + v[0] * k, p[1] + v[1] * k];
+  const lines = [];
+  for (const k of ['pg', 'tot', 'lk']) {
+    const [a, b] = [...wrap.querySelectorAll(`[data-pair="${k}"]`)].map(hex);
+    if (!a || !b) continue;
+    const [u, l] = a.cy <= b.cy ? [a, b] : [b, a];
+    let e1, e2; // the two facing edges
+    if (Math.abs(u.cy - l.cy) < 4) { const [L, R] = u.cx < l.cx ? [u, l] : [l, u]; e1 = [L.pts[1], L.pts[2]]; e2 = [R.pts[5], R.pts[4]]; }
+    else if (l.cx < u.cx) { e1 = [u.pts[4], u.pts[3]]; e2 = [l.pts[0], l.pts[1]]; } // lower one down-left
+    else { e1 = [u.pts[3], u.pts[2]]; e2 = [l.pts[5], l.pts[0]]; } // down-right
+    const c = mid(mid(...e1), mid(...e2)); // centre of the gap
+    const along = unit(e1[0], e1[1]);
+    const across = unit(mid(...e1), mid(...e2));
+    const half = Math.hypot(mid(...e2)[0] - mid(...e1)[0], mid(...e2)[1] - mid(...e1)[1]) / 2 + PAIR_IN;
+    for (let i = 0; i < PAIR_STITCHES; i++) {
+      const p = at(c, along, (i - (PAIR_STITCHES - 1) / 2) * PAIR_GAP);
+      const [s, f] = [at(p, across, -half), at(p, across, half)];
+      lines.push(`<line class="bk-stitch" x1="${s[0].toFixed(1)}" y1="${s[1].toFixed(1)}" x2="${f[0].toFixed(1)}" y2="${f[1].toFixed(1)}"/>`);
+    }
+  }
+  // SORTED-BADGE HIGHLIGHT (owner, Nov 11 2026): when the table is sorted by a badge stat, that badge gets a glowing outline.
+  const hl = sortedBadge();
+  const hb = hl && wrap.querySelector(`[data-badge="${hl}"]`);
+  if (hb) {
+    const r = hb.getBoundingClientRect(), x = r.left - o.left, y = r.top - o.top, w = r.width, h = r.height, g = 3;
+    const pts = [[x + w / 2, y - g], [x + w + g, y + 0.18 * h - g / 2], [x + w + g, y + 0.82 * h + g / 2], [x + w / 2, y + h + g], [x - g, y + 0.82 * h + g / 2], [x - g, y + 0.18 * h - g / 2]];
+    lines.push(`<polygon class="bk-hexhl" points="${pts.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(' ')}"/>`);
+  }
+  wrap.insertAdjacentHTML('beforeend', `<svg class="bk-pairs" width="${o.width}" height="${o.height}" aria-hidden="true">${lines.join('')}</svg>`);
+}
+let PAIR_RESIZE = null;
 // HEXAGON MEDALS (owner, Nov 11 2026): each Rosters-card hexagon is gold / silver / bronze / slate by where he ranks.
 // Avg rank + Total rank: by POSITION rank (1-5 / 6-15 / 16-30); Total FP: league-wide overall rank by total FP
 // (1-25 / 26-75 / 76-150); Locked + Avg lock: league-wide percentile among players locked this period by ANY team (top 10% /
@@ -3821,6 +3878,14 @@ async function renderBreakdown(body, params) {
     return arrows.length ? `<div class="bk-goto">${arrows.join('')}</div>` : '';
   };
   if (BK.list !== list) { BK.list = list; BK.q = ''; BK.limit = BK_PAGE; }
+  // Back from a badge jump (?bkret=1, the floating Back pill): put the view, sort, filters and picked player back.
+  if (params.get('bkret') === '1' && BK.badgeBack) {
+    const b = BK.badgeBack;
+    BK.badgeBack = null;
+    Object.assign(BK, { view: b.view, sort: b.sort, dir: b.dir, tags: b.tags, group: b.group, jump: b.pid });
+    gmSave('gm-bk-pos', b.pos);
+    gmSave('gm-bk-sec', b.sec);
+  }
   // Came from the Injury Report (?from=inj): a back link on top; kept in every link while browsing here.
   const listTabs0 = () => `<div class="st-tabs bk-lists" role="tablist">${BK_LISTS.map(([id, label]) => `<a role="tab" class="${id === list ? 'on' : ''}" href="${mygmBase()}?${new URLSearchParams({ tab: 'rosters', ...(id !== 'team' ? { list: id } : {}), ...(season !== cur.season ? { season } : {}) })}">${label}${id === 'watch' && watchList().length ? ` <small>${watchList().length}</small>` : ''}${id === 'block' && BK_BLOCK && Object.keys(BK_BLOCK).length ? ` <small>${Object.keys(BK_BLOCK).length}</small>` : ''}</a>`).join('')}</div>`;
   if (list === 'watch' && !watchList().length) {
@@ -3965,7 +4030,7 @@ async function renderBreakdown(body, params) {
     const l = BK.locked(p.pid);
     const why = `Locked points: his starters' points that counted${list === 'team' ? ` for ${teamName(me, cur.season)}` : ' (any team)'}, ${period}${l ? ` · ${l.starts} starts, ${num(l.pts / l.starts)} per start` : ' · none yet'}`;
     const m = BK.medal.lk(p.pid);
-    return `<div class="bk-total bk-lock bk-m-${m}" title="${esc(`${why} · ${MEDAL_WORD[m]}: league-wide locked points (any team), ${MEDAL_PCT_TXT}`)}"><small>Locked</small><b>${l ? bkBadgeNum(l.pts) : '—'}</b><small>${l ? `${l.starts} wk${l.starts === 1 ? '' : 's'}` : 'Pts'}</small></div>`;
+    return `<div class="bk-total bk-lock bk-m-${m}" data-pair="lk" data-badge="locked" title="${esc(`${why} · ${MEDAL_WORD[m]}: league-wide locked points (any team), ${MEDAL_PCT_TXT}`)}"><small>Locked</small><b>${l ? bkBadgeNum(l.pts) : '—'}</b><small>${l ? `${l.starts} wk${l.starts === 1 ? '' : 's'}` : 'Pts'}</small></div>`;
   };
   // Awards (owner, Oct 25 2026): championship rings (on the champion's roster in championship week, not
   // on taxi), then individual awards, then teams (All-Star, All-Fantasy, All-Rookie), newest first.
@@ -4111,18 +4176,18 @@ async function renderBreakdown(body, params) {
             // HEXAGON STACK (owner's sketch, Nov 11 2026): gold league ranks on top (Avg = by FP/G, Total = by total FP; position +
             // overall), navy Locked + silver Total FP below. MyGM+ adds the gold Dynasty score first in the top row.
             const rs = esc(season === 'career' ? bkSeason(cur.season) : bkSeason(season));
-            const rank = (label, pos, ovr, why) => { const m = medalByRank(pos, MEDAL_POS); return `<div class="bk-total bk-rankb bk-m-${m}" title="${why} · ${MEDAL_WORD[m]}: by position rank (gold 1-${MEDAL_POS[0]}, silver ${MEDAL_POS[0] + 1}-${MEDAL_POS[1]}, bronze ${MEDAL_POS[1] + 1}-${MEDAL_POS[2]})"><small>${label}</small><b>${pos ? `${pos} ${esc(p.mainPos)}` : '—'}</b><small>${ovr ? `${ovr} OVR` : 'OVR —'}</small></div>`; };
+            const rank = (label, pos, ovr, why) => { const m = medalByRank(pos, MEDAL_POS); return `<div class="bk-total bk-rankb bk-m-${m}" data-pair="${label === 'Avg' ? 'pg' : 'tot'}" data-badge="${label === 'Avg' ? 'avgrk' : 'totrk'}" title="${why} · ${MEDAL_WORD[m]}: by position rank (gold 1-${MEDAL_POS[0]}, silver ${MEDAL_POS[0] + 1}-${MEDAL_POS[1]}, bronze ${MEDAL_POS[1] + 1}-${MEDAL_POS[2]})"><small>${label}</small><b>${pos ? `${pos} ${esc(p.mainPos)}` : '—'}</b><small>${ovr ? `${ovr} OVR` : 'OVR —'}</small></div>`; };
             // FP/G hexagon (owner, Nov 11 2026: replaced the FP/G ring under the headshot), medal by league-wide FP/G rank.
             const fm = medalByRank(p.rankAvgOvr, MEDAL_LG);
-            const fpg = `<div class="bk-total bk-fpgb bk-m-${fm}" title="Fantasy points per game, ${esc(period)} · ${MEDAL_WORD[fm]}: league-wide rank by FP/G (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]}; players with at least 40% of the most games played)"><small>FP/G</small><b>${p.tot.gp ? bkF1(p.avg.fp) : '—'}</b><small>${p.rankAvgOvr ? `${p.rankAvgOvr} OVR` : `${p.tot.gp} GP`}</small></div>`;
-            const avgLk = `<div class="bk-total bk-lock bk-avgb bk-m-${BK.medal.av(p.pid)}" title="Average locked points per week his score counted (${list === 'team' ? 'for this team' : 'any team'}, ${esc(period)}) · ${MEDAL_WORD[BK.medal.av(p.pid)]}: league-wide average lock (any team, ${MEDAL_AVGLK_MIN}+ weeks locked), ${MEDAL_PCT_TXT}"><small>Avg lock</small><b>${bkAvgLock(p.pid) == null ? '—' : bkF1(bkAvgLock(p.pid))}</b><small>Per wk</small></div>`;
+            const fpg = `<div class="bk-total bk-fpgb bk-m-${fm}" data-pair="pg" data-badge="fpg" title="Fantasy points per game, ${esc(period)} · ${MEDAL_WORD[fm]}: league-wide rank by FP/G (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]}; players with at least 40% of the most games played)"><small>FP/G</small><b>${p.tot.gp ? bkF1(p.avg.fp) : '—'}</b><small>${p.rankAvgOvr ? `${p.rankAvgOvr} OVR` : `${p.tot.gp} GP`}</small></div>`;
+            const avgLk = `<div class="bk-total bk-lock bk-avgb bk-m-${BK.medal.av(p.pid)}" data-pair="lk" data-badge="avglk" title="Average locked points per week his score counted (${list === 'team' ? 'for this team' : 'any team'}, ${esc(period)}) · ${MEDAL_WORD[BK.medal.av(p.pid)]}: league-wide average lock (any team, ${MEDAL_AVGLK_MIN}+ weeks locked), ${MEDAL_PCT_TXT}"><small>Avg lock</small><b>${bkAvgLock(p.pid) == null ? '—' : bkF1(bkAvgLock(p.pid))}</b><small>Per wk</small></div>`;
             const top = [
               fpg,
               rank('Avg', p.rankAvgPos, p.rankAvgOvr, `League rank by fantasy points PER GAME, ${rs} (players with at least 40% of the most games played), among ${esc(p.mainPos)}s and among all NBA players`),
               rank('Total', p.rankPos, p.rankOvr, `League rank by TOTAL fantasy points under our league scoring, ${rs}, among ${esc(p.mainPos)}s and among all NBA players`),
             ].filter(Boolean);
             // PYRAMID (owner, Nov 11 2026): Avg lock alone on top, Locked + Total FP in the middle, FP/G + Avg + Total ranks as the base.
-            return `<div class="bk-hexes"><div class="bk-hexrow">${avgLk}</div><div class="bk-hexrow">${lockBadge(p)}<div class="bk-total bk-m-${medalByRank(p.rankOvr, MEDAL_LG)}" title="Total fantasy points, ${esc(period)} · ${MEDAL_WORD[medalByRank(p.rankOvr, MEDAL_LG)]}: league-wide rank by total FP (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]})"><small>Total FP</small><b>${bkBadgeNum(p.tot.fp)}</b><small>${p.tot.gp} GP</small></div></div><div class="bk-hexrow">${top.join('')}</div></div>`;
+            return `<div class="bk-hexes"><div class="bk-hexrow">${avgLk}</div><div class="bk-hexrow">${lockBadge(p)}<div class="bk-total bk-m-${medalByRank(p.rankOvr, MEDAL_LG)}" data-pair="tot" data-badge="totfp" title="Total fantasy points, ${esc(period)} · ${MEDAL_WORD[medalByRank(p.rankOvr, MEDAL_LG)]}: league-wide rank by total FP (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]})"><small>Total FP</small><b>${bkBadgeNum(p.tot.fp)}</b><small>${p.tot.gp} GP</small></div></div><div class="bk-hexrow">${top.join('')}</div></div>`;
           })()}
           <div class="bk-side">
           <div class="bk-who">${bkTrim() ? '' : `<b class="bk-title">${esc(slot)}</b>${dynOf(p.pid) != null ? tierTag(dynOf(p.pid)) : ''}`}${list !== 'team' && p.owner ? `<small class="bk-owner">${esc(teamName(p.owner, cur.season))} (${esc(name(p.owner))})</small>` : ''}${dynNote(p.pid)}</div>
@@ -4155,9 +4220,20 @@ async function renderBreakdown(body, params) {
       return (typeof x === 'string' ? x.localeCompare(y) : x - y) * BK.dir || b.avg.fp - a.avg.fp || slotRank(a) - slotRank(b);
     });
   };
+  // NAME MEDALS (owner, Nov 11 2026): on every list, when the sort column is a badge stat, a dot before each name shows his medal for
+  // it (same cutoffs as the badges; one position picked = the position-rank cutoffs). Below bronze stays white.
+  const nameMedal = p => {
+    // every list (owner: Team, Waiver wire, League, NBA team, Watchlist, Trade Block)
+    const pos = gmLoad('gm-bk-pos', 'all');
+    const one = BK_EXACT.includes(pos) || pos === 'C';
+    const m = { fpg: () => (one ? medalByRank(p.rankAvgPos, MEDAL_POS) : medalByRank(p.rankAvgOvr, MEDAL_LG)), fp: () => (one ? medalByRank(p.rankPos, MEDAL_POS) : medalByRank(p.rankOvr, MEDAL_LG)),
+      prk: () => medalByRank(p.rankPos, MEDAL_POS), rk: () => medalByRank(p.rankOvr, MEDAL_LG), locked: () => BK.medal.lk(p.pid), avglk: () => BK.medal.av(p.pid) }[BK.sort]?.();
+    // A medal DOT before the name (owner, Nov 11 2026: silver text looked like the greyed-out IR / taxi rows).
+    return m && m !== 'none' ? `<i class="bk-mdot ${m}" title="${MEDAL_WORD[m]} for the sorted stat"></i>` : '';
+  };
   const shownCols = () => cols().filter(c => !c[4]?.hide);
   const table = rows => `<thead><tr><th class="bk-nm${BK.sort === 'dsg' ? ' srt' : ''}" data-k="dsg" title="Sort by Depth Chart designation" aria-sort="${BK.sort === 'dsg' ? (BK.dir < 0 ? 'descending' : 'ascending') : 'none'}"><span class="bk-rk">#</span>${BK.sort === 'dsg' ? (BK.dir < 0 ? '▼' : '▲') : ''}Name</th>${shownCols().map(([k, label, , , o]) => `<th data-k="${k}" class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}" aria-sort="${k === BK.sort ? (BK.dir < 0 ? 'descending' : 'ascending') : 'none'}">${k === BK.sort ? (BK.dir < 0 ? '▼' : '▲') : ''}${label}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map((p, i) => `<tr data-pid="${p.pid}" class="${p.pid === BK.pid ? 'on' : ''}${p.slot === 'IR' || p.slot === 'TX' ? ' bk-res' : ''}" tabindex="0"><td class="bk-nm"><span class="bk-rk">${i + 1}</span>${cmpBtn(p.pid)}${dsgTag(BK.dsg(p))}<span>${esc(p.first ? `${p.first[0]}. ${p.last}` : p.name)}</span>${secMark(p)}${noteOf(p.pid) ? `<i class="bk-hasnote" title="${esc(noteOf(p.pid))}">✎</i>` : ''}${p.injury ? `<i class="bk-dot${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}" title="${esc(p.injury)}"></i>` : ''}</td>${shownCols().map(([k, , , cell, o]) => `<td class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}">${o?.html ? cell(p) : esc(cell(p))}</td>`).join('')}</tr>`).join('') || `<tr><td class="bk-nm" colspan="${shownCols().length + 1}">No player by that name.</td></tr>`}</tbody>`;
+    <tbody>${rows.map((p, i) => `<tr data-pid="${p.pid}" class="${p.pid === BK.pid ? 'on' : ''}${p.slot === 'IR' || p.slot === 'TX' ? ' bk-res' : ''}" tabindex="0"><td class="bk-nm"><span class="bk-rk">${i + 1}</span>${cmpBtn(p.pid)}${dsgTag(BK.dsg(p))}${nameMedal(p)}<span>${esc(p.first ? `${p.first[0]}. ${p.last}` : p.name)}</span>${secMark(p)}${noteOf(p.pid) ? `<i class="bk-hasnote" title="${esc(noteOf(p.pid))}">✎</i>` : ''}${p.injury ? `<i class="bk-dot${/out|ir|susp|inactive/i.test(p.injury) ? ' bad' : ''}" title="${esc(p.injury)}"></i>` : ''}</td>${shownCols().map(([k, , , cell, o]) => `<td class="${[k === BK.sort ? 'srt' : '', o?.cls ?? ''].join(' ').trim()}">${o?.html ? cell(p) : esc(cell(p))}</td>`).join('')}</tr>`).join('') || `<tr><td class="bk-nm" colspan="${shownCols().length + 1}">No player by that name.</td></tr>`}</tbody>`;
 
   // Season by season (owner, Oct 26 2026): "NBA" = one row per NBA season (as before); "League" = one row per
   // stretch on a fantasy team in that season (games in weeks a team had him, Front Office stints, same rule as
@@ -4446,6 +4522,25 @@ async function renderBreakdown(body, params) {
   const afterCmp = msg => { draw(); drawTray(msg); renderCompare(); };
   // On the page wrapper (new every render), so a redraw never stacks a second listener.
   $('.bk-page', body).addEventListener('click', e => {
+    // BADGE LINKS (owner, Nov 11 2026): a badge opens the League list sorted by that stat (rank badges: his position only,
+    // main position, no secondary), his card picked and the table scrolled to his row.
+    const badge = e.target.closest('[data-badge]');
+    if (badge) {
+      const bp = byPid[BK.pid];
+      if (!bp) return;
+      const go = { fpg: ['avg', 'fpg', false], avgrk: ['avg', 'fpg', true], totrk: ['tot', 'fp', true], totfp: ['tot', 'fp', false], locked: ['avg', 'locked', false], avglk: ['avg', 'avglk', false] }[badge.dataset.badge];
+      if (!go) return;
+      const [v, sort, byPos] = go;
+      // Remember where he came from: the floating Back pill (backFloat, ?ret=) returns there with these settings restored.
+      BK.badgeBack = { view: BK.view, sort: BK.sort, dir: BK.dir, tags: [...BK.tags], group: BK.group, pos: gmLoad('gm-bk-pos', 'all'), sec: gmLoad('gm-bk-sec', true), pid: bp.pid };
+      const back = `${location.hash.replace(/[&?]bkret=1/, '')}${location.hash.includes('?') ? '&' : '?'}bkret=1`;
+      Object.assign(BK, { view: v, sort, dir: -1, tags: [], q: '', group: 'all', jump: bp.pid });
+      gmSave('gm-bk-pos', byPos && bp.mainPos ? bp.mainPos : 'all');
+      if (byPos) gmSave('gm-bk-sec', false);
+      const to = `${mygmBase()}?${new URLSearchParams({ tab: 'rosters', list: 'league', ...(season !== cur.season ? { season } : {}), ...(bp.owner ? {} : { fa: '1' }), p: bp.pid, ret: back, retl: `Back to ${VIEW_NAME[list]} view` })}`;
+      if (location.hash === to) render(); else location.hash = to;
+      return;
+    }
     const add = e.target.closest('[data-cmp]');
     const open = e.target.closest('[data-cmpopen]');
     const watch = e.target.closest('[data-watch]');
@@ -4474,7 +4569,13 @@ async function renderBreakdown(body, params) {
 
   const drawTable = () => {
     const rows = rowsNow();
+    // Came from a badge (BK.jump): show enough rows to include him, then scroll to his row.
+    const jump = BK.jump; BK.jump = null;
+    const ji = jump ? rows.findIndex(r => r.pid === jump) : -1;
+    if (ji >= BK.limit) BK.limit = Math.ceil((ji + 1) / BK_PAGE) * BK_PAGE;
     $('#bk-table', body).innerHTML = table(rows.slice(0, BK.limit));
+    if (ji >= 0) requestAnimationFrame(() => $(`#bk-table tr[data-pid="${jump}"]`, body)?.scrollIntoView({ block: 'center', behavior: 'smooth' }));
+    requestAnimationFrame(() => drawHexPairs($('#bk-hero', body))); // the sorted-badge highlight follows the sort
     const left = rows.length - BK.limit;
     // Clear your own tags from every player in this view (owner, Oct 31 2026: in the fine print under the table, not the Tags row).
     const tagged = rows.filter(p => tagsOf(p.pid).length).length;
@@ -4486,6 +4587,8 @@ async function renderBreakdown(body, params) {
   const draw = () => {
     const p = byPid[BK.pid];
     $('#bk-hero', body).innerHTML = p ? hero(p) : '';
+    requestAnimationFrame(() => drawHexPairs($('#bk-hero', body))); // pair outlines need the badges laid out first
+    if (!PAIR_RESIZE) { PAIR_RESIZE = () => drawHexPairs(document.querySelector('#bk-hero')); addEventListener('resize', PAIR_RESIZE); }
     // Bio area in his NBA team's color (owner, Nov 11 2026); no team = the usual navy.
     const tm = NBA_COLORS[p?.team];
     $('#bk-hero', body).classList.toggle('bk-tmc', !!tm);

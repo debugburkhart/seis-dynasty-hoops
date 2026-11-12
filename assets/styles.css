@@ -4868,3 +4868,23 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .bk-tagsel .bk-tagpick { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 99px; padding: 4px 8px 4px 11px; font: 700 12px/1.2 var(--font); cursor: pointer; opacity: .6; }
 .bk-tagsel .bk-tagpick:hover, .bk-tagsel .bk-tagpick:focus-visible { opacity: .85; }
 .bk-tagsel .bk-tagx { font-size: 15px; line-height: 1; opacity: .55; }
+/* Hexagon pair stitches (owner, Nov 11 2026; drawHexPairs in app.js): short lines across the gap between paired badges */
+.bk-hexes { position: relative; }
+.bk-hexes > .bk-hexrow { position: relative; z-index: 1; }
+.bk-pairs { position: absolute; left: 0; top: 0; z-index: 2; overflow: visible; pointer-events: none; }
+.bk-stitch { stroke: #0b1424; stroke-width: 2; stroke-linecap: round; }
+/* Badges open the League list sorted by that stat (owner, Nov 11 2026) */
+.bk-hexes [data-badge] { cursor: pointer; }
+.bk-hexes [data-badge]:hover { filter: brightness(1.08); }
+/* Medal dot before a name when the table is sorted by a badge stat (owner, Nov 11 2026; replaced colored names, whose silver
+   looked like the greyed-out IR / taxi rows) */
+/* Mini hexagon (owner: "make it a small hexagon"): dark outer hex + medal-colored inner hex, same shape as the badges */
+.bk-mdot { position: relative; display: inline-block; flex: none; width: 14px; height: 15px; margin: 0 6px 0 1px; vertical-align: -3px; background: #050c1a; clip-path: polygon(50% 0, 100% 18%, 100% 82%, 50% 100%, 0 82%, 0 18%); }
+.bk-mdot::before { content: ''; position: absolute; inset: 1.5px; clip-path: polygon(50% 0, 100% 18%, 100% 82%, 50% 100%, 0 82%, 0 18%); }
+.bk-mdot.gold::before { background: linear-gradient(#ffe39a, #d9a53f); }
+.bk-mdot.silver::before { background: linear-gradient(#ffffff, #aab4c4); }
+.bk-mdot.bronze::before { background: linear-gradient(#f2c8a0, #a5652f); }
+/* Sorted-badge highlight (owner, Nov 11 2026): glowing outline around the badge whose stat the table is sorted by */
+.bk-hexhl { fill: none; stroke: #fff; stroke-width: 2; stroke-linejoin: round; filter: drop-shadow(0 0 3px rgba(255,255,255,.75)); animation: bk-hexhl 2.4s ease-in-out infinite; }
+@keyframes bk-hexhl { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .bk-hexhl { animation: none; } }

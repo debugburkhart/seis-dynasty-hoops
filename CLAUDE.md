@@ -2464,6 +2464,24 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   pull-up made it overlap the stat labels); the card's contract line has no flag chips
   (contractLine(p, { flags: false }); Dynasty / Waiver / Trade finder keep them). AUTO TAGS REMOVED from Rosters (both pages):
   Contract year, Extension next summer, Dynasty riser, Dynasty faller, Top 100 prospect (out of AUTO_TAGS + 'false &&' in autoTagsOf).
+  BADGE LINKS (owner, Nov 11 2026): every badge has data-badge; a tap opens the League list (?list=leaguep=pid, + fa=1 for a free
+  agent, same season) with BK.view / BK.sort set: FP/G = Averages by FP/G; Avg rank = Averages by FP/G + his main position (and
+  'Include secondary positions' turned off); Total rank = Totals by FP + his position; Total FP = Totals by FP; Locked = Averages by
+  Locked; Avg lock = Averages by Avg Lk. Tags / search / group cleared; BK.jump makes drawTable show enough rows and scroll to him.
+  Note: the League list is rostered players, so his row number can be lower than the badge's OVR (that counts every NBA player).
+  BACK PILL: the jump adds ?ret=<where he was + bkret=1>&retl="Back to {list} view" = the floating .back-float pill (bottom centre,
+  above the MyGM tab bar on phones); BK.badgeBack saves view / sort / dir / tags / group / position / secondary setting / player, and
+  renderBreakdown restores them when it sees bkret=1. NAME MEDALS (same day, every list): when the sort column is a badge stat
+  (fpg, fp, prk, rk, locked, avglk) a mini hexagon (14x15) before each name (.bk-mdot gold / silver / bronze, none below; colored names
+  were dropped: silver text looked like the greyed-out IR / taxi rows) = his medal for it, same cutoffs as
+  the badges; with one position picked, FP/G and FP use the position-rank cutoffs. In theme.js KEEP.
+  SORTED-BADGE HIGHLIGHT: sortedBadge() maps the sort column to its badge (one position picked: FP/G -> Avg rank, FP -> Total rank;
+  prk / rk -> Total rank); drawHexPairs adds a pulsing white outline (.bk-hexhl, still with reduced motion) around it; redrawn on
+  every table draw (sort clicks) and card draw.
+  BADGE PAIR STITCHES (owner's sketch, Nov 11 2026; outlines around pairs and two-color bars were tried and scrapped):
+  drawHexPairs(#bk-hero) in app.js draws an SVG (.bk-pairs, on top) with PAIR_STITCHES 1 short dark line (2 tried) (.bk-stitch, 2px, in
+  theme.js KEEP) per pair (data-pair pg = FP/G + Avg, tot = Total FP + Total rank, lk = Avg lock + Locked), PAIR_GAP 12px apart,
+  crossing the shared edge at right angles and reaching PAIR_IN 5px into both badges; no fill. Redrawn after every card draw + resize.
   MULTI-TAG FILTER (owner, Nov 11 2026, "match all"): BK.tags = [picked tags] (was BK.tag); each Tags-row chip toggles, rows must
   have EVERY picked tag; with picks, chip counts = players that already have all picks (= rows left if you add it), "All" turns
   into "Clear"; picked tags leave the chip row and sit in .bk-tagsel below: "Showing players with all N tags:" + each pick faded in
