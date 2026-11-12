@@ -2671,6 +2671,29 @@ async function renderTrophyRoom(body, params) {
 
   const stat = (n, label, sub = '') => `<div class="tr-stat"><b>${n}</b><span>${label}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
   const list = xs => xs.map(r => seasonSpan(r.s)).join(', ');
+  // RECORDS HELD (owner, Nov 11 2026): every all-time Record Book record (all seasons, all stages) where this team is No. 1
+  // today; a tie = shared (names the others). League-wide marks (a whole week's scoring) aren't a team's. Bad marks flagged.
+  const recAll = recordsFor('all', 'all');
+  const held = [];
+  for (const cat of CATEGORIES) {
+    for (const r of recAll[cat.id] ?? []) {
+      if (!recordVisible(r, {})) continue;
+      const top = (r.rows ?? []).filter(x => x.rank === 1);
+      if (!top.length || (!r.asc && !top[0].value)) continue; // nobody on the board yet
+      const mine = top.find(x => x.who === me || x.also === me);
+      if (!mine || /^\d{4} Week \d+$/.test(mine.whoText ?? '')) continue;
+      const others = [...new Set(top.filter(x => x.who !== me && x.also !== me).map(x => x.who))];
+      held.push({ cat, r, x: mine, others });
+    }
+  }
+  const heldCard = () => {
+    if (!held.length) return '<p class="empty">No league records yet. They’re all in the Record Book.</p>';
+    return CATEGORIES.filter(c => held.some(h => h.cat === c)).map(c => `<h3 class="tr-rh">${esc(c.title)} <small>${held.filter(h => h.cat === c).length}</small></h3>
+      <ul class="tr-recs">${held.filter(h => h.cat === c).map(({ r, x, others }) => `<li class="${r.bad ? 'bad' : ''}">
+        <div><a href="#/records/${c.id}?rec=${slug(r.title)}"><b>${esc(r.title)}</b></a>${r.bad ? ' <span class="tr-badtag">Dubious</span>' : ''}</div>
+        <span class="tr-rv">${esc(String(x.display ?? x.value))}</span>
+        <small>${[x.img ? x.whoText : '', x.ctx, others.length ? `shared with ${others.map(name).join(', ')}` : ''].filter(Boolean).map(esc).join(' · ')}</small></li>`).join('')}</ul>`).join('');
+  };
   body.innerHTML = `
     ${gmTeamPick(me, cur.season, 'trophies')}
     <div class="gm-page tr-page">
@@ -2690,6 +2713,7 @@ async function renderTrophyRoom(body, params) {
         </table></div>` : '<p class="empty">No completed seasons yet.</p>')}
       ${betaCard('Manager awards', mgr.length ? `<ul class="tr-list">${mgr.map(a => `<li><span class="tr-aw indiv">${esc(a.label)}</span><small>${seasonSpan(a.s)}${a.pid ? ` · <a href="${card2k(a.pid)}">${esc(pnm(a.pid))}</a>` : ''}</small></li>`).join('')}</ul>` : '<p class="empty">No GM of the Year, Draft of the Year or Steal of the Draft yet.</p>', { sub: 'GM of the Year · Draft of the Year · Steal of the Draft' })}
       ${rivals.length ? betaCard('Rivalry trophies', `<ul class="tr-riv">${rivals.map(x => `<li>${trophyPic(x.r, 'tr-img')}<div><b>${esc(x.r[2])}</b><small>vs ${esc(name(x.r[0] === me ? x.r[1] : x.r[0]))} · ${x.won.length ? `won ${x.won.map(seasonSpan).join(', ')}` : 'not won yet'}${x.holder === me ? ' · <b class="tr-hold">holds it now</b>' : x.holder ? ` · held by ${esc(name(x.holder))}` : ''}</small></div></li>`).join('')}</ul>`) : ''}
+      ${betaCard('Records held', heldCard(), { sub: `${held.filter(h => !h.r.bad).length} league record${held.filter(h => !h.r.bad).length === 1 ? '' : 's'}${held.some(h => h.r.bad) ? ` + ${held.filter(h => h.r.bad).length} dubious` : ''} · all-time Record Book, No. 1 today (ties shared)` })}
       ${betaCard('Player honors on this team', players.length ? `<ul class="tr-players">${players.map(p => `<li><img src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy"><div><a href="${card2k(p.pid)}"><b>${esc(pnm(p.pid))}</b></a><div class="tr-aws">${grouped(p.list)}</div></div></li>`).join('')}</ul>
         <p class="cm-rule">Awards count for the fantasy team that had him for that award (season’s end; All-Stars at the All-Star break), the same as the Awards page and the Rosters card. Champion = on the title roster in championship week (taxi left out).</p>` : '<p class="empty">No player honors won on this team yet.</p>', { sub: `${players.length} player${players.length === 1 ? '' : 's'}` })}
     </div>`;
@@ -3249,7 +3273,7 @@ async function coachPick(season, week, pid, mark, boxes) {
 // game log. Three lists (owner, Oct 25 2026): one team's roster, the waiver wire (free agents) and
 // the whole league (every rostered player, with his fantasy team). Basic NBA stats and fantasy
 // points, plus the dynasty score (badge + column, owner asked). No grades or other site models.
-const BK = { dsg: () => null, pid: null, view: 'avg', sort: null, dir: -1, logAll: false, list: 'team', q: '', limit: 50, group: 'all', tag: null, tagOpen: false, dyn: () => null, locked: () => null, lgs: () => null, cmpOpen: false, espn: {} };
+const BK = { dsg: () => null, pid: null, view: 'avg', sort: null, dir: -1, logAll: false, list: 'team', q: '', limit: 50, group: 'all', tags: [], tagOpen: false, dyn: () => null, locked: () => null, lgs: () => null, cmpOpen: false, espn: {} };
 // Injury report on the 2K card (owner, Oct 26 2026): a round medical-cross button after the injury tags toggles a
 // small panel with ESPN's report paragraph (same note as the Injury Report tab), hurt date, estimate and Sleeper's
 // status. Open/closed is kept in BK.injOpen while you browse players.
@@ -3500,7 +3524,7 @@ function deleteTag(tag) {
   gmSave('gm-tags', Object.fromEntries(Object.entries(bkTags()).map(([pid, l]) => [pid, l.filter(t => t !== tag)]).filter(([, l]) => l.length)));
   const c = { ...tagColors() }; delete c[tag]; gmSave('gm-tag-colors', c);
   gmSave('gm-tag-order', gmLoad('gm-tag-order', []).filter(t => t !== tag));
-  if (BK.tag === tag) BK.tag = null;
+  BK.tags = BK.tags.filter(t => t !== tag);
   if (BK.recolor === tag) BK.recolor = null;
   return true;
 }
@@ -3567,14 +3591,16 @@ function autoTagsOf(p) {
   const c = dp && CONTRACTS?.players?.[p.pid];
   const flags = c ? readContract(c, DATA.seasons.at(-1).season, dp.nbaSeasons)?.flags ?? [] : [];
   const ends = flags.find(f => f.id === 'contract-year' || f.id === 'rookie-end');
-  if (ends) out.push(['Contract year', `${ends.label}: ${ends.why}`]);
+  // Contract year, Extension next summer, Dynasty riser / faller and Top 100 prospect auto tags are OFF (owner, Nov 11 2026: removed
+  // from Rosters); also dropped from AUTO_TAGS in breakdown.js. Delete the 'false &&' to bring one back (and re-add it there).
+  if (false && ends) out.push(['Contract year', `${ends.label}: ${ends.why}`]);
   const ext = flags.find(f => f.id === 'rookie-ext');
-  if (ext) out.push(['Extension next summer', ext.why]);
+  if (false && ext) out.push(['Extension next summer', ext.why]);
   const mv = a.dynMove?.[p.pid];
-  if (mv != null && mv >= DYN_MOVE && !bkTrim()) out.push(['Dynasty riser', `Dynasty score +${mv} since ${shortMd(a.dynBase)} (now ${dp?.score ?? '?'})`]);
-  if (mv != null && mv <= -DYN_MOVE && !bkTrim()) out.push(['Dynasty faller', `Dynasty score ${mv} since ${shortMd(a.dynBase)} (now ${dp?.score ?? '?'})`]);
+  if (false && mv != null && mv >= DYN_MOVE && !bkTrim()) out.push(['Dynasty riser', `Dynasty score +${mv} since ${shortMd(a.dynBase)} (now ${dp?.score ?? '?'})`]);
+  if (false && mv != null && mv <= -DYN_MOVE && !bkTrim()) out.push(['Dynasty faller', `Dynasty score ${mv} since ${shortMd(a.dynBase)} (now ${dp?.score ?? '?'})`]);
   const pr = a.prospects?.[p.pid];
-  if (pr && !bkTrim()) out.push(['Top 100 prospect', `No. ${pr.rank} on the Top 100 Prospects list (prospect grade ${pr.grade})`, `Top 100 prospect #${pr.rank}`]);
+  if (false && pr && !bkTrim()) out.push(['Top 100 prospect', `No. ${pr.rank} on the Top 100 Prospects list (prospect grade ${pr.grade})`, `Top 100 prospect #${pr.rank}`]);
   // Made the Home card's Taxi players of the week top 5 (owner, Oct 27 2026); chip shows how many times.
   const tw = BK_TAXIW?.[p.pid] ?? [];
   if (tw.length) out.push(['Made Taxi POTW', `In the weekly top 5 taxi games ${tw.length} time${tw.length === 1 ? '' : 's'}: ${tw.map(x => `${bkSeason(x.season)} week ${x.week} No. ${x.rank} (${num(x.fp)} FP)`).join(', ')}`, `Made Taxi POTW ×${tw.length}`]);
@@ -3971,6 +3997,7 @@ async function renderBreakdown(body, params) {
       ? `${lg.s} ${lg.kind === 'startup' ? 'startup' : 'rookie'} draft · ${lg.round}.${String(lg.inRound).padStart(2, '0')} (No. ${lg.no} overall) by ${esc(teamName(lg.owner, lg.s))} (${esc(name(lg.owner))})`
       : 'Not drafted in the league (joined a roster later)';
     return `<div class="bk-draft">
+      ${p.college ? `<small><span class="ct-label">College</span> ${esc(p.college)}</small>` : p.country ? `<small><span class="ct-label">Country</span> ${esc(p.country)}</small>` : ''}
       ${nba ? `<small><span class="ct-label">NBA draft</span> ${esc(nba)}</small>` : ''}
       <small><span class="ct-label">League draft</span> ${lgText}</small>
     </div>`;
@@ -4018,24 +4045,27 @@ async function renderBreakdown(body, params) {
   const tagBar = () => {
     const show = { auto: true, mine: true, ...gmLoad('gm-bk-tagshow', {}) };
     const counts = {};
-    for (const p of bk.players) for (const t of tagsAll(p)) counts[t] = (counts[t] ?? 0) + 1;
+    // With tags picked, counts are among players who already have every picked tag (= how many would be left if you add it).
+    for (const p of bk.players.filter(p => BK.tags.every(t => tagsAll(p).includes(t)))) for (const t of tagsAll(p)) counts[t] = (counts[t] ?? 0) + 1;
     // "In this view" (owner, Oct 31 2026; default) = only tags someone in this list has; "Show all" = every tag.
     // Separate for auto and your own tags (gm-bk-tagscope { auto, mine }: 'view' | 'all').
     const scope = { auto: 'view', mine: 'view', ...gmLoad('gm-bk-tagscope', {}) };
-    const inView = (k, t) => scope[k] === 'all' || counts[t] || BK.tag === t;
+    const inView = (k, t) => scope[k] === 'all' || counts[t] || BK.tags.includes(t);
     const autos = show.auto ? autoOrder().filter(t => inView('auto', t)) : [];
     const mine = show.mine ? allTags().filter(t => inView('mine', t)) : [];
     const scopeLink = (k, label) => `<span class="bk-tagscope">${label}: <b>${scope[k] === 'all' ? 'all' : 'in this view'}</b> <button type="button" data-tagscope="${k}">${scope[k] === 'all' ? 'Only this view' : 'Show all'}</button></span>`;
-    if (BK.tag && !autos.includes(BK.tag) && !mine.includes(BK.tag)) BK.tag = null;
+    BK.tags = BK.tags.filter(t => autos.includes(t) || mine.includes(t)); // a hidden group drops its picks
     const sw = (k, label) => `<button type="button" class="bk-tagsw${show[k] ? ' on' : ''}" data-tagshow="${k}" aria-pressed="${show[k]}" title="${show[k] ? 'Hide' : 'Show'} ${k === 'auto' ? 'auto tags' : 'your tags'} in this row">${show[k] ? '✓ ' : ''}${label}</button>`;
     const chips = [
-      ...autos.map(t => `<button type="button" data-tagf="${esc(t)}" class="bk-autof ${AUTO_CLS[t] ?? 'au-opt'}${BK.tag === t ? ' on' : ''}">${AUTO_ICON}${esc(t)} <small>${counts[t] ?? 0}</small></button>`),
-      ...mine.map(t => `<button type="button" data-tagf="${esc(t)}" class="${BK.tag === t ? 'on' : ''}"><i class="bk-swatch th-${tagHue(t)}"></i>${esc(t)} <small>${counts[t] ?? 0}</small></button>`),
+      ...autos.filter(t => !BK.tags.includes(t)).map(t => `<button type="button" data-tagf="${esc(t)}" class="bk-autof ${AUTO_CLS[t] ?? 'au-opt'}${BK.tags.includes(t) ? ' on' : ''}">${AUTO_ICON}${esc(t)} <small>${counts[t] ?? 0}</small></button>`),
+      ...mine.filter(t => !BK.tags.includes(t)).map(t => `<button type="button" data-tagf="${esc(t)}" class="${BK.tags.includes(t) ? 'on' : ''}"><i class="bk-swatch th-${tagHue(t)}"></i>${esc(t)} <small>${counts[t] ?? 0}</small></button>`),
     ];
     return `<div class="bk-bar bk-bar2${chips.length ? '' : ' bk-tagbar-off'}"><span class="bk-bar-label">Tags</span><span class="bk-tagsws">${sw('auto', 'Auto')}${sw('mine', 'Mine')}</span><label class="bk-check bk-hidetags-box"><input type="checkbox" class="bk-hidetags"${gmLoad('gm-bk-hidetags', false) ? ' checked' : ''}> Hide tags column</label>
-      ${chips.length ? `<div class="bk-views bk-tagfilter" role="tablist"><button type="button" data-tagf="" class="${BK.tag ? '' : 'on'}">All</button>${chips.join('')}</div>` : ''}
+      ${chips.length ? `<div class="bk-views bk-tagfilter" role="tablist"><button type="button" data-tagf="" class="${BK.tags.length ? '' : 'on'}">${BK.tags.length ? 'Clear' : 'All'}</button>${chips.join('')}</div>` : ''}
       <div class="bk-tagscopes">${show.auto ? scopeLink('auto', 'Auto tags') : ''}${show.mine ? scopeLink('mine', 'Your tags') : ''}</div>
-      ${BK.tag && allTags().includes(BK.tag) ? `<button type="button" class="bk-tagdel" data-deltag="${esc(BK.tag)}">Delete the tag "${esc(BK.tag)}"</button>` : ''}
+      ${BK.tags.length ? `<div class="bk-tagsel"><small class="bk-tagmatch">Showing players with all ${BK.tags.length} tag${BK.tags.length === 1 ? '' : 's'}:</small>${BK.tags.map(t => `<button type="button" data-tagpick="${esc(t)}" class="bk-tagpick ${AUTO_TAGS.includes(t) ? `bk-auto ${AUTO_CLS[t] ?? 'au-opt'}` : `bk-tag th-${tagHue(t)}`}" title="Remove ${esc(t)} from the filter">${esc(t)}<span class="bk-tagx" aria-hidden="true">×</span></button>`).join('')}</div>
+        ` : ''}
+      ${BK.tags.filter(t => allTags().includes(t)).map(t => `<button type="button" class="bk-tagdel" data-deltag="${esc(t)}">Delete the tag "${esc(t)}"</button>`).join('')}
       ${chips.length > 1 ? '<small class="bk-draghint">Drag tags to reorder (on a phone: press and hold, then drag)</small>' : ''}</div>`;
   };
   const addTag = (p, raw) => {
@@ -4095,18 +4125,18 @@ async function renderBreakdown(body, params) {
             return `<div class="bk-hexes"><div class="bk-hexrow">${avgLk}</div><div class="bk-hexrow">${lockBadge(p)}<div class="bk-total bk-m-${medalByRank(p.rankOvr, MEDAL_LG)}" title="Total fantasy points, ${esc(period)} · ${MEDAL_WORD[medalByRank(p.rankOvr, MEDAL_LG)]}: league-wide rank by total FP (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]})"><small>Total FP</small><b>${bkBadgeNum(p.tot.fp)}</b><small>${p.tot.gp} GP</small></div></div><div class="bk-hexrow">${top.join('')}</div></div>`;
           })()}
           <div class="bk-side">
-          <div class="bk-who">${bkTrim() ? '' : `<b class="bk-title">${esc(slot)}</b>${dynOf(p.pid) != null ? tierTag(dynOf(p.pid)) : ''}`}${list !== 'team' && p.owner ? `<small class="bk-owner">${esc(teamName(p.owner, cur.season))} (${esc(name(p.owner))})</small>` : ''}${bio[0] ? `<small>${esc(bio[0])}</small>` : ''}${dynNote(p.pid)}</div>
+          <div class="bk-who">${bkTrim() ? '' : `<b class="bk-title">${esc(slot)}</b>${dynOf(p.pid) != null ? tierTag(dynOf(p.pid)) : ''}`}${list !== 'team' && p.owner ? `<small class="bk-owner">${esc(teamName(p.owner, cur.season))} (${esc(name(p.owner))})</small>` : ''}${dynNote(p.pid)}</div>
           </div>
         </div>
       <div class="bk-info">
-            ${BK.lgs(p.pid) ? (() => { const c = BK.lgs(p.pid); return `<p class="bk-share bk-lgs" title="League Games Started: games where a fantasy team${list === 'team' ? ' (this one)' : ''} had him in a starting slot when his NBA game tipped off (one per game, any slot; his games after his lock that week don't count). Out of the games he played while on a roster here, taxi / IR left out. Unsure = moved in or out right around tip-off. Tracking started midway through week 2 (Oct 29); weeks 1-2 before that count only the game each starter was locked on. Lock per start = weeks locked ÷ LGS."><span class="ct-label">League Games Started</span> <b>${c.n}</b> of ${c.seen} game${c.seen === 1 ? '' : 's'}${c.u ? ` <small>(${c.u} unsure)</small>` : ''} · Locked <b>${BK.lkWeeks(p.pid)}</b> week${BK.lkWeeks(p.pid) === 1 ? '' : 's'}${BK.lkPct(p.pid) != null ? ` · <b>${BK.lkPct(p.pid)}%</b> lock per start` : ''}${BK_LIVE?.rows.some(r => r.pid === p.pid) ? ` <small class="bk-livelk" title="Sleeper shows him locked in week ${BK_LIVE.week} (still being played): that lock already counts in his locked points, weeks locked and LGS">· incl. week ${BK_LIVE.week} lock (live)</small>` : ''}</p>`; })() : ''}
           <div class="bk-statline">${[['PTS', p.avg.pts], ['REB', p.avg.reb], ['AST', p.avg.ast], ['STL', p.avg.stl], ['BLK', p.avg.blk], ['MIN', p.avg.min]].map(([k, x]) => `<span><b>${p.tot.gp ? bkF1(x) : '—'}</b><small>${k}</small></span>`).join('')}<span><b>${p.tot.gp}</b><small>GP</small></span></div>
+            ${BK.lgs(p.pid) ? (() => { const c = BK.lgs(p.pid); return `<p class="bk-share bk-lgs" title="League Games Started: games where a fantasy team${list === 'team' ? ' (this one)' : ''} had him in a starting slot when his NBA game tipped off (one per game, any slot; his games after his lock that week don't count). Out of the games he played while on a roster here, taxi / IR left out. Unsure = moved in or out right around tip-off. Tracking started midway through week 2 (Oct 29); weeks 1-2 before that count only the game each starter was locked on. Lock per start = weeks locked ÷ LGS."><span class="ct-label">League Games Started</span> <b>${c.n}</b> of ${c.seen} game${c.seen === 1 ? '' : 's'}${c.u ? ` <small>(${c.u} unsure)</small>` : ''} · Locked <b>${BK.lkWeeks(p.pid)}</b> week${BK.lkWeeks(p.pid) === 1 ? '' : 's'}${BK.lkPct(p.pid) != null ? ` · <b>${BK.lkPct(p.pid)}%</b> lock per start` : ''}${BK_LIVE?.rows.some(r => r.pid === p.pid) ? ` <small class="bk-livelk" title="Sleeper shows him locked in week ${BK_LIVE.week} (still being played): that lock already counts in his locked points, weeks locked and LGS">· incl. week ${BK_LIVE.week} lock (live)</small>` : ''}</p>`; })() : ''}
         <div class="bk-note">
           <textarea class="bk-notein" rows="2" maxlength="1000" placeholder="Your notes on ${esc(p.first || p.name)}… (only you see these)" aria-label="Notes on ${esc(p.name)}">${esc(noteOf(p.pid))}</textarea>
           <small class="bk-notesaved" aria-live="polite"></small>
         </div>
         ${draftLines(p)}
-        ${contractLine({ pid: p.pid, team: p.team, nbaSeasons: p.exp })}
+        ${contractLine({ pid: p.pid, team: p.team, nbaSeasons: p.exp }, { flags: false })}
         ${awardLine(p)}
         ${tagRow(p)}
         ${inj ? `<div class="bk-injline">${inj}</div>` : ''}
@@ -4120,7 +4150,7 @@ async function renderBreakdown(body, params) {
     const keep = list === 'team' ? (BK_GROUPS.find(g => g[0] === BK.group) ?? BK_GROUPS[0])[2] : () => true;
     const pos = gmLoad('gm-bk-pos', 'all');
     const sec = gmLoad('gm-bk-sec', true);
-    return bk.players.filter(p => keep(p) && bkPosOk(p, pos, sec) && (!BK.tag || tagsAll(p).includes(BK.tag)) && (!q || bkFold(p.name).includes(q))).sort((a, b) => {
+    return bk.players.filter(p => keep(p) && bkPosOk(p, pos, sec) && BK.tags.every(t => tagsAll(p).includes(t)) && (!q || bkFold(p.name).includes(q))).sort((a, b) => {
       const x = col[2](a), y = col[2](b);
       return (typeof x === 'string' ? x.localeCompare(y) : x - y) * BK.dir || b.avg.fp - a.avg.fp || slotRank(a) - slotRank(b);
     });
@@ -4611,7 +4641,7 @@ async function renderBreakdown(body, params) {
     const pids = new Set(rowsNow().filter(p => tagsOf(p.pid).length).map(p => p.pid));
     if (!pids.size || !confirm(`Remove your tags from the ${pids.size} player${pids.size === 1 ? '' : 's'} in this view? Auto tags stay, and players in other lists keep theirs.`)) return;
     gmSave('gm-tags', Object.fromEntries(Object.entries(bkTags()).filter(([pid]) => !pids.has(pid))));
-    if (BK.tag && !allTags().includes(BK.tag) && !AUTO_TAGS.includes(BK.tag)) BK.tag = null;
+    BK.tags = BK.tags.filter(t => allTags().includes(t) || AUTO_TAGS.includes(t));
     BK.limit = BK_PAGE;
     draw();
   });
@@ -4642,9 +4672,13 @@ async function renderBreakdown(body, params) {
       $('#bk-tagbar', body).innerHTML = tagBar();
       return;
     }
+    const pick = e.target.closest('[data-tagpick]'); // a picked tag in the lower row: tap = take it off the filter
+    if (pick) { BK.tags = BK.tags.filter(x => x !== pick.dataset.tagpick); BK.limit = BK_PAGE; draw(); return; }
     const b = e.target.closest('[data-tagf]');
     if (!b) return;
-    BK.tag = b.dataset.tagf || null;
+    // Multiple tags (owner, Nov 11 2026): each chip toggles; players must have ALL picked tags. All / Clear empties it.
+    const t = b.dataset.tagf;
+    BK.tags = !t ? [] : BK.tags.includes(t) ? BK.tags.filter(x => x !== t) : [...BK.tags, t];
     BK.limit = BK_PAGE;
     draw();
   });
@@ -7313,13 +7347,13 @@ async function loadContracts() {
 // Contract line under a player row (Dynasty roster, Waiver wire, Trade finder), e.g.
 // "$12.4M · 2 more yrs · team option 2028-29" + flags (tap/hover a flag for what it means).
 // p = a dynastyValues player (pid, team, nbaSeasons).
-const contractLine = p => {
+const contractLine = (p, { flags = true } = {}) => {
   if (!CONTRACTS?.players || !p) return '';
   const season = DATA.seasons.at(-1).season;
   const c = CONTRACTS.players[p.pid];
   if (!c) return p.team ? '<small class="dy-contract ct-none">No standard NBA contract (two-way, Exhibit 10 or unsigned)</small>' : '';
   const r = readContract(c, season, p.nbaSeasons);
-  return `<small class="dy-contract"><span class="ct-label">Contract</span> ${esc(contractText(c, season, p.nbaSeasons))}${p.team && c.team !== p.team ? ` <span class="ct-team">(listed with ${esc(c.team)})</span>` : ''}${r.flags.map(f => ` <span class="ct-flag ct-${f.id}" title="${esc(f.why)}">${esc(f.label)}</span>`).join('')}</small>`;
+  return `<small class="dy-contract"><span class="ct-label">Contract</span> ${esc(contractText(c, season, p.nbaSeasons))}${p.team && c.team !== p.team ? ` <span class="ct-team">(listed with ${esc(c.team)})</span>` : ''}${(flags ? r.flags : []).map(f => ` <span class="ct-flag ct-${f.id}" title="${esc(f.why)}">${esc(f.label)}</span>`).join('')}</small>`;
 };
 // Team card on the Dynasty tab: how much of the roster's dynasty value has a contract that ends
 // (or can end) after this season, and who.

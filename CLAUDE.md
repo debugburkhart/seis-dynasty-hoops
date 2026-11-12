@@ -1211,7 +1211,11 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   first), Rivalry trophies (RIVALRIES with this team, trophyHistory: seasons won, current holder, trophy image), Player honors
   on this team (breakdown.js playerAwards entries whose o = this team + championshipRings rings won here; grouped chips
   "2 × All-Fantasy (seasons)", ring = navy, individual = gold; names open the Rosters card with back = Trophy Room). .tr-* in
-  styles.css. NOT included yet: Record Book records held. Checked Nov 8 2026: Parma = 2024-25 title, 3/3 playoff trips, Steal
+  styles.css. RECORDS HELD card (owner, Nov 11 2026, before Player honors): every all-time Record Book record (recordsFor all/all,
+  recordVisible) where this team is a No. 1 row today (row.who or .also = owner; ties = "shared with" the other holders; league-wide
+  "{season} Week N" marks skipped; r.bad = "Dubious" tag, counted apart), grouped by category, title links to #/records/{cat}?rec=slug.
+  Parma Nov 11 2026: 11 + 1 dubious (Highest playoff score 423, Biggest trade heist, Longest playoff win streak 3 ...; checked vs
+  the Record Book). Checked Nov 8 2026: Parma = 2024-25 title, 3/3 playoff trips, Steal
   of the Draft 2024-25 (Sarr) + 2025-26 (Raynaud), The Crown Clash not won yet, 32 players (Banchero Championship MVP); Report
   Cards Parma lock grade B (5 of 8), draft B+ GPA 3.15; old links forward; office Test features list no longer has 2K /
   coach / depth; 402 px + dark OK.
@@ -2455,6 +2459,16 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   + a Guards / Forwards dropdown (BK_POS_GRP, .bk-posxsel, gold edge when picked; values G / F)
   with counts; an exact position (BK_EXACT) = Sleeper main position, + secondary = fantasy_positions when
   "Include secondary positions" is on ("2nd" mark); C uses the old Centers group rule. SLOT COLUMN = Team list only (same day).
+  CARD TEXT (owner, Nov 11 2026): "College Kentucky" (or "Country X") is the first line of the .bk-draft block, above NBA draft (no
+  longer by the slot title); the LGS line sits UNDER the per-game stat line (.bk-info > .bk-lgs own margin: the bio lines' -6px
+  pull-up made it overlap the stat labels); the card's contract line has no flag chips
+  (contractLine(p, { flags: false }); Dynasty / Waiver / Trade finder keep them). AUTO TAGS REMOVED from Rosters (both pages):
+  Contract year, Extension next summer, Dynasty riser, Dynasty faller, Top 100 prospect (out of AUTO_TAGS + 'false &&' in autoTagsOf).
+  MULTI-TAG FILTER (owner, Nov 11 2026, "match all"): BK.tags = [picked tags] (was BK.tag); each Tags-row chip toggles, rows must
+  have EVERY picked tag; with picks, chip counts = players that already have all picks (= rows left if you add it), "All" turns
+  into "Clear"; picked tags leave the chip row and sit in .bk-tagsel below: "Showing players with all N tags:" + each pick faded in
+  its color with a faded × (data-tagpick, tap = remove); a Delete button per picked custom tag. Not saved (resets each visit).
+  Checked: League list 4-game week 135 -> + Injured chip 26 = 26 rows, all with both.
   CARD TOP (owner, Oct 26 2026): .bk-top = .bk-id (headshot, FP/G ring right under it) beside .bk-head (#number +
   positions, first/LAST name, HT/WT/AGE, league rank, Sleeper %); the rest (.bk-info) below. One column up to
   1199px; from 1200px the top sits left (max 440px) and .bk-info right. Long last names shrink (h3.bk-l1 10-12
