@@ -1349,6 +1349,32 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   BenDoverPlz123 14, simeoncampbell7 1), League list filter count 20.
 - LGS NOTE (owner, Nov 11 2026): every LGS explanation (Rosters fine print, card tooltip, Season by season header) says
   tracking started midway through week 2 of 2026-27 (Oct 29); before that only each starter's locked game counts.
+- MY DESK (owner, Nov 12 2026; both pages, Beta): the DEFAULT MyGM tab (MYGM_DEFAULT 'desk'), 3rd of 6 in MYGM_TABS = middle of
+  the phone bottom bar (icon desk). renderDesk in app.js (.desk-* at the end of styles.css; .dk-* is the Draft Kit's). Team =
+  mygmTeam(params) (MyGM = MYGM_ME; MyGM+ has the picker). Sub-tabs My Desk / Injury Report (?view=injuries = renderInjuries, the
+  whole old Test features Injury Report; its TEST_FEATURES entry is gone, #/commish?tab=injuries forwards to #/mygm?tab=desk&
+  view=injuries with the other params; the 2K card's "Back to Injury Report" + list=inj go there). Every link off the desk carries
+  ret/retl "Back to My Desk" (backFloat pill); render() now also keeps the commish session when ret starts with #/mygm. ITEMS (each
+  { id, sig, ack, sec, tone, ic, title, body(prev) }): DECISIONS = (a) lock prompts: owner's answer: an unlocked starter (roster
+  starters now; Sleeper's locks via liveLocks, owner = me) whose LATEST game is FINAL, wasn't a bench game (lgs.json), and beat
+  Sleeper's per-date projection (/projections/nba/{s}/{w} rows x.date, league scoring) by DESK_LOCK.pct 15% AND .min 5 FP, with a
+  game left this week; vanishes once Sleeper shows him locked; ackable (id per player + game date). Week in progress = state
+  regular + NOT last_scored_leg >= week (the field is MISSING from Sleeper's state some days: Number(undefined) broke a "<" test).
+  (b) roster: active + IR > ROSTER_LIMIT and still over after the Depth Chart Cut List (gm-dc-desig-{me}.cut, non-taxi) -> no
+  ack, clears only when legal; link to the Depth Chart. (c) chores (owner: Weekly Props ONLY): open (unlocked) props week, n =
+  keys of props/{sw}/picks/{uid}.picks < 10 -> no ack; signed out = "sign in to pick"; only when the signed-in account's team = me.
+  TRADE COURT section: every case without a vote by me (courtVotes(s, true), all seasons): this season one item per case, older
+  seasons one item per season listing the cases; ackable + "Acknowledge all N". INJURY BRIEF (owner: no odds): week = Sleeper
+  state week (next one once its last game date has passed), opponent from DATA.schedule; per side one item = non-taxi roster
+  players with injWeekCall (lifted out of renderInjuries, shared with My schedule; injChangeLine too) = Out all week / May miss
+  part; my team also shows this week's injury-log + live injuryDiff changes NETTED per field (Out -> DTD -> Out shows nothing).
+  ACK: gm-desk-ack = { id: { s: signature, t, d: row snapshot for briefs } } (gmSave; 'gm-desk-' in SYNCED, MERGE object; entries
+  older than 45 days pruned). Acknowledged = ack.s === item sig; a changed sig brings the item back, briefs then tag rows New / Changed
+  vs ack.d + "Back on your desk because something changed". Acknowledged fold with Undo. Tested Nov 12 2026 (MyGM+, live week 4):
+  Šengün 44 vs 38 = the only unlocked Parma starter over the bar (Harden / Fox / Booker locked in Sleeper), roster 27 / 23, 2 + 57
+  unvoted court cases, opponent Murray's Meat Market 2 out + 2 may return; ack / reload / undo / faked change (New + Changed) / back
+  pill (session kept) / forward; 320 dark, 402, desktop, no overflow. NOT tested: MyGM itself with a real Google sign-in, the props
+  item (no open props week that night).
 - PLAN FOR MANAGER LOGINS (owner, Nov 9 2026; agreed in talk; STEPS 1-3 BUILT the same day, see MYGM LOGIN below): MyGM becomes the
   managers' page: Google sign-in REQUIRED + an approved claim (members/{uid}, same as Props / Trade Court), locked to their own
   team; each manager's settings private in users/{uid}/prefs (already); fix the shared-device bleed (localStorage is per

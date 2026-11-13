@@ -6,7 +6,7 @@
 // One entry per feature: tab id (#/commish?tab=id), tab label, the day it was added.
 // Moved to MyGM (owner, Nov 8 2026): 2K breakdown (now "Rosters"), Assistant Coach, Depth Chart. Contracts came back Nov 9 2026.
 export const TEST_FEATURES = [
-  { id: 'injuries', label: 'Injury Report', since: '2026-10-26' },
+  // Injury Report (Oct 26 2026) moved into MyGM's My Desk Nov 12 2026 (#/mygm?tab=desk&view=injuries).
   // Reports (owner, Oct 28 2026): one-off questions answered from live data; each report is a title that opens.
   { id: 'reports', label: 'Reports', since: '2026-10-28' },
   // Dev Dashboard (owner, Nov 1 2026): every starter's lock per matchup, every uncertainty, the commish's picks = law.

@@ -84,6 +84,7 @@ const ICONS = {
   down: '<path d="M10 3v9M6 8.5l4 4 4-4M4 16.5h12"/>',
   lock: '<rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>',
   tree: '<path d="M10 3v14M10 8 5.5 5M10 12l4.5-3M5.5 5v4M14.5 9v4"/>',
+  desk: '<path d="M2.5 8h15M4 8v9M16 8v9M10 8v4.5h6M7 8V4.5h6V8"/>',
   toilet: '<path d="M4.5 3h4v6h-4zM3 9h14c0 3-2.4 5.2-5.5 5.7L12 17H7l.6-2.4C5 13.8 3 11.7 3 9z"/>',
 };
 const icon = name => `<svg class="ic" viewBox="0 0 20 20" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -2382,7 +2383,15 @@ const cmFlag = on => { try { on ? sessionStorage.setItem('cm-open', '1') : sessi
 let COMMISH_OPEN = (() => { try { return sessionStorage.getItem('cm-open') === '1'; } catch { return false; } })();
 
 function renderCommish(main, params) {
-  // Contracts, 2K breakdown (= Rosters), Assistant Coach and Depth Chart moved to MyGM (owner, Nov 8 2026): old links forward.
+  // The Injury Report moved into MyGM's My Desk (owner, Nov 12 2026): ?tab=injuries forwards there, other params kept.
+  if (params.get('tab') === 'injuries') {
+    const q = new URLSearchParams(params);
+    q.set('tab', 'desk');
+    q.set('view', 'injuries');
+    location.replace(`#/mygm?${q}`);
+    return;
+  }
+  // Contracts,2K breakdown (= Rosters), Assistant Coach and Depth Chart moved to MyGM (owner, Nov 8 2026): old links forward.
   if (MYGM_IDS[params.get('tab')]) {
     const q = new URLSearchParams(params);
     q.set('tab', MYGM_IDS[params.get('tab')]);
@@ -2471,8 +2480,11 @@ function renderCommish(main, params) {
 // [id, label, short label (phone bar), icon]. Nav (owner, Nov 8 2026: "C on desktop, D on phones"): a 2K-style navy menu
 // bar with big icons on desktop, a bottom tab bar pinned to the screen on phones (.mg-nav in styles.css).
 // Contracts moved back to Test features (owner, Nov 9 2026: "we won't worry about it now"): #/commish?tab=contracts.
-const MYGM_TABS = [['rosters', 'Rosters', 'Rosters', 'users'], ['coach', 'Assistant Coach', 'Coach', 'whistle'], ['depth', 'Depth Chart', 'Depth', 'list'], ['advanced', 'Advanced Stats', 'Stats', 'gauge'], ['trophies', 'Trophy Room', 'Trophies', 'trophy']];
+const MYGM_TABS = [['rosters', 'Rosters', 'Rosters', 'users'], ['coach', 'Assistant Coach', 'Coach', 'whistle'], ['desk', 'My Desk', 'Desk', 'desk'], ['depth', 'Depth Chart', 'Depth', 'list'], ['advanced', 'Advanced Stats', 'Stats', 'gauge'], ['trophies', 'Trophy Room', 'Trophies', 'trophy']];
+// My Desk (owner, Nov 12 2026) = the DEFAULT tab, in the middle of the nav.
+const MYGM_DEFAULT = 'desk';
 const MYGM_SHOW = {
+  desk: (body, params) => renderDesk(body, params),
   rosters: (body, params) => renderBreakdown(body, params),
   coach: (body, params) => renderCoach(body, params),
   depth: (body, params) => renderDepth(body, params),
@@ -2480,7 +2492,7 @@ const MYGM_SHOW = {
   trophies: (body, params) => renderTrophyRoom(body, params),
 };
 // Office tab ids that live in MyGM now (old ids kept: 'breakdown' = Rosters), and a link to any office / MyGM tab.
-const MYGM_IDS = { breakdown: 'rosters', rosters: 'rosters', coach: 'coach', depth: 'depth', advanced: 'advanced', trophies: 'trophies' };
+const MYGM_IDS = { desk: 'desk', breakdown: 'rosters', rosters: 'rosters', coach: 'coach', depth: 'depth', advanced: 'advanced', trophies: 'trophies' };
 const officeHash = (tab, rest = {}) => (MYGM_IDS[tab]
   ? `${mygmBase()}?${new URLSearchParams({ tab: MYGM_IDS[tab], ...rest })}`
   : `#/commish?${new URLSearchParams({ ...(tab === 'brief' ? {} : { tab }), ...rest })}`);
@@ -2529,7 +2541,7 @@ async function renderMyGM(main, params) {
     params = new URLSearchParams(params);
     // Own team only, except Rosters (owner, Nov 9 2026: "default to the team who's logged in but also allow a drop down menu
     // of other league teams"): there a valid ?team= is kept, and it opens on his own team.
-    const tabId = params.get('tab') ?? MYGM_TABS[0][0];
+    const tabId = params.get('tab') ?? MYGM_DEFAULT;
     if (!['rosters', 'depth'].includes(tabId) || // Depth Chart too (owner, Nov 11 2026): other teams read-only (renderDepth foreign)
        !DATA.seasons.at(-1).teams.some(t => t.owner === params.get('team'))) params.set('team', acct.owner);
   } else if (!COMMISH_OPEN) {
@@ -2555,7 +2567,7 @@ async function renderMyGM(main, params) {
     return;
   }
   if (params.get('tab') === 'contracts') { const q = new URLSearchParams(params); location.replace(`#/commish?${q}`); return; } // old link: Contracts is a Test feature again
-  const tab = MYGM_TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : MYGM_TABS[0][0];
+  const tab = MYGM_TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : MYGM_DEFAULT;
   clearInterval(GM_TIMER);
   main.innerHTML = `
     <div class="page page-wide mygm-page mygm-${tab}">
@@ -3847,7 +3859,7 @@ const SLOT_WORD = { BN: 'Bench', IR: 'Injured reserve', TX: 'Taxi squad', FA: 'F
 const bkFold = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 async function renderBreakdown(body, params) {
-  if (params.get('list') === 'inj') { location.hash = '#/commish?tab=injuries'; return; } // old link: now its own tab
+  if (params.get('list') === 'inj') { location.hash = `${mygmBase()}?tab=desk&view=injuries`; return; } // old link: the Injury Report lives in My Desk
   const cur = DATA.seasons.at(-1);
   const list = BK_LISTS.some(([id]) => id === params.get('list')) ? params.get('list') : 'team';
   const me = cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH;
@@ -3984,7 +3996,7 @@ async function renderBreakdown(body, params) {
       <select class="bk-nba" aria-label="NBA team">${[...NBA_TEAM_CODES].sort((a, b) => nbaTeamName(a).localeCompare(nbaTeamName(b))).map(t => `<option value="${t}"${t === nbaTeam ? ' selected' : ''}>${esc(nbaTeamName(t))}</option>`).join('')}</select></span></label>`;
 
   body.innerHTML = `<div class="gm-page bk-page">
-    ${back ? `<a class="bk-back" href="${esc(back.back)}">← Back to ${esc(back.backl)}</a>` : fromInj ? '<a class="bk-back" href="#/commish?tab=injuries">← Back to Injury Report</a>' : ''}
+    ${back ? `<a class="bk-back" href="${esc(back.back)}">← Back to ${esc(back.backl)}</a>` : fromInj ? `<a class="bk-back" href="${mygmBase()}?tab=desk&view=injuries">← Back to Injury Report</a>` : ''}
     ${listTabs}
     <div class="cm-pickers">
       ${list === 'team' ? gmTeamPick(me, cur.season, 'breakdown') : list === 'nba' ? nbaPick : ''}
@@ -5162,7 +5174,331 @@ async function reportCompareRuns(owner, sa, sb) {
 const INJ_ORDER = { IR: 0, Out: 1, Sus: 1, Doubtful: 2, GTD: 3, Questionable: 3, DTD: 4, Probable: 5 };
 const injRank = s => INJ_ORDER[s] ?? 4;
 const injBad = s => /^(out|ir|sus)/i.test(s ?? '');
-// Injury Report tab (Test features, owner Oct 26 2026; was the 2K breakdown's "Injuries" list): ?team= picks "you".
+// Shared by the Injury Report's My schedule and My Desk's injury brief (owner, Nov 12 2026). p = { injury (status), espn },
+// d = the fantasy week's { from, to } game dates, near = the current or next week. ESPN out for season or an estimated
+// return after the week's last game = 'out'; return inside the week = 'part'; Out / IR with no estimate and day-to-day only
+// for near weeks (nobody knows further out). why = the extra note ('' when the estimate chip already says it).
+function injWeekCall(p, d, near) {
+  const e = p.espn;
+  if (e?.ofs) return { kind: 'out', why: '' };
+  if (e?.ret && d) {
+    if (e.ret > d.to) return { kind: 'out', why: '' };
+    if (e.ret > d.from) return { kind: 'part', why: `Est. back ${shortMd(e.ret)} (week runs ${shortMd(d.from)}–${shortMd(d.to)})` };
+    return null;
+  }
+  if (!p.injury) return null;
+  if (near && injBad(p.injury)) return { kind: 'out', why: `${p.injury}, no return estimate` };
+  if (near) return { kind: 'part', why: `${p.injury}: day-to-day` };
+  return null;
+}
+// One injury-log change [field, from, to] as a line (Injury Report's Recent changes, My Desk).
+function injChangeLine([f, a, b]) {
+  const v = x => esc(x ?? 'none');
+  if (f === 's') return `Sleeper status <b>${v(a)} → ${v(b)}</b>`;
+  if (f === 'e') return `ESPN status <b>${v(a)} → ${v(b)}</b>`;
+  if (f === 'o') return b ? '<b class="inj-bad">Ruled out for the season</b>' : '<b>No longer listed out for the season</b>';
+  if (f === 'r') {
+    if (!a) return `Return estimate added: <b>${esc(shortMd(b))}</b>`;
+    if (!b) return `Return estimate removed (was ${esc(shortMd(a))})`;
+    const days = Math.round((Date.parse(`${b}T12:00:00`) - Date.parse(`${a}T12:00:00`)) / 864e5);
+    const span = Math.abs(days) < 14 ? `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'}` : `${Math.round(Math.abs(days) / 7)} weeks`;
+    return `Est. return <b>${esc(shortMd(a))} → ${esc(shortMd(b))}</b> <span class="${days > 0 ? 'inj-bad' : 'inj-good'}">(${span} ${days > 0 ? 'later' : 'sooner'})</span>`;
+  }
+  if (f === 'b') return `Injury <b>${v(a)} → ${v(b)}</b>`;
+  if (f === 'n') return `Sleeper note <b>${v(a)} → ${v(b)}</b>`;
+  if (f === 'c') return 'New ESPN report';
+  return '';
+}
+
+// ---------- My Desk (MyGM's landing tab; owner, Nov 12 2026) ----------
+// Everything that needs the manager this week, on one page. Decisions: lock prompts (an unlocked starter whose last FINAL
+// game beat Sleeper's projection for that game by DESK_LOCK.pct AND DESK_LOCK.min, with a game still to come; gone once
+// Sleeper shows him locked: breakdown.js liveLocks), roster over ROSTER_LIMIT (clears only when the roster or the Depth
+// Chart's Cut List makes it legal), Weekly Props picks (clears at 10 / 10), Trade Court cases he hasn't voted on. Injury
+// brief: this week's opponent and your own team (injWeekCall: out all week / may miss part), with New / Changed tags.
+// Every item but the "clears when done" ones has an Acknowledged box: gm-desk-ack = { itemId: { s: signature, t, d? } }
+// (gmSave, synced per Google account via 'gm-desk-'); an item whose signature changes (new info) comes back. ?view=injuries
+// = the full Injury Report (moved here from Test features).
+const DESK_LOCK = { pct: 0.15, min: 5 }; // owner's pick (Nov 12 2026): final games 15%+ AND 5+ FP over the projection
+const DESK_ACK = 'gm-desk-ack';
+const deskAcks = () => gmLoad(DESK_ACK, {});
+function deskSetAck(list, on) {
+  const a = { ...deskAcks() };
+  const old = Date.now() - 45 * 864e5;
+  for (const [k, v] of Object.entries(a)) if (!v?.t || v.t < old) delete a[k]; // forget old weeks' items
+  for (const it of list) {
+    if (on) a[it.id] = { s: it.sig, t: Date.now(), ...(it.snap ? { d: it.snap } : {}) };
+    else delete a[it.id];
+  }
+  gmSave(DESK_ACK, a);
+}
+async function renderDesk(body, params) {
+  const cur = DATA.seasons.at(-1);
+  const season = cur.season;
+  const me = mygmTeam(params);
+  const view = params.get('view') === 'injuries' ? 'injuries' : 'desk';
+  const teamQ = route().page === 'mygmplus' && params.get('team') ? { team: me } : {};
+  const deskHash = `${mygmBase()}?${new URLSearchParams({ tab: 'desk', ...teamQ })}`;
+  const back = { ret: deskHash, retl: 'Back to My Desk' };
+  const withBack = hash => `${hash}${hash.includes('?') ? '&' : '?'}${new URLSearchParams(back)}`;
+  const sub = `<div class="desk-top">${gmTeamPick(me, season, 'desk')}
+    <div class="st-tabs desk-sub" role="tablist">${[['desk', 'My Desk'], ['injuries', 'Injury Report']].map(([id, l]) => `<a role="tab" class="${view === id ? 'on' : ''}" href="${mygmBase()}?${new URLSearchParams({ tab: 'desk', ...(id === 'injuries' ? { view: id } : {}), ...teamQ })}">${l}</a>`).join('')}</div></div>`;
+  if (view === 'injuries') {
+    body.innerHTML = `${sub}<div id="desk-inj"></div>`;
+    bindTeamPick(body);
+    return renderInjuries($('#desk-inj', body), params, me);
+  }
+  body.innerHTML = `${sub}<div class="loading">Clearing off your desk…</div>`;
+  bindTeamPick(body);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+  const day = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
+  const notes = []; // what couldn't be read
+  const [state, all, league, rosters, schedule, injLog] = await Promise.all([
+    get('/v1/state/nba', {}),
+    get('/v1/players/nba', {}),
+    get(`/v1/league/${cur.leagueId}`, {}),
+    get(`/v1/league/${cur.leagueId}/rosters`, []),
+    get(`/schedule/nba/regular/${season}`, []),
+    fetch(`data/injury-log.json?t=${Date.now()}`, { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then(f => (f?.version === INJ_LOG_VERSION ? f : null)).catch(() => null),
+  ]);
+  const espn = (await espnInjuries(all).catch(() => null)) ?? {};
+  if (!Object.keys(espn).length) notes.push('ESPN’s injury report (return estimates)');
+  const scoring = league?.scoring_settings ?? {};
+  const roster = (rosters ?? []).find(r => r.owner_id === me);
+  const weekDates = {};
+  for (const g of schedule ?? []) {
+    if (!g?.week || !g.date) continue;
+    const d = (weekDates[g.week] ??= { from: g.date, to: g.date });
+    if (g.date < d.from) d.from = g.date;
+    if (g.date > d.to) d.to = g.date;
+  }
+  const inSeason = state?.season_type === 'regular' && String(state.season) === String(season);
+  let week = inSeason ? Number(state.week) || 1 : null;
+  if (week && weekDates[week]?.to < today && weekDates[week + 1]) week++; // between weeks: the next one
+  const lockWeek = inSeason && !(Number(state.last_scored_leg) >= Number(state.week)) ? Number(state.week) : null; // same test as liveLocks (the field can be missing)
+  const pname = pid => { const a = all?.[pid]; return a ? `${a.first_name ?? ''} ${a.last_name ?? ''}`.trim() : DATA.players?.[pid]?.n ?? `Player ${pid}`; };
+  const cardHref = (owner, pid) => withBack(`${mygmBase()}?${new URLSearchParams({ tab: 'rosters', team: owner, p: pid })}`);
+  const items = [];
+
+  // ---- Decisions: lock prompts ----
+  if (lockWeek && roster) {
+    try {
+      const [proj, boxes, live, lgs] = await Promise.all([
+        get(`/projections/nba/${season}/${lockWeek}?season_type=regular`, []),
+        weekBoxes(season, lockWeek, scoring),
+        withTimeout(liveLocks(DATA), 9000).catch(() => null),
+        loadLgs().catch(() => null),
+      ]);
+      if (!boxes) throw new Error('box scores');
+      const locksRead = live && Number(live.week) === lockWeek;
+      if (!locksRead) notes.push('Sleeper’s locks (prompts can’t clear themselves until it answers)');
+      const locked = new Set(locksRead ? live.rows.filter(r => r.o === me).map(r => r.pid) : []);
+      const byDate = {};
+      for (const x of proj ?? []) if (x?.player_id && x.date) (byDate[x.player_id] ??= {})[x.date] = bkFantasy(x.stats ?? {}, scoring);
+      for (const pid of roster.starters ?? []) {
+        if (!pid || pid === '0' || locked.has(pid)) continue;
+        const games = boxes.games[pid] ?? [];
+        const last = games.at(-1);
+        if (!last?.done || games.some(g => !g.done)) continue; // nothing final yet, or he's playing right now
+        if (benchDates(lgs, season, pid, me, lockWeek).has(last.date)) continue; // sat on your bench for it: can't be locked
+        const left = (boxes.sched[last.team] ?? []).filter(g => !g.done && g.date > last.date);
+        if (!left.length) continue; // his last game of the week counts anyway
+        const pj = Math.round((byDate[pid]?.[last.date] ?? 0) * 10) / 10;
+        if (!(pj > 0) || last.p < pj * (1 + DESK_LOCK.pct) || last.p - pj < DESK_LOCK.min) continue;
+        const id = `lock|${season}|${lockWeek}|${pid}|${last.date}`;
+        items.push({
+          id, sig: String(last.p), ack: true, sec: 'decide', tone: 'gold', ic: 'lock',
+          title: `${esc(pname(pid))} scored ${num(last.p)}, ${num(Math.round((last.p - pj) * 10) / 10)} over his projection (${num(pj)}). Lock him?`,
+          body: () => `<p>${esc(day(last.date))} ${last.opp ? `vs ${esc(last.opp)} ` : ''}· +${Math.round((last.p / pj - 1) * 100)}% · ${left.length} game${left.length === 1 ? '' : 's'} left this week (next ${esc(day(left[0].date))}). Lock him in Sleeper before his next game tips; this clears itself once Sleeper shows the lock.</p>
+            <p class="desk-links"><a href="${cardHref(me, pid)}">Player card</a> · <a href="https://sleeper.com/leagues/${esc(cur.leagueId)}" target="_blank" rel="noopener">Open Sleeper ↗</a></p>`,
+        });
+      }
+    } catch { notes.push('this week’s box scores / projections (no lock prompts)'); }
+  }
+
+  // ---- Decisions: roster over the limit (clears only when legal) ----
+  if (roster) {
+    const taxi = new Set(roster.taxi ?? []);
+    const counted = (roster.players ?? []).filter(pid => !taxi.has(pid));
+    const cuts = (gmLoad(`gm-dc-desig-${me}`, null)?.cut ?? []).filter(pid => counted.includes(pid));
+    const after = counted.length - cuts.length;
+    if (counted.length > ROSTER_LIMIT && after > ROSTER_LIMIT) {
+      items.push({
+        id: 'roster', sec: 'decide', tone: 'red', ic: 'users', clears: 'Clears when your roster (or your Cut List) gets to 23',
+        title: `Roster ${counted.length} / ${ROSTER_LIMIT}: ${after - ROSTER_LIMIT} over the limit${cuts.length ? ' after your Cut List' : ''}`,
+        body: () => `<p>Active + IR count, taxi doesn’t. ${cuts.length ? `Your Cut List has ${cuts.length} (${cuts.map(pid => esc(pname(pid))).join(', ')}), so you’d be at ${after}.` : 'Your Cut List is empty.'} Mark ${after - ROSTER_LIMIT} more with ✂ Cut in a player’s ⋮ menu on the Depth Chart.</p>
+          <p class="desk-links"><a href="${withBack(`${mygmBase()}?${new URLSearchParams({ tab: 'depth', team: me })}`)}">Open the Depth Chart’s Cut List →</a></p>`,
+      });
+    }
+  }
+
+  // ---- Decisions: Weekly Props (clears at 10 / 10) ----
+  try {
+    const W = propsWeeks(await loadPropsFile(), season);
+    const open = Object.values(W).filter(w => !prLocked(w)).sort((a, b) => a.week - b.week)[0];
+    if (open) {
+      const acct = await propsAccount().catch(() => null);
+      const total = open.props?.length ?? 10;
+      const href = withBack(`#/props?${new URLSearchParams({ season, week: open.week })}`);
+      if (!acct?.user) {
+        items.push({ id: 'props', sec: 'decide', tone: 'navy', ic: 'ticket', clears: 'Clears when your picks are in',
+          title: `Weekly Props, week ${open.week}: sign in to pick`, body: () => `<p>Locks ${esc(prWhen(open.lockAt))} (${esc(prCountdown(open.lockAt))}).</p><p class="desk-links"><a href="${href}">Open Weekly Props →</a></p>` });
+      } else if (acct.owner === me) {
+        const doc = await acct.fb.getDoc(acct.fb.doc(acct.fb.db, 'props', prWeekId(season, open.week), 'picks', acct.user.uid)).catch(() => null);
+        const n = Object.keys(doc?.exists() ? doc.data().picks ?? {} : {}).length;
+        if (n < total) {
+          items.push({ id: 'props', sec: 'decide', tone: 'navy', ic: 'ticket', clears: `Clears at ${total} / ${total} picks`,
+            title: `Weekly Props, week ${open.week}: ${n} / ${total} picks made`,
+            body: () => `<p>Picks lock ${esc(prWhen(open.lockAt))} (${esc(prCountdown(open.lockAt))}).</p><p class="desk-links"><a href="${href}">Make your picks →</a></p>` });
+        }
+      }
+    }
+  } catch { notes.push('Weekly Props'); }
+
+  // ---- Decisions: Trade Court cases without your vote ----
+  try {
+    const cases = courtCases();
+    const seasons = [...new Set(cases.map(c => String(c.s)))];
+    const votes = (await Promise.all(seasons.map(s => courtVotes(s, true)))).flat();
+    const voted = new Set(votes.filter(v => v.owner === me).map(v => v.k));
+    const open = cases.filter(c => !voted.has(c.key));
+    const caseHref = c => withBack(`#/trade-court?${new URLSearchParams({ case: c.no })}`);
+    for (const c of open.filter(c => String(c.s) === String(season)).reverse()) {
+      items.push({ id: `court|${c.key}`, sig: '1', ack: true, sec: 'court', tone: 'navy', ic: 'scale',
+        title: `Trade Court · Case ${caseNo(c.no)}: ${c.owners.map(o => esc(name(o))).join(' ⇄ ')}`,
+        body: () => `<p>Week ${c.w ?? '?'} · ${esc(shortDate(c.ts))}${c.owners.includes(me) ? ' · you’re in this trade (your vote is shown, not counted)' : ''}. You haven’t ruled on it.</p><p class="desk-links"><a href="${caseHref(c)}">Rule on it →</a></p>` });
+    }
+    for (const s of seasons.filter(s => s !== String(season)).sort().reverse()) {
+      const list = open.filter(c => String(c.s) === s);
+      if (!list.length) continue;
+      items.push({ id: `court|season|${s}`, sig: list.map(c => c.no).join(','), ack: true, sec: 'court', tone: 'navy', ic: 'scale',
+        title: `Trade Court · ${bkSeason(s)}: ${list.length} case${list.length === 1 ? '' : 's'} without your vote`,
+        body: () => `<p class="desk-links">${list.map(c => `<a href="${caseHref(c)}">Case ${caseNo(c.no)}</a>`).join(' · ')}</p>` });
+    }
+  } catch (e) { notes.push(`Trade Court votes (${e.message})`); }
+
+  // ---- Injury brief: this week's opponent + your team ----
+  const d = week ? weekDates[week] : null;
+  const opp = (DATA.schedule ?? []).find(m => m.s === season && m.w === week && (m.a === me || m.b === me));
+  const oppId = opp ? (opp.a === me ? opp.b : opp.a) : null;
+  const ESPN_ST = { 'Day-To-Day': 'DTD', Out: 'Out' };
+  const evByPid = {};
+  if (injLog && d) {
+    const live = injuryDiff(injLog.last, injuryNow(all, espn, injLog.last), new Date().toISOString());
+    const from = new Date(`${d.from}T06:00:00Z`).toISOString(); // the week's first morning
+    for (const ev of [...(injLog.events ?? []).filter(x => x.at >= from), ...live]) (evByPid[ev.pid] ??= []).push(ev);
+  }
+  const brief = owner => {
+    const r = (rosters ?? []).find(x => x.owner_id === owner);
+    if (!r || !d) return [];
+    const tx = new Set(r.taxi ?? []), st = new Set(r.starters ?? []), ir = new Set(r.reserve ?? []);
+    return (r.players ?? []).filter(pid => !tx.has(pid)).map(pid => {
+      const a = all?.[pid] ?? {}, e = espn[pid];
+      const p = { pid, name: pname(pid), pos: a.fantasy_positions ?? [], team: a.team ?? '', injury: a.injury_status ?? (e ? ESPN_ST[e.status] ?? e.status : null), part: a.injury_body_part, note: a.injury_notes, espn: e, slot: st.has(pid) ? 'Starter' : ir.has(pid) ? 'IR' : 'Bench' };
+      return { p, c: injWeekCall(p, d, true) };
+    }).filter(x => x.c);
+  };
+  const rowSig = x => [x.c.kind, x.p.injury ?? '', x.p.espn?.ret ?? '', x.p.espn?.ofs ? 1 : 0].join('/');
+  const briefItem = (owner, mine) => {
+    const rows = brief(owner);
+    const snap = Object.fromEntries(rows.map(x => [x.p.pid, rowSig(x)]));
+    const sig = Object.entries(snap).sort().map(([k, v]) => `${k}:${v}`).join('|') || 'none';
+    const out = rows.filter(x => x.c.kind === 'out'), part = rows.filter(x => x.c.kind === 'part');
+    const row = (x, prev) => {
+      const p = x.p, e = p.espn;
+      const tag = !prev ? '' : !(p.pid in prev) ? '<i class="desk-new">New</i>' : prev[p.pid] !== snap[p.pid] ? '<i class="desk-chg">Changed</i>' : '';
+      const what = [p.part || [e?.side, e?.type].filter(Boolean).join(' '), p.note || e?.detail].filter(Boolean).join(' · ');
+      // This week's changes, NET per field (first "from" -> last "to"; a status that went Out -> DTD -> Out shows nothing).
+      const evs = [];
+      if (mine) {
+        const net = {};
+        let added = false, report = false;
+        for (const ev of [...(evByPid[p.pid] ?? [])].sort((a, b) => (a.at < b.at ? -1 : 1))) {
+          if (ev.k === 'new') added = true;
+          for (const [f, a, b] of ev.k === 'upd' ? ev.ch : []) {
+            if (f === 'c') { report = true; continue; }
+            if (f === 'n') continue; // Sleeper's note text: the ESPN note below says it better
+            if (!(f in net)) net[f] = [f, a, b]; else net[f][2] = b;
+          }
+        }
+        if (added) evs.push('Added to the injury report this week');
+        for (const ch of Object.values(net)) if ((ch[1] ?? null) !== (ch[2] ?? null)) evs.push(injChangeLine(ch));
+        if (report && !added) evs.push('New ESPN report this week');
+      }
+      return `<a class="inj-row desk-inj" href="${cardHref(owner, p.pid)}">
+        <img class="inj-photo" src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+        <span class="inj-main"><b>${esc(p.name)} ${tag}</b><small>${esc([p.pos.join('/'), p.team, p.slot].filter(Boolean).join(' · '))}</small>
+          ${what ? `<small class="inj-what">${esc(what)}</small>` : ''}${estChip(e, 'inj-est')}${x.c.why ? `<small class="inj-why">${esc(x.c.why)}</small>` : ''}
+          ${evs.length ? `<ul class="inj-ch">${[...new Set(evs)].map(l => `<li>${l}</li>`).join('')}</ul>` : ''}
+          ${e?.note ? `<small class="inj-note">${esc(e.note)}</small>` : ''}</span>
+        <span class="inj-side"><span class="inj-pill${injBad(p.injury) || e?.ofs ? ' bad' : ''}">${esc(p.injury ?? '—')}</span></span></a>`;
+    };
+    const group = (label, list, prev) => (list.length ? `<div class="inj-wkgroup"><span class="bk-bar-label">${label}</span>${list.map(x => row(x, prev)).join('')}</div>` : '');
+    const who = mine ? 'Your team' : `${esc(teamName(owner, season))} (${esc(name(owner))})`;
+    return {
+      id: `inj|${mine ? 'me' : 'opp'}|${season}|${week}|${owner}`, sig, snap, ack: true, sec: 'inj', tone: out.length ? 'red' : 'green', ic: mine ? 'users' : 'swords',
+      title: `${mine ? 'Your team' : `Opponent · ${esc(teamName(owner, season))}`}: ${out.length ? `${out.length} out all week` : 'nobody out all week'}${part.length ? ` · ${part.length} may miss part` : ''}`,
+      body: prev => `${rows.length ? `${group('Out all week', out, prev)}${group(mine ? 'May miss part of the week / may return' : 'May return during the week', part, prev)}` : `<p>${who} is at full strength for week ${week} (taxi left out).</p>`}
+        ${prev ? '<p class="desk-fine">Back on your desk because something changed since you acknowledged it.</p>' : ''}`,
+    };
+  };
+  if (d && roster) {
+    if (oppId) items.push(briefItem(oppId, false));
+    else notes.push(`a week ${week} opponent (none on the schedule)`);
+    items.push(briefItem(me, true));
+  }
+
+  // ---- Draw ----
+  const SECS = [['decide', 'Decisions', 'What needs a move from you'], ['court', 'Trade Court', 'Cases you haven’t voted on'], ['inj', 'Injury brief', d ? `Week ${week} · ${shortMd(d.from)}–${shortMd(d.to)}${oppId ? ` · vs ${teamName(oppId, season)}` : ''}` : 'No regular-season week right now']];
+  const draw = () => {
+    const acks = deskAcks();
+    const isAck = it => it.ack && acks[it.id]?.s === it.sig;
+    const open = items.filter(it => !isAck(it)), done = items.filter(isAck);
+    const card = it => {
+      const prev = it.ack && acks[it.id] && acks[it.id].s !== it.sig ? acks[it.id].d ?? null : null;
+      return `<div class="desk-item tone-${it.tone}">
+        <span class="desk-ic">${icon(it.ic)}</span>
+        <div class="desk-main"><b class="desk-t">${it.title}</b><div class="desk-b">${it.body(prev)}</div></div>
+        ${it.ack ? `<label class="desk-ack"><input type="checkbox" data-ack="${esc(it.id)}"><span>Acknowledged</span></label>` : `<span class="desk-clr">${esc(it.clears)}</span>`}
+      </div>`;
+    };
+    const secHtml = ([id, title, sub]) => {
+      const list = open.filter(it => it.sec === id);
+      const ackable = list.filter(it => it.ack);
+      return betaCard(title, `${list.length ? list.map(card).join('') : `<p class="desk-clear">${id === 'inj' && !d ? 'Nothing to brief.' : 'All clear.'}</p>`}
+        ${ackable.length > 1 ? `<button type="button" class="desk-all" data-ackall="${id}">Acknowledge all ${ackable.length}</button>` : ''}`, { sub, cls: `desk-sec desk-${id}` });
+    };
+    $('#desk-body', body).innerHTML = `
+      ${betaCard('My Desk', `<p class="desk-sum">${open.length ? `<b>${open.length}</b> thing${open.length === 1 ? '' : 's'} on your desk` : '<b>Your desk is clear.</b>'}${done.length ? ` · ${done.length} acknowledged` : ''}.</p>
+        <p class="desk-fine">Tick <b>Acknowledged</b> to clear an item; it comes back if its news changes. Items marked “clears when …” go away on their own once they’re done.${notes.length ? ` Couldn’t read: ${notes.map(esc).join('; ')}.` : ''}</p>`, { cls: 'desk-head', sub: teamName(me, season) })}
+      ${SECS.map(secHtml).join('')}
+      ${done.length ? `<details class="card desk-acked"${DESK_OPEN.acked ? ' open' : ''}><summary>Acknowledged <small>${done.length}</small></summary>
+        ${done.map(it => `<div class="desk-arow"><span>${it.title}</span><button type="button" data-unack="${esc(it.id)}">Undo</button></div>`).join('')}</details>` : ''}`;
+  };
+  body.innerHTML = `${sub}<div id="desk-body" class="desk-page"></div>`;
+  bindTeamPick(body);
+  draw();
+  $('#desk-body', body).addEventListener('change', e => {
+    const box = e.target.closest('[data-ack]');
+    if (!box) return;
+    const it = items.find(x => x.id === box.dataset.ack);
+    if (it && box.checked) { deskSetAck([it], true); draw(); }
+  });
+  $('#desk-body', body).addEventListener('click', e => {
+    const un = e.target.closest('[data-unack]');
+    const allB = e.target.closest('[data-ackall]');
+    if (un) { const it = items.find(x => x.id === un.dataset.unack); if (it) { DESK_OPEN.acked = true; deskSetAck([it], false); draw(); } }
+    else if (allB) {
+      const acks = deskAcks();
+      deskSetAck(items.filter(it => it.ack && it.sec === allB.dataset.ackall && acks[it.id]?.s !== it.sig), true);
+      draw();
+    }
+  });
+  $('#desk-body', body).addEventListener('toggle', e => { if (e.target.matches('.desk-acked')) DESK_OPEN.acked = e.target.open; }, true);
+}
+const DESK_OPEN = { acked: false };
+
+// Injury Report (Test features Oct 26 2026; moved into MyGM's My Desk Nov 12 2026, ?view=injuries): ?team= picks "you".
 function renderInjuryReport(body, params) {
   const cur = DATA.seasons.at(-1);
   return renderInjuries(body, params, cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH);
@@ -5278,21 +5614,7 @@ async function renderInjuries(body, params, me) {
   const liveWeek = nbaState?.season === cur.season && nbaState.season_type === 'regular' ? Number(nbaState.week) || 1 : 1;
   const myGames = (DATA.schedule ?? []).filter(m => m.s === cur.season && (m.a === me || m.b === me) && m.w >= liveWeek && (!weekDates[m.w] || weekDates[m.w].to >= today))
     .sort((a, b) => a.w - b.w);
-  const weekCall = (p, w) => {
-    const d = weekDates[w];
-    const e = p.espn;
-    const near = w <= liveWeek + 1;
-    // why = the extra note on the right; '' when the estimate chip on the row already says it.
-    if (e?.ofs) return { kind: 'out', why: '' };
-    if (e?.ret && d) {
-      if (e.ret > d.to) return { kind: 'out', why: '' };
-      if (e.ret > d.from) return { kind: 'part', why: `Est. back ${shortMd(e.ret)} (week runs ${shortMd(d.from)}–${shortMd(d.to)})` };
-      return null;
-    }
-    if (near && injBad(p.injury)) return { kind: 'out', why: `${p.injury}, no return estimate` };
-    if (near) return { kind: 'part', why: `${p.injury}: day-to-day` };
-    return null;
-  };
+  const weekCall = (p, w) => injWeekCall(p, weekDates[w], w <= liveWeek + 1);
   const scheduleHtml = () => {
     if (!myGames.length) return '<p class="empty">No regular-season matchups left on your schedule.</p>';
     return myGames.map(m => {
@@ -5331,23 +5653,7 @@ async function renderInjuries(body, params, me) {
     return d === today ? 'Today' : d === y ? 'Yesterday' : new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
   const statusOf = st => st?.s ?? (st?.e ? ESPN_STATUS[st.e] ?? st.e : null);
-  const changeLine = ([f, a, b]) => {
-    const v = x => esc(x ?? 'none');
-    if (f === 's') return `Sleeper status <b>${v(a)} → ${v(b)}</b>`;
-    if (f === 'e') return `ESPN status <b>${v(a)} → ${v(b)}</b>`;
-    if (f === 'o') return b ? '<b class="inj-bad">Ruled out for the season</b>' : '<b>No longer listed out for the season</b>';
-    if (f === 'r') {
-      if (!a) return `Return estimate added: <b>${esc(shortMd(b))}</b>`;
-      if (!b) return `Return estimate removed (was ${esc(shortMd(a))})`;
-      const days = Math.round((Date.parse(`${b}T12:00:00`) - Date.parse(`${a}T12:00:00`)) / 864e5);
-      const span = Math.abs(days) < 14 ? `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'}` : `${Math.round(Math.abs(days) / 7)} weeks`;
-      return `Est. return <b>${esc(shortMd(a))} → ${esc(shortMd(b))}</b> <span class="${days > 0 ? 'inj-bad' : 'inj-good'}">(${span} ${days > 0 ? 'later' : 'sooner'})</span>`;
-    }
-    if (f === 'b') return `Injury <b>${v(a)} → ${v(b)}</b>`;
-    if (f === 'n') return `Sleeper note <b>${v(a)} → ${v(b)}</b>`;
-    if (f === 'c') return 'New ESPN report';
-    return '';
-  };
+  const changeLine = injChangeLine;
   const evRow = ev => {
     const st = ev.st;
     const p = anyById[ev.pid];
@@ -11735,7 +12041,7 @@ function render() {
   const { page, sub, params } = route();
   clearInterval(HYPE_TIMER);
   // Leaving the section locks it again, except for a trip that carries a way back into it (2K Transactions links).
-  if (page !== 'commish' && page !== 'mygm' && page !== 'mygmplus' && !params.get('ret')?.startsWith('#/commish')) { COMMISH_OPEN = false; cmFlag(false); }
+  if (page !== 'commish' && page !== 'mygm' && page !== 'mygmplus' && !/^#\/(commish|mygm)/.test(params.get('ret') ?? '')) { COMMISH_OPEN = false; cmFlag(false); } // My Desk links carry a way back into MyGM / MyGM+
   $('#dk-tip')?.classList.remove('on');
   renderSidebar(page);
   const main = $('#main');

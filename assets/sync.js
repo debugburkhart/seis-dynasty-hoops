@@ -48,12 +48,13 @@ export const SYNCED = [
   'gm-dvp-', // Defense vs Position: view (opts), sort, fantasy team
   'gm-adv-', // Advanced Stats: view, window, pool, chart choices, NBA teams
   'gm-dc-', // Depth Chart: view, NBA team, Hide taxi, categories (gm-dc-cats), order / designations / lineup slots per team
+  'gm-desk-', // My Desk (MyGM): acknowledged items gm-desk-ack = { itemId: { s, t, d } }
   'gm-ct-', // Contracts: day-one lengths (gm-ct-init-{owner}), offseason plans (gm-ct-plan-{owner}), price guesses, view, team
 ];
 export const isSynced = key => SYNCED.some(k => (k.endsWith('-') ? key.startsWith(k) : key === k));
 
 // How the first sign-in on a device combines its value with the account's (later saves: newest wins).
-const MERGE = [['gm-locks-', 'object'], ['gm-whatif-', 'object'], ['gm-block-', 'list'], ['gm-tracker-seen-', 'max'], ['gm-tags', 'object'], ['gm-tag-colors', 'object'], ['gm-notes', 'object']];
+const MERGE = [['gm-locks-', 'object'], ['gm-whatif-', 'object'], ['gm-block-', 'list'], ['gm-tracker-seen-', 'max'], ['gm-tags', 'object'], ['gm-tag-colors', 'object'], ['gm-notes', 'object'], ['gm-desk-ack', 'object']];
 const mergeKind = key => MERGE.find(([p]) => key.startsWith(p))?.[1] ?? 'newest';
 
 const ls = {
