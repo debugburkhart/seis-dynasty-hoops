@@ -6,6 +6,12 @@ import { AWARD_SCORING, exhibitionRow } from './config.js';
 
 export const PASSCODE_SHA256 = '86477df6cc9ac53fe05aa7a71b6d5ac9f1063f23b76142bc2393ec40d8f85884';
 export const COMMISH = '1035475215997906944'; // bigdaddyburk (Parma John Wall): the default team to scout
+// TEST FEATURES section of the sidebar (owner, Nov 14 2026): its own password, for testers (MyGM). Only the SHA-256 is stored.
+export const TESTER_SHA256 = '54de7f606f2523cba8efac173fab42fb7f59d56ceff974c8fdb7342cf2cfe345';
+export async function checkTester(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('') === TESTER_SHA256;
+}
 
 export async function checkPasscode(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));

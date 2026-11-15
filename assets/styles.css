@@ -4750,36 +4750,9 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .dc-s9kind { display: inline-block; margin-right: 4px; padding: 1px 8px; border-radius: 99px; background: #e8eef6; color: var(--navy-800); font: 800 10.5px/1.6 var(--font); text-transform: uppercase; letter-spacing: .04em; }
 .dc-s9kind.custom { background: #f2c14e; color: var(--navy-900); }
 .mb-s9note b { color: inherit; }
-/* ROSTERS ON A BROWSER (owner, Nov 11 2026: "every column in rosters showing when opened on a browser, there's a lot of empty
-   space"): from 1100px the Rosters tab uses the whole content width (no 1040px cap) and the table is tighter (4-5px cell
-   padding, two-line headers, a narrower Tags column whose chips wrap), so all of a view's columns fit without sideways scrolling. */
-@media (min-width: 1100px) {
-  .mygm-rosters.page-wide { max-width: none; }
-  .mygm-rosters .bk-table { font-size: 11px; }
-  .mygm-rosters .bk-table th { padding: 6px 2px; white-space: normal; line-height: 1.15; vertical-align: bottom; }
-  .mygm-rosters .bk-table td { padding: 6px 2px; }
-  .mygm-rosters .bk-table th.bk-nm, .mygm-rosters .bk-table td.bk-nm { padding-left: 8px; }
-  .mygm-rosters .bk .bk-table td.bk-tagcol { max-width: 96px; min-width: 80px; white-space: normal; }
-  .mygm-rosters .bk .bk-table td.bk-nm { max-width: 136px; overflow: hidden; text-overflow: ellipsis; }
-  .mygm-rosters .bk .bk-table td.bk-own { white-space: normal; min-width: 70px; max-width: 86px; line-height: 1.15; font-size: 10.5px; }
-  .mygm-rosters .bk .bk-table td.bk-tagcol .bk-tag, .mygm-rosters .bk .bk-table td.bk-tagcol .bk-auto { margin-bottom: 2px; }
-}
-/* Smaller laptops (1100-1399px): a bit tighter still, so Averages fits too. */
-@media (min-width: 1100px) and (max-width: 1399px) {
-  .mygm-rosters .bk-table { font-size: 10.5px; }
-  .mygm-rosters .bk-table th { font-size: 9.5px; letter-spacing: .02em; }
-  .mygm-rosters .bk-table td { padding: 5px 1px; }
-  .mygm-rosters .bk .bk-table td.bk-nm { max-width: 118px; }
-  .mygm-rosters .bk .bk-table td.bk-tagcol { max-width: 80px; min-width: 64px; }
-  .mygm-rosters .bk .bk-table td.bk-own { min-width: 56px; max-width: 60px; font-size: 10px; }
-  .mygm-rosters .bk .bk-table .bk-cmpbtn { transform: scale(.85); }
-}
-@media (min-width: 1400px) and (max-width: 1599px) {
-  .mygm-rosters .bk-table td { padding: 6px 1px; }
-  .mygm-rosters .bk .bk-table td.bk-nm { max-width: 126px; }
-  .mygm-rosters .bk .bk-table td.bk-own { max-width: 70px; }
-  .mygm-rosters .bk .bk-table td.bk-tagcol { max-width: 80px; min-width: 68px; }
-}
+/* ROSTERS ON A BROWSER (owner, Nov 14 2026, REPLACES the Nov 11 fit-to-screen squeeze: "on smaller screens it doesn't show well ...
+   reintroduce side scroll with lock on player name"): the table keeps its normal size and scrolls sideways; see SIDE SCROLL below. */
+@media (min-width: 1100px) { .mygm-rosters.page-wide { max-width: none; } }
 /* SLEEPER POSITION COLORS (owner, Nov 11 2026: "color coded the same as sleeper: PG = red, SG = orange, SF = Green, PF = blue,
    C = pink, match the hues"; picked from his Sleeper screenshot). .pc-{pos} sets --pc; boxes: Starting 9 = filled with the
    position color + navy text, everyone else = navy box + position-colored text (Sleeper's dark tiles); .pc-txt = colored text.
@@ -4925,3 +4898,81 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
   .desk-ack, .desk-clr { grid-column: 1 / -1; justify-self: start; max-width: none; text-align: left; }
   .desk-inj .desk-b { margin-left: -40px; } /* injury rows use the full width under the icon */
 }
+/* SIDE SCROLL on the Rosters table (owner, Nov 14 2026; sideBar / sideScroll in app.js). */
+.bk-xwrap { position: relative; }
+.bk-xbar { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #050f22; border-bottom: 1px solid rgba(255,255,255,.08); }
+.bk-xbar[hidden] { display: none; }
+.bk-xbtn { flex: none; width: 30px; height: 26px; border: 1px solid rgba(244,194,79,.5); border-radius: 6px; background: rgba(244,194,79,.12); color: var(--gold); font: 900 17px/1 var(--display); cursor: pointer; }
+.bk-xbtn:hover:not(:disabled) { background: var(--gold); color: var(--navy-950); }
+.bk-xbtn:disabled { opacity: .3; cursor: default; }
+.bk-xtrack { position: relative; flex: 1 1 auto; min-width: 60px; height: 10px; border-radius: 99px; background: rgba(255,255,255,.1); cursor: pointer; touch-action: none; }
+.bk-xtrack i { position: absolute; top: 0; bottom: 0; border-radius: 99px; background: var(--gold); min-width: 18px; }
+.bk-xmore { flex: none; font: 700 11px/1 var(--display); color: #9fb0cc; white-space: nowrap; }
+@media (max-width: 860px) { .bk-xbar { top: 54px; } }
+@media not ((hover: hover) and (pointer: fine)) { .bk-xbar { display: none !important; } }
+/* The table: grab cursor for mouse dragging, a visible scrollbar, a shadow on the locked name column once scrolled, and
+   a fade on the side that has more columns. */
+@media (hover: hover) and (pointer: fine) {
+  .bk-xwrap .bk-scroll { cursor: grab; scrollbar-width: thin; scrollbar-color: var(--gold) rgba(255,255,255,.08); }
+  .bk-xwrap .bk-scroll::-webkit-scrollbar { height: 10px; }
+  .bk-xwrap .bk-scroll::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 99px; }
+  .bk-xwrap .bk-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,.08); }
+}
+.bk-xwrap .bk-scroll.xs-drag { cursor: grabbing; user-select: none; }
+.bk-xwrap .bk-scroll:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.bk-xwrap.xs-left .bk-table .bk-nm { box-shadow: 8px 0 10px -6px rgba(0,0,0,.65); }
+.bk-xwrap.xs-right::after { content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 36px; pointer-events: none; z-index: 2; background: linear-gradient(to left, rgba(5,15,34,.85), rgba(5,15,34,0)); }
+.bk-xwrap .bk-xbar { z-index: 4; }
+/* PHONE IN LANDSCAPE (owner, Nov 14 2026: "when you flip it the side navigation bar of the whole site shows up, I want all the
+   room for the current page ... a hamburger menu to show and hide while in landscape mode like how it is in portrait"): a
+   touch screen that's short (landscape phone, wider than the 860px phone breakpoint) gets the phone layout: top bar with the
+   hamburger, sidebar as a slide-out drawer, full-width page. The top bar is slimmer to save height, and everything keeps
+   clear of the notch (viewport-fit=cover). */
+@media (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 540px) {
+  .topbar {
+    display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 20;
+    padding: 5px max(16px, env(safe-area-inset-right)) 5px max(16px, env(safe-area-inset-left)); background: var(--navy-800); color: #fff;
+  }
+  .topbar-brand { display: flex; align-items: center; gap: 8px; font: 800 13px/1 var(--display); text-transform: uppercase; letter-spacing: .08em; }
+  .menu-btn { display: grid; place-items: center; width: 34px; height: 30px; border: 0; border-radius: 8px; background: rgba(255,255,255,.08); color: #fff; cursor: pointer; }
+  .sidebar { transform: translateX(-100%); transition: transform .2s ease; box-shadow: 0 0 40px rgba(0,0,0,.35); top: 0; padding-left: max(12px, env(safe-area-inset-left)); }
+  .nav-open .sidebar { transform: none; }
+  .nav-open .scrim { display: block; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 25; }
+  .main { margin-left: 0; padding: 14px max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left)); }
+  .archive { margin-left: 0; width: 100%; }
+  .archive-main { flex: 1; }
+  .inj-head { top: 40px; }
+  .bk-xbar { top: 40px; }
+}
+/* Fantasy team line on the Rosters card (owner, Nov 14 2026: moved from beside the badges to under the Sleeper line; every list
+   but Team, "Free agent" when nobody has him). */
+.bk-ownline { margin: -6px 0 12px; font-size: 12px; color: #d6deec; }
+.bk-ownline b { color: #fff; }
+.bk .bk-ownline .ct-label { color: #9fb0cc; }
+/* FP/G badge bottom line = recent form (owner, Nov 14 2026): "L5 48.2 ▲". */
+.bk-total .bk-l5 i { font-style: normal; margin-left: 1px; }
+.bk-total .bk-l5 .bk-l5-up { color: #14753a; }
+.bk-total .bk-l5 .bk-l5-down { color: #b3261e; }
+.bk-total .bk-l5 .bk-l5-flat { opacity: .6; }
+/* MY DESK = THE CENTER, BIGGER NAV ITEM (owner, Nov 14 2026: "Desk is now the center icon and I want it to be more prominent
+   than the other icons"; order Stats, Rosters, Desk, Depth, Coach). Desktop: a gold-edged raised tile with a larger icon. Phones:
+   a gold circle that rises above the bottom bar. */
+.mg-nav a.mg-main { flex: 1.25; }
+.mg-nav a.mg-main .ic { width: 34px; height: 34px; padding: 6px; box-sizing: content-box; border-radius: 50%; background: #f4c24f; color: #0b1d3d; stroke-width: 1.8; box-shadow: 0 3px 10px rgba(0,0,0,.35); }
+.mg-nav a.mg-main .mg-nl { color: #f4c24f; }
+.mg-nav a.mg-main:hover .ic { background: #ffd56f; }
+.mg-nav a.mg-main.on .ic { box-shadow: 0 0 0 3px #0b1d3d, 0 0 0 5px #f4c24f, 0 3px 10px rgba(0,0,0,.35); }
+@media (max-width: 699px) {
+  .mg-nav { overflow: visible; }
+  .mg-nav a.mg-main { padding-top: 0; }
+  .mg-nav a.mg-main .ic { width: 30px; height: 30px; padding: 9px; margin-top: -26px; border: 3px solid #0b1d3d; }
+  .mg-nav a.mg-main .mg-ns { color: #f4c24f; font-weight: 800; margin-top: 4px; } /* owner, Nov 14 2026: label was too close to the circle */
+  .mg-nav a.mg-main.on { border-top-color: transparent; }
+  .mg-nav a.mg-main.on .gm-beta { display: none; }
+}
+/* TEST FEATURES section in the sidebar (owner, Nov 14 2026). */
+.tf-title { display: flex; align-items: center; gap: 8px; }
+.tf-lockbtn { margin-left: auto; padding: 1px 7px; border: 1px solid rgba(255,255,255,.18); border-radius: 99px; background: none; color: #a9b7cc; font: 700 9px/1.4 var(--font); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+.tf-lockbtn:hover { color: #fff; border-color: rgba(255,255,255,.4); }
+.nav-item .tf-beta { margin-left: auto; }
+.nav-item.tf-locked { color: #a9b7cc; }

@@ -1310,6 +1310,39 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   name 118, team 56-60); 1400-1599 padding 1px, Tags 68-80. Checked (scrollWidth = clientWidth): MyGM Team + League x Averages /
   Totals / Shooting at 1280; MyGM+ (2 more columns: Dyn, USG%) Team, League, Waiver wire at 1440; 1920 fills the width. Phones
   unchanged.
+- TEST FEATURES IN THE SIDEBAR (owner, Nov 14 2026: "a section on the nav pane called Test Features that is locked with the password
+  ... place MyGM in there"): app.js testNav(page) in renderSidebar, above the Commish button: locked = "Locked · Password" item
+  (opens #/mygm); unlocked = MyGM link (Beta) + a "Lock" button in the section title (data-tf-lock, forgets it on this device).
+  Password: owner chose it (he knows it; NEVER write it in files); only its SHA-256 is in commish.js (TESTER_SHA256 + checkTester).
+  #/mygm (not MyGM+) asks for it FIRST (.tf-form), then the Google sign-in + approved team as before. Remembered per device in
+  localStorage tf-open = the hash (a new password = everyone locked out again); TF_SESSION when storage is blocked. The MyGM
+  button inside the Commish office is gone (MyGM+ stays there). Checked: locked item, wrong password refused, unlock -> MyGM
+  sign-in gate + sidebar link, Lock -> password screen again.
+- NAV ORDER + TROPHY ROOM IN MY DESK (owner, Nov 14 2026): MYGM_TABS = Stats (advanced), Rosters, Desk (center), Depth, Coach; the
+  Trophy Room tab is gone from the nav and lives in My Desk as a third sub-tab (My Desk / Injury Report / Trophy Room,
+  ?tab=desk&view=trophies; renderDesk calls renderTrophyRoom(div, params, { inDesk: true }) = no second team picker; its "here"
+  link = officeHash('trophies') which now returns the desk link; old ?tab=trophies forwards there). DESK IS PROMINENT: nav link
+  class mg-main = wider slot, gold circle icon (34px desktop, raised -26px above the bottom bar on phones with a navy ring, gold
+  label; the selected state = gold outer ring). Checked 402 + 1200, both pages (MyGM+ tested).
+- FP/G BADGE = RECENT FORM (owner, Nov 14 2026: its bottom line repeated the Avg badge's OVR rank; "go with recent form, last 5
+  games"): bottom line "L5 57.4 ▲/▼/▬" = average FP of his last L5_GAMES 5 games played in the card's game-log season (DNPs
+  skipped), ▲ / ▼ when L5_EDGE 5%+ above / below the badge's FP/G (green / red, ▬ faded otherwise); "L5 …" until the game log
+  loads (setL5 from the card's log(); BK_L5 cache per player; tooltip explains). Avg badge keeps "N OVR". Checked: Dončić 41, 59,
+  64, 56, 67 (DNP skipped) = 57.4 vs 55.7 = ▬.
+- SIDE SCROLL + PHONE LANDSCAPE (owner, Nov 14 2026; REPLACES "ROSTERS FITS A BROWSER" above: "on smaller screens it doesn't show
+  well ... reintroduce side scroll with lock on player name. make it intuitive on browser"): the fit-to-screen squeeze CSS is gone
+  (only .mygm-rosters.page-wide max-width none from 1100px stays); the Rosters table scrolls sideways with the name column sticky.
+  sideBar() + sideScroll(wrap) in app.js (#bk-xwrap > .bk-xbar + #bk-tscroll): bar sticky to the top of the screen while the table is
+  in view (top 54px under the phone top bar, 40px in phone landscape), ‹ › buttons (~2/3 of the visible width), a draggable gold
+  track, "N more columns →" / "End of the table"; mouse grab-and-drag on the table (6px threshold; the click after a drag is
+  swallowed so no card opens), arrow keys when the table has focus, gold thin scrollbar, shadow on the locked name column once
+  scrolled (.xs-left), fade on the right while more columns (.xs-right). Bar shown on (hover: hover) and (pointer: fine) only;
+  touch swipes. PHONE LANDSCAPE: @media (hover: none) and (pointer: coarse) and (orientation: landscape) and (max-height: 540px)
+  = the phone layout (slim 40px top bar with the hamburger, sidebar as a drawer, full-width page, safe-area insets for the notch);
+  not testable in the preview (no coarse pointer at 874 px), check on the iPhone. Checked desktop 1200: table 1,760 / 899 px,
+  button + drag scroll, drag doesn't open a card, a click does. SEASON BY SEASON: "Avg Lk" column after Wks Lk (locked ÷ weeks
+  locked, Career row too). FANTASY TEAM LINE (owner's screenshot): on every list but Team the card shows "Fantasy team {team}
+  (manager)" / "Free agent" under the Sleeper rostered line (.bk-ownline), no longer beside the badges.
 - SLEEPER POSITION COLORS (owner, Nov 11 2026: "color coded the same as sleeper: PG = red, SG = orange, SF = Green, PF =
   blue, C = pink, match the hues" + "do that to assistant coach too"): styles.css .pc-pg #ff2a6d, .pc-sg #ff9a3c, .pc-sf #19cfa8,
   .pc-pf #4fa8ff, .pc-c #c96cf2 (+ .pc-g #ff6455, .pc-f #33bcd4, .pc-util #8c61f5 = Sleeper's UTIL violet, owner's screenshot, for slot labels) set --pc; app.js pcCls(pos /
@@ -2275,6 +2308,22 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   the official score). Top REC_N 10 lists per system in folds (ours open). Nov 9 2026: ours 40 = Yahoo 46 / ESPN 50; ESPN +21%
   avg; ESPN PG +4.9 / SG +4.6 / PF -6.5 rank places; player record ours Wembanyama 104 (Yahoo 112.8, ESPN 119), ESPN No. 1 =
   Doncic 2023-24 (65 ours at half points, 119 ESPN); team record ours 471 (8496, 2025-26 wk 4), ESPN No. 1 = 7792 466 -> 588.
+  Report 10 (owner, Nov 13 2026: "I think I'm aging ... worried about the gap between the top 4 and the bottom 4 ... obvious trade
+  targets ... a soft rebuild ahead of the 2028 draft ... keep current rules ... auto update") "Your team's 3-season outlook":
+  `assets/report-outlook.js` reportOutlook(h) (h = DATA, esc, name, teamName, COMMISH, dynasty = gmDynasty; team = COMMISH; rebuilt
+  on every open like every report). Strength per season k (0-2) = best LINEUP 9 of each player's dynasty v[k] (this season: no
+  taxi; later: taxi counts + rookie picks from their draft season, pickValueAt = v3 / (am(20) x am(21)) aged on), index vs league
+  avg = 100, ranks, top-4 / bottom-4 gap; this season's record (H2H + median), games behind 4th / ahead of 7th, combined top-4 vs
+  bottom-4 records; roster aging table (top 12, v0 -> v2), position strength now / in 2 yrs, taxi pipeline; TRADE TARGETS = other
+  teams' players <= YOUNG 25 in your best 9 now and in 2028-29, offersFor with your AGING 28+ players as the block (offer with the
+  most aging pieces first); SOFT REBUILD = timing (2028 draft = reverse 2027-28 standings, bottom 2 flip), your 2028 picks with
+  projected slots (rank by 2027-28 strength), Draft Scout's 2028 class top 5, sell list (aging 28+, dyn >= 8, 2 offers each from
+  different teams, picks / players <= REBUILD_AGE 22 first), simulation = up to SELL_COUNT 4 biggest decliners ((v0 - v2) x score)
+  sold for pick / prospect returns (no asset twice, max 2 deals a partner), applied to both rosters, re-ranked; adaptive text (says
+  so when selling doesn't make the team worse). Nov 13 2026 (Parma, live data): strength 5th -> 6th -> 7th, oldest roster 28.3, 65% of
+  the best 9 from 28+, 1-5 (4 games behind 4th), top 4 22-2 vs bottom 4 2-22; targets Flagg / Jalen Johnson / Cunningham / Maxey
+  (loganzarvell), Boozer, Castle; sim Booker -> TRT3 (Castle + Acuff + 2027 1st), Harden -> loganzarvell (Duren + Mikel Brown +
+  Collier): 2027-28 6th -> 5th, 2028-29 7th -> 3rd; BenDoverPlz123's 2028 1st (owned) projects No. 1-2. 402 px no overflow.
   renderReports must stay async (renderCommish
   calls .catch() on every tab's result; a plain function crashed the office page).
   2K BREAKDOWN (tab=breakdown; owner's NBA 2K roster screenshot, Oct 25 2026; logic `assets/breakdown.js`, no

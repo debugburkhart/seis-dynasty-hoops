@@ -4,7 +4,7 @@ import { PARTS, PRESEASON_PARTS, powerRankings, powerSeasons, preseasonRankings,
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
 import { frontOffice } from './frontoffice.js';
 import { HYPE_PARTS, hypeSlate, isRivalry, moments, seasonSeries, seasonWeeks, seriesBefore, standingsBefore, trophyHistory, trophyImg, trophyOf, weekPairs } from './hype.js';
-import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, get, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
+import { COMMISH, LOPSIDED, REPEAT_TRADES, activity, checkPasscode, checkTester, TESTER_SHA256, get, lineupIssues, loadTradedPicks, loadWaivers, loadWeek, matchupForm, pickLedger, playoffPicture, seasonTotals, taxiCheck, teamRoster, tradeFlags, waiverWire, weeklyRecap } from './commish.js';
 import { LOCK_CAL, mergeMarks, bestFit, fits as slotFits, bestLineup, gameCoach, gameFactor, injuryNews, loadBoxes, loadSlate, lockCoach, lockedPoints, setMatchups, startingPipeline, tipTime, valueNow } from './gm.js';
 import { loadMatchups } from './matchup.js';
 import { PROSPECT_LIST, PROSPECT_MAX_AGE, SEASON_WEIGHTS, dynastyValues, loadDynasty, prospectRanking, taxiLeft } from './dynasty.js';
@@ -20,6 +20,7 @@ import { gradeOf } from './scout.js';
 import { CONTRACTS_SOURCE, contractText, readContract } from './contracts.js';
 import { reportContracts } from './report-contracts.js';
 import { reportSalary } from './report-salary.js';
+import { reportOutlook } from './report-outlook.js';
 import { reportSalaryNba } from './report-salary-nba.js';
 import { reportTokens } from './report-tokens.js';
 import { reportYearsPool } from './report-yearspool.js';
@@ -228,6 +229,17 @@ function defaultPair() {
 
 // ---------- Layout ----------
 
+// TEST FEATURES (owner, Nov 14 2026: "a section on the nav pane called Test Features that is locked with the password ... place
+// MyGM in there"): its own password (commish.js TESTER_SHA256, only the hash is stored), remembered on this device (localStorage
+// tf-open = the hash, so a new password locks everyone out again). Locked = one "Locked" item that opens #/mygm, whose first screen
+// asks for the password; open = the MyGM link + a Lock button. MyGM still needs the Google sign-in + approved team after that.
+let TF_SESSION = false; // unlocked this visit (when the browser blocks storage)
+const testOpen = () => { try { return TF_SESSION || localStorage.getItem('tf-open') === TESTER_SHA256; } catch { return TF_SESSION; } };
+const testNav = page => `
+    <div class="nav-title tf-title">Test Features${testOpen() ? '<button type="button" class="tf-lockbtn" data-tf-lock title="Lock the test features on this device">Lock</button>' : ''}</div>
+    ${testOpen()
+      ? `<a class="nav-item${page === 'mygm' ? ' active' : ''}" href="#/mygm">${icon('clipboard')}<span>MyGM</span><span class="gm-beta tf-beta">Beta</span></a>`
+      : `<a class="nav-item tf-locked${page === 'mygm' ? ' active' : ''}" href="#/mygm">${icon('lock')}<span>Locked</span><span class="soon-tag">Password</span></a>`}`;
 function renderSidebar(page) {
   const played = DATA.seasons.filter(s => s.weeksPlayed).length;
   const updated = new Date(DATA.generatedAt).toLocaleString('en-US', {
@@ -251,6 +263,7 @@ function renderSidebar(page) {
           </a>`).join('')}
       `).join('')}
     </nav>
+    ${testNav(page)}
     <a class="commish-btn${page === 'commish' ? ' active' : ''}" href="#/commish">${icon('lock')}<span>Commish</span></a>
     <div class="sidebar-foot">
       ${themeSwitch()}
@@ -2449,7 +2462,7 @@ function renderCommish(main, params) {
         </div>
       </div>
       <!-- MyGM+ (owner, Nov 9 2026: shown like the sidebar's Commish / MyGM buttons, but only inside the office) -->
-      <div class="cm-plus"><a class="commish-btn mygm-btn" href="#/mygm">${icon('clipboard')}<span>MyGM</span><span class="gm-beta">Beta</span></a><a class="commish-btn mygm-btn" href="#/mygmplus">${icon('clipboard')}<span>MyGM+</span><span class="gm-beta">Beta</span></a></div>
+      <div class="cm-plus"><a class="commish-btn mygm-btn" href="#/mygmplus">${icon('clipboard')}<span>MyGM+</span><span class="gm-beta">Beta</span></a></div>
       <div class="cm-groups">
         ${GROUPS.map(([label, tabs]) => `
           <div class="cm-group-tabs">
@@ -2480,7 +2493,8 @@ function renderCommish(main, params) {
 // [id, label, short label (phone bar), icon]. Nav (owner, Nov 8 2026: "C on desktop, D on phones"): a 2K-style navy menu
 // bar with big icons on desktop, a bottom tab bar pinned to the screen on phones (.mg-nav in styles.css).
 // Contracts moved back to Test features (owner, Nov 9 2026: "we won't worry about it now"): #/commish?tab=contracts.
-const MYGM_TABS = [['rosters', 'Rosters', 'Rosters', 'users'], ['coach', 'Assistant Coach', 'Coach', 'whistle'], ['desk', 'My Desk', 'Desk', 'desk'], ['depth', 'Depth Chart', 'Depth', 'list'], ['advanced', 'Advanced Stats', 'Stats', 'gauge'], ['trophies', 'Trophy Room', 'Trophies', 'trophy']];
+// Order (owner, Nov 14 2026): Stats, Rosters, Desk (center, bigger), Depth, Coach. Trophy Room moved INTO My Desk (?view=trophies).
+const MYGM_TABS = [['advanced', 'Advanced Stats', 'Stats', 'gauge'], ['rosters', 'Rosters', 'Rosters', 'users'], ['desk', 'My Desk', 'Desk', 'desk'], ['depth', 'Depth Chart', 'Depth', 'list'], ['coach', 'Assistant Coach', 'Coach', 'whistle']];
 // My Desk (owner, Nov 12 2026) = the DEFAULT tab, in the middle of the nav.
 const MYGM_DEFAULT = 'desk';
 const MYGM_SHOW = {
@@ -2489,11 +2503,10 @@ const MYGM_SHOW = {
   coach: (body, params) => renderCoach(body, params),
   depth: (body, params) => renderDepth(body, params),
   advanced: (body, params) => renderAdvancedPage(body, params), // swapped in for Report Cards (owner, Nov 11 2026)
-  trophies: (body, params) => renderTrophyRoom(body, params),
 };
 // Office tab ids that live in MyGM now (old ids kept: 'breakdown' = Rosters), and a link to any office / MyGM tab.
 const MYGM_IDS = { desk: 'desk', breakdown: 'rosters', rosters: 'rosters', coach: 'coach', depth: 'depth', advanced: 'advanced', trophies: 'trophies' };
-const officeHash = (tab, rest = {}) => (MYGM_IDS[tab]
+const officeHash = (tab, rest = {}) => (tab === 'trophies' ? `${mygmBase()}?${new URLSearchParams({ tab: 'desk', view: 'trophies', ...rest })}` : MYGM_IDS[tab]
   ? `${mygmBase()}?${new URLSearchParams({ tab: MYGM_IDS[tab], ...rest })}`
   : `#/commish?${new URLSearchParams({ ...(tab === 'brief' ? {} : { tab }), ...rest })}`);
 // The office and MyGM share the same body (#cm-body) and session lock: pages built for one work in both.
@@ -2512,6 +2525,32 @@ async function renderMyGM(main, params) {
   // show more there later); MyGM (#/mygm) is the managers' page.
   const plus = isMyGMPlus();
   const title = plus ? 'MyGM+' : 'MyGM';
+  if (!plus && !testOpen()) { // Test Features password first (owner, Nov 14 2026)
+    main.innerHTML = `
+      <div class="page">
+        <section class="card cm-lock">
+          <div class="page-icon">${icon('lock')}</div>
+          <h1>Test Features</h1>
+          <p class="card-sub">MyGM is being tested. Enter the test password to open it on this device.</p>
+          <form class="cm-form tf-form" autocomplete="off">
+            <input type="password" id="tf-code" placeholder="Password" aria-label="Test features password" autocomplete="off" autofocus>
+            <button class="btn" type="submit">Unlock</button>
+          </form>
+          <p class="cm-error" id="tf-error" hidden>Wrong password.</p>
+        </section>
+      </div>`;
+    $('.tf-form', main).addEventListener('submit', async e => {
+      e.preventDefault();
+      if (await checkTester($('#tf-code', main).value)) {
+        try { localStorage.setItem('tf-open', TESTER_SHA256); } catch { /* storage blocked: unlocked for this visit only */ }
+        TF_SESSION = true;
+        renderSidebar('mygm');
+        renderMyGM(main, route().params);
+      } else { $('#tf-error', main).hidden = false; $('#tf-code', main).select(); }
+    });
+    $('#tf-code', main).focus();
+    return;
+  }
   if (!plus) {
     MYGM_ME = null;
     main.innerHTML = '<div class="page"><div class="loading">Checking your sign-in…</div></div>';
@@ -2567,6 +2606,7 @@ async function renderMyGM(main, params) {
     return;
   }
   if (params.get('tab') === 'contracts') { const q = new URLSearchParams(params); location.replace(`#/commish?${q}`); return; } // old link: Contracts is a Test feature again
+  if (params.get('tab') === 'trophies') { const q = new URLSearchParams(params); q.set('tab', 'desk'); q.set('view', 'trophies'); location.replace(`${mygmBase()}?${q}`); return; } // old link: Trophy Room lives in My Desk
   const tab = MYGM_TABS.some(([id]) => id === params.get('tab')) ? params.get('tab') : MYGM_DEFAULT;
   clearInterval(GM_TIMER);
   main.innerHTML = `
@@ -2576,7 +2616,7 @@ async function renderMyGM(main, params) {
         <div><div class="eyebrow">${plus ? '<a href="#/commish">← Commissioner’s office</a> · full features' : `${esc(teamName(MYGM_ME, DATA.seasons.at(-1).season))} · Beta`}</div><h1>${title}</h1></div>${plus ? '' : '<div class="sync-box sync-office mg-acct" data-sync="office"></div>'}
       </div>
       <nav class="mg-nav" aria-label="${title} sections">
-        ${MYGM_TABS.map(([id, text, short, ic]) => `<a class="${tab === id ? 'on' : ''}" href="${mygmBase()}?tab=${id}"${tab === id ? ' aria-current="page"' : ''}>${icon(ic)}<span class="mg-nl">${text}</span><span class="mg-ns">${short}</span><span class="gm-beta">Beta</span></a>`).join('')}
+        ${MYGM_TABS.map(([id, text, short, ic]) => `<a class="${[tab === id ? 'on' : '', id === 'desk' ? 'mg-main' : ''].join(' ').trim()}" href="${mygmBase()}?tab=${id}"${tab === id ? ' aria-current="page"' : ''}>${icon(ic)}<span class="mg-nl">${text}</span><span class="mg-ns">${short}</span><span class="gm-beta">Beta</span></a>`).join('')}
       </nav>
       <div id="cm-body" class="tf-body"><div class="loading">Pulling the latest from Sleeper…</div></div>
     </div>`;
@@ -2623,10 +2663,11 @@ async function renderReportCards(body, params) {
 // trophies (hype.js trophyHistory). Players: awards they won WHILE ON THIS TEAM (breakdown.js playerAwards: the fantasy team
 // is the award's team, same as the 2K card's Awards row) and championship rings won here (rings: roster minus taxi).
 const TROPHY_ORDER = ['Championship MVP', 'League MVP', 'Player of the Year', 'Rookie of the Year', 'Steal of the Draft', 'All-Fantasy', 'All-Star', 'All-Rookie'];
-async function renderTrophyRoom(body, params) {
+async function renderTrophyRoom(body, params, { inDesk = false } = {}) {
   const cur = DATA.seasons.at(-1);
   const me = mygmTeam(params);
-  body.innerHTML = `${gmTeamPick(me, cur.season, 'trophies')}<section class="card"><p class="empty">Polishing the trophies…</p></section>`;
+  const pick = () => (inDesk ? '' : gmTeamPick(me, cur.season, 'trophies')); // in My Desk the desk's own picker is used
+  body.innerHTML = `${pick()}<section class="card"><p class="empty">Polishing the trophies…</p></section>`;
   bindTeamPick(body);
   const fo = frontOffice(DATA);
   await draftKitData().catch(() => null); // Draft of the Year / Steal need draft stats
@@ -2707,7 +2748,7 @@ async function renderTrophyRoom(body, params) {
         <small>${[x.img ? x.whoText : '', x.ctx, others.length ? `shared with ${others.map(name).join(', ')}` : ''].filter(Boolean).map(esc).join(' · ')}</small></li>`).join('')}</ul>`).join('');
   };
   body.innerHTML = `
-    ${gmTeamPick(me, cur.season, 'trophies')}
+    ${pick()}
     <div class="gm-page tr-page">
       ${betaCard(`${esc(teamName(me, cur.season))} <small>${esc(name(me))}</small>`, `
         <div class="tr-stats">
@@ -3777,6 +3818,92 @@ function pctPlaces(list) {
   return out;
 }
 // Avg lock (owner, Nov 11 2026): locked points per week locked (same period / team as Locked), every view.
+// SIDE SCROLL (owner, Nov 14 2026: "reintroduce side scroll with lock on player name. make it intuitive on browser"): the
+// Rosters table keeps its size and scrolls sideways; the name column stays put (.bk-nm sticky). sideBar() = a slim control bar
+// above the table (sticky to the top of the screen while the table is in view): ‹ › buttons, a draggable track showing which
+// part of the table is visible, and "N more columns →". sideScroll(wrap) wires it: buttons scroll ~2/3 of a screen, the track
+// jumps / drags, a mouse can grab-and-drag the table itself (a drag never opens a player card), arrow keys work when the
+// table has focus, edge shading + a shadow on the locked name column show there's more. Bar = mouse / trackpad screens only;
+// touch screens just swipe (edge shading still shows).
+const sideBar = () => `<div class="bk-xbar" hidden><button type="button" class="bk-xbtn" data-x="-1" aria-label="Scroll left">‹</button><div class="bk-xtrack" title="Drag to scroll the columns"><i></i></div><button type="button" class="bk-xbtn" data-x="1" aria-label="Scroll right">›</button><span class="bk-xmore"></span></div>`;
+function sideScroll(wrap) {
+  const sc = wrap?.querySelector('.bk-scroll'), bar = wrap?.querySelector('.bk-xbar');
+  if (!sc || !bar || wrap.dataset.ss) return;
+  wrap.dataset.ss = '1';
+  const track = bar.querySelector('.bk-xtrack'), thumb = track.querySelector('i'), more = bar.querySelector('.bk-xmore');
+  const [prev, next] = bar.querySelectorAll('.bk-xbtn');
+  const nameW = () => sc.querySelector('thead .bk-nm')?.offsetWidth ?? 0;
+  let raf = 0;
+  const upd = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => {
+    const max = sc.scrollWidth - sc.clientWidth, x = sc.scrollLeft, on = max > 4;
+    bar.hidden = !on;
+    wrap.classList.toggle('xs-left', on && x > 2);
+    wrap.classList.toggle('xs-right', on && x < max - 2);
+    if (!on) return;
+    thumb.style.width = `${100 * sc.clientWidth / sc.scrollWidth}%`;
+    thumb.style.left = `${100 * x / sc.scrollWidth}%`;
+    prev.disabled = x <= 2; next.disabled = x >= max - 2;
+    const r = sc.getBoundingClientRect();
+    const hidden = [...sc.querySelectorAll('thead th:not(.bk-nm)')].filter(th => th.getBoundingClientRect().right > r.right + 2).length;
+    more.textContent = hidden ? `${hidden} more column${hidden === 1 ? '' : 's'} →` : 'End of the table';
+  }); };
+  sc.addEventListener('scroll', upd, { passive: true });
+  new ResizeObserver(upd).observe(sc);
+  new MutationObserver(upd).observe(sc, { childList: true, subtree: true });
+  const step = dir => sc.scrollBy({ left: dir * Math.max(120, (sc.clientWidth - nameW()) * 0.66), behavior: 'smooth' });
+  prev.addEventListener('click', () => step(-1));
+  next.addEventListener('click', () => step(1));
+  // Track: tap = jump there, drag = scroll.
+  const fromTrack = e => { const r = track.getBoundingClientRect(); const f = (e.clientX - r.left) / r.width; sc.scrollLeft = f * sc.scrollWidth - sc.clientWidth / 2; };
+  track.addEventListener('pointerdown', e => { e.preventDefault(); track.setPointerCapture(e.pointerId); fromTrack(e); const mv = ev => fromTrack(ev); track.addEventListener('pointermove', mv); track.addEventListener('pointerup', () => track.removeEventListener('pointermove', mv), { once: true }); });
+  // Grab-and-drag the table with a mouse.
+  sc.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'mouse' || e.button !== 0 || e.target.closest('button, a, input, select, textarea, label')) return;
+    const x0 = e.clientX, s0 = sc.scrollLeft;
+    let moved = false;
+    const mv = ev => {
+      if (!moved && Math.abs(ev.clientX - x0) < 6) return;
+      if (!moved) { moved = true; sc.classList.add('xs-drag'); sc.setPointerCapture(e.pointerId); }
+      sc.scrollLeft = s0 - (ev.clientX - x0);
+    };
+    const up = () => {
+      sc.removeEventListener('pointermove', mv);
+      sc.classList.remove('xs-drag');
+      if (moved) sc.addEventListener('click', ev => { ev.stopPropagation(); ev.preventDefault(); }, { capture: true, once: true }); // a drag isn't a tap
+    };
+    sc.addEventListener('pointermove', mv);
+    sc.addEventListener('pointerup', up, { once: true });
+  });
+  sc.addEventListener('keydown', e => { if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); sc.scrollBy({ left: e.key === 'ArrowRight' ? 140 : -140, behavior: 'smooth' }); } });
+  upd();
+}
+// RECENT FORM on the FP/G badge (owner, Nov 14 2026: the bottom line repeated the Avg badge's OVR rank; "go with recent form, last
+// 5 games"): average FP of his last L5_GAMES games played (newest in the game log's season; DNPs skipped) + ▲ / ▼ when it's
+// L5_EDGE 5%+ above / below the badge's FP/G, ▬ otherwise. Filled once the card's game log loads (cached per player for the visit).
+const L5_GAMES = 5, L5_EDGE = 0.05;
+const BK_L5 = {};
+const l5Of = (p, games) => {
+  const last = games.filter(g => !g.dnp).slice(0, L5_GAMES);
+  if (!last.length) return null;
+  const avg = last.reduce((a, g) => a + (g.line.fp ?? 0), 0) / last.length;
+  const base = p.tot?.gp ? p.avg.fp : 0;
+  const dir = !base ? '' : avg >= base * (1 + L5_EDGE) ? 'up' : avg <= base * (1 - L5_EDGE) ? 'down' : 'flat';
+  return { n: last.length, avg, dir, base };
+};
+const l5Txt = p => {
+  const f = BK_L5[p.pid];
+  if (f === undefined) return `L${L5_GAMES} …`;
+  if (!f) return `${p.tot?.gp ?? 0} GP`;
+  return `L${f.n} ${bkF1(f.avg)} <i class="bk-l5-${f.dir}">${{ up: '▲', down: '▼', flat: '▬' }[f.dir] ?? ''}</i>`;
+};
+function setL5(p, games, root) {
+  BK_L5[p.pid] = l5Of(p, games);
+  const el = root.querySelector('#bk-hero .bk-l5');
+  if (!el) return;
+  el.innerHTML = l5Txt(p);
+  const f = BK_L5[p.pid];
+  if (f) el.closest('.bk-fpgb')?.setAttribute('title', `${el.closest('.bk-fpgb').title} · Bottom line: his last ${f.n} games average ${bkF1(f.avg)} FP (${f.dir === 'up' ? 'hot: 5%+ above' : f.dir === 'down' ? 'cold: 5%+ below' : 'about the same as'} this average)`);
+}
 const bkAvgLock = pid => { const l = BK.locked(pid); return l?.starts ? l.pts / l.starts : null; };
 const BK_AVGLK = ['avglk', 'Avg Lk', p => bkAvgLock(p.pid) ?? -1, p => (bkAvgLock(p.pid) == null ? '—' : bkF1(bkAvgLock(p.pid))), { cls: 'bk-lockcol' }];
 // NBA games started (ESPN box scores, collected nightly; owner, Oct 28 2026): '—' until that season is complete.
@@ -4018,7 +4145,7 @@ async function renderBreakdown(body, params) {
       </div>` : ''}
       <div id="bk-posbar"></div>
       <div id="bk-tagbar"></div>
-      <div class="bk-scroll"><table class="bk-table" id="bk-table"></table></div>
+      <div class="bk-xwrap" id="bk-xwrap">${sideBar()}<div class="bk-scroll" id="bk-tscroll" tabindex="0" aria-label="Player table, scrolls sideways"><table class="bk-table" id="bk-table"></table></div></div>
       <div class="bk-pager" id="bk-pager"></div>
       <p class="bk-foot">Tap a player for his card · tap a column to sort · ${esc(period)}${season === 'career' && list === 'team' ? ' (only games from weeks he was on this team)' : ' regular season'}${bk.through ? `, games through ${esc(shortMd(bk.through))}` : ''}; fantasy points under each season’s league scoring; Locked = his starters’ points that counted${list === 'team' ? ' for this team' : ''}${season === 'career' ? '' : ' that season'} (finished weeks); Wks Lk = weeks his score counted${list === 'team' ? ' for this team' : ''}; LGS = League Games Started: NBA games he was in a fantasy starting lineup${list === 'team' ? ' (this team’s)' : ''} when the game tipped (not after he was locked that week). Tracking started midway through week 2 of 2026-27 (Oct 29); before that only the game each starter was locked on counts, so early-season LGS run a little low; Lk% = weeks locked ÷ LGS (how often a start turned into his counted week); Avg Lk = locked points ÷ weeks locked${bkTrim() ? '' : '; Dyn = dynasty score today'}.</p><p class="bk-foot bk-clear" id="bk-clear" hidden></p>${fpNote('game')}`, { cls: 'bk', sub: `${esc(period)} · ${bk.players.length} ${what}` })}
     ${betaCard('Season by season', '<div id="bk-years"><p class="empty">Loading…</p></div>', { id: 'bk-years-card', sub: 'Regular season · NBA or by league team' })}
@@ -4179,6 +4306,7 @@ async function renderBreakdown(body, params) {
           <p class="bk-meas">${[p.height && `HT: ${p.height}`, p.weight && `WT: ${p.weight}`, p.age != null && `AGE: ${p.age}`].filter(Boolean).map(esc).join(' / ')}</p>
           ${bio.slice(1).some(Boolean) ? `<p class="bk-meas bk-meas2">${bio.slice(1).filter(Boolean).map(esc).join(' · ')}</p>` : ''}
           ${p.owned != null ? `<p class="bk-share" title="Share of Sleeper NBA dynasty leagues where he is on a roster / in a starting lineup this week (the numbers the Sleeper app shows in this league)"><span class="ct-label">Sleeper</span> Rostered <b>${bkShare(p.owned)}</b> · Started <b>${bkShare(p.started)}</b> of dynasty leagues</p>` : ''}
+          ${list !== 'team' ? `<p class="bk-ownline"><span class="ct-label">Fantasy team</span> ${p.owner ? `<b>${esc(teamName(p.owner, cur.season))}</b> (${esc(name(p.owner))})` : '<b>Free agent</b>'}</p>` : ''}
           ${p.tot.usg != null && !bkTrim() ? `<p class="bk-share bk-role" title="Usage rate: the share of his team's plays he finished (shot, free-throw trip or turnover) while on the floor, ${esc(period)}. Under 20% Role Player / Connector · 20-23% Average Starter · 24-29% Co-Star / Lead Scorer · 30-35% Primary Creator / Superstar · 35%+ Ultra-High Usage"><span class="ct-label">Role</span> <b>${esc(usgRole(p.tot.usg))}</b> (${p.tot.usg.toFixed(1)}% usage${p.tot.gp < 5 ? `, ${p.tot.gp} game${p.tot.gp === 1 ? '' : 's'}` : ''})</p>` : ''}
           ${!bkTrim() && dyn && dynOf(p.pid) != null ? `<p class="bk-share bk-dynl" title="Dynasty score today (0-100, same as the Dynasty tab)"><span class="ct-label">Dynasty</span> <b>${dynOf(p.pid)}</b> score</p>` : ''}
         </div>
@@ -4191,7 +4319,7 @@ async function renderBreakdown(body, params) {
             const rank = (label, pos, ovr, why) => { const m = medalByRank(pos, MEDAL_POS); return `<div class="bk-total bk-rankb bk-m-${m}" data-pair="${label === 'Avg' ? 'pg' : 'tot'}" data-badge="${label === 'Avg' ? 'avgrk' : 'totrk'}" title="${why} · ${MEDAL_WORD[m]}: by position rank (gold 1-${MEDAL_POS[0]}, silver ${MEDAL_POS[0] + 1}-${MEDAL_POS[1]}, bronze ${MEDAL_POS[1] + 1}-${MEDAL_POS[2]})"><small>${label}</small><b>${pos ? `${pos} ${esc(p.mainPos)}` : '—'}</b><small>${ovr ? `${ovr} OVR` : 'OVR —'}</small></div>`; };
             // FP/G hexagon (owner, Nov 11 2026: replaced the FP/G ring under the headshot), medal by league-wide FP/G rank.
             const fm = medalByRank(p.rankAvgOvr, MEDAL_LG);
-            const fpg = `<div class="bk-total bk-fpgb bk-m-${fm}" data-pair="pg" data-badge="fpg" title="Fantasy points per game, ${esc(period)} · ${MEDAL_WORD[fm]}: league-wide rank by FP/G (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]}; players with at least 40% of the most games played)"><small>FP/G</small><b>${p.tot.gp ? bkF1(p.avg.fp) : '—'}</b><small>${p.rankAvgOvr ? `${p.rankAvgOvr} OVR` : `${p.tot.gp} GP`}</small></div>`;
+            const fpg = `<div class="bk-total bk-fpgb bk-m-${fm}" data-pair="pg" data-badge="fpg" title="Fantasy points per game, ${esc(period)} · ${MEDAL_WORD[fm]}: league-wide rank by FP/G (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]}; players with at least 40% of the most games played)"><small>FP/G</small><b>${p.tot.gp ? bkF1(p.avg.fp) : '—'}</b><small class="bk-l5">${l5Txt(p)}</small></div>`;
             const avgLk = `<div class="bk-total bk-lock bk-avgb bk-m-${BK.medal.av(p.pid)}" data-pair="lk" data-badge="avglk" title="Average locked points per week his score counted (${list === 'team' ? 'for this team' : 'any team'}, ${esc(period)}) · ${MEDAL_WORD[BK.medal.av(p.pid)]}: league-wide average lock (any team, ${MEDAL_AVGLK_MIN}+ weeks locked), ${MEDAL_PCT_TXT}"><small>Avg lock</small><b>${bkAvgLock(p.pid) == null ? '—' : bkF1(bkAvgLock(p.pid))}</b><small>Per wk</small></div>`;
             const top = [
               fpg,
@@ -4202,7 +4330,7 @@ async function renderBreakdown(body, params) {
             return `<div class="bk-hexes"><div class="bk-hexrow">${avgLk}</div><div class="bk-hexrow">${lockBadge(p)}<div class="bk-total bk-m-${medalByRank(p.rankOvr, MEDAL_LG)}" data-pair="tot" data-badge="totfp" title="Total fantasy points, ${esc(period)} · ${MEDAL_WORD[medalByRank(p.rankOvr, MEDAL_LG)]}: league-wide rank by total FP (gold 1-${MEDAL_LG[0]}, silver ${MEDAL_LG[0] + 1}-${MEDAL_LG[1]}, bronze ${MEDAL_LG[1] + 1}-${MEDAL_LG[2]})"><small>Total FP</small><b>${bkBadgeNum(p.tot.fp)}</b><small>${p.tot.gp} GP</small></div></div><div class="bk-hexrow">${top.join('')}</div></div>`;
           })()}
           <div class="bk-side">
-          <div class="bk-who">${bkTrim() ? '' : `<b class="bk-title">${esc(slot)}</b>${dynOf(p.pid) != null ? tierTag(dynOf(p.pid)) : ''}`}${list !== 'team' && p.owner ? `<small class="bk-owner">${esc(teamName(p.owner, cur.season))} (${esc(name(p.owner))})</small>` : ''}${dynNote(p.pid)}</div>
+          <div class="bk-who">${bkTrim() ? '' : `<b class="bk-title">${esc(slot)}</b>${dynOf(p.pid) != null ? tierTag(dynOf(p.pid)) : ''}`}${dynNote(p.pid)}</div>
           </div>
         </div>
       <div class="bk-info">
@@ -4330,7 +4458,7 @@ async function renderBreakdown(body, params) {
       });
       career = { label: 'Career', team: 'On league teams', tot: totalOf(onTeam), lk: lockOf(() => true), lgs: lgsIn(() => true) };
     }
-    const lkCells = r => (r.lk ? `<td><b>${r.lk.pts ? num(r.lk.pts) : '—'}</b></td><td>${r.lk.starts}</td>` : '<td>—</td><td>—</td>');
+    const lkCells = r => (r.lk ? `<td><b>${r.lk.pts ? num(r.lk.pts) : '—'}</b></td><td>${r.lk.starts}</td><td>${r.lk.starts ? bkF1(r.lk.pts / r.lk.starts) : '—'}</td>` : '<td>—</td><td>—</td><td>—</td>'); // Locked, Wks Lk, Avg Lk (owner, Nov 14 2026)
     // Columns per view: [header, cell(row, averages), title?].
     const COLS = {
       avg: [['GP', r => r.tot.gp], ['GS', r => r.tot.gs ?? '—'], ['Min', (r, a) => bkF1(a.min)], ['Pts', (r, a) => bkF1(a.pts)], ['Reb', (r, a) => bkF1(a.reb)], ['Ast', (r, a) => bkF1(a.ast)],
@@ -4343,7 +4471,7 @@ async function renderBreakdown(body, params) {
     }[view];
     const ranks = mode === 'nba' && view !== 'shoot';
     const locks = view !== 'shoot';
-    const head = `<tr><th class="bk-nm">Season</th><th>${mode === 'nba' ? 'NBA team' : 'Fantasy team'}</th>${COLS.map(([h, , c]) => `<th${c ? ` class="${c}"` : ''}>${h}</th>`).join('')}${ranks ? '<th title="Rank among all NBA players by total fantasy points that season, our league scoring">OVR</th><th>Pos Rk</th>' : ''}${locks ? `<th title="${mode === 'nba' ? 'Locked points for any team' : 'Locked points for this team in these weeks'}">Locked</th><th title="Weeks locked (weeks his score counted)">Wks Lk</th><th title="League Games Started: games where ${mode === 'nba' ? 'a fantasy team' : 'this team'} had him in a starting slot when his NBA game tipped off. Tracked since midway through week 2 of 2026-27 (earlier: only locked games; earlier seasons: —)">LGS</th><th title="Lock per start: weeks locked ÷ LGS">Lk%</th>` : ''}${mineCol && locks ? `<th title="Locked points for ${esc(teamName(me, cur.season))}">For team</th>` : ''}</tr>`;
+    const head = `<tr><th class="bk-nm">Season</th><th>${mode === 'nba' ? 'NBA team' : 'Fantasy team'}</th>${COLS.map(([h, , c]) => `<th${c ? ` class="${c}"` : ''}>${h}</th>`).join('')}${ranks ? '<th title="Rank among all NBA players by total fantasy points that season, our league scoring">OVR</th><th>Pos Rk</th>' : ''}${locks ? `<th title="${mode === 'nba' ? 'Locked points for any team' : 'Locked points for this team in these weeks'}">Locked</th><th title="Weeks locked (weeks his score counted)">Wks Lk</th><th title="Avg lock: locked points ÷ weeks locked">Avg Lk</th><th title="League Games Started: games where ${mode === 'nba' ? 'a fantasy team' : 'this team'} had him in a starting slot when his NBA game tipped off. Tracked since midway through week 2 of 2026-27 (earlier: only locked games; earlier seasons: —)">LGS</th><th title="Lock per start: weeks locked ÷ LGS">Lk%</th>` : ''}${mineCol && locks ? `<th title="Locked points for ${esc(teamName(me, cur.season))}">For team</th>` : ''}</tr>`;
     const line = (r, career) => {
       const a = averages(r.tot);
       return `<tr class="${[!career && r.s === season ? 'on' : '', r.cls ?? '', career ? 'bk-yr-career' : ''].join(' ').trim()}"><td class="bk-nm">${esc(r.label)}${r.when ? `<small class="bk-yr-when">${esc(r.when)}</small>` : ''}</td><td class="bk-yr-team">${r.team}</td>${COLS.map(([, f, c]) => `<td${c ? ` class="${c}"` : ''}>${r.tot.gp ? f(r, a) : '—'}</td>`).join('')}${ranks ? (career ? '<td>—</td><td>—</td>' : `<td>${r.rank?.ovr ?? '—'}</td><td>${r.rank?.pos ? `${r.rank.pos} ${esc(p.mainPos)}` : '—'}</td>`) : ''}${locks ? `${lkCells(r)}<td>${r.lgs ? r.lgs.n : '—'}</td><td>${r.lgs?.d ? `${Math.round(100 * (r.lk?.starts ?? 0) / r.lgs.d)}%` : '—'}</td>` : ''}${mineCol && locks ? `<td>${r.lk?.mine ? num(r.lk.mine) : '—'}</td>` : ''}</tr>`;
@@ -4382,6 +4510,7 @@ async function renderBreakdown(body, params) {
     const box = $('#bk-log', body);
     const games = await gameLog(DATA, p.pid, logSeason);
     if (BK.pid !== p.pid || !box.isConnected) return;
+    setL5(p, games, body);
     if (!games.length) { box.innerHTML = `<p class="empty">No games for ${esc(p.name)} in ${bkSeason(logSeason)}.</p>`; return; }
     // Lock / League Games Started colors (owner, Nov 2 2026). starts: date -> owner for his LGS games (data/lgs.json,
     // after-lock games left out). locks: date -> owner for the game each FINISHED week counted (DATA.playerWeeks): the
@@ -4804,6 +4933,7 @@ async function renderBreakdown(body, params) {
     draw();
   });
   $('#bk-pager', body).addEventListener('click', e => { if (e.target.closest('.bk-page-more')) { BK.limit += BK_PAGE; drawTable(); } });
+  sideScroll($('#bk-xwrap', body));
   const tableEl = $('#bk-table', body);
   tableEl.addEventListener('click', e => {
     const th = e.target.closest('th[data-k]');
@@ -4860,6 +4990,9 @@ const REPORTS = [
   { id: 'yahoo-scoring', added: '2026-11-09', title: 'What if we used Yahoo’s or ESPN’s standard scoring?',
     sub: 'Every game scored three ways: what our 40 equals, which positions gain or lose, the league’s records re-scored, biggest movers, our teams',
     run: () => reportYahoo({ DATA, esc, get, name, teamName }) },
+  { id: 'my-outlook', added: '2026-11-13', title: 'Your team’s 3-season outlook: aging, the top-4 gap, trade targets and a soft rebuild',
+    sub: 'Every team’s projected strength for 3 seasons, your roster as it ages, young trade targets, and what selling ahead of the 2028 draft would do. Rebuilt live each time you open it',
+    run: () => reportOutlook({ DATA, esc, name, teamName, COMMISH, dynasty: () => gmDynasty(new URLSearchParams()) }) },
 ];
 
 async function renderReports(body) { // async: renderCommish calls .catch() on every tab's result
@@ -5236,13 +5369,18 @@ async function renderDesk(body, params) {
   const cur = DATA.seasons.at(-1);
   const season = cur.season;
   const me = mygmTeam(params);
-  const view = params.get('view') === 'injuries' ? 'injuries' : 'desk';
+  const view = ['injuries', 'trophies'].includes(params.get('view')) ? params.get('view') : 'desk';
   const teamQ = route().page === 'mygmplus' && params.get('team') ? { team: me } : {};
   const deskHash = `${mygmBase()}?${new URLSearchParams({ tab: 'desk', ...teamQ })}`;
   const back = { ret: deskHash, retl: 'Back to My Desk' };
   const withBack = hash => `${hash}${hash.includes('?') ? '&' : '?'}${new URLSearchParams(back)}`;
   const sub = `<div class="desk-top">${gmTeamPick(me, season, 'desk')}
-    <div class="st-tabs desk-sub" role="tablist">${[['desk', 'My Desk'], ['injuries', 'Injury Report']].map(([id, l]) => `<a role="tab" class="${view === id ? 'on' : ''}" href="${mygmBase()}?${new URLSearchParams({ tab: 'desk', ...(id === 'injuries' ? { view: id } : {}), ...teamQ })}">${l}</a>`).join('')}</div></div>`;
+    <div class="st-tabs desk-sub" role="tablist">${[['desk', 'My Desk'], ['injuries', 'Injury Report'], ['trophies', 'Trophy Room']].map(([id, l]) => `<a role="tab" class="${view === id ? 'on' : ''}" href="${mygmBase()}?${new URLSearchParams({ tab: 'desk', ...(id !== 'desk' ? { view: id } : {}), ...teamQ })}">${l}</a>`).join('')}</div></div>`;
+  if (view === 'trophies') { // Trophy Room (owner, Nov 14 2026: moved into My Desk next to the Injury Report)
+    body.innerHTML = `${sub}<div id="desk-tr"></div>`;
+    bindTeamPick(body);
+    return renderTrophyRoom($('#desk-tr', body), params, { inDesk: true });
+  }
   if (view === 'injuries') {
     body.innerHTML = `${sub}<div id="desk-inj"></div>`;
     bindTeamPick(body);
@@ -12155,6 +12293,13 @@ function pullToRefresh() {
 pullToRefresh();
 
 $('.menu-btn').addEventListener('click', () => document.body.classList.toggle('nav-open'));
+// Test Features "Lock" button (sidebar): forget the password on this device; MyGM shows the password screen again.
+$('#sidebar').addEventListener('click', e => {
+  if (!e.target.closest('[data-tf-lock]')) return;
+  try { localStorage.removeItem('tf-open'); } catch { /* blocked */ }
+  TF_SESSION = false;
+  if (route().page === 'mygm') render(); else renderSidebar(route().page);
+});
 $('.scrim').addEventListener('click', () => document.body.classList.remove('nav-open'));
 
 try {
