@@ -1322,7 +1322,7 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   Trophy Room tab is gone from the nav and lives in My Desk as a third sub-tab (My Desk / Injury Report / Trophy Room,
   ?tab=desk&view=trophies; renderDesk calls renderTrophyRoom(div, params, { inDesk: true }) = no second team picker; its "here"
   link = officeHash('trophies') which now returns the desk link; old ?tab=trophies forwards there). DESK IS PROMINENT: nav link
-  class mg-main = wider slot, gold circle icon (34px desktop, raised -26px above the bottom bar on phones with a navy ring, gold
+  class mg-main = wider slot, gold circle icon on desktop (34px; PHONES = a gold rounded PILL inside the bar since Nov 14 2026, owner picked it over the raised circle: navy icon + label, brighter + thin white edge when open, no lift), gold
   label; the selected state = gold outer ring). Checked 402 + 1200, both pages (MyGM+ tested).
 - FP/G BADGE = RECENT FORM (owner, Nov 14 2026: its bottom line repeated the Avg badge's OVR rank; "go with recent form, last 5
   games"): bottom line "L5 57.4 ▲/▼/▬" = average FP of his last L5_GAMES 5 games played in the card's game-log season (DNPs
