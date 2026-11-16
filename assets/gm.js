@@ -86,10 +86,20 @@ export async function loadBoxes(season, week, scoring) {
   const out = {};
   for (const g of rows ?? []) {
     if (!/^\d+$/.test(g.player_id) || !g.stats || !(g.stats.gp || g.stats.sp) || exhibitionRow(g)) continue; // no All-Star Game
-    (out[g.player_id] ??= []).push({ date: g.date, pts: r1(fantasy(g.stats, scoring)) });
+    (out[g.player_id] ??= []).push({ date: g.date, pts: r1(fantasy(g.stats, scoring)), st: statLine(g.stats) });
   }
   for (const list of Object.values(out)) list.sort((a, b) => (a.date < b.date ? -1 : 1));
   return out;
+}
+// A game's box-score line (owner, Nov 15 2026: "the stats each player has for each game ... also for games going on"), kept
+// small: the Assistant Coach shows it on each game of a player's card. Sleeper's weekly feed updates during games, so a live
+// game's line grows (no gp until it ends; minutes from sp).
+const STAT_LINE = ['pts', 'reb', 'ast', 'stl', 'blk', 'to', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta'];
+function statLine(s) {
+  const o = {};
+  for (const k of STAT_LINE) o[k] = Math.round(Number(s[k]) || 0);
+  o.min = Math.round(Number(s.min) || (Number(s.sp) || 0) / 60);
+  return o;
 }
 
 // Tip-off times (owner, Oct 2026: for streaming). Sleeper's schedule has dates only, so the time comes
@@ -139,7 +149,36 @@ export async function loadSlate(season, week) {
   if (typeof localStorage !== 'undefined') {
     const tips = await tipoffsFor([...new Set(Object.values(out).flat().map(g => g.date))]);
     for (const [team, list] of Object.entries(out)) for (const g of list) g.tip = tips[g.date]?.[team] ?? null;
+    // Games going on now get ESPN's clock + score (g.clock "Q3 4:12", g.score { us, them }), read fresh on every load.
+    const now = Date.now();
+    const liveDates = [...new Set(Object.values(out).flat().filter(g => g.status !== 'complete' && (['in_progress', 'in_game'].includes(g.status) || (g.tip && Date.parse(g.tip) <= now && now - Date.parse(g.tip) < 5 * 3600e3))).map(g => g.date))];
+    const clocks = await liveClocks(liveDates);
+    for (const [team, list] of Object.entries(out)) for (const g of list) { const c = clocks[g.date]?.[team]; if (c) Object.assign(g, c); }
   }
+  return out;
+}
+// ESPN's scoreboard for days with a game in progress (no cache): { date: { TEAM: { clock, live, score: { us, them } } } }.
+async function liveClocks(dates) {
+  const out = {};
+  await Promise.all(dates.map(async date => {
+    try {
+      const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${date.replace(/-/g, '')}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const t = {};
+      for (const ev of (await res.json())?.events ?? []) {
+        const st = ev.status?.type;
+        if (st?.state !== 'in' && st?.state !== 'post') continue;
+        const cs = ev.competitions?.[0]?.competitors ?? [];
+        for (const c of cs) {
+          const ab = c.team?.abbreviation;
+          const o = cs.find(x => x !== c);
+          // ESPN says "10:32 - 3rd"; shown as "3rd 10:32".
+          if (ab) t[ESPN_TEAM[ab] ?? ab] = { clock: String(st.shortDetail ?? st.detail ?? '').replace(/^(.+?) - (\S+)$/, '$2 $1'), live: st.state === 'in', score: { us: Number(c.score) || 0, them: Number(o?.score) || 0 } };
+        }
+      }
+      out[date] = t;
+    } catch { /* offline: no clock */ }
+  }));
   return out;
 }
 
@@ -226,7 +265,7 @@ function coachCall(p, ctx, boxes, slate, live, risk, marked, whatif) {
     const box = (boxes[p.pid] ?? []).find(b => b.date === g.date);
     const done = g.status === 'complete' || g.date < today;
     const playing = !done && g.date === today && (['in_progress', 'in_game'].includes(g.status) || Boolean(box));
-    return { ...g, pts: box?.pts ?? null, done, playing, mf: gameFactor(p.pos, g.opp) };
+    return { ...g, pts: box?.pts ?? null, st: box?.st ?? null, done, playing, mf: gameFactor(p.pos, g.opp) };
   });
   const played = sched.filter(g => g.done && g.pts != null);
   const latest = played.at(-1);

@@ -2994,7 +2994,7 @@ async function loadLawSrc(fresh = false) {
 // Defense vs Position (Test features, owner Nov 2 2026): the page lives in assets/defense-ui.js.
 const renderDefensePage = (body, params) => renderDefense(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName });
 // Advanced Stats (Test features, owner Nov 4 2026): page in advstats-ui.js, logic in advstats.js.
-const renderAdvancedPage = (body, params) => renderAdvanced(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName });
+const renderAdvancedPage = (body, params) => renderAdvanced(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName, me: route().page === 'mygm' && MYGM_ME ? MYGM_ME : COMMISH });
 // Contracts (Test features, owner Nov 7 2026): page in contracts-ui.js, logic in leaguecontracts.js.
 const renderContractsPage = (body, params) => renderContracts(body, params, { DATA, esc, gmLoad, gmSave, COMMISH, teamName, name, loadContracts });
 // Sleeper Insider (Test features, owner Nov 8 2026): Sleeper's private GraphQL API, read-only (sleeperpriv.js + sleeperpriv-ui.js).
@@ -7624,6 +7624,25 @@ async function renderCoach(body, params) {
     // Owner, Nov 8 2026: locks come from Sleeper now, so game chips are no longer tap-to-mark buttons.
     return `<span class="gm-game ${cls}${isLocked ? ' locked' : ''}">${inner}</span>`;
   };
+  // BOX SCORES (owner, Nov 15 2026: "the stats each player has for each game ... include the live games too"): one line per game
+  // he played or is playing, under the game chips: day + opponent, fantasy points, the box score (gm.js statLine), and for a game
+  // going on ESPN's clock + score. Sleeper's feed updates during games (a minute or two behind TV); the page refreshes every 2 min.
+  const statRows = (sched, r = null) => {
+    const rows = (sched ?? []).filter(g => g.st && (g.done || g.playing));
+    if (!rows.length) return '';
+    const sh = (m, a) => `${m}-${a}`;
+    return `<ul class="gm-box">${rows.map(g => {
+      const s = g.st;
+      const live = g.playing && !g.done;
+      const locked = r && r.call === 'locked' && !r.whatIf && (r.lockDate ? r.lockDate === g.date : g.pts != null && Math.abs(g.pts - r.score) < 0.05);
+      const main = [`${s.pts} PTS`, `${s.reb} REB`, `${s.ast} AST`, s.stl ? `${s.stl} STL` : '', s.blk ? `${s.blk} BLK` : '', s.to ? `${s.to} TO` : ''].filter(Boolean).join(' · ');
+      const shoot = [s.fga ? `${sh(s.fgm, s.fga)} FG` : '', s.tpa ? `${sh(s.tpm, s.tpa)} 3P` : '', s.fta ? `${sh(s.ftm, s.fta)} FT` : '', `${s.min} MIN`].filter(Boolean).join(' · ');
+      const clock = live ? `<span class="gm-box-live">● ${esc(g.clock || 'Live')}</span>${g.score ? ` <span class="gm-box-sc">${g.score.us}–${g.score.them}</span>` : ''}` : '';
+      return `<li class="${live ? 'live' : ''}${locked ? ' locked' : ''}">
+        <div class="gm-box-top"><b>${esc(shortDay(g.date))} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</b>${clock}${locked ? '<span class="gm-box-lk">🔒 Locked</span>' : ''}<span class="gm-box-fp">${num(g.pts ?? 0)} FP</span></div>
+        <div class="gm-box-line">${esc(main)}</div><div class="gm-box-line sub">${esc(shoot)}</div></li>`;
+    }).join('')}</ul>`;
+  };
   // Soft lock (owner, Nov 8 2026): his last game of the week has tipped, he isn't locked: counts as locked (score in the
   // locked total) but can still be moved off the lineup. r.soft from gm.js coachCall (calls 'held', or 'live' on his last game).
   const label = r => (r.whatIf ? 'What-if' : r.soft ? 'Soft lock' : advice(r) ? 'Not locked' : trim && r.call === 'plan' ? 'Not started' : CALL_LABEL[r.call]);
@@ -7644,7 +7663,7 @@ async function renderCoach(body, params) {
         <div class="gm-who"><b>${esc(r.name)}</b> ${injuryTag(r)}<small>${esc([r.pos, r.team || 'No team', r.perGame ? `about ${num(r.perGame * LOCK_CAL)} a game` : ''].filter(Boolean).join(' · '))}</small></div>
         <span class="gm-badge">${label(r)}</span>
       </div>
-      ${r.sched.length ? `<div class="gm-games">${r.sched.map(g => game(r, g)).join('')}</div>` : ''}
+      ${r.sched.length ? `<div class="gm-games">${r.sched.map(g => game(r, g)).join('')}</div>${statRows(r.sched, r)}` : ''}
       ${trim && !r.soft && !r.whatIf && !['locked', 'final', 'none'].includes(r.call) ? '' : `<p class="gm-text">${esc(r.text)}</p>`}
       ${["locked", "final"].includes(r.call) || r.soft ? "" : muLine(r.pos, r.sched)}
       ${ro ? '' : `<div class="gm-btns">${whatIfBtn(r, i, mine)}</div>`}
@@ -7742,7 +7761,7 @@ async function renderCoach(body, params) {
   const weekGames = p => (w.slate[p.team] ?? []).map(g => {
     const box = (w.boxes[p.pid] ?? []).find(b => b.date === g.date);
     const done = g.status === 'complete' || g.date < today;
-    return { ...g, pts: box?.pts ?? null, done, playing: !done && g.date === today && (['in_progress', 'in_game'].includes(g.status) || Boolean(box)) };
+    return { ...g, pts: box?.pts ?? null, st: box?.st ?? null, done, playing: !done && g.date === today && (['in_progress', 'in_game'].includes(g.status) || Boolean(box)) };
   });
   const gamesLeft = p => (w.slate[p.team] ?? []).filter(g => g.status !== 'complete' && (g.date > today || (g.date === today && g.status === 'pre_game'))).length;
   const todayGame = p => (w.slate[p.team] ?? []).find(g => g.date === today && g.status !== 'complete');
@@ -7783,27 +7802,39 @@ async function renderCoach(body, params) {
       ${scoreBox(r)}</div>`;
   };
   // Bench and IR players: no score (bench points never count); red + struck out with no games left.
+  // A game going on now isn't "left" (it's too late to move him in for it) but he isn't done either (owner, Nov 15 2026: the card
+  // said "No games left this week" mid-game): playingNow = Sleeper says in progress, ESPN's clock says live, or his box score
+  // for today exists while the game isn't complete.
+  const inBox = p => (w.boxes[p.pid] ?? []).some(b => b.date === today);
+  const playingNow = p => (w.slate[p.team] ?? []).find(g => g.date === today && g.status !== 'complete' && (['in_progress', 'in_game'].includes(g.status) || g.live || inBox(p)));
+  const nowWord = p => (inBox(p) ? 'Playing now' : 'Game on now'); // stats in this game = he has played; else his team is on the floor
   const reserve = (p, side, o, where) => {
     if (!p) return `<div class="mb-p mb-${side}"></div>`;
     const left = gamesLeft(p);
+    const now = playingNow(p);
     const nextUp = left ? nextTip((w.slate[p.team] ?? []).find(g => g.status !== 'complete' && (g.date > today || (g.date === today && g.status === 'pre_game')))) : '';
-    const meta = [p.team || 'FA', left ? `${left} game${left === 1 ? '' : 's'} left` : 'No games left', nextUp].filter(Boolean).join(' · ');
-    return `<div class="mb-p mb-${side} mb-res${left ? '' : ' mb-gone'}${todayGame(p) ? ' mb-on' : ''}${dgc(o, p.pid)}" ${tapAttrs(`${side}-${o}-${where}-${p.pid}`)}>
+    const meta = [p.team || 'FA', now ? `${nowWord(p)}${left ? ` · ${left} more left` : ''}` : left ? `${left} game${left === 1 ? '' : 's'} left` : 'No games left', nextUp].filter(Boolean).join(' · ');
+    return `<div class="mb-p mb-${side} mb-res${left || now ? '' : ' mb-gone'}${todayGame(p) ? ' mb-on' : ''}${dgc(o, p.pid)}" ${tapAttrs(`${side}-${o}-${where}-${p.pid}`)}>
       ${dgBar(o, p.pid)}<span class="mb-name">${nameHtml(p, slotC(o, p.pid))}<span class="mb-tags">${tags(p)}</span><small${nextUp ? ' class="mb-wrap"' : ''}>${posTxt(p.elig)}${meta ? ` · ${esc(meta)}` : ''}</small></span></div>`;
   };
   // The card a tapped bench/IR player opens: his week's games and what he could still add.
   const reserveCard = (p, where, mine) => {
     const left = gamesLeft(p);
+    const now = playingNow(p);
     const sched = weekGames(p);
-    const text = where === 'ir' ? `On IR: ${mine ? 'you’d' : 'they’d'} have to move him off IR to start him.${left ? ` ${left} game${left === 1 ? '' : 's'} left this week.` : ' No games left this week.'}`
+    const more = left ? ` ${left} more game${left === 1 ? '' : 's'} left this week.` : ' It’s his team’s last game of the week.';
+    const wh = inBox(p) ? 'playing now' : 'his team is playing now (he hasn’t played in it)';
+    const text = now
+      ? (where === 'ir' ? `On IR, ${wh}: this game can’t count.${more}` : `On the bench, ${wh}: this game can’t count (a player can’t be moved in once his game starts).${left ? `${more} Only games after ${mine ? 'you move' : 'they move'} him into the lineup count.` : more}`)
+      : where === 'ir' ? `On IR: ${mine ? 'you’d' : 'they’d'} have to move him off IR to start him.${left ? ` ${left} game${left === 1 ? '' : 's'} left this week.` : ' No games left this week.'}`
       : left ? `On the bench: ${left} game${left === 1 ? '' : 's'} left this week. Only games after ${mine ? 'you move' : 'they move'} him into the lineup count.` : 'No games left this week: he can’t add anything from here.';
-    return `<div class="gm-call gm-${left ? 'plan' : 'none'}">
+    return `<div class="gm-call gm-${left || now ? 'plan' : 'none'}">
       <div class="gm-call-top">
         <span class="cm-slot">${where === 'ir' ? 'IR' : 'BN'}</span>
         <div class="gm-who"><b>${esc(p.name)}</b> ${injuryTag(p)}<small>${esc([p.pos, p.team || 'No team', p.perGame ? `about ${num(p.perGame * LOCK_CAL)} a game` : ''].filter(Boolean).join(' · '))}</small></div>
-        <span class="gm-badge">${left ? `${left} left` : 'No games'}</span>
+        <span class="gm-badge">${now ? `Live${left ? ` · ${left} left` : ''}` : left ? `${left} left` : 'No games'}</span>
       </div>
-      ${sched.length ? `<div class="gm-games">${sched.map(g => game({}, g, p.pid, p.pos)).join('')}</div>` : ''}
+      ${sched.length ? `<div class="gm-games">${sched.map(g => game({}, g, p.pid, p.pos)).join('')}</div>${statRows(sched)}` : ''}
       <p class="gm-text">${esc(text)}</p>
       ${left ? muLine(p.pos, sched) : ''}
     </div>`;

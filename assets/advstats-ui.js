@@ -8,7 +8,8 @@
 import { get } from './commish.js';
 import { betaCard, mygmBase } from './test-features.js';
 import { playerPhoto } from './records.js';
-import { NBA_TEAM_CODES, gameLog, lineFromTable, nbaTeamName, seasonTable, teamLogo } from './breakdown.js';
+import { NBA_TEAM_CODES, fantasy, gameLog, lineFromTable, nbaTeamName, seasonTable, teamLogo } from './breakdown.js';
+import { boxWeek } from './weekcache.js';
 import {
   GROUP, MIX, consistency, defenseDiffs, enrichGames, fpMix, loadAdv, mean, pctRank, poss, ptObj, roleWeeks, splits, tgObj, treemap, windowLine,
 } from './advstats.js';
@@ -54,14 +55,19 @@ const tipAttr = (esc, t) => ` data-tip="${esc(t)}" tabindex="0"`;
 
 export async function renderAdvanced(body, params, h) {
   const { DATA, esc, gmLoad, gmSave, COMMISH, teamName } = h;
+  const ME = h.me ?? COMMISH;
   // dark mode (theme.js): the navy series color would vanish on a dark card, so it turns light blue
   const navy = document.documentElement.classList.contains('dark') ? '#8eb4ec' : '#173266';
   COLORS[0] = navy; MIX_COLORS.pts = navy;
   const cur = DATA.seasons.at(-1);
   const seasonsAll = DATA.seasons.map(s => s.season);
   const season = params.get('season') === 'career' ? 'career' : seasonsAll.includes(params.get('season')) ? params.get('season') : cur.season;
-  const O = { view: 'players', win: 'season', pool: 'pos', trend: 'fp', scatter: 0, tree: 'fp', teams: ['ATL'], role: null, kind: 'nba', ftree: 'pts', ...gmLoad('gm-adv-opts', {}) };
-  if (params.get('view')) O.view = params.get('view') === 'teams' ? 'teams' : 'players';
+  const O = { view: 'players', win: 'season', pool: 'pos', trend: 'fp', scatter: 0, tree: 'fp', teams: ['ATL'], role: null, kind: 'nba', ftree: 'pts', lpool: 'nba', lpos: 'all', ...gmLoad('gm-adv-opts', {}) };
+  // LEADERS (owner, Nov 15 2026: "Advanced stats just looks so empty ... maybe some leaderboards?"): the page opens on Leaders
+  // unless the link asks for a view or brings players (?p= / ?ps= from the 2K card or Compare); a tab picked here works as before.
+  const VIEWS = ['leaders', 'players', 'teams'];
+  if (!['nba', 'league', 'fa'].includes(O.lpool)) O.lpool = O.lpool === 'rost' ? 'league' : 'nba'; // "Rostered here" became League teams
+  O.view = VIEWS.includes(params.get('view')) ? params.get('view') : params.get('p') || params.get('ps') ? 'players' : 'leaders';
   if (params.get('kind')) O.kind = params.get('kind') === 'fantasy' ? 'fantasy' : 'nba';
   if (params.get('nba') && NBA_TEAM_CODES.includes(params.get('nba'))) O.teams = [params.get('nba'), ...O.teams.filter(t => t !== params.get('nba'))].slice(0, MAX);
   const fteam = params.get('team') || COMMISH;
@@ -434,26 +440,189 @@ export async function renderAdvanced(body, params, h) {
       ${betaCard('Star power vs depth', `${tbl}<p class="cm-rule"><b>Top 3 share</b> = how much of the team's locked points came from its 3 best players (high = star-driven, low = deep). Per start = locked points per starter-week.</p>`, { sub: 'all 8 teams' })}`;
   };
 
+  // ---------- Leaders (default view, owner Nov 15 2026) ----------
+  // Season leaderboards from the same season table as the percentiles (the qualified pool: POOL_MIN+ minutes a game and 40% of
+  // the most games), under that season's league scoring. Filters (owner, same day): Whole NBA / League teams (+ a picker: all 8
+  // or one team) / Free agents, position group, top 10 or 25. A name opens him in the Players charts (added to the compare list);
+  // your team's players are highlighted. HOT STREAKS = his last HOT_N games (current season only; box scores of this week and the
+  // 2 before, weekcache.js boxWeek, loaded after the page draws) vs his season FP/G.
+  const HOT_N = 5, HOT_MIN = 20; // last-5 FP/G of 20+ keeps deep bench out
+  const RATE_MIN = 20; // minutes a game for the usage and true-shooting boards
+  let HOT = null; // { pid: [FP of his recent games, oldest first] } once loaded; false = could not load
+  const loadHot = async () => {
+    if (season !== cur.season) return (HOT = false);
+    try {
+      const st = await get('/v1/state/nba', {});
+      const wk = String(st?.season) === String(cur.season) && st.season_type === 'regular' ? Number(st.week) || 1 : null;
+      if (!wk) return (HOT = false);
+      const weeks = [wk - 2, wk - 1, wk].filter(w => w >= 1);
+      const rows = (await Promise.all(weeks.map(w => boxWeek(cur.season, w).catch(() => [])))).flat();
+      const by = {};
+      for (const g of rows) {
+        if (!/^\d+$/.test(g.player_id) || !g.stats || !(g.stats.gp || g.stats.sp)) continue;
+        (by[g.player_id] ??= []).push([g.date, fantasy(g.stats, sc)]);
+      }
+      HOT = Object.fromEntries(Object.entries(by).map(([pid, l]) => [pid, l.sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(x => x[1])]));
+    } catch { HOT = false; }
+    return HOT;
+  };
+  const LB = [
+    ['hot', `Hot streaks · last ${HOT_N} games`, null, f1, `ranked by how far above his season FP/G · ${HOT_MIN}+ FP/G`],
+    ['fpg', 'Fantasy points per game', l => l.fp / l.gp, f1],
+    ['fp', 'Total fantasy points', l => l.fp, v => Math.round(v).toLocaleString()],
+    ['fp36', 'Fantasy points per 36 min', l => (l.min / l.gp >= 15 ? (l.fp / l.min) * 36 : null), f1, '15+ min a game'],
+    // Minutes floor on the rate boards (owner, Nov 15 2026): a low-minute player could top usage / shooting.
+    ['usg', 'Usage rate', l => (l.min / l.gp >= RATE_MIN ? l.usg : null), v => `${f1(v)}%`, `${RATE_MIN}+ min a game`],
+    ['ts', 'True shooting', l => (l.min / l.gp >= RATE_MIN && l.fga / l.gp >= 8 ? l.ts : null), v => `${(v * 100).toFixed(1)}%`, `${RATE_MIN}+ min, 8+ shots a game`],
+    ['min', 'Minutes per game', l => l.min / l.gp, f1],
+    ['pts', 'Points per game', l => l.pts / l.gp, f1],
+    ['reb', 'Rebounds per game', l => l.reb / l.gp, f1],
+    ['ast', 'Assists per game', l => l.ast / l.gp, f1],
+    ['stk', 'Steals + blocks per game', l => (l.stl + l.blk) / l.gp, f1],
+    ['tpm', '3-pointers made per game', l => l.tpm / l.gp, f1],
+    ['dd', 'Double-doubles', l => l.dd || null, v => String(Math.round(v))],
+  ];
+  const leagueOwners = (cur.teams ?? []).map(t => t.owner).filter(Boolean);
+  const leadersPool = () => {
+    const isFa = pid => !rostered.has(pid) && all?.[pid]?.team;
+    const inLeague = pid => (O.lteam && O.lteam !== 'all' ? ownerOf[pid] === O.lteam : rostered.has(pid));
+    return poolAll.filter(x => (O.lpool === 'league' ? inLeague(x.pid) : O.lpool === 'fa' ? isFa(x.pid) : true) && (O.lpos === 'all' || groupOf(x.pid) === O.lpos));
+  };
+  // rows already in board order; rank = place (ties share when byValue).
+  const lbRows = (rows, n, fmt, { extra = () => '', byValue = true, lgRank = null } = {}) => {
+    const top = Math.max(...rows.slice(0, n).map(r => r.v)) || 1;
+    const inTray = new Set(tray());
+    let rk = 0;
+    return `<ol>${rows.slice(0, n).map((r, i) => {
+      if (!byValue || !i || r.v !== rows[i - 1].v) rk = i + 1;
+      const o = ownerOf[r.pid];
+      return `<li class="${o === ME ? 'mine' : ''}">
+        <span class="as-lrk">${rk}</span>
+        <img src="${playerPhoto(DATA, r.pid)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+        <span class="as-lwho"><button type="button" data-chart="${r.pid}" title="Chart him in Players">${esc(nameOf(r.pid))}${inTray.has(r.pid) ? ' <i class="as-lin">charted</i>' : ''}</button>
+          <small>${esc([all?.[r.pid]?.team, all?.[r.pid]?.position].filter(Boolean).join(' · '))} · ${o ? esc(teamName(o, cur.season)) : '<b class="as-lfa">Free agent</b>'}</small>${extra(r)}</span>
+        <span class="as-lv"><b>${esc(fmt(r.v))}</b><i style="width:${Math.max(4, (r.v / top) * 100).toFixed(1)}%"></i>${lgRank ? (k => (k ? `<small class="as-lgrk${k <= 10 ? ' top' : ''}" title="Where he ranks among all ${poolAll.length} qualified NBA players">${ord(k)} in NBA</small>` : ''))(lgRank(r)) : ''}</span>
+      </li>`;
+    }).join('')}</ol>`;
+  };
+  // Hot streaks board body: ranked by how far his last 5 beat his season FP/G; the number shown = his last-5 FP/G.
+  const hotRow = x => {
+    const g = HOT?.[x.pid] ?? [];
+    if (g.length < HOT_N) return null;
+    const last = mean(g.slice(-HOT_N)), avg = x.l.fp / x.l.gp;
+    return last >= HOT_MIN ? { pid: x.pid, v: last, gain: last - avg, avg } : null;
+  };
+  // withRank = team leaders: each row also says where his gain ranks among the qualified NBA pool.
+  const hotBody = (pool, n, withRank = false) => {
+    if (HOT === null) return '<p class="cm-rule">Reading the last few weeks of box scores…</p>';
+    if (HOT === false) return `<p class="cm-rule">${season === cur.season ? 'Couldn’t read the recent box scores.' : 'Current season only.'}</p>`;
+    const rows = pool.map(hotRow).filter(Boolean).sort((a, b) => b.gain - a.gain);
+    if (!rows.length) return `<p class="cm-rule">Nobody with these filters has ${HOT_N} recent games at ${HOT_MIN}+ FP/G.</p>`;
+    const seen = new Set();
+    const lg = withRank ? [...poolAll, ...pool].filter(x => !seen.has(x.pid) && seen.add(x.pid)).map(hotRow).filter(Boolean).map(r => r.gain) : null;
+    return lbRows(rows, n, f1, {
+      byValue: false,
+      extra: r => `<small class="as-lhotl">${r.gain >= 0 ? `<b class="as-lhot">+${f1(r.gain)}</b> over` : `<b class="as-lcold">${f1(-r.gain)}</b> under`} his ${f1(r.avg)} season FP/G</small>`,
+      lgRank: lg ? r => 1 + lg.filter(g => g > r.gain).length : null,
+    });
+  };
+  // League rank of a value on a board: 1 + qualified NBA players (poolAll) with a better value (a looser team pool player
+  // who isn't in poolAll still gets his place among them).
+  // The team's own players count too, so two teammates never share a place because one is under the league minimum.
+  const lgRankOf = (f, teamPool) => {
+    const seen = new Set();
+    const vals = [...poolAll, ...teamPool].filter(x => !seen.has(x.pid) && seen.add(x.pid)).map(x => f(x.l)).filter(v => v != null && Number.isFinite(v) && v > 0);
+    return r => 1 + vals.filter(v => v > r.v).length;
+  };
+  // TEAM LEADERS (owner, Nov 15 2026: "show leaders for each team on the league teams and NBA teams"): the same boards, top 3 each,
+  // for one team: its players with TEAM_GP_SHARE of the most games (looser than the league pool, so a team's regulars all count).
+  // NBA team = players Sleeper lists on it now; league team = its current roster (taxi included). Hot streaks too (current season).
+  const TEAM_GP_SHARE = 0.25;
+  const TEAM_TOP = 5; // owner, Nov 15 2026: top 5 on every team board, each with his league rank ("12th in NBA")
+  const teamLeadersCard = (title, sub, inTeam, top = '') => {
+    const pool = lines.filter(x => inTeam(x.pid) && x.l.gp >= Math.max(1, Math.round(most * TEAM_GP_SHARE)) && x.l.min > 0);
+    if (!pool.length) return betaCard(title, `${top}<p class="empty">No games for this team yet.</p>`, { sub, cls: 'as-leaders as-tleaders' });
+    const boards = LB.map(([k, t, f, fmt, req]) => {
+      const head = `<h3>${esc(t.replace(/ · last \d+ games/, ''))}${k === 'hot' ? ` <small>last ${HOT_N} games</small>` : req && k !== 'hot' ? ` <small>${esc(req)}</small>` : ''}</h3>`;
+      if (k === 'hot') return season === cur.season ? `<section class="as-lb as-lhotb" data-team>${head}${hotBody(pool, TEAM_TOP, true)}</section>` : '';
+      const rows = pool.map(x => ({ pid: x.pid, v: f(x.l) })).filter(r => r.v != null && Number.isFinite(r.v) && r.v > 0).sort((a, b) => b.v - a.v);
+      return rows.length ? `<section class="as-lb">${head}${lbRows(rows, TEAM_TOP, fmt, { lgRank: lgRankOf(f, pool) })}</section>` : '';
+    }).filter(Boolean);
+    return betaCard(title, `${top}<div class="as-lgrid as-tgrid">${boards.join('')}</div>
+      <p class="cm-rule">${sLabel(poolSeason)} season, league scoring · ${pool.length} players with ${Math.round(TEAM_GP_SHARE * 100)}%+ of the most games played. “Nth in NBA” = his place among all ${poolAll.length} qualified NBA players (${POOL_MIN}+ min a game, 40% of the most games). Tap a name to chart him.</p>`, { sub, cls: 'as-leaders as-tleaders' });
+  };
+  const nbaLeadersTeam = () => (O.teams.includes(O.treeTeam) ? O.treeTeam : O.teams[0]);
+  const nbaTeamLeaders = () => {
+    const t = nbaLeadersTeam();
+    const sw = O.teams.length > 1 ? `<div class="dvp-seg as-seg">${O.teams.map(x => `<button type="button" class="ct-chip${x === t ? ' on' : ''}" data-o="treeTeam" data-v="${x}">${x}</button>`).join('')}</div>` : '';
+    return teamLeadersCard(`Team leaders: ${esc(nbaTeamName(t))}`, 'top 5 on each board + league rank · players on the roster now', pid => all?.[pid]?.team === t, sw);
+  };
+  const leagueTeamLeaders = () => {
+    const o = leagueOwners.includes(fteam) ? fteam : ME;
+    return teamLeadersCard(`Team leaders: ${esc(teamName(o, cur.season))}`, 'top 5 on each board + league rank · current roster (pick the team above)', pid => ownerOf[pid] === o);
+  };
+  // Team leaders on the Leaders tab (owner, Nov 15 2026): one picker for any league team or NBA team (O.ltl = 'L:<owner>' |
+  // 'N:<code>', default your team).
+  const leadersTabTeam = () => {
+    const [kind, id] = String(O.ltl ?? '').split(':');
+    const k = kind === 'N' && NBA_TEAM_CODES.includes(id) ? 'N' : kind === 'L' && leagueOwners.includes(id) ? 'L' : 'L';
+    const team = k === 'N' ? id : leagueOwners.includes(id) ? id : ME;
+    const val = `${k}:${team}`;
+    const sel = `<label class="as-lteam"><span>Team</span><select data-ltl aria-label="Team for team leaders">
+      <optgroup label="League teams">${leagueOwners.map(o => `<option value="L:${esc(o)}"${val === `L:${o}` ? ' selected' : ''}>${esc(teamName(o, cur.season))}</option>`).join('')}</optgroup>
+      <optgroup label="NBA teams">${[...NBA_TEAM_CODES].sort((a, b) => nbaTeamName(a).localeCompare(nbaTeamName(b))).map(c => `<option value="N:${c}"${val === `N:${c}` ? ' selected' : ''}>${esc(nbaTeamName(c))}</option>`).join('')}</optgroup></select></label>`;
+    return k === 'N'
+      ? teamLeadersCard(`Team leaders: ${esc(nbaTeamName(team))}`, 'top 5 on each board + league rank · players on the roster now', pid => all?.[pid]?.team === team, `<div class="as-row">${sel}</div>`)
+      : teamLeadersCard(`Team leaders: ${esc(teamName(team, cur.season))}`, 'top 5 on each board + league rank · current roster', pid => ownerOf[pid] === team, `<div class="as-row">${sel}</div>`);
+  };
+  const leadersCard = () => {
+    const pool = leadersPool();
+    const n = O.ltop === 25 ? 25 : 10;
+    // League teams / Free agents / one position (owner, Nov 15 2026): each row also says where he ranks league-wide ("Nth in NBA").
+    const filtered = O.lpool !== 'nba' || O.lpos !== 'all';
+    const board = ([k, title, f, fmt, req]) => {
+      const head = `<h3>${esc(title)}${req ? ` <small>${esc(req)}</small>` : ''}</h3>`;
+      if (k === 'hot') return season === cur.season ? `<section class="as-lb as-lhotb">${head}${hotBody(pool, n, filtered)}</section>` : '';
+      const rows = pool.map(x => ({ pid: x.pid, v: f(x.l) })).filter(r => r.v != null && Number.isFinite(r.v)).sort((a, b) => b.v - a.v);
+      return rows.length ? `<section class="as-lb">${head}${lbRows(rows, n, fmt, filtered ? { lgRank: lgRankOf(f, pool) } : {})}</section>` : '';
+    };
+    const boards = LB.map(board).filter(Boolean);
+    const teamSel = O.lpool === 'league' ? `<label class="as-lteam"><span>League team</span><select data-lteam aria-label="League team"><option value="all"${!O.lteam || O.lteam === 'all' ? ' selected' : ''}>All league teams</option>${leagueOwners.map(o => `<option value="${esc(o)}"${O.lteam === o ? ' selected' : ''}>${esc(teamName(o, cur.season))}</option>`).join('')}</select></label>` : '';
+    const scope = O.lpool === 'league' ? (O.lteam && O.lteam !== 'all' ? ` on ${esc(teamName(O.lteam, cur.season))}` : ' on league rosters') : O.lpool === 'fa' ? ' on no league roster' : '';
+    return betaCard('Leaders', `
+      <div class="as-row">${seg('lpool', [['nba', 'Whole NBA'], ['league', 'League teams'], ['fa', 'Free agents']], O.lpool)}${teamSel}</div>
+      <div class="as-row">${seg('lpos', [['all', 'All'], ['G', 'Guards'], ['F', 'Forwards'], ['C', 'Centers']], O.lpos)}${seg('ltop', [[10, 'Top 10'], [25, 'Top 25']], n)}</div>
+      <p class="cm-rule">${sLabel(poolSeason)} season averages${season === 'career' ? ' (Career shows this season’s leaders)' : ''}, league scoring · ${pool.length} qualified players (${POOL_MIN}+ min a game and 40% of the most games played)${scope}. <span class="as-lkey">Gold rows</span> = ${esc(teamName(ME, cur.season))}. Tap a name to chart him.</p>
+      ${boards.length ? `<div class="as-lgrid">${boards.join('')}</div>` : '<p class="empty">Nobody qualifies with these filters yet.</p>'}`, { sub: 'season leaderboards', cls: 'as-leaders' });
+  };
+
   // ---------- Page ----------
   const draw = () => {
     const head = betaCard('Advanced Stats', `
       ${params.get('back') ? `<a class="bk-back" href="${esc(params.get('back'))}">← Back to ${esc(params.get('backl') || 'the last page')}</a>` : ''}
-      ${seg('view', [['players', 'Players'], ['teams', 'Teams']], O.view)}
+      ${seg('tab', [['leaders', 'Leaders'], ['players', 'Players'], ['nba', 'NBA Teams'], ['league', 'League Teams']], O.view === 'teams' ? (O.kind === 'fantasy' ? 'league' : 'nba') : O.view)}
       <div class="dvp-seg as-seg">${[...seasonsAll.map(s => [s, `${s}-${String(Number(s) + 1).slice(2)}`]), ['career', 'Career']].map(([s, l]) => `<a class="ct-chip${season === s ? ' on' : ''}" href="${link({ season: s === cur.season ? '' : s })}">${l}</a>`).join('')}</div>
-      ${seg('win', WINS, O.win)}
-      ${O.view === 'teams' ? seg('kind', [['nba', 'NBA teams'], ['fantasy', 'Fantasy teams']], O.kind) : ''}
+      ${O.view === 'leaders' ? '' : seg('win', WINS, O.win)}
       ${advNow ? '' : `<p class="as-note">Team totals for ${season === 'career' ? cur.season : season} arrive with the next nightly update (usage, shares, rest days and team views use them).</p>`}`, { sub: 'charts from every box score' });
     let cards;
-    if (O.view === 'teams') {
-      if (O.kind === 'fantasy') cards = fantasyCards();
-      else { const T = teamStats(); cards = `${betaCard('NBA teams', teamPicker(), { sub: `${O.teams.length}/${MAX}` })}${teamProfileCard(T)}${usageTreeCard()}${teamMapCard(T)}`; }
+    if (O.view === 'leaders') cards = `${leadersCard()}${leadersTabTeam()}`;
+    else if (O.view === 'teams') {
+      if (O.kind === 'fantasy') cards = `${fantasyCards()}${leagueTeamLeaders()}`;
+      else { const T = teamStats(); cards = `${betaCard('NBA teams', teamPicker(), { sub: `${O.teams.length}/${MAX}` })}${nbaTeamLeaders()}${teamProfileCard(T)}${usageTreeCard()}${teamMapCard(T)}`; }
     } else {
       cards = `${pickerCard()}${trendCard()}${profileCard()}${scatterCard()}${consistencyCard()}${mixCard()}${roleCard()}${splitCard()}
         ${betaCard('How it works', `<p class="cm-rule">Everything comes from Sleeper's per-game box scores (the same games as the 2K breakdown; All-Star Game left out), scored with each season's league scoring. Team totals per game (for usage, shares, rest days, pace and opponent strength) are saved nightly in data/adv-stats.json; this week's games are added live. Windows: Season = every game of the season picked; Last N = his last N games played. Percentiles and the scatter pool always use season averages (${POOL_MIN}+ minutes a game).</p>`)}`;
     }
     body.innerHTML = `<div class="as-page">${head}${cards}</div>`;
     bind();
+    // Hot streaks: read the recent box scores once, then fill just that board (filters redraw from the loaded data).
+    // Every hot board on the page (Leaders + Team leaders) is redrawn from the loaded data (scroll position kept).
+    if (body.querySelector('.as-lhotb') && HOT === null && season === cur.season && !hotLoading) {
+      hotLoading = true;
+      loadHot().then(() => { if (body.querySelector('.as-lhotb')) redraw(); });
+    }
   };
+  let hotLoading = false;
   const redraw = async reload => { if (reload) { P = await loadPlayers(); if (!body.isConnected) return; } const y = window.scrollY; draw(); window.scrollTo(0, y); };
 
   function bind() {
@@ -462,9 +631,23 @@ export async function renderAdvanced(body, params, h) {
       const o = e.target.closest('[data-o]');
       if (o) {
         const k = o.dataset.o, v = o.dataset.v;
-        O[k] = k === 'scatter' ? Number(v) : k === 'win' && v !== 'season' ? Number(v) : v;
+        // Top tabs (owner, Nov 15 2026): Leaders / Players / NBA Teams / League Teams (the old Teams view's two kinds).
+        if (k === 'tab') {
+          if (v === 'nba' || v === 'league') { O.view = 'teams'; O.kind = v === 'league' ? 'fantasy' : 'nba'; } else O.view = v;
+          saveO();
+          redraw(O.view === 'players');
+          return;
+        }
+        O[k] = k === 'scatter' || k === 'ltop' ? Number(v) : k === 'win' && v !== 'season' ? Number(v) : v;
         saveO();
         redraw(k === 'win');
+        return;
+      }
+      const ch = e.target.closest('[data-chart]');
+      if (ch) { // Leaders: chart this player (Players view, added to the compare list when there's room)
+        const pid = ch.dataset.chart;
+        if (!tray().includes(pid)) { if (tray().length < MAX) gmSave('gm-bk-cmp', [...tray(), pid]); else note = `The compare list holds ${MAX} players: remove one to add ${nameOf(pid)}.`; }
+        O.view = 'players'; saveO(); redraw(true).then(() => window.scrollTo(0, 0));
         return;
       }
       const rm = e.target.closest('[data-rm]');
@@ -483,6 +666,8 @@ export async function renderAdvanced(body, params, h) {
       }
     });
     page.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest?.('[data-tip]')) { e.preventDefault(); e.target.click(); } });
+    page.querySelector('[data-lteam]')?.addEventListener('change', e => { O.lteam = e.target.value; saveO(); redraw(); });
+    page.querySelector('[data-ltl]')?.addEventListener('change', e => { O.ltl = e.target.value; saveO(); redraw(); });
     page.querySelector('.as-tadd')?.addEventListener('change', e => { if (e.target.value) { O.teams = [...O.teams, e.target.value].slice(0, MAX); O.treeTeam = e.target.value; saveO(); redraw(); } });
     page.querySelector('.as-fsel')?.addEventListener('change', e => { location.hash = link({ view: 'teams', kind: 'fantasy', team: e.target.value === COMMISH ? '' : e.target.value }); });
     const input = page.querySelector('.as-search input');

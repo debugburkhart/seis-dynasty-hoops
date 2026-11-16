@@ -5099,3 +5099,59 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 /* Accent edges as backgrounds (dark mode converts border colors but keeps bright backgrounds). */
 .tr-rivs .tr-riv li::before, .tr-pb .tr-recs li::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 10px 0 0 10px; background: var(--tr-ac); }
 .tr-case::before { background: var(--gold); }
+
+/* Assistant Coach box scores (owner, Nov 15 2026): one line per game played / playing, under the game chips. */
+.gm-box { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.gm-box li { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: #f7f8fb; }
+.gm-box li.locked { border-color: var(--navy-700); background: #eef2fa; }
+.gm-box li.live { border-color: #e8833a; background: #fff4ea; }
+.gm-box-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; font-size: 12px; }
+.gm-box-top b { font: 800 12px/1.2 var(--display); color: var(--navy-800); }
+.gm-box-fp { margin-left: auto; font: 900 13px/1 var(--display); color: var(--navy-800); font-variant-numeric: tabular-nums; }
+.gm-box-live { font: 800 11px/1 var(--display); color: #c4581a; letter-spacing: .02em; }
+.gm-box-sc { font-size: 11px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gm-box-lk { font-size: 11px; font-weight: 700; color: var(--navy-700); }
+.gm-box-line { margin-top: 3px; font-size: 12.5px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.gm-box-line.sub { margin-top: 1px; font-size: 11.5px; font-weight: 500; color: var(--muted); }
+
+/* Advanced Stats Leaders (owner, Nov 15 2026): grid of top-10 / top-25 boards. */
+.as-lgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; margin-top: 6px; }
+.as-lb { min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fbfaf6; }
+.as-lb h3 { margin: 0 0 6px; font: 900 12.5px/1.25 var(--display); letter-spacing: .04em; text-transform: uppercase; color: var(--navy-800); }
+.as-lb h3 small { font: 600 10.5px var(--font); letter-spacing: 0; text-transform: none; color: var(--muted); }
+.as-lb ol { list-style: none; margin: 0; padding: 0; }
+.as-lb li { display: grid; grid-template-columns: 20px 30px minmax(0, 1fr) 64px; align-items: center; gap: 8px; padding: 4px 4px; border-top: 1px solid var(--line); }
+.as-lb li:first-child { border-top: 0; }
+.as-lb li.mine { background: #fdf3dc; border-radius: 6px; }
+.as-lrk { font: 900 12px var(--display); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.as-lb li:first-child .as-lrk { color: var(--brass); }
+.as-lb img { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: #eef0f4; }
+.as-lwho { min-width: 0; display: grid; }
+.as-lwho button { padding: 0; border: 0; background: none; text-align: left; font: 700 13px/1.25 var(--font); color: var(--ink); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-lwho button:hover { color: var(--navy-600); text-decoration: underline; }
+.as-lwho small { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-lfa { color: #2f7d4f; font-weight: 700; }
+.as-lin { font-style: normal; font-size: 9.5px; font-weight: 800; color: var(--brass); text-transform: uppercase; }
+.as-lv { display: grid; justify-items: end; gap: 3px; }
+.as-lv b { font: 900 13.5px/1 var(--display); color: var(--navy-800); font-variant-numeric: tabular-nums; }
+.as-lv i { display: block; height: 4px; border-radius: 2px; background: var(--brass); justify-self: end; }
+.as-lkey { padding: 0 5px; border-radius: 4px; background: #fdf3dc; color: var(--gold-ink); font-weight: 700; }
+/* Leaders: league-team picker + hot streak board (owner, Nov 15 2026). */
+.as-lteam { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.as-lteam select { max-width: 220px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink); font: 600 13px var(--font); }
+.as-lhotb { background: #fff6ee; border-color: #f2cfb0; }
+.as-lhotb h3 { color: #b4501b; }
+.as-lhotb h3::before { content: "🔥 "; }
+.as-lhotb .as-lv i { background: #e8833a; }
+.as-lhot { color: #23704a; font-weight: 800; }
+/* Team leaders (NBA Teams / League Teams): top 3 per board, tighter grid. */
+.as-tgrid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 10px; }
+.as-tgrid .as-lb { padding: 8px 10px; }
+.as-lgrk { font: 700 10px/1 var(--font); color: var(--muted); white-space: nowrap; }
+.as-lgrk.top { color: var(--gold-ink); font-weight: 800; }
+.as-tgrid .as-lb li { grid-template-columns: 20px 30px minmax(0, 1fr) 72px; }
+.as-lcold { color: #a03a2d; font-weight: 800; }
+@media (max-width: 360px) {
+  .as-lb li, .as-tgrid .as-lb li { grid-template-columns: 18px minmax(0, 1fr) 66px; gap: 6px; }
+  .as-lb li img { display: none; }
+}

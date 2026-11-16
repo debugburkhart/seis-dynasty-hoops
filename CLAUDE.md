@@ -1424,7 +1424,58 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   (owner: "design it to your taste and I can help adjust"): last section, sticky-note pad per team gm-desk-notes-{owner} = { at,
   n: [{ id, t, c, u (edited), pin, done, dn }] } (synced via 'gm-desk-', newest wins); add box (Ctrl/⌘+Enter), Pin (pinned first,
   navy edge), Edit in place, done checkbox -> "Done" fold (+ delete all done), × delete (confirm), NOTE_MAX 600; summary line
-  "· N notes" jumps to it. .desk-note* at the end of styles.css. (5) ASSISTANT COACH = ONE PANEL PER MATCHUP: gm.js gameCoach also
+  "· N notes" links to it. .desk-note* at the end of styles.css. OWN SUB-TAB (owner, same day: "make notes its own section like
+  injury report"): My Desk sub-tabs = My Desk / Injury Report / Notes / Trophy Room; ?tab=desk&view=notes -> renderNotes(box, me)
+  (module function, deskNotes(owner) reads the list); no longer drawn on the desk page itself.
+  TROPHY ROOM SECTIONS LOOK DIFFERENT (owner, same day: "they just blend"): every card has cls tr-sec tr-{case, seasons, mgr, rivs,
+  held, pb, honors} + an icon chip in its title (trIc), accent --tr-ac per section (blue, purple, red, gold, teal, green) as a 5px
+  top bar + icon chip + inner look (purple award rows, red-edged rivalry cards, gold record cards, teal-edged personal records,
+  green player tiles in a grid, blue table header); the trophy case is a solid navy hero with gold numbers. Accent edges are
+  ::before BACKGROUNDS on purpose: theme.js dark mode converts border colors, which wiped them out.
+  (6) COACH BOX SCORES (owner, same day: "the stats each player has for each game ... include the live games too"): gm.js loadBoxes
+  keeps st = statLine(stats) (pts reb ast stl blk to fgm/fga tpm/tpa ftm/fta + min, min from sp mid-game) next to pts; coachCall's
+  sched games and renderCoach weekGames carry g.st. statRows(sched, r) in renderCoach = one .gm-box line per game played or
+  playing under the game chips on every player card (starters, bench, IR, every matchup panel): day + opp, FP, 🔒 on the locked
+  game, PTS/REB/AST (+STL/BLK/TO when > 0), FG/3P/FT + MIN. LIVE: Sleeper's weekly feed updates during games (a minute or two
+  behind TV; page refresh every 2 min); loadSlate adds ESPN's clock + score for games under way (liveClocks: scoreboard read fresh,
+  no cache, only for dates with a game in progress; g.clock "3rd 10:32" (ESPN's "10:32 - 3rd" flipped), g.live, g.score { us,
+  them }); live lines are orange. Checked Sun Nov 15 2026 9:30 PM CT: 556 lines across the 4 panels, live games with clock + score,
+  FP = the line under league scoring, 402 px dark OK.
+  BENCH / IR DURING A LIVE GAME (owner, same day, "yes fix it"): the card said "No games left this week" and the row was struck out
+  while his team was playing (gamesLeft counts only pre_game / later games). renderCoach playingNow(p) = his team's game today not
+  complete and (Sleeper in_progress / in_game, ESPN g.live, or his box row today); row meta "Playing now" (he has stats in it) or
+  "Game on now" (team on the floor, he hasn't played: inactive / not in yet) + "· N more left", never .mb-gone; card badge "Live",
+  text "On the bench, playing now: this game can't count ... N more games left / his team's last game of the week".
+  (7) ADVANCED STATS LEADERS (owner, same day: "looks so empty ... maybe some leaderboards?"): new first view Leaders (view seg
+  Leaders / Players / Teams) and the DEFAULT on arrival: O.view = ?view= if given, else players when ?p= / ?ps= brings players, else
+  leaders (the saved view no longer decides where the page opens). leadersCard() in advstats-ui.js: 12 boards (LB: FP/G, total FP,
+  FP/36 (15+ min), usage, TS% (8+ FGA), minutes, pts, reb, ast, stl+blk, 3PM, double-doubles) over poolAll (season table, POOL_MIN
+  10+ min, 40% of most games; Career = this season's leaders); filters lpool Whole NBA / Rostered here / Free agents, lpos All / G /
+  F / C, ltop 10 / 25 (gm-adv-opts); rows = rank, photo, name, team · pos · fantasy team or Free agent, value + bar; h.me's players
+  gold (app.js passes me = MYGM_ME in MyGM, else COMMISH); a name = data-chart: adds him to the compare tray (if room) and opens
+  Players. Window chips hidden on Leaders. .as-l* in styles.css. Checked: Dončić 55.8 FP/G, Wemby 751 total, FA filter, chart
+  click, 402 dark, desktop grid. ROUND 2 (owner, same day): (a) HOT STREAKS board first (current season only): loadHot() reads
+  this week + the 2 before via weekcache.js boxWeek AFTER the page draws (fills #as-hot), last HOT_N 5 games' FP/G (HOT_MIN 20+),
+  ranked by gain over his season FP/G, shows "+9.0 over his 38.2 season FP/G" (Franz Wagner 47.2 = raw box scores). (b) Pool
+  filter "Rostered here" REMOVED -> Whole NBA / League teams / Free agents; League teams shows a select (data-lteam, O.lteam: all
+  8 or one team); an old saved 'rost' reads as League teams. (c) Top tabs Leaders / Players / NBA Teams / League Teams (seg 'tab';
+  NBA / League = the old Teams view with O.kind nba / fantasy, so ?view=teams&kind=fantasy links still work); the inner NBA /
+  Fantasy teams switch is gone. The Players percentile pool still has its own "Rostered here" option (not asked).
+  (d) TEAM LEADERS (owner, same day: "show leaders for each team on the league teams and NBA teams"): teamLeadersCard() = every LB
+  board, top 3, for one team; pool = that team's players with TEAM_GP_SHARE 25%+ of the most games (looser than the league pool).
+  NBA Teams: after the team picker, for the picked team (same chips as the usage tree, O.treeTeam), players Sleeper lists on it now.
+  League Teams: after Star power vs depth, for the team in the existing picker (?team=, default yours), its current roster incl. taxi.
+  Hot streaks board too (loadHot runs whenever #as-hot is on the page; team cards redraw once it's loaded). .as-tgrid tighter grid.
+  (e) Owner, same day: RATE_MIN 20 min a game on the Usage and True shooting boards (TS also 8+ FGA), everywhere (league + team
+  boards). Team leaders = TEAM_TOP 5 per board, each row with "Nth in NBA" (.as-lgrk, gold for top 10) = 1 + players with a better
+  value among poolAll (qualified NBA) PLUS that team's own pool (lgRankOf(f, pool): so a teammate under the league minimum, e.g.
+  Haliburton after missed games, doesn't make the next one share his place); hot board ranks gains the same way. A negative hot gain
+  reads "0.9 under his ..." (red). <= 360px: no photos on leader rows (names fit).
+  (f) Team leaders on the LEADERS tab too (owner, same day): leadersTabTeam() under the Leaders card, one select (data-ltl,
+  O.ltl 'L:<owner>' | 'N:<code>', optgroups League teams / NBA teams, default your team). Hot boards no longer use id="as-hot":
+  after loadHot the page redraws whenever any .as-lhotb is on it.
+  (g) Leaders card rows also show "Nth in NBA" whenever the board is filtered (League teams, Free agents, or one position):
+  filtered = O.lpool !== 'nba' || O.lpos !== 'all'; Whole NBA + All shows none (its own rank already is the NBA rank). (5) ASSISTANT COACH = ONE PANEL PER MATCHUP: gm.js gameCoach also
   returns every (all 8 teams' lockCoach rows) + oddsFor(a, b) (oddsOf over the SAME simulated totals: no extra runs). renderCoach
   builds panels [yours, ...other pairs] in .mb-strip (scroll-snap, swipe / trackpad; .mb-nav ‹ › + dots + "Your matchup" / "A vs
   B" + "N of 4"; arrow keys when focused; bindMatchupStrip: other panels inert, strip height = shown panel via ResizeObserver,
