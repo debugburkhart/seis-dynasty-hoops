@@ -2101,6 +2101,34 @@ button.gm-game:focus-visible { outline: 2px solid var(--brass); outline-offset: 
 .mb-sec > span:last-child { text-align: right; }
 .mb-sec > span:last-child:empty { border-bottom: 0; }
 .mb-sec + .mb-rows { border-top: 0; }
+/* Matchup strip (owner, Nov 15 2026): one panel per game of the week, swipe / ‹ › / dots; the strip takes the shown panel's height (JS). */
+.mb-strip { display: flex; align-items: flex-start; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; transition: height .2s ease; }
+.mb-strip::-webkit-scrollbar { display: none; }
+.mb-strip:focus-visible { outline: 2px solid var(--brass); outline-offset: 4px; border-radius: 8px; }
+.mb-strip.mb-one { overflow: visible; height: auto !important; }
+.mb-panel { flex: 0 0 100%; min-width: 0; scroll-snap-align: start; scroll-snap-stop: always; }
+.mb-nav { display: grid; grid-template-columns: 40px minmax(0, 1fr) 40px; align-items: center; gap: 6px; max-width: 640px; margin: 4px auto 10px; }
+.mb-arrow { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper, #fff); color: var(--navy-800); font: 900 22px/1 var(--display); cursor: pointer; }
+.mb-arrow:hover:not(:disabled) { background: var(--navy-800); color: #fff; border-color: var(--navy-800); }
+.mb-arrow:disabled { opacity: .3; cursor: default; }
+.mb-navmid { display: grid; justify-items: center; gap: 4px; min-width: 0; text-align: center; }
+.mb-navlbl { font: 900 13px/1.2 var(--display); color: var(--navy-800); overflow-wrap: anywhere; }
+.mb-navsub { font: 700 10.5px/1 var(--display); letter-spacing: .04em; color: var(--muted); }
+.mb-dots { display: flex; gap: 6px; }
+.mb-dots button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: var(--line); cursor: pointer; }
+.mb-dots button.on { width: 20px; border-radius: 4px; background: var(--brass); }
+@media (prefers-reduced-motion: reduce) { .mb-strip { transition: none; } }
+/* Odds on top of each panel (owner, Nov 15 2026): left team | label | right team, the favourite in gold. */
+.mb-odds { max-width: 640px; margin: 0 auto 10px; padding: 8px 10px; border-radius: 10px; background: var(--navy-800); color: #fff; }
+.mb-orow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: baseline; gap: 8px; padding: 3px 0; }
+.mb-orow + .mb-orow { border-top: 1px solid rgba(255, 255, 255, .12); }
+.mb-orow span { font: 800 10px/1.2 var(--display); letter-spacing: .1em; text-transform: uppercase; color: rgba(255, 255, 255, .7); text-align: center; }
+.mb-orow b { font: 900 16px/1.1 var(--display); font-variant-numeric: tabular-nums; color: #fff; }
+.mb-orow .mb-or { text-align: right; }
+.mb-orow b.fav { color: var(--brass, #d4a537); }
+.mb-orow.mb-owin b { font-size: 22px; }
+.mb-omed { margin: 4px 0 0; padding-top: 5px; border-top: 1px solid rgba(255, 255, 255, .12); text-align: center; font: 800 10px/1.2 var(--display); letter-spacing: .1em; text-transform: uppercase; color: rgba(255, 255, 255, .7); }
+.mb-omed b { margin-left: 6px; font-size: 14px; letter-spacing: 0; color: #fff; }
 .mb-detail { padding: 8px 0 10px; border-bottom: 1px solid var(--line); }
 .mb-detail .gm-call { box-shadow: 0 2px 10px rgba(16, 38, 79, .08); }
 .mb-whose { margin: 0 0 5px; font: 800 9.5px/1.2 var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
@@ -4979,3 +5007,43 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
 .tf-lockbtn:hover { color: #fff; border-color: rgba(255,255,255,.4); }
 .nav-item .tf-beta { margin-left: auto; }
 .nav-item.tf-locked { color: #a9b7cc; }
+
+/* Injury Report "My team" (owner, Nov 15 2026): this week's call per player. */
+.inj-wk { display: inline-block; margin-bottom: 3px; padding: 2px 7px; border-radius: 99px; font: 800 10.5px/1.3 var(--display); white-space: nowrap; }
+.inj-wk.out { background: #fbe3e1; color: #a03a2d; }
+.inj-wk.part { background: #fdf1d6; color: #7a5a12; }
+.inj-wk.ok { background: #e2f2e7; color: #23704a; }
+/* Trophy Room personal records: league rank chip. */
+.tr-rank { display: inline-block; padding: 1px 7px; border-radius: 99px; background: var(--cream); color: var(--navy-800); font: 800 11px/1.4 var(--display); }
+.tr-rank.r3 { background: #fdf1d6; color: #7a5a12; }
+.tr-rank.r1 { background: var(--navy-800); color: var(--gold); }
+.tr-recs li.top { border-color: var(--gold); }
+/* My Desk notes (owner, Nov 15 2026): sticky-note pad. */
+.desk-nadd { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: end; margin-bottom: 10px; }
+.desk-note-in { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font: 400 14px/1.4 var(--font); resize: vertical; min-height: 44px; }
+.desk-note-in:focus { outline: 2px solid var(--brass); outline-offset: 0; border-color: var(--brass); }
+.desk-nbtn { padding: 7px 11px; border: 1px solid var(--line); border-radius: 99px; background: #fff; color: var(--navy-800); font: 700 12px/1 var(--font); cursor: pointer; white-space: nowrap; }
+.desk-nbtn.on { background: var(--navy-800); border-color: var(--navy-800); color: #fff; }
+.desk-nbtn.del { padding: 5px 9px; font-size: 15px; color: #a03a2d; }
+.desk-notes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.desk-note { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 10px; align-items: start; padding: 10px 10px 10px 12px; border: 1px solid #ecdcae; border-left: 4px solid var(--gold); border-radius: 8px; background: #fffaf0; box-shadow: 0 1px 3px rgba(16, 38, 79, .06); }
+.desk-note.pinned { border-left-color: var(--navy-800); background: #fff6dc; }
+.desk-note.done { opacity: .7; background: #fff; border-color: var(--line); border-left-color: var(--line); }
+.desk-note.done .desk-ntext p { text-decoration: line-through; }
+.desk-note.editing { grid-template-columns: minmax(0, 1fr); }
+.desk-ncheck input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--navy-800); cursor: pointer; }
+.desk-ntext { min-width: 0; }
+.desk-ntext p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere; }
+.desk-ntext small { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
+.desk-note-acts { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.desk-ndone { margin-top: 10px; }
+.desk-ndone summary { cursor: pointer; font-weight: 800; font-size: 13px; color: var(--navy-800); margin-bottom: 8px; }
+.desk-ndone summary small { color: var(--muted); margin-left: 4px; }
+.desk-ndone .desk-all { margin-top: 8px; }
+.desk-njump { padding: 0; border: 0; background: none; color: var(--navy-600); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+@media (max-width: 430px) {
+  .desk-note { grid-template-columns: auto minmax(0, 1fr); }
+  .desk-note > .desk-note-acts { grid-column: 2; justify-content: flex-start; }
+  .desk-nadd { grid-template-columns: minmax(0, 1fr); }
+  .desk-nadd .desk-nbtn { justify-self: end; }
+}

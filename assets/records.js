@@ -876,7 +876,7 @@ export const CHANGE_LABELS = { broken: 'Record broken', tied: 'Record tied', 'ne
 const involves = (x, m) => x.who === m || x.also === m;
 // Personal records are achievements: the bad kind (worst, lowest) and schedule or
 // luck trivia aren't announced as a manager's new personal best.
-const NOT_PERSONAL = new Set(['Toughest schedule', 'Friendliest schedule', 'Luckiest season', 'Unluckiest season',
+export const NOT_PERSONAL = new Set(['Toughest schedule', 'Friendliest schedule', 'Luckiest season', 'Unluckiest season',
   'Lowest score in a win', 'Highest score in a loss', 'Closest win', 'Lowest combined score',
   'Shootout week']); // the whole league's week, not one manager's performance
 function personalChanges(before, now) {

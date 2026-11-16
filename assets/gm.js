@@ -1046,7 +1046,10 @@ export function gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode = 'win', ma
   }
 
   const { swaps, moves } = lineupMoves(plans[me], mine, ctx.today);
-  return { ...mine, opp, oppCoach: opp ? all[opp] : null, oppBest: opp ? lineupOf(all[opp], plans[opp]) : null, now, asSet, swaps, moves, medianOn, plan: plans[me] };
+  // every = all 8 teams' lock rows; oddsFor(a, b) = team a's odds vs b from the SAME runs (no extra simulation), used by
+  // the Assistant Coach's other-matchup panels (owner, Nov 15 2026). Your team in those runs follows the coach.
+  const oddsFor = (a, b) => (totals[a] ? oddsOf(totals, a, totals[b] ? b : null, medianOn) : null);
+  return { ...mine, opp, oppCoach: opp ? all[opp] : null, oppBest: opp ? lineupOf(all[opp], plans[opp]) : null, now, asSet, swaps, moves, medianOn, plan: plans[me], every: all, oddsFor };
 }
 
 // Every team's week played out the same way (Weekly Props lines, assets/props.js): each roster

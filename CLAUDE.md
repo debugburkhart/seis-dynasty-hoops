@@ -1408,6 +1408,33 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   unvoted court cases, opponent Murray's Meat Market 2 out + 2 may return; ack / reload / undo / faked change (New + Changed) / back
   pill (session kept) / forward; 320 dark, 402, desktop, no overflow. NOT tested: MyGM itself with a real Google sign-in, the props
   item (no open props week that night).
+- NOV 15 2026 BATCH (owner; both pages): (1) INJURY REPORT "MY TEAM": first mode tab + DEFAULT (MODES in renderInjuries); saved
+  under a NEW key gm-bk-injview (old gm-bk-injmode ignored on purpose, so an old saved choice doesn't hide My team; a tab picked now
+  is remembered). teamHtml(): the desk team's injured players, "Active roster" then "Taxi squad" groups, each row = the shared row()
+  + a week chip (.inj-wk out / part / ok: "Out all week N" / "May miss part of week N" / "Should play week N" via injWeekCall; week
+  = Sleeper state week, next one once its last game date has passed) + why line; summary counts taxi out. Recent changes in this
+  mode = your team only. (2) MY DESK "Personal records" section (sec 'prec', 2nd): records.js PERSONAL events (DATA.recordEvents,
+  last 30 league-wide) of the desk team from the LAST TWO WEEKS OF GAMES PLAYED (order >= newest point - 1), newest first; ackable
+  (id prec|s|w|cat|slug, sig = value); body = player/ctx, previous best, "Now Nth in the league" / league record; link
+  recHref(cat, title, owner) = #/records/{cat}?rec=&manager= + ret/retl. Nov 15 2026: nobody has set a personal best in 2026-27
+  yet (newest 2025 wk 24), so it's empty; rendering tested with a wider window. (3) TROPHY ROOM "Personal records" card (after
+  Records held): personalBests(owner) in app.js = his best entry on every board where personalEligible(r) (r.limit, kind 'mark',
+  not bad, not records.js NOT_PERSONAL, now exported) = the same boards the desk announces; .tr-rank chip "Nth in the league" /
+  "League record" (r1 navy, top 3 gold). Parma: 22 bests, 1 league record (Highest playoff score 423), 4 top 3. (4) MY DESK NOTES
+  (owner: "design it to your taste and I can help adjust"): last section, sticky-note pad per team gm-desk-notes-{owner} = { at,
+  n: [{ id, t, c, u (edited), pin, done, dn }] } (synced via 'gm-desk-', newest wins); add box (Ctrl/⌘+Enter), Pin (pinned first,
+  navy edge), Edit in place, done checkbox -> "Done" fold (+ delete all done), × delete (confirm), NOTE_MAX 600; summary line
+  "· N notes" jumps to it. .desk-note* at the end of styles.css. (5) ASSISTANT COACH = ONE PANEL PER MATCHUP: gm.js gameCoach also
+  returns every (all 8 teams' lockCoach rows) + oddsFor(a, b) (oddsOf over the SAME simulated totals: no extra runs). renderCoach
+  builds panels [yours, ...other pairs] in .mb-strip (scroll-snap, swipe / trackpad; .mb-nav ‹ › + dots + "Your matchup" / "A vs
+  B" + "N of 4"; arrow keys when focused; bindMatchupStrip: other panels inert, strip height = shown panel via ResizeObserver,
+  MB_PANEL keeps the panel across the 2-minute refresh). Every board helper is per OWNER now (T[o] = { dg, s9, hide, top }; keys
+  `${side}-${owner}-...`). Other panels are read-only (card(..., ro) = no what-if). MyGM trim: every team but yours = Starting 9
+  only (shared s9 record or automatic) + an S9 note each; MyGM+ = full designations for all 8. ODDS ON TOP of each panel (.mb-odds
+  navy box: Win chance / Beat the median / Expected final per side, favourite gold, Projected median); your game = coach.now (you
+  following the coach), others from oddsFor; the old gmOdds + "Expected final" lines under the board are gone (gmOdds still used by
+  the Briefing). Checked: 4 panels, MyGM trim (other panels S9 strips only, 0 what-if, 0 Wait), 320 / 402 / desktop no overflow,
+  dark mode.
 - PLAN FOR MANAGER LOGINS (owner, Nov 9 2026; agreed in talk; STEPS 1-3 BUILT the same day, see MYGM LOGIN below): MyGM becomes the
   managers' page: Google sign-in REQUIRED + an approved claim (members/{uid}, same as Props / Trade Court), locked to their own
   team; each manager's settings private in users/{uid}/prefs (already); fix the shared-device bleed (localStorage is per

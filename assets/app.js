@@ -1,5 +1,5 @@
 import { ALL_STARS_FROM, AWARD_SCORING, LEAGUE_ID, MINOR_RIVALRIES, RIVALRIES, RIVALRIES_FROM, RIVALRY_BONUS, WAGER } from './config.js';
-import { CATEGORIES, CHANGE_LABELS, buildRecords, playerPhoto, recordHistory, recordVisible, viewData } from './records.js';
+import { CATEGORIES, CHANGE_LABELS, NOT_PERSONAL, buildRecords, playerPhoto, recordHistory, recordVisible, viewData } from './records.js';
 import { PARTS, PRESEASON_PARTS, powerRankings, powerSeasons, preseasonRankings, scheduleLabel } from './power.js';
 import { LEGACY, comparisons, finishes, legacy, legacyLabel, standings } from './standings.js';
 import { frontOffice } from './frontoffice.js';
@@ -729,6 +729,26 @@ function shownRows(r, manager) {
 }
 
 const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+// PERSONAL RECORDS (owner, Nov 15 2026; My Desk + Trophy Room): the boards a manager can set a personal best on = the same rule
+// recordHistory uses for its personal events (records with many entries per manager, single performances, no bad marks or
+// schedule / luck trivia). personalBests(owner) = his best entry on each, all-time, with its league rank.
+const personalEligible = r => Boolean(r.limit) && r.kind === 'mark' && !r.bad && !NOT_PERSONAL.has(r.title);
+function personalBests(owner) {
+  const recs = recordsFor('all', 'all');
+  const out = [];
+  for (const cat of CATEGORIES) {
+    for (const r of recs[cat.id] ?? []) {
+      if (!recordVisible(r, {}) || !personalEligible(r)) continue;
+      const best = shownRows({ ...r, limit: 0 }, owner).find(x => x.rank !== '–');
+      if (!best || (!r.asc && !best.value)) continue;
+      out.push({ cat, r, x: best, n: (r.managerRows ?? r.rows).filter(x => x.rank !== '–').length });
+    }
+  }
+  return out;
+}
+const ordinal = n => { const v = n % 100; return `${n}${v >= 11 && v <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`; };
+const recHref = (cat, title, owner) => `#/records/${cat}?${new URLSearchParams({ rec: slug(title), manager: owner })}`;
 
 // ---------- Record Book filters ----------
 
@@ -2747,6 +2767,19 @@ async function renderTrophyRoom(body, params, { inDesk = false } = {}) {
         <span class="tr-rv">${esc(String(x.display ?? x.value))}</span>
         <small>${[x.img ? x.whoText : '', x.ctx, others.length ? `shared with ${others.map(name).join(', ')}` : ''].filter(Boolean).map(esc).join(' · ')}</small></li>`).join('')}</ul>`).join('');
   };
+  // PERSONAL RECORDS (owner, Nov 15 2026): this team's own best on every board it can set a personal best on (personalBests,
+  // same boards as the desk's "new personal best"), with where that best sits in the league; grouped like Records held.
+  const pbs = personalBests(me);
+  const pbCard = () => {
+    if (!pbs.length) return '<p class="empty">No personal bests yet.</p>';
+    return CATEGORIES.filter(c => pbs.some(b => b.cat === c)).map(c => `<h3 class="tr-rh">${esc(c.title)} <small>${pbs.filter(b => b.cat === c).length}</small></h3>
+      <ul class="tr-recs">${pbs.filter(b => b.cat === c).map(({ r, x, n }) => `<li class="${x.rank === 1 ? 'top' : ''}">
+        <div><a href="${recHref(c.id, r.title, me)}"><b>${esc(r.title)}</b></a></div>
+        <span class="tr-rv">${esc(String(x.display ?? x.value))}</span>
+        <small><span class="tr-rank${x.rank === 1 ? ' r1' : x.rank <= 3 ? ' r3' : ''}">${x.rank === 1 ? 'League record' : `${ordinal(x.rank)} in the league`}</span>${[x.img || (x.whoText && x.whoText !== name(me)) ? x.whoText : '', x.ctx].filter(Boolean).map(t => ` · ${esc(t)}`).join('')}</small></li>`).join('')}</ul>`).join('')
+      + `<p class="cm-rule">Your best entry on each board that keeps personal bests (single games, seasons and player performances; the bad-luck and schedule boards are left out), all seasons and stages. “Nth in the league” = where it ranks among every entry on that board. Tap a title for the board with your bests in gold.</p>`;
+  };
+  const pbTop = pbs.filter(b => b.x.rank === 1).length, pbTop3 = pbs.filter(b => b.x.rank <= 3).length;
   body.innerHTML = `
     ${pick()}
     <div class="gm-page tr-page">
@@ -2767,6 +2800,7 @@ async function renderTrophyRoom(body, params, { inDesk = false } = {}) {
       ${betaCard('Manager awards', mgr.length ? `<ul class="tr-list">${mgr.map(a => `<li><span class="tr-aw indiv">${esc(a.label)}</span><small>${seasonSpan(a.s)}${a.pid ? ` · <a href="${card2k(a.pid)}">${esc(pnm(a.pid))}</a>` : ''}</small></li>`).join('')}</ul>` : '<p class="empty">No GM of the Year, Draft of the Year or Steal of the Draft yet.</p>', { sub: 'GM of the Year · Draft of the Year · Steal of the Draft' })}
       ${rivals.length ? betaCard('Rivalry trophies', `<ul class="tr-riv">${rivals.map(x => `<li>${trophyPic(x.r, 'tr-img')}<div><b>${esc(x.r[2])}</b><small>vs ${esc(name(x.r[0] === me ? x.r[1] : x.r[0]))} · ${x.won.length ? `won ${x.won.map(seasonSpan).join(', ')}` : 'not won yet'}${x.holder === me ? ' · <b class="tr-hold">holds it now</b>' : x.holder ? ` · held by ${esc(name(x.holder))}` : ''}</small></div></li>`).join('')}</ul>`) : ''}
       ${betaCard('Records held', heldCard(), { sub: `${held.filter(h => !h.r.bad).length} league record${held.filter(h => !h.r.bad).length === 1 ? '' : 's'}${held.some(h => h.r.bad) ? ` + ${held.filter(h => h.r.bad).length} dubious` : ''} · all-time Record Book, No. 1 today (ties shared)` })}
+      ${betaCard('Personal records', pbCard(), { sub: `${pbs.length} personal bests · ${pbTop} league record${pbTop === 1 ? '' : 's'} · ${pbTop3} in the top 3` })}
       ${betaCard('Player honors on this team', players.length ? `<ul class="tr-players">${players.map(p => `<li><img src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy"><div><a href="${card2k(p.pid)}"><b>${esc(pnm(p.pid))}</b></a><div class="tr-aws">${grouped(p.list)}</div></div></li>`).join('')}</ul>
         <p class="cm-rule">Awards count for the fantasy team that had him for that award (season’s end; All-Stars at the All-Star break), the same as the Awards page and the Rosters card. Champion = on the title roster in championship week (taxi left out).</p>` : '<p class="empty">No player honors won on this team yet.</p>', { sub: `${players.length} player${players.length === 1 ? '' : 's'}` })}
     </div>`;
@@ -5515,6 +5549,24 @@ async function renderDesk(body, params) {
     }
   } catch (e) { notes.push(`Trade Court votes (${e.message})`); }
 
+  // ---- Personal records broken (owner, Nov 15 2026): the desk team's own bests set in the last two weeks of games played
+  // (records.js recordHistory personal events, newest first), each acknowledgeable; links open that board with manager=. ----
+  try {
+    loadRecordEvents();
+    const pts = [...new Set(DATA.games.map(g => `${g.s}|${g.w}`))].length - 1; // index of the newest week played
+    const best = Object.fromEntries(personalBests(me).map(b => [`${b.cat.id}|${b.r.title}`, b]));
+    const catTitle = id => CATEGORIES.find(c => c.id === id)?.title ?? id;
+    for (const e of [...(PERSONAL ?? [])].filter(x => x.owner === me && (x.order ?? -1) >= pts - 1).sort((a, b) => (b.order ?? 0) - (a.order ?? 0))) {
+      const h = e.holders[0], was = e.prev?.[0];
+      const now = best[`${e.cat}|${e.title}`];
+      const still = now && now.x.display === h.display;
+      items.push({ id: `prec|${e.s}|${e.w}|${e.cat}|${slug(e.title)}`, sig: String(h.display), ack: true, sec: 'prec', tone: 'gold', ic: 'trophy',
+        title: `New personal best · ${esc(e.title)}: ${esc(h.display)}`,
+        body: () => `<p>${esc([h.whoText && h.whoText !== name(me) ? h.whoText : '', h.ctx].filter(Boolean).join(' · '))}${was ? ` · previous best ${esc(was.display)}${was.ctx ? ` (${esc(was.ctx)})` : ''}` : ''}.${still ? ` ${now.x.rank === 1 ? '<b>That’s the league record.</b>' : `Now ${ordinal(now.x.rank)} in the league.`}` : ''}</p>
+          <p class="desk-links"><a href="${withBack(recHref(e.cat, e.title, me))}">${esc(catTitle(e.cat))} · see the board →</a></p>` });
+    }
+  } catch (err) { notes.push(`personal records (${err.message})`); }
+
   // ---- Injury brief: this week's opponent + your team ----
   const d = week ? weekDates[week] : null;
   const opp = (DATA.schedule ?? []).find(m => m.s === season && m.w === week && (m.a === me || m.b === me));
@@ -5587,7 +5639,34 @@ async function renderDesk(body, params) {
   }
 
   // ---- Draw ----
-  const SECS = [['decide', 'Decisions', 'What needs a move from you'], ['court', 'Trade Court', 'Cases you haven’t voted on'], ['inj', 'Injury brief', d ? `Week ${week} · ${shortMd(d.from)}–${shortMd(d.to)}${oppId ? ` · vs ${teamName(oppId, season)}` : ''}` : 'No regular-season week right now']];
+  const SECS = [['decide', 'Decisions', 'What needs a move from you'], ['prec', 'Personal records', 'Your own bests broken this week and last'], ['court', 'Trade Court', 'Cases you haven’t voted on'], ['inj', 'Injury brief', d ? `Week ${week} · ${shortMd(d.from)}–${shortMd(d.to)}${oppId ? ` · vs ${teamName(oppId, season)}` : ''}` : 'No regular-season week right now']];
+  // ---- Notes (owner, Nov 15 2026: "add a notes section ... design it to your taste"): a sticky-note pad per team, synced with
+  // the account (gm-desk-notes-{owner} via 'gm-desk-'): { at, n: [{ id, t (text), c (made), u (edited), pin, done, dn (done at) }] }.
+  // Pinned first, then newest; ticking one done moves it to a Done fold (kept until deleted). Ctrl/⌘ + Enter adds.
+  const NOTES_KEY = `gm-desk-notes-${me}`;
+  const NOTE_MAX = 600;
+  const notesNow = () => { const v = gmLoad(NOTES_KEY, null); return Array.isArray(v?.n) ? v.n : []; };
+  const notesSave = n => gmSave(NOTES_KEY, { at: Date.now(), n });
+  const noteWhen = ms => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' });
+  const noteText = t => esc(t).replace(/\n/g, '<br>');
+  const noteHtml = x => (DESK_OPEN.edit === x.id
+    ? `<li class="desk-note editing" data-note="${esc(x.id)}"><textarea class="desk-note-in" maxlength="${NOTE_MAX}" rows="3" aria-label="Edit note">${esc(x.t)}</textarea>
+        <div class="desk-note-acts"><button type="button" class="desk-nbtn on" data-nsave>Save</button><button type="button" class="desk-nbtn" data-ncancel>Cancel</button></div></li>`
+    : `<li class="desk-note${x.pin ? ' pinned' : ''}${x.done ? ' done' : ''}" data-note="${esc(x.id)}">
+        <label class="desk-ncheck" title="${x.done ? 'Not done' : 'Done'}"><input type="checkbox" data-ndone aria-label="Done"${x.done ? ' checked' : ''}></label>
+        <div class="desk-ntext"><p>${noteText(x.t)}</p><small>${x.pin ? '📌 Pinned · ' : ''}${esc(noteWhen(x.c))}${x.u ? ` · edited ${esc(noteWhen(x.u))}` : ''}</small></div>
+        <div class="desk-note-acts">${x.done ? '' : `<button type="button" class="desk-nbtn${x.pin ? ' on' : ''}" data-npin aria-pressed="${Boolean(x.pin)}">${x.pin ? 'Unpin' : 'Pin'}</button><button type="button" class="desk-nbtn" data-nedit>Edit</button>`}<button type="button" class="desk-nbtn del" data-ndel aria-label="Delete note">×</button></div></li>`);
+  const notesHtml = () => {
+    const n = notesNow();
+    const open = n.filter(x => !x.done).sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || b.c - a.c);
+    const doneN = n.filter(x => x.done).sort((a, b) => (b.dn ?? b.c) - (a.dn ?? a.c));
+    return betaCard('Notes', `<form class="desk-nadd"><textarea class="desk-note-in" name="t" maxlength="${NOTE_MAX}" rows="2" placeholder="Jot something down: a trade idea, a waiver target, who to watch…" aria-label="New note">${esc(DESK_OPEN.draft ?? '')}</textarea>
+        <button type="submit" class="desk-nbtn on">Add note</button></form>
+      ${open.length ? `<ul class="desk-notes">${open.map(noteHtml).join('')}</ul>` : '<p class="desk-clear">No notes yet.</p>'}
+      ${doneN.length ? `<details class="desk-ndone"${DESK_OPEN.ndone ? ' open' : ''}><summary>Done <small>${doneN.length}</small></summary><ul class="desk-notes">${doneN.map(noteHtml).join('')}</ul>
+        <button type="button" class="desk-all" data-nclear>Delete all ${doneN.length} done</button></details>` : ''}
+      <p class="desk-fine">Only you see these. Signed in with Google, they follow you to your other devices.</p>`, { sub: `${open.length} note${open.length === 1 ? '' : 's'}${doneN.length ? ` · ${doneN.length} done` : ''}`, cls: 'desk-sec desk-notecard', id: 'desk-notes' });
+  };
   const draw = () => {
     const acks = deskAcks();
     const isAck = it => it.ack && acks[it.id]?.s === it.sig;
@@ -5603,20 +5682,60 @@ async function renderDesk(body, params) {
     const secHtml = ([id, title, sub]) => {
       const list = open.filter(it => it.sec === id);
       const ackable = list.filter(it => it.ack);
-      return betaCard(title, `${list.length ? list.map(card).join('') : `<p class="desk-clear">${id === 'inj' && !d ? 'Nothing to brief.' : 'All clear.'}</p>`}
+      return betaCard(title, `${list.length ? list.map(card).join('') : `<p class="desk-clear">${id === 'inj' && !d ? 'Nothing to brief.' : id === 'prec' ? 'No new personal bests in the last two weeks of games.' : 'All clear.'}</p>`}
         ${ackable.length > 1 ? `<button type="button" class="desk-all" data-ackall="${id}">Acknowledge all ${ackable.length}</button>` : ''}`, { sub, cls: `desk-sec desk-${id}` });
     };
     $('#desk-body', body).innerHTML = `
-      ${betaCard('My Desk', `<p class="desk-sum">${open.length ? `<b>${open.length}</b> thing${open.length === 1 ? '' : 's'} on your desk` : '<b>Your desk is clear.</b>'}${done.length ? ` · ${done.length} acknowledged` : ''}.</p>
+      ${betaCard('My Desk', `<p class="desk-sum">${open.length ? `<b>${open.length}</b> thing${open.length === 1 ? '' : 's'} on your desk` : '<b>Your desk is clear.</b>'}${done.length ? ` · ${done.length} acknowledged` : ''}${(() => { const k = notesNow().filter(x => !x.done).length; return k ? ` · <button type="button" class="desk-njump" data-njump>${k} note${k === 1 ? '' : 's'}</button>` : ''; })()}.</p>
         <p class="desk-fine">Tick <b>Acknowledged</b> to clear an item; it comes back if its news changes. Items marked “clears when …” go away on their own once they’re done.${notes.length ? ` Couldn’t read: ${notes.map(esc).join('; ')}.` : ''}</p>`, { cls: 'desk-head', sub: teamName(me, season) })}
       ${SECS.map(secHtml).join('')}
+      ${notesHtml()}
       ${done.length ? `<details class="card desk-acked"${DESK_OPEN.acked ? ' open' : ''}><summary>Acknowledged <small>${done.length}</small></summary>
         ${done.map(it => `<div class="desk-arow"><span>${it.title}</span><button type="button" data-unack="${esc(it.id)}">Undo</button></div>`).join('')}</details>` : ''}`;
   };
   body.innerHTML = `${sub}<div id="desk-body" class="desk-page"></div>`;
   bindTeamPick(body);
   draw();
+  // Notes: add / edit / pin / done / delete (all redraw the desk; the draft survives redraws in DESK_OPEN.draft).
+  const noteEdit = (id, fn) => { notesSave(notesNow().map(x => (x.id === id ? fn({ ...x }) : x)).filter(Boolean)); draw(); };
+  const addNote = form => {
+    const t = form.t.value.trim().slice(0, NOTE_MAX);
+    if (!t) return;
+    notesSave([...notesNow(), { id: `n${Date.now().toString(36)}`, t, c: Date.now() }]);
+    DESK_OPEN.draft = '';
+    draw();
+    $('.desk-nadd textarea', body)?.focus();
+  };
+  const saveEdit = li => {
+    const t = $('textarea', li).value.trim().slice(0, NOTE_MAX);
+    DESK_OPEN.edit = null;
+    noteEdit(li.dataset.note, x => (t ? { ...x, t, u: Date.now() } : x));
+  };
+  $('#desk-body', body).addEventListener('submit', e => { if (e.target.matches('.desk-nadd')) { e.preventDefault(); addNote(e.target); } });
+  $('#desk-body', body).addEventListener('input', e => { if (e.target.closest('.desk-nadd')) DESK_OPEN.draft = e.target.value; });
+  $('#desk-body', body).addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || !e.target.matches('.desk-note-in')) return;
+    e.preventDefault();
+    const li = e.target.closest('.desk-note.editing');
+    if (li) saveEdit(li); else addNote(e.target.form);
+  });
+  $('#desk-body', body).addEventListener('click', e => {
+    if (e.target.closest('[data-njump]')) { $('#desk-notes', body)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    const b = e.target.closest('[data-npin], [data-nedit], [data-nsave], [data-ncancel], [data-ndel], [data-nclear]');
+    if (!b) return;
+    const li = b.closest('[data-note]');
+    if ('nclear' in b.dataset) { if (confirm('Delete every done note?')) { notesSave(notesNow().filter(x => !x.done)); draw(); } return; }
+    if (!li) return;
+    if ('npin' in b.dataset) noteEdit(li.dataset.note, x => ({ ...x, pin: !x.pin }));
+    else if ('nedit' in b.dataset) { DESK_OPEN.edit = li.dataset.note; draw(); const ta = $(`[data-note="${CSS.escape(li.dataset.note)}"] textarea`, body); ta?.focus(); ta?.setSelectionRange(ta.value.length, ta.value.length); }
+    else if ('nsave' in b.dataset) saveEdit(li);
+    else if ('ncancel' in b.dataset) { DESK_OPEN.edit = null; draw(); }
+    else if ('ndel' in b.dataset && confirm('Delete this note?')) noteEdit(li.dataset.note, () => null);
+  });
+  $('#desk-body', body).addEventListener('toggle', e => { if (e.target.matches('.desk-ndone')) DESK_OPEN.ndone = e.target.open; }, true);
   $('#desk-body', body).addEventListener('change', e => {
+    const nd = e.target.closest('[data-ndone]');
+    if (nd) { const li = nd.closest('[data-note]'); noteEdit(li.dataset.note, x => ({ ...x, done: nd.checked, dn: Date.now() })); return; }
     const box = e.target.closest('[data-ack]');
     if (!box) return;
     const it = items.find(x => x.id === box.dataset.ack);
@@ -5634,7 +5753,7 @@ async function renderDesk(body, params) {
   });
   $('#desk-body', body).addEventListener('toggle', e => { if (e.target.matches('.desk-acked')) DESK_OPEN.acked = e.target.open; }, true);
 }
-const DESK_OPEN = { acked: false };
+const DESK_OPEN = { acked: false, ndone: false, edit: null, draft: '' };
 
 // Injury Report (Test features Oct 26 2026; moved into MyGM's My Desk Nov 12 2026, ?view=injuries): ?team= picks "you".
 function renderInjuryReport(body, params) {
@@ -5774,7 +5893,32 @@ async function renderInjuries(body, params, me) {
       </section>`;
     }).join('');
   };
-  const modeNow = () => gmLoad('gm-bk-injmode', showAll() ? 'all' : 'subs');
+  // MY TEAM (owner, Nov 15 2026): first tab and the default. Saved under a NEW key (gm-bk-injview), so an older saved choice
+  // (gm-bk-injmode) doesn't hide it; a tab picked from now on is remembered as before.
+  const MODES = [['team', 'My team'], ['subs', 'My subscriptions'], ['all', 'Whole league'], ['sched', 'My schedule']];
+  const modeNow = () => { const m = gmLoad('gm-bk-injview', 'team'); return MODES.some(([id]) => id === m) ? m : 'team'; };
+  // This week (the next one once its last game date has passed), for "out all week / may miss part".
+  let teamWeek = liveWeek;
+  if (weekDates[teamWeek]?.to < today && weekDates[teamWeek + 1]) teamWeek++;
+  const teamHtml = () => {
+    const list = players.filter(p => p.owner === me);
+    if (!list.length) return `<p class="empty">Nobody on ${esc(teamName(me, cur.season))} is on the injury report. Full strength.</p>`;
+    const d = weekDates[teamWeek];
+    const inSeason = nbaState?.season === cur.season && nbaState.season_type === 'regular';
+    const callOf = p => (inSeason && d ? injWeekCall(p, d, true) : null);
+    const weekTag = p => {
+      if (!inSeason || !d) return '';
+      const c = callOf(p);
+      const txt = !c ? `Should play week ${teamWeek}` : c.kind === 'out' ? `Out all week ${teamWeek}` : `May miss part of week ${teamWeek}`;
+      return `<small class="inj-wk ${!c ? 'ok' : c.kind}">${esc(txt)}</small>${c?.why ? `<small class="inj-why">${esc(c.why)}</small>` : ''}`;
+    };
+    const withWeek = p => row(p).replace(' <i class="inj-yours">Yours</i>', '').replace('<span class="inj-side">', `<span class="inj-side">${weekTag(p)}`);
+    const active = list.filter(p => p.slot !== 'TX'), taxi = list.filter(p => p.slot === 'TX');
+    const out = active.filter(p => callOf(p)?.kind === 'out').length, part = active.filter(p => callOf(p)?.kind === 'part').length;
+    const grp = (label, l) => (l.length ? `<div class="inj-wkgroup"><span class="bk-bar-label">${label} <small>${l.length}</small></span>${sorted(l).map(withWeek).join('')}</div>` : '');
+    return `<p class="inj-sum">${inSeason && d ? `Week ${teamWeek} (${esc(shortMd(d.from))}–${esc(shortMd(d.to))}): <b>${out}</b> out all week · <b>${part}</b> may miss part${taxi.length ? ` · taxi left out of the count` : ''}.` : `${list.length} on the report.`}</p>
+      ${grp('Active roster (starters, bench, IR)', active)}${grp('Taxi squad', taxi)}`;
+  };
 
   // ---- Recent changes (owner, Nov 2 2026): who joined the report, whose injury changed (status, out for season,
   // return estimate, body part / note, a new ESPN report) and who came off it, newest first, grouped by the check that
@@ -5826,6 +5970,7 @@ async function renderInjuries(body, params, me) {
     const inScope = ev => {
       if (mode === 'all') return true;
       const p = anyById[ev.pid];
+      if (mode === 'team') return p?.owner === me;
       return (p?.owner && s.f.includes(p.owner)) || s.n.includes(p?.team ?? ev.st.t);
     };
     const pool = injEvents.filter(ev => (ev.live || ev.at >= from) && inScope(ev));
@@ -5847,13 +5992,13 @@ async function renderInjuries(body, params, me) {
     const chips = (items, cur, attr, n) => `<div class="inj-rchips">${items.map(([id, label]) => `<button type="button" data-${attr}="${id}" class="inj-sub${cur === id ? ' on' : ''}" aria-pressed="${cur === id}">${esc(label)}${n ? ` <small>${n[id] ?? 0}</small>` : ''}</button>`).join('')}</div>`;
     return `${chips(R_DAYS, days, 'rdays')}${chips(R_KINDS, kind, 'rkind', counts)}
       ${groups.length ? groups.map(g => `<div class="inj-rgroup"><div class="inj-rhead">${head(g)}<span>${g.items.length}</span></div>${g.items.map(evRow).join('')}</div>`).join('')
-    : `<p class="inj-none">No ${kind === 'all' ? '' : `${R_KINDS.find(k => k[0] === kind)[1].toLowerCase()} `}changes in the last ${esc(R_DAYS.find(d => d[0] === days)?.[1] ?? `${days} days`)}${mode === 'all' ? '' : ' for your subscriptions'}.</p>`}
+    : `<p class="inj-none">No ${kind === 'all' ? '' : `${R_KINDS.find(k => k[0] === kind)[1].toLowerCase()} `}changes in the last ${esc(R_DAYS.find(d => d[0] === days)?.[1] ?? `${days} days`)}${mode === 'all' ? '' : mode === 'team' ? ' on your team' : ' for your subscriptions'}.</p>`}
       ${list.length > shown.length ? `<button type="button" class="inj-rmore" data-rmore>Show all ${list.length}</button>` : ''}
       <p class="inj-src">The nightly update saves the injury report (Sleeper status + ESPN estimates and notes) and logs what changed since the run before, so a change shows under the check that first saw it (it happened between checks). “Since the last check” compares the live feeds with that newest snapshot. Tracking since ${esc(ctTime(injLog.since))}; changes kept ${INJ_LOG_DAYS} days.</p>`;
   };
   const recentCard = (mode, s) => betaCard('Recent changes', recentHtml(mode, s), {
     id: 'inj-recent', cls: 'inj-list inj-recent',
-    sub: mode === 'all' ? 'Whole league' : 'Your subscriptions',
+    sub: mode === 'all' ? 'Whole league' : mode === 'team' ? 'Your team' : 'Your subscriptions',
   });
 
   const draw = () => {
@@ -5872,13 +6017,15 @@ async function renderInjuries(body, params, me) {
       ${betaCard('Injury Report', `
         <p class="inj-sum"><b>${players.length}</b> players on the injury report: ${esc(count(players))} · <b>${players.filter(p => p.espn?.ofs).length}</b> out for the season · <b>${players.filter(p => p.owner).length}</b> on fantasy rosters here.</p>
         <p class="inj-src">Status from Sleeper; return estimates, “out for season” and news notes from ESPN’s injury report${Object.keys(espn).length ? '' : ' (not available right now)'}. Estimates are teams’ and reporters’ timelines, so they move.</p>${fpNote('game')}
-        <div class="st-tabs inj-mode" role="tablist">${[['subs', 'My subscriptions'], ['all', 'Whole league'], ['sched', 'My schedule']].map(([id, label]) => `<button type="button" role="tab" data-mode="${id}" class="${mode === id ? 'on' : ''}">${label}</button>`).join('')}</div>
+        <div class="st-tabs inj-mode" role="tablist">${MODES.map(([id, label]) => `<button type="button" role="tab" data-mode="${id}" class="${mode === id ? 'on' : ''}">${label}</button>`).join('')}</div>
         <details class="inj-subs"${s.f.length + s.n.length ? '' : ' open'}><summary>Subscriptions <small>${s.f.length + s.n.length} teams</small></summary>
           <div class="inj-subgroup"><span class="bk-bar-label">Fantasy teams</span><div>${teams.map(o => chip(`f:${o}`, teamName(o, cur.season), players.filter(p => p.owner === o).length, s.f.includes(o))).join('')}</div></div>
           <div class="inj-subgroup"><span class="bk-bar-label">NBA teams</span><div>${[...NBA_TEAM_CODES].sort((a, b) => nbaTeamName(a).localeCompare(nbaTeamName(b))).map(t => chip(`n:${t}`, nbaTeamName(t), players.filter(p => p.team === t).length, s.n.includes(t))).join('')}</div></div>
         </details>`, { cls: 'inj-card', sub: 'Sleeper, live' })}
       ${recentCard(mode, s)}
-      ${mode === 'sched'
+      ${mode === 'team'
+    ? betaCard(`My team · ${esc(teamName(me, cur.season))}`, teamHtml(), { cls: 'inj-list', sub: `${players.filter(p => p.owner === me).length} on the report · taxi listed last` })
+    : mode === 'sched'
     ? betaCard(`My schedule · ${esc(teamName(me, cur.season))}`, scheduleHtml(), { cls: 'inj-list', sub: `${myGames.length} matchups left · opponents' players projected to miss each week` })
     : betaCard(everything ? 'Whole league' : 'Your teams', sections.length ? sections.join('') : '<p class="empty">No subscriptions yet: open Subscriptions above and tap a team.</p>', { cls: 'inj-list', sub: everything ? `${nba.length} NBA teams with injuries` : `${sections.length} subscribed` })}`;
   };
@@ -5903,7 +6050,7 @@ async function renderInjuries(body, params, me) {
       draw();
       if (open) $('.inj-subs', body).open = true;
     } else if (mode) {
-      gmSave('gm-bk-injmode', mode.dataset.mode);
+      gmSave('gm-bk-injview', mode.dataset.mode);
       draw();
     } else if (e.target.closest('[data-rdays], [data-rkind], [data-rmore]')) {
       const b = e.target.closest('[data-rdays], [data-rkind], [data-rmore]');
@@ -7040,6 +7187,58 @@ function gmAutoRefresh(body, params, render, w) {
 // Lock-in coach board: which player cards are open (kept across the 2-minute refresh) and
 // dynasty values for the tier tags (injured players at full value, owner's choice; once per page load).
 const MB_OPEN = new Set();
+// Assistant Coach matchup strip (owner, Nov 15 2026): one panel per game of the week, swipe (touch, trackpad) or ‹ › / dots /
+// arrow keys. MB_PANEL = the left team of the panel on screen, kept across the 2-minute refresh (null = yours, the first).
+let MB_PANEL = null;
+function bindMatchupStrip(body, keys, labelOf) {
+  const strip = $('.mb-strip', body);
+  if (!strip) return;
+  const panels = [...strip.querySelectorAll('.mb-panel')];
+  const nav = $('.mb-nav', body);
+  const at = () => Math.max(0, Math.min(panels.length - 1, Math.round(strip.scrollLeft / Math.max(1, strip.clientWidth))));
+  let cur = -1;
+  // The strip is as tall as the panel on screen (a short panel next to a long one leaves no gap).
+  const fit = () => { const p = panels[at()]; if (p) strip.style.height = `${p.offsetHeight}px`; };
+  const show = i => {
+    if (i === cur) return fit();
+    cur = i;
+    MB_PANEL = i ? keys[i] : null;
+    panels.forEach((p, k) => { p.inert = k !== i; p.setAttribute('aria-hidden', String(k !== i)); });
+    if (nav) {
+      $('.mb-navlbl', nav).textContent = labelOf(i);
+      $('.mb-navsub', nav).textContent = `${i + 1} of ${panels.length}${i ? '' : ' · swipe for the other games'}`;
+      nav.querySelectorAll('[data-mbdot]').forEach((d, k) => d.classList.toggle('on', k === i));
+      nav.querySelector('[data-mbgo="-1"]').disabled = i === 0;
+      nav.querySelector('[data-mbgo="1"]').disabled = i === panels.length - 1;
+    }
+    fit();
+  };
+  const go = (i, smooth = true) => {
+    i = Math.max(0, Math.min(panels.length - 1, i));
+    strip.scrollTo({ left: i * strip.clientWidth, behavior: smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto' });
+    show(i);
+  };
+  let t;
+  strip.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(() => show(at()), 60); }, { passive: true });
+  strip.addEventListener('keydown', e => {
+    if (e.target !== strip) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(at() + 1); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); go(at() - 1); }
+  });
+  nav?.addEventListener('click', e => {
+    const b = e.target.closest('[data-mbgo], [data-mbdot]');
+    if (!b) return;
+    go(b.dataset.mbdot != null ? Number(b.dataset.mbdot) : at() + Number(b.dataset.mbgo));
+  });
+  // Cards opening / closing (and the page width changing) change the panel's height.
+  if (typeof ResizeObserver === 'function') {
+    const ro = new ResizeObserver(() => { if (!strip.isConnected) return ro.disconnect(); fit(); });
+    panels.forEach(p => ro.observe(p));
+    ro.observe(strip);
+  }
+  const start = Math.max(0, keys.indexOf(MB_PANEL));
+  requestAnimationFrame(() => go(start, false));
+}
 let COACH_DYN = null;
 const coachDynasty = () => (COACH_DYN ??= loadDynastyFeeds().then(f => dynastyValues(DATA, f, { fullInjured: true })).catch(() => null));
 
@@ -7422,7 +7621,8 @@ async function renderCoach(body, params) {
     return `<button class="gm-whatif" type="button" data-pid="${esc(r.pid)}" data-date="${esc(last.date)}" data-slot="${r.lockSlotIdx ?? i}">What if ${mine ? 'I lock' : 'they lock'} him${r.lockSlot && !trim ? ` in ${esc(r.lockSlot)}` : ''}?</button>`;
   };
   // A starter's lock card (opened from the board). mine = false: the opponent's (button says "They locked him").
-  const card = (r, mine = true, i = 0) => (r.empty ? `<div class="gm-call gm-none"><div class="gm-call-top"><span class="cm-slot">${esc(r.slot)}</span><b>Empty spot</b></div></div>` : `
+  // ro = a read-only matchup panel (another game this week): no what-if button.
+  const card = (r, mine = true, i = 0, ro = false) => (r.empty ? `<div class="gm-call gm-none"><div class="gm-call-top"><span class="cm-slot">${esc(r.slot)}</span><b>Empty spot</b></div></div>` : `
     <div class="gm-call gm-${advice(r) ? 'plan' : r.call}${r.soft ? ' gm-soft' : ''}${r.whatIf ? ' gm-whatif-card' : ''}">
       <div class="gm-call-top">
         <span class="cm-slot">${esc(r.slot)}</span>
@@ -7432,47 +7632,60 @@ async function renderCoach(body, params) {
       ${r.sched.length ? `<div class="gm-games">${r.sched.map(g => game(r, g)).join('')}</div>` : ''}
       ${trim && !r.soft && !r.whatIf && !['locked', 'final', 'none'].includes(r.call) ? '' : `<p class="gm-text">${esc(r.text)}</p>`}
       ${["locked", "final"].includes(r.call) || r.soft ? "" : muLine(r.pos, r.sched)}
-      <div class="gm-btns">${whatIfBtn(r, i, mine)}</div>
+      ${ro ? '' : `<div class="gm-btns">${whatIfBtn(r, i, mine)}</div>`}
     </div>`);
   const riskBtns = GM_MODES.map(([k, label]) => `<a href="#" data-risk="${k}" class="${k === w.mode ? 'on' : ''}">${label}</a>`).join('');
   const opp = coach.opp;
-  // Depth Chart designations as a colored strip on each player's outer edge (owner, Oct 30 2026; was an outline): each side in its own team's
-  // designations (yours or automatic, teamDesigs = the CURRENT chart); a failure just leaves the strip off. Names,
-  // colors, short labels and order = this login's categories (dcCats, Nov 9 2026).
-  const [dgMe, dgOppAll] = await Promise.all([teamDesigs(w.me).catch(() => ({})), opp ? teamDesigs(opp).catch(() => ({})) : {}]);
+  // EVERY MATCHUP (owner, Nov 15 2026: "scroll / swipe between all 4 matchups"): one panel per game of the week, yours first;
+  // the others are read-only views built from the same coach run (coach.every = all 8 teams' rows, coach.oddsFor = odds from
+  // the same simulated runs, so there's no extra simulation).
+  const every = coach.every ?? {};
+  const panels = [{ a: w.me, b: opp }, ...(w.pairs ?? []).filter(p => p.a !== w.me && p.b !== w.me && every[p.a] && every[p.b]).map(p => ({ a: p.a, b: p.b }))];
+  const owners = [...new Set(panels.flatMap(p => [p.a, p.b]).filter(Boolean))];
+  // Depth Chart designations as a colored strip on each player's outer edge (owner, Oct 30 2026; was an outline): each team in its own
+  // designations (teamDesigs = the CURRENT chart); a failure just leaves the strip off. Names, colors, short labels and order = this
+  // login's categories (dcCats, Nov 9 2026).
   // MyGM (owner, Nov 11 2026: "you can only see the starting 9 of an opposing team, seeing how they categorize their other players
-  // affects strategy"): the opponent shows only Starting 9 strips + tags; his bench is in plain FP/G rank order.
-  // Shared Starting 9 (owner, Nov 11 2026): the opponent's REAL Starting 9 + spots when he has shared it (s9/{owner}), else automatic.
-  const oppS9 = trim && opp ? await loadSharedS9(opp) : null;
-  const dgOpp = !trim ? dgOppAll : oppS9 ? Object.fromEntries(Object.keys(oppS9.s).map(pid => [pid, 'start'])) : Object.fromEntries(Object.entries(dgOppAll ?? {}).filter(([, k]) => k === 'start'));
+  // affects strategy"): every team but your own shows only Starting 9 strips + tags (its REAL Starting 9 + spots when the manager shared
+  // it, s9/{owner}, else automatic), and its bench is in plain FP/G rank order. MyGM+ shows everything.
   const dgCats = dcCats();
-  // Slot tag (owner, Nov 9 2026): a Starting 9 player first in a Depth Chart column gets that slot ("PG", "UTIL") by his name.
-  const [topMe, topOppAuto] = await Promise.all([teamSlotTops(w.me, dgMe).catch(() => ({})), opp ? teamSlotTops(opp, dgOpp).catch(() => ({})) : {}]);
-  const topOpp = oppS9 ? { ...topOppAuto, ...oppS9.s } : topOppAuto;
+  const T = {};
+  await Promise.all(owners.map(async o => {
+    const all = await teamDesigs(o).catch(() => ({}));
+    const hide = trim && o !== w.me;
+    const s9 = hide ? await loadSharedS9(o) : null;
+    const dg = !hide ? all ?? {} : s9 ? Object.fromEntries(Object.keys(s9.s).map(pid => [pid, 'start'])) : Object.fromEntries(Object.entries(all ?? {}).filter(([, k]) => k === 'start'));
+    // Slot tag (owner, Nov 9 2026): every player's Depth Chart spot ("PG1", "C2") by his name.
+    const top = await teamSlotTops(o, dg).catch(() => ({}));
+    T[o] = { dg, s9, hide, top: s9 ? { ...top, ...s9.s } : top };
+  }));
+  const dgMe = T[w.me]?.dg ?? {};
+  const topMe = T[w.me]?.top ?? {};
   // My own team: share my Starting 9 + spots (and whether the designations are my own) for other managers' views.
-  if (ownTeamHere(w.me)) publishS9(w.me, Object.fromEntries(Object.keys(dgMe ?? {}).filter(pid => dgMe[pid] === 'start' && topMe[pid]).map(pid => [pid, topMe[pid]])), dcCustom(gmLoad(`gm-dc-desig-${w.me}`, null))).catch(() => {});
-  const slotC = (side, pid) => {
-    const s = (side === 'l' ? topMe : topOpp)?.[pid];
-    const st = (side === 'l' ? dgMe : dgOpp)?.[pid] === 'start'; // Starting 9 = gold tag, everyone else navy
-    if (trim && side === 'r' && !st) return ''; // MyGM: the opponent's non-Starting 9 spots stay hidden
+  if (ownTeamHere(w.me)) publishS9(w.me, Object.fromEntries(Object.keys(dgMe).filter(pid => dgMe[pid] === 'start' && topMe[pid]).map(pid => [pid, topMe[pid]])), dcCustom(gmLoad(`gm-dc-desig-${w.me}`, null))).catch(() => {});
+  const slotC = (o, pid) => {
+    const t = T[o];
+    const s = t?.top?.[pid];
+    const st = t?.dg?.[pid] === 'start'; // Starting 9 = gold tag, everyone else navy
+    if (t?.hide && !st) return ''; // MyGM: other teams' non-Starting 9 spots stay hidden
     return s ? ` <span class="dc-slot mb-stag${st ? '' : ' alt'}${pcCls(s)}" title="${st ? 'Starting 9 · ' : ''}${s} on the Depth Chart">${s}</span>` : '';
   };
-  const dgKey = (side, pid) => { const k = (side === 'l' ? dgMe : dgOpp)?.[pid]; return k && dcCatOf(k, dgCats) ? k : null; };
-  const dgc = (side, pid) => { const k = dgKey(side, pid); return k ? ` mb-dg ${dgClass(k, dgCats)}` : ''; };
+  const dgKey = (o, pid) => { const k = T[o]?.dg?.[pid]; return k && dcCatOf(k, dgCats) ? k : null; };
+  const dgc = (o, pid) => { const k = dgKey(o, pid); return k ? ` mb-dg ${dgClass(k, dgCats)}` : ''; };
   // Bench order (owner, Nov 2 2026): by category in the categories' order (none last), then his rank inside that group
   // on the Depth Chart's Designations card (that team's drag order), then league rank in FP/G (fpgRanks), so groups
   // nobody has ordered still read best first.
   const dgRanks = await fpgRanks(DATA, w.season).catch(() => ({}));
-  const benchSort = (list, side) => {
-    const d = (side === 'l' ? dgMe : dgOpp) ?? {};
-    const order = side === 'r' && trim ? {} : gmLoad(`gm-dc-desig-${side === 'l' ? w.me : opp}`, null)?.order ?? {};
+  const benchSort = (list, o) => {
+    const d = T[o]?.dg ?? {};
+    const order = T[o]?.hide ? {} : gmLoad(`gm-dc-desig-${o}`, null)?.order ?? {};
     const group = pid => { const i = dgCats.findIndex(c => c.id === d[pid]); return i < 0 ? dgCats.length : i; };
     const inGroup = pid => { const i = (order[d[pid]] ?? []).indexOf(pid); return i < 0 ? 1e6 : i; };
     const rank = pid => dgRanks?.[pid] ?? 1e6;
     return [...list].sort((a, b) => group(a.pid) - group(b.pid) || inGroup(a.pid) - inGroup(b.pid) || rank(a.pid) - rank(b.pid));
   };
   // The strip itself: a thick bar on the board's OUTER edge (first child; .mb-r is row-reverse, so it lands on the right).
-  const dgBar = (side, pid) => { const k = dgKey(side, pid); if (!k) return ''; const c = dcCatOf(k, dgCats); return `<span class="mb-dgbar dgc-${c.color}" title="Depth Chart: ${esc(c.name)}">${esc(c.short)}</span>`; };
+  const dgBar = (o, pid) => { const k = dgKey(o, pid); if (!k) return ''; const c = dcCatOf(k, dgCats); return `<span class="mb-dgbar dgc-${c.color}" title="Depth Chart: ${esc(c.name)}">${esc(c.short)}</span>`; };
   // The opponent's lineup as the coach assumes it: their best healthy players (fromBench = moved in).
   const oppRow = r => {
     if (r.empty) return `<li><span>Empty spot<small>${esc(r.slot)} · nobody healthy with games left to fill it</small></span><b class="gm-badge-s gm-none">0</b></li>`;
@@ -7485,9 +7698,9 @@ async function renderCoach(body, params) {
     return `<li><span>${esc(r.name)}${r.fromBench ? ' <span class="cm-pill good">From bench</span>' : ''} ${injuryTag(r)}<small>${esc(r.slot)} · ${esc(what)}</small></span><b class="gm-badge-s gm-${s.fixed != null ? 'locked' : 'wait'}">${badge}</b></li>`;
   };
   const benchedOpp = coach.oppBest?.benched ?? [];
+  const rowsOf = o => (o === w.me ? coach.rows : every[o]?.rows ?? []);
+  const teamOf = o => (o === w.me ? coach.team : every[o]?.team);
 
-  // Matchup board: both current starting lineups across from each other, slot in the middle.
-  const oppRows = coach.oppCoach?.rows ?? [];
   // Locked points and starters left to lock; ifLocked/ifLeft = the same if every unlocked
   // score (a finished game not locked yet) were locked now.
   // Soft locks (owner, Nov 8 2026) count as locked: their score is in the locked total and they aren't "left to lock".
@@ -7526,7 +7739,7 @@ async function renderCoach(body, params) {
   };
   // PosX tag under the name (owner, Nov 11 2026: on phones it was cut off at the end of the name line).
   const nameHtml = (p, tag = '') => `<b><span class="mb-full">${esc(p.name)}</span><span class="mb-short">${esc(short(p.name))}</span></b>${tag}`;
-  // A tappable player: key = side + pid, opens his card (data-for) below the row.
+  // A tappable player: key = side + team + pid (unique across the matchup panels), opens his card (data-for) below the row.
   const tapAttrs = key => `role="button" tabindex="0" data-key="${esc(key)}" aria-expanded="${MB_OPEN.has(key)}"`;
   // Next game's tip-off for players who aren't locked ("Next Fri 8:30pm"); a game later today is
   // already in the "Today vs X · time" tag, so it isn't repeated.
@@ -7535,7 +7748,7 @@ async function renderCoach(body, params) {
     const t = tipTime(next).replace(/ ([AP])M$/, (_, x) => `${x.toLowerCase()}m`);
     return `Next ${shortDay(next.date)}${t ? ` ${t}` : ''}`;
   };
-  const who = (r, side) => {
+  const who = (r, side, o) => {
     if (!r) return `<div class="mb-p mb-${side}"></div>`;
     if (r.empty) return `<div class="mb-p mb-${side}"><span class="mb-name"><i>Empty</i></span>${scoreBox(r)}</div>`;
     // A lock call says by when: his next game's tip-off ("Lock by 6:30pm on Fri"), or the day if no time is known.
@@ -7550,18 +7763,18 @@ async function renderCoach(body, params) {
     const nextUp = ['wait', 'plan', 'live'].includes(r.call) && !r.whatIf ? nextTip(r.sched.find(g => !g.done && !g.playing)) : '';
     // Every position he can play (owner, Nov 11 2026: "show all positions a player can play on the assistant coach").
     const meta = [r.team || 'FA', r.call === 'none' ? 'No games' : r.call === 'plan' ? `${r.sched.length} game${r.sched.length === 1 ? '' : 's'}` : isLock ? lockBy() : advice(r) ? '' : label(r), nextUp].filter(Boolean).join(' · ');
-    return `<div class="mb-p mb-${side} mb-${r.whatIf ? 'wi' : r.call}${todayGame(r) ? ' mb-on' : ''}${dgc(side, r.pid)}" ${tapAttrs(`${side}-${r.pid}`)}>
-      ${dgBar(side, r.pid)}<span class="mb-name">${nameHtml(r, slotC(side, r.pid))}<span class="mb-tags">${tags(r)}</span><small${isLock ? ' class="mb-lockby"' : nextUp ? ' class="mb-wrap"' : ''}>${posTxt(r.elig)}${meta ? ` · ${esc(meta)}` : ''}</small></span>
+    return `<div class="mb-p mb-${side} mb-${r.whatIf ? 'wi' : r.call}${todayGame(r) ? ' mb-on' : ''}${dgc(o, r.pid)}" ${tapAttrs(`${side}-${o}-${r.pid}`)}>
+      ${dgBar(o, r.pid)}<span class="mb-name">${nameHtml(r, slotC(o, r.pid))}<span class="mb-tags">${tags(r)}</span><small${isLock ? ' class="mb-lockby"' : nextUp ? ' class="mb-wrap"' : ''}>${posTxt(r.elig)}${meta ? ` · ${esc(meta)}` : ''}</small></span>
       ${scoreBox(r)}</div>`;
   };
   // Bench and IR players: no score (bench points never count); red + struck out with no games left.
-  const reserve = (p, side, where) => {
+  const reserve = (p, side, o, where) => {
     if (!p) return `<div class="mb-p mb-${side}"></div>`;
     const left = gamesLeft(p);
     const nextUp = left ? nextTip((w.slate[p.team] ?? []).find(g => g.status !== 'complete' && (g.date > today || (g.date === today && g.status === 'pre_game')))) : '';
     const meta = [p.team || 'FA', left ? `${left} game${left === 1 ? '' : 's'} left` : 'No games left', nextUp].filter(Boolean).join(' · ');
-    return `<div class="mb-p mb-${side} mb-res${left ? '' : ' mb-gone'}${todayGame(p) ? ' mb-on' : ''}${dgc(side, p.pid)}" ${tapAttrs(`${side}-${where}-${p.pid}`)}>
-      ${dgBar(side, p.pid)}<span class="mb-name">${nameHtml(p, slotC(side, p.pid))}<span class="mb-tags">${tags(p)}</span><small${nextUp ? ' class="mb-wrap"' : ''}>${posTxt(p.elig)}${meta ? ` · ${esc(meta)}` : ''}</small></span></div>`;
+    return `<div class="mb-p mb-${side} mb-res${left ? '' : ' mb-gone'}${todayGame(p) ? ' mb-on' : ''}${dgc(o, p.pid)}" ${tapAttrs(`${side}-${o}-${where}-${p.pid}`)}>
+      ${dgBar(o, p.pid)}<span class="mb-name">${nameHtml(p, slotC(o, p.pid))}<span class="mb-tags">${tags(p)}</span><small${nextUp ? ' class="mb-wrap"' : ''}>${posTxt(p.elig)}${meta ? ` · ${esc(meta)}` : ''}</small></span></div>`;
   };
   // The card a tapped bench/IR player opens: his week's games and what he could still add.
   const reserveCard = (p, where, mine) => {
@@ -7580,53 +7793,87 @@ async function renderCoach(body, params) {
       ${left ? muLine(p.pos, sched) : ''}
     </div>`;
   };
-  const detail = (key, html) => `<div class="mb-detail mb-d${key[0]}" data-for="${esc(key)}"${MB_OPEN.has(key) ? '' : ' hidden'}><p class="mb-whose">${esc(key[0] === 'l' ? teamName(w.me, w.season) : teamName(opp, w.season))}</p>${html}</div>`;
-  const side = (owner, t) => `<div class="mb-team"><small>${esc(owner ? teamName(owner, w.season) : 'No opponent')}</small>${owner ? `<b>${num(t.locked)}<span>(${t.left})</span></b><em title="If every unlocked score were locked now">${num(t.ifLocked)} (${t.ifLeft})</em>` : ''}</div>`;
+  const detail = (key, side, o, html) => `<div class="mb-detail mb-d${side}" data-for="${esc(key)}"${MB_OPEN.has(key) ? '' : ' hidden'}><p class="mb-whose">${esc(teamName(o, w.season))}</p>${html}</div>`;
+  const teamHead = (owner, t) => `<div class="mb-team"><small>${esc(owner ? teamName(owner, w.season) : 'No opponent')}</small>${owner ? `<b>${num(t.locked)}<span>(${t.left})</span></b><em title="If every unlocked score were locked now">${num(t.ifLocked)} (${t.ifLeft})</em>` : ''}</div>`;
   // Bench or IR section: both teams side by side, each row followed by its (hidden) cards.
-  const section = (label, mineList, theirList, where) => {
+  const section = (label, a, b, where, mineList, theirList) => {
     if (!mineList.length && !theirList.length) return '';
     const rows = Array.from({ length: Math.max(mineList.length, theirList.length) }, (_, i) => {
-      const a = mineList[i], b = theirList[i];
-      return `<div class="mb-row mb-rrow">${reserve(a, 'l', where)}<span class="mb-slot"></span>${reserve(b, 'r', where)}</div>
-        ${a ? detail(`l-${where}-${a.pid}`, reserveCard(a, where, true)) : ''}${b ? detail(`r-${where}-${b.pid}`, reserveCard(b, where, false)) : ''}`;
+      const x = mineList[i], y = theirList[i];
+      return `<div class="mb-row mb-rrow">${reserve(x, 'l', a, where)}<span class="mb-slot"></span>${reserve(y, 'r', b, where)}</div>
+        ${x ? detail(`l-${a}-${where}-${x.pid}`, 'l', a, reserveCard(x, where, a === w.me)) : ''}${y ? detail(`r-${b}-${where}-${y.pid}`, 'r', b, reserveCard(y, where, false)) : ''}`;
     }).join('');
-    return `<div class="mb-sec"><span>${label}</span><span class="mb-slot"></span><span>${opp ? label : ''}</span></div><div class="mb-rows">${rows}</div>`;
+    return `<div class="mb-sec"><span>${label}</span><span class="mb-slot"></span><span>${b ? label : ''}</span></div><div class="mb-rows">${rows}</div>`;
   };
   const oppTeam = coach.oppCoach?.team;
-  // Between the two teams (owner, Oct 2026): your locked-points lead, then starters left to lock vs
+  // Between the two teams (owner, Oct 2026): the left team's locked-points lead, then starters left to lock vs
   // theirs ("+12 (2 more)"). What-if locks count, since the tally treats them as locked.
-  const tMe = tally(coach.rows);
-  const tOpp = tally(oppRows);
-  const gap = () => {
-    if (!opp) return '';
-    const d = Math.round((tMe.locked - tOpp.locked) * 10) / 10;
-    const n = tMe.left - tOpp.left;
+  const gap = (tA, tB) => {
+    const d = Math.round((tA.locked - tB.locked) * 10) / 10;
+    const n = tA.left - tB.left;
     const left = n ? `${Math.abs(n)} ${n < 0 ? 'less' : 'more'}` : 'even';
     // Points per extra starter it takes to even it up: the gap divided by the difference in starters left.
     const per = n && d ? Math.round((Math.abs(d) / Math.abs(n)) * 10) / 10 : null;
-    return `<b class="mb-gap ${d > 0 ? 'up' : d < 0 ? 'down' : ''}" title="Locked points ahead or behind (starters left to lock vs theirs)">${d > 0 ? '+' : d < 0 ? '-' : ''}${num(Math.abs(d))} <span>(${left})</span></b>${per != null ? `<small class="mb-per" title="The gap divided by the difference in starters left to lock">${num(per)} per slot</small>` : ''}${medianPer()}`;
+    return `<b class="mb-gap ${d > 0 ? 'up' : d < 0 ? 'down' : ''}" title="Locked points ahead or behind (starters left to lock vs theirs)">${d > 0 ? '+' : d < 0 ? '-' : ''}${num(Math.abs(d))} <span>(${left})</span></b>${per != null ? `<small class="mb-per" title="The gap divided by the difference in starters left to lock">${num(per)} per slot</small>` : ''}${medianPer(tA)}`;
   };
-  // What each of your starters left to lock needs on average to reach the projected league median
-  // (owner, Oct 2026): (projected median - your locked points) / your starters left to lock.
-  const medianPer = () => {
+  // What each of the left team's starters left to lock needs on average to reach the projected league median
+  // (owner, Oct 2026): (projected median - locked points) / starters left to lock.
+  const medianPer = t => {
     const m = coach.now?.medianScore;
     if (!w.medianOn || m == null) return '';
-    const need = m - tMe.locked;
-    if (need <= 0) return `<small class="mb-per mb-med-ok" title="Your locked points already pass the projected median (${num(Math.round(m * 10) / 10)})">Median: already past it</small>`;
-    if (!tMe.left) return '';
-    return `<small class="mb-per" title="Projected median ${num(Math.round(m * 10) / 10)} minus your locked points, split over your ${tMe.left} starters left to lock">Median: ${num(Math.round((need / tMe.left) * 10) / 10)} per slot</small>`;
+    const need = m - t.locked;
+    if (need <= 0) return `<small class="mb-per mb-med-ok" title="The locked points already pass the projected median (${num(Math.round(m * 10) / 10)})">Median: already past it</small>`;
+    if (!t.left) return '';
+    return `<small class="mb-per" title="Projected median ${num(Math.round(m * 10) / 10)} minus the locked points, split over the ${t.left} starters left to lock">Median: ${num(Math.round((need / t.left) * 10) / 10)} per slot</small>`;
   };
+  // ODDS ON TOP (owner, Nov 15 2026: moved above the board): win chance, beat the median, expected final, projected median,
+  // for both teams of the panel. Your own game uses coach.now (your team following the coach, as before).
+  const oddsBlock = (a, b) => {
+    const oa = a === w.me ? coach.now : coach.oddsFor?.(a, b);
+    if (!oa || (!b && !w.medianOn)) return '';
+    const ob = b ? coach.oddsFor?.(b, a) : null;
+    const pct = x => (x == null ? '–' : gmPct(x));
+    const pts = x => (x == null ? '–' : num(Math.round(x)));
+    const fav = (x, y) => (x != null && y != null && x > y ? ' fav' : '');
+    const row = (label, x, y, cls = '') => `<div class="mb-orow${cls}"><b class="mb-ol${fav(x?.v, y?.v)}">${x?.t ?? ''}</b><span>${label}</span><b class="mb-or${fav(y?.v, x?.v)}">${y?.t ?? ''}</b></div>`;
+    const v = (val, t) => ({ v: val, t });
+    return `<div class="mb-odds" aria-label="Odds">
+      ${b ? row('Win chance', v(oa.h2h, pct(oa.h2h)), v(ob?.h2h, pct(ob?.h2h)), ' mb-owin') : ''}
+      ${w.medianOn ? row('Beat the median', v(oa.median, pct(oa.median)), b ? v(ob?.median, pct(ob?.median)) : null) : ''}
+      ${row('Expected final', v(oa.avg?.[a], pts(oa.avg?.[a])), b ? v(oa.avg?.[b], pts(oa.avg?.[b])) : null)}
+      ${w.medianOn && oa.medianScore != null ? `<p class="mb-omed">Projected median <b class="gm-med">${num(Math.round(oa.medianScore * 10) / 10)}</b></p>` : ''}
+    </div>`;
+  };
+  const panelHtml = (p, idx) => {
+    const mine = idx === 0;
+    const A = rowsOf(p.a), B = p.b ? rowsOf(p.b) : [];
+    const tA = tally(A), tB = tally(B);
+    const notes = trim ? [p.a, p.b].filter(o => o && T[o]?.hide).map(o => `<p class="mb-key mb-s9note"><span class="dc-s9kind${T[o].s9?.custom ? ' custom' : ''}">${T[o].s9?.custom ? 'Custom Starting 9' : 'Automatic Starting 9'}</span> ${s9Note(T[o].s9, teamName(o, w.season))}</p>`).join('') : '';
+    return `<div class="mb-panel${mine ? ' mb-mine' : ''}" data-panel="${idx}" role="group" aria-roledescription="matchup" aria-label="${esc(`${teamName(p.a, w.season)} vs ${p.b ? teamName(p.b, w.season) : 'no opponent'}`)}">
+      ${oddsBlock(p.a, p.b)}
+      <div class="mb-head">${teamHead(p.a, tA)}<span class="mb-mid">${p.b ? gap(tA, tB) : ''}<span class="mb-vs">vs</span></span>${teamHead(p.b, tB)}</div>
+      ${notes}
+      <div class="mb-rows">${A.map((r, i) => {
+        const o = B[i];
+        return `<div class="mb-row">${who(r, 'l', p.a)}<span class="mb-slot${pcCls(r.slot)}">${esc(r.slot)}</span>${who(o, 'r', p.b)}</div>
+          ${r.empty ? '' : detail(`l-${p.a}-${r.pid}`, 'l', p.a, card(r, p.a === w.me, i, !mine))}${o && !o.empty ? detail(`r-${p.b}-${o.pid}`, 'r', p.b, card(o, false, i, !mine)) : ''}`;
+      }).join('')}</div>
+      ${section('Bench', p.a, p.b, 'bn', benchSort(teamOf(p.a)?.bench ?? [], p.a), p.b ? benchSort(teamOf(p.b)?.bench ?? [], p.b) : [])}
+      ${section('IR', p.a, p.b, 'ir', teamOf(p.a)?.ir ?? [], p.b ? teamOf(p.b)?.ir ?? [] : [])}
+    </div>`;
+  };
+  const navLabel = i => (i === 0 ? 'Your matchup' : `${teamName(panels[i].a, w.season)} vs ${teamName(panels[i].b, w.season)}`);
+  const multi = panels.length > 1;
   const board = `
-    <div class="mb-head">${side(w.me, tMe)}<span class="mb-mid">${gap()}<span class="mb-vs">vs</span></span>${side(opp, tOpp)}</div>
     <p class="mb-key">Locked points <span>(starters left to lock)</span><br>Small number: if every unlocked score were locked now · tap a player for his card</p>
-    ${trim && opp ? `<p class="mb-key mb-s9note"><span class="dc-s9kind${oppS9?.custom ? ' custom' : ''}">${oppS9?.custom ? 'Custom Starting 9' : 'Automatic Starting 9'}</span> on their side: ${s9Note(oppS9, teamName(opp, w.season))}</p>` : ''}
-    <div class="mb-rows">${coach.rows.map((r, i) => {
-      const o = oppRows[i];
-      return `<div class="mb-row">${who(r, 'l')}<span class="mb-slot${pcCls(r.slot)}">${esc(r.slot)}</span>${who(o, 'r')}</div>
-        ${r.empty ? '' : detail(`l-${r.pid}`, card(r, true, i))}${o && !o.empty ? detail(`r-${o.pid}`, card(o, false, i)) : ''}`;
-    }).join('')}</div>
-    ${section('Bench', benchSort(coach.team.bench ?? [], 'l'), benchSort(oppTeam?.bench ?? [], 'r'), 'bn')}
-    ${section('IR', coach.team.ir ?? [], oppTeam?.ir ?? [], 'ir')}`;
+    ${multi ? `<div class="mb-nav">
+      <button type="button" class="mb-arrow" data-mbgo="-1" aria-label="Previous matchup">‹</button>
+      <div class="mb-navmid"><b class="mb-navlbl" aria-live="polite">${esc(navLabel(0))}</b>
+        <span class="mb-dots">${panels.map((_, i) => `<button type="button" class="${i ? '' : 'on'}" data-mbdot="${i}" aria-label="Matchup ${i + 1} of ${panels.length}"></button>`).join('')}</span>
+        <small class="mb-navsub">1 of ${panels.length} · swipe for the other games</small></div>
+      <button type="button" class="mb-arrow" data-mbgo="1" aria-label="Next matchup">›</button>
+    </div>` : ''}
+    <div class="mb-strip${multi ? '' : ' mb-one'}" tabindex="${multi ? 0 : -1}">${panels.map(panelHtml).join('')}</div>`;
 
   body.innerHTML = `<div class="gm-page">
     <div class="cm-pickers gm-tools">
@@ -7639,8 +7886,6 @@ async function renderCoach(body, params) {
       ${coach.calls.length && !trim ? `<p class="gm-alert">Lock now: ${coach.calls.map(r => `<b>${esc(r.name)}</b> (${num(r.score)}${r.lockSlot ? ` in ${esc(r.lockSlot)}` : ''})`).join(', ')}.</p>` : ''}
       ${whatIfBanner(w)}
       ${board}
-      ${opp || w.medianOn ? gmOdds(w, coach.now) : ''}
-      ${opp ? `<p class="cm-rule gm-center">Expected final: you ${num(coach.now.avg[w.me])}, ${esc(teamName(opp, w.season))} ${num(coach.now.avg[opp])}.</p>` : ''}
     </section>
     ${pipelineCard(w)}
     <div class="cm-races">
@@ -7687,6 +7932,7 @@ async function renderCoach(body, params) {
     el.addEventListener('click', e => { if (!e.target.closest('a')) toggle(el); });
     el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(el); } });
   });
+  bindMatchupStrip(body, panels.map(p => p.a), navLabel);
   // Real lock marks (this device): "I locked him" = his latest game; a tapped game chip = that game
   // (tap it again to undo); "Not locked" = ignore Sleeper's reading for him ({ none: true }).
   // Each mark is also saved as a Dev Dashboard pick (coachPick: word of law, used by the Monday solve), so the two
