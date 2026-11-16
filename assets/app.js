@@ -7673,6 +7673,8 @@ function wspCard(w, dg, cats) {
       locked: Boolean(r && r.call === 'locked' && !r.whatIf), lockScore: r?.score ?? null, lockDate: r?.lockDate ?? null,
       // An unlocked starter holding an earlier score this week: another lineup game replaces it.
       held: start >= 0 && r && !r.whatIf && r.call !== 'locked' && last ? { pts: last.pts, date: last.date } : null,
+      // Soft lock (gm.js coachCall r.soft): done for the week, not locked; his score counts if he stays in the lineup.
+      soft: start >= 0 && r && r.soft && !r.whatIf && r.call !== 'locked' ? { pts: r.score ?? 0, date: last?.date ?? null } : null,
     };
   };
   const players = [
@@ -7691,6 +7693,13 @@ function wspCard(w, dg, cats) {
   const row = r => {
     const slot = `<span class="wsp-slot${pcCls(r.slot)}">${esc(r.slot)}</span>`;
     if (r.kind === 'locked') return `<li class="wsp-row wsp-locked">${slot}<span class="wsp-who"><b>${esc(r.p.name)}</b> ${tag(r.p)}<small>🔒 Locked${r.p.lockDate ? ` ${esc(shortDay(r.p.lockDate))}` : ''}${r.p.lockScore != null ? ` at ${num(r.p.lockScore)}` : ''}: keeps this spot all week</small></span></li>`;
+    if (r.kind === 'soft') {
+      const s = r.p.soft;
+      const held = `<span class="wsp-who"><b>${esc(r.p.name)}</b> ${tag(r.p)}<small>Soft lock · done for the week · holds ${num(s.pts)}${s.date ? ` from ${esc(shortDay(s.date))}` : ''} (counts if he stays in the lineup)</small></span>`;
+      const sw = r.swap ? `<div class="wsp-dbl wsp-swap"><span class="wsp-call">Keep or swap</span>
+        <p>Keep <b>${esc(r.p.name)}</b>’s ${num(s.pts)}, or start <b>${esc(r.swap.p.name)}</b> ${tag(r.swap.p)} (${posTxt(r.swap.p.elig)} · ${gameTxt(r.swap.p, r.swap.g)}) in his spot before tip-off. Benching ${esc(r.p.name.split(' ').slice(-1)[0])} loses his ${num(s.pts)}; ${esc(r.swap.p.name.split(' ').slice(-1)[0])}’s game would count instead (or a later one if he stays in). Your call.</p></div>` : '';
+      return `<li class="wsp-row wsp-softrow">${slot}<span class="wsp-stack">${held}${sw}</span></li>`;
+    }
     if (r.kind === 'open') return `<li class="wsp-row wsp-open">${slot}<span class="wsp-who"><b>Open</b><small>Nobody left who fits ${esc(r.slot)} plays this day</small></span></li>`;
     const base = r.kind === 'tipped'
       ? who(r.p, r.g, ` · <b class="wsp-now">${r.g.status === 'complete' ? 'played' : 'playing'}</b>`)
@@ -7722,12 +7731,13 @@ function wspCard(w, dg, cats) {
     </div>`;
   };
   const chip = d => {
-    const flag = d.open ? `<i class="wsp-f open">${d.open} open</i>` : d.doubles ? `<i class="wsp-f dbl">${d.doubles} call${d.doubles === 1 ? '' : 's'}</i>` : '';
+    const calls = d.doubles + (d.swaps ?? 0);
+    const flag = d.open ? `<i class="wsp-f open">${d.open} open</i>` : calls ? `<i class="wsp-f dbl">${calls} call${calls === 1 ? '' : 's'}</i>` : '';
     return `<button type="button" role="tab" data-wday="${d.date}" class="${d.date === pick ? 'on' : ''}${d.open ? ' slim' : ''}" aria-selected="${d.date === pick}">${d.date === today ? 'Today' : esc(shortDay(d.date))} ${Number(d.date.slice(8))}${flag}</button>`;
   };
   const slim = days.filter(d => d.open).length;
   return betaCard('Weekly Start Planner', `
-    <p class="cm-rule">Each day’s lineup from your Depth Chart: ${order.map(k => esc(k.name)).join(' → ')}, best FP/G first inside each (players with no category last). IR and taxi never start. Only players with a game that day; a locked starter keeps his spot all week, bench games never count, and a player can only be moved in before his game tips. Two players whose games tip 90+ minutes apart can share a spot: the early one plays, then it’s your call.</p>
+    <p class="cm-rule">Each day’s lineup from your Depth Chart: ${order.map(k => esc(k.name)).join(' → ')}, best FP/G first inside each (players with no category last). IR and taxi never start. Only players with a game that day; a locked starter keeps his spot all week, a starter who’s done for the week but not locked (soft lock) holds his spot with a keep-or-swap call when someone else could use it, bench games never count, and a player can only be moved in before his game tips. Two players whose games tip 90+ minutes apart can share a spot: the early one plays, then it’s your call.</p>
     ${slim ? `<p class="wsp-flag-box">⚑ ${slim} slim day${slim === 1 ? '' : 's'} this week: ${days.filter(d => d.open).map(d => esc(shortDay(d.date))).join(', ')}.</p>` : ''}
     <div class="gm-days wsp-days" role="tablist" aria-label="Days">${days.map(chip).join('')}</div>
     ${days.map(panel).join('')}

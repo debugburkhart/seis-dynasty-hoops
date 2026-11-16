@@ -1517,6 +1517,12 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   SLIM DAYS (owner: "just flag the day"): open spots -> red "⚑ Slim day" box + red day chip "N open", top line lists the slim days;
   no free agents listed. Day chips also show "N calls" (doubles). Rows show the category chip (dsgTag), positions, game + tip,
   and for an unlocked starter holding an earlier score "Holds 40 from Tue, not locked: a game in the lineup today replaces it".
+  SOFT LOCKS (owner, Nov 15 2026: "show it as a keep or swap decision"): a starter with gm.js r.soft (done for the week, not
+  locked) holds his spot on every day he has no game (row "Soft lock · done for the week · holds 41 from Tue", not counted as
+  open); the best player left over who fits that spot and plays that day (fill order) is offered in a gold "Keep or swap" box
+  (benching him loses his score); never automatic; lowest hold gets the best option; swaps are picked before double-ups and
+  count as "calls" on the day chip. Tested with made-up data (2 soft spots both held + swap offered); the drawn row not yet seen
+  with live data (no soft locks when built).
   Uses TODAY's roster + designations for every day. Checked week 5 (Parma): Mon 9 / 9 + Eason (ROT 6:30p) then Booker (S9 8:00p)
   sub-or-keep; Thu 4 / 9, 5 open; Fox / VanVleet / Murray Out listed.
 - PLAN FOR MANAGER LOGINS (owner, Nov 9 2026; agreed in talk; STEPS 1-3 BUILT the same day, see MYGM LOGIN below): MyGM becomes the

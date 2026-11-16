@@ -51,16 +51,20 @@ function place(open, set, slots) {
 
 // One day. players = active roster (starters + bench, no IR spot / taxi) as
 // { pid, name, elig, team, fpg, cat (index in the category order; Infinity = none), catId, start (slot index | -1),
-//   injury, missDates, locked (bool), held: { pts, date } | null }.
+//   injury, missDates, locked (bool), held: { pts, date } | null, soft: { pts } | null (done for the week, not locked) }.
+// SOFT LOCKS (owner, Nov 15 2026: "show it as a keep or swap decision"): a starter who isn't locked but has no games left
+// keeps his spot on days he doesn't play (his score counts if he stays in the lineup); the best player left over who fits
+// that spot and plays that day is offered as a swap (benching him loses his score). Never automatic.
 export function planDay({ date, slots, players, slate, today, now = Date.now(), bad = SITS, bestFit }) {
   const gameOf = p => (slate[p.team] ?? []).find(g => g.date === date) ?? null;
   const closed = new Map(); // slot index -> locked player
   const fixed = new Map(); // slot index -> starter whose game today already tipped (he plays there)
+  const soft = new Map(); // slot index -> starter done for the week, not locked (holds his score there)
   const out = [], lateBench = [], cands = [];
   for (const p of players) {
     if (p.locked && p.start >= 0) { closed.set(p.start, p); continue; }
     const g = gameOf(p);
-    if (!g) continue;
+    if (!g) { if (p.soft && p.start >= 0) soft.set(p.start, p); continue; }
     if (bad.test(p.injury ?? '') || (p.missDates ?? []).includes(date)) { out.push({ p, g }); continue; }
     if (tipped(g, today, now)) {
       if (p.start >= 0) fixed.set(p.start, { p, g });
@@ -70,7 +74,7 @@ export function planDay({ date, slots, players, slate, today, now = Date.now(), 
     cands.push({ p, g });
   }
   // A tipped starter's slot is taken by him. (A bench player could still double up behind him: see below.)
-  const open = slots.map((_, i) => i).filter(i => !closed.has(i) && !fixed.has(i));
+  const open = slots.map((_, i) => i).filter(i => !closed.has(i) && !fixed.has(i) && !soft.has(i));
   cands.sort((a, b) => a.p.cat - b.p.cat || (b.p.fpg ?? 0) - (a.p.fpg ?? 0) || a.p.name.localeCompare(b.p.name));
   const chosen = [];
   for (const c of cands) if (place(open, [...chosen.map(x => x.p), c.p], slots)) chosen.push(c);
@@ -92,6 +96,7 @@ export function planDay({ date, slots, players, slate, today, now = Date.now(), 
   const rows = slots.map((slot, i) => {
     if (closed.has(i)) return { slot, i, kind: 'locked', p: closed.get(i) };
     if (fixed.has(i)) return { slot, i, kind: 'tipped', ...fixed.get(i) };
+    if (soft.has(i)) return { slot, i, kind: 'soft', p: soft.get(i) };
     if (at.has(i)) return { slot, i, kind: 'start', ...at.get(i) };
     return { slot, i, kind: 'open' };
   });
@@ -103,7 +108,15 @@ export function planDay({ date, slots, players, slate, today, now = Date.now(), 
   const rankOf = p => [p.cat, -(p.fpg ?? 0)];
   const weaker = (a, b) => { const x = rankOf(a), y = rankOf(b); return x[0] - y[0] || x[1] - y[1]; };
   const extra = [];
+  // KEEP OR SWAP first: the best player left over who fits a soft-locked starter's spot (lowest hold gets the best option).
+  const softRows = rows.filter(r => r.kind === 'soft').sort((a, b) => (a.p.soft?.pts ?? 0) - (b.p.soft?.pts ?? 0));
+  const swapped = new Set();
+  for (const r of softRows) {
+    const c = left.find(x => !swapped.has(x.p.pid) && fitsSlot(r.slot, x.p.elig));
+    if (c) { r.swap = c; swapped.add(c.p.pid); }
+  }
   for (const c of left) {
+    if (swapped.has(c.p.pid)) continue;
     const t = tipMs(c.g);
     const fit = rows.filter(r => ['start', 'tipped'].includes(r.kind) && !r.dbl && fitsSlot(r.slot, c.p.elig) && t != null && tipMs(r.g) != null
       && Math.abs(t - tipMs(r.g)) >= DOUBLE_GAP
@@ -117,7 +130,7 @@ export function planDay({ date, slots, players, slate, today, now = Date.now(), 
     r.dbl = { early, late, ends: tipMs(early.g) + GAME_LEN, added: c.p };
   }
   const openN = rows.filter(r => r.kind === 'open').length;
-  return { date, rows, open: openN, doubles: rows.filter(r => r.dbl).length, bench: extra, out, lateBench, closed: closed.size };
+  return { date, rows, open: openN, doubles: rows.filter(r => r.dbl).length, swaps: rows.filter(r => r.swap).length, bench: extra, out, lateBench, closed: closed.size };
 }
 
 // Every day of the week still to plan: days with at least one game, from today on (today only while one of its games
