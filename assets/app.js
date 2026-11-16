@@ -2683,6 +2683,9 @@ async function renderReportCards(body, params) {
 // trophies (hype.js trophyHistory). Players: awards they won WHILE ON THIS TEAM (breakdown.js playerAwards: the fantasy team
 // is the award's team, same as the 2K card's Awards row) and championship rings won here (rings: roster minus taxi).
 const TROPHY_ORDER = ['Championship MVP', 'League MVP', 'Player of the Year', 'Rookie of the Year', 'Steal of the Draft', 'All-Fantasy', 'All-Star', 'All-Rookie'];
+// Trophy Room sections each get their own accent color + icon chip (owner, Nov 15 2026: "they just blend"): .tr-sec.tr-{case,
+// seasons, mgr, rivs, held, pb, honors} in styles.css; the trophy case is a solid navy hero.
+const trIc = name => `<span class="tr-ic">${icon(name)}</span>`;
 async function renderTrophyRoom(body, params, { inDesk = false } = {}) {
   const cur = DATA.seasons.at(-1);
   const me = mygmTeam(params);
@@ -2783,7 +2786,7 @@ async function renderTrophyRoom(body, params, { inDesk = false } = {}) {
   body.innerHTML = `
     ${pick()}
     <div class="gm-page tr-page">
-      ${betaCard(`${esc(teamName(me, cur.season))} <small>${esc(name(me))}</small>`, `
+      ${betaCard(`${trIc('trophy')}${esc(teamName(me, cur.season))} <small>${esc(name(me))}</small>`, `
         <div class="tr-stats">
           ${stat(titles.length, `Championship${titles.length === 1 ? '' : 's'}`, list(titles))}
           ${stat(runners.length, 'Runner-up', list(runners))}
@@ -2792,17 +2795,17 @@ async function renderTrophyRoom(body, params, { inDesk = false } = {}) {
           ${stat(mgr.length, 'Manager awards')}
           ${stat(rivals.reduce((t, x) => t + x.won.length, 0), 'Rivalry trophies')}
         </div>
-        <p class="cm-rule">Completed seasons only (${done.length}). Seeds: regular-season win %, then points for, like the Awards banner.</p>`, { sub: 'Trophy case' })}
-      ${betaCard('Season by season', rows.length ? `<div class="tr-scroll"><table class="tr-table">
+        <p class="cm-rule">Completed seasons only (${done.length}). Seeds: regular-season win %, then points for, like the Awards banner.</p>`, { sub: 'Trophy case', cls: 'tr-sec tr-case' })}
+      ${betaCard(`${trIc('calendar')}Season by season`, rows.length ? `<div class="tr-scroll"><table class="tr-table">
           <thead><tr><th>Season</th><th>Team</th><th>Record</th><th>Seed</th><th>Finish</th></tr></thead>
           <tbody>${[...rows].reverse().map(r => `<tr class="${r.champ ? 'champ' : ''}"><td>${seasonSpan(r.s)}</td><td>${esc(teamName(me, r.s))}</td><td>${rec(r.t.w, r.t.l, r.t.t)}</td><td>${r.seed ?? '—'}</td><td>${r.champ ? '🏆 Champion' : r.place ? ordinalPlace(r.place) : r.playoffs ? 'Playoffs' : '—'}</td></tr>`).join('')}</tbody>
-        </table></div>` : '<p class="empty">No completed seasons yet.</p>')}
-      ${betaCard('Manager awards', mgr.length ? `<ul class="tr-list">${mgr.map(a => `<li><span class="tr-aw indiv">${esc(a.label)}</span><small>${seasonSpan(a.s)}${a.pid ? ` · <a href="${card2k(a.pid)}">${esc(pnm(a.pid))}</a>` : ''}</small></li>`).join('')}</ul>` : '<p class="empty">No GM of the Year, Draft of the Year or Steal of the Draft yet.</p>', { sub: 'GM of the Year · Draft of the Year · Steal of the Draft' })}
-      ${rivals.length ? betaCard('Rivalry trophies', `<ul class="tr-riv">${rivals.map(x => `<li>${trophyPic(x.r, 'tr-img')}<div><b>${esc(x.r[2])}</b><small>vs ${esc(name(x.r[0] === me ? x.r[1] : x.r[0]))} · ${x.won.length ? `won ${x.won.map(seasonSpan).join(', ')}` : 'not won yet'}${x.holder === me ? ' · <b class="tr-hold">holds it now</b>' : x.holder ? ` · held by ${esc(name(x.holder))}` : ''}</small></div></li>`).join('')}</ul>`) : ''}
-      ${betaCard('Records held', heldCard(), { sub: `${held.filter(h => !h.r.bad).length} league record${held.filter(h => !h.r.bad).length === 1 ? '' : 's'}${held.some(h => h.r.bad) ? ` + ${held.filter(h => h.r.bad).length} dubious` : ''} · all-time Record Book, No. 1 today (ties shared)` })}
-      ${betaCard('Personal records', pbCard(), { sub: `${pbs.length} personal bests · ${pbTop} league record${pbTop === 1 ? '' : 's'} · ${pbTop3} in the top 3` })}
-      ${betaCard('Player honors on this team', players.length ? `<ul class="tr-players">${players.map(p => `<li><img src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy"><div><a href="${card2k(p.pid)}"><b>${esc(pnm(p.pid))}</b></a><div class="tr-aws">${grouped(p.list)}</div></div></li>`).join('')}</ul>
-        <p class="cm-rule">Awards count for the fantasy team that had him for that award (season’s end; All-Stars at the All-Star break), the same as the Awards page and the Rosters card. Champion = on the title roster in championship week (taxi left out).</p>` : '<p class="empty">No player honors won on this team yet.</p>', { sub: `${players.length} player${players.length === 1 ? '' : 's'}` })}
+        </table></div>` : '<p class="empty">No completed seasons yet.</p>', { cls: 'tr-sec tr-seasons', sub: `${rows.length} season${rows.length === 1 ? '' : 's'}` })}
+      ${betaCard(`${trIc('medal')}Manager awards`, mgr.length ? `<ul class="tr-list">${mgr.map(a => `<li><span class="tr-aw indiv">${esc(a.label)}</span><small>${seasonSpan(a.s)}${a.pid ? ` · <a href="${card2k(a.pid)}">${esc(pnm(a.pid))}</a>` : ''}</small></li>`).join('')}</ul>` : '<p class="empty">No GM of the Year, Draft of the Year or Steal of the Draft yet.</p>', { sub: 'GM of the Year · Draft of the Year · Steal of the Draft', cls: 'tr-sec tr-mgr' })}
+      ${rivals.length ? betaCard(`${trIc('swords')}Rivalry trophies`, `<ul class="tr-riv">${rivals.map(x => `<li>${trophyPic(x.r, 'tr-img')}<div><b>${esc(x.r[2])}</b><small>vs ${esc(name(x.r[0] === me ? x.r[1] : x.r[0]))} · ${x.won.length ? `won ${x.won.map(seasonSpan).join(', ')}` : 'not won yet'}${x.holder === me ? ' · <b class="tr-hold">holds it now</b>' : x.holder ? ` · held by ${esc(name(x.holder))}` : ''}</small></div></li>`).join('')}</ul>`, { cls: 'tr-sec tr-rivs', sub: `${rivals.length} rivalr${rivals.length === 1 ? 'y' : 'ies'}` }) : ''}
+      ${betaCard(`${trIc('crown')}Records held`, heldCard(), { sub: `${held.filter(h => !h.r.bad).length} league record${held.filter(h => !h.r.bad).length === 1 ? '' : 's'}${held.some(h => h.r.bad) ? ` + ${held.filter(h => h.r.bad).length} dubious` : ''} · all-time Record Book, No. 1 today (ties shared)`, cls: 'tr-sec tr-held' })}
+      ${betaCard(`${trIc('star')}Personal records`, pbCard(), { sub: `${pbs.length} personal bests · ${pbTop} league record${pbTop === 1 ? '' : 's'} · ${pbTop3} in the top 3`, cls: 'tr-sec tr-pb' })}
+      ${betaCard(`${trIc('users')}Player honors on this team`, players.length ? `<ul class="tr-players">${players.map(p => `<li><img src="${playerPhoto(DATA, p.pid)}" alt="" loading="lazy"><div><a href="${card2k(p.pid)}"><b>${esc(pnm(p.pid))}</b></a><div class="tr-aws">${grouped(p.list)}</div></div></li>`).join('')}</ul>
+        <p class="cm-rule">Awards count for the fantasy team that had him for that award (season’s end; All-Stars at the All-Star break), the same as the Awards page and the Rosters card. Champion = on the title roster in championship week (taxi left out).</p>` : '<p class="empty">No player honors won on this team yet.</p>', { sub: `${players.length} player${players.length === 1 ? '' : 's'}`, cls: 'tr-sec tr-honors' })}
     </div>`;
   bindTeamPick(body);
 }
@@ -5403,13 +5406,19 @@ async function renderDesk(body, params) {
   const cur = DATA.seasons.at(-1);
   const season = cur.season;
   const me = mygmTeam(params);
-  const view = ['injuries', 'trophies'].includes(params.get('view')) ? params.get('view') : 'desk';
+  const view = ['injuries', 'notes', 'trophies'].includes(params.get('view')) ? params.get('view') : 'desk';
   const teamQ = route().page === 'mygmplus' && params.get('team') ? { team: me } : {};
   const deskHash = `${mygmBase()}?${new URLSearchParams({ tab: 'desk', ...teamQ })}`;
   const back = { ret: deskHash, retl: 'Back to My Desk' };
   const withBack = hash => `${hash}${hash.includes('?') ? '&' : '?'}${new URLSearchParams(back)}`;
-  const sub = `<div class="desk-top">${gmTeamPick(me, season, 'desk')}
-    <div class="st-tabs desk-sub" role="tablist">${[['desk', 'My Desk'], ['injuries', 'Injury Report'], ['trophies', 'Trophy Room']].map(([id, l]) => `<a role="tab" class="${view === id ? 'on' : ''}" href="${mygmBase()}?${new URLSearchParams({ tab: 'desk', ...(id !== 'desk' ? { view: id } : {}), ...teamQ })}">${l}</a>`).join('')}</div></div>`;
+  const deskViewHash = id => `${mygmBase()}?${new URLSearchParams({ tab: 'desk', ...(id !== 'desk' ? { view: id } : {}), ...teamQ })}`;
+  const sub =`<div class="desk-top">${gmTeamPick(me, season, 'desk')}
+    <div class="st-tabs desk-sub" role="tablist">${[['desk', 'My Desk'], ['injuries', 'Injury Report'], ['notes', 'Notes'], ['trophies', 'Trophy Room']].map(([id, l]) => `<a role="tab" class="${view === id ? 'on' : ''}" href="${deskViewHash(id)}">${l}</a>`).join('')}</div></div>`;
+  if (view === 'notes') { // Notes (owner, Nov 15 2026: its own sub-tab, like the Injury Report)
+    body.innerHTML = `${sub}<div id="desk-notes-tab" class="desk-page"></div>`;
+    bindTeamPick(body);
+    return renderNotes($('#desk-notes-tab', body), me);
+  }
   if (view === 'trophies') { // Trophy Room (owner, Nov 14 2026: moved into My Desk next to the Injury Report)
     body.innerHTML = `${sub}<div id="desk-tr"></div>`;
     bindTeamPick(body);
@@ -5640,33 +5649,6 @@ async function renderDesk(body, params) {
 
   // ---- Draw ----
   const SECS = [['decide', 'Decisions', 'What needs a move from you'], ['prec', 'Personal records', 'Your own bests broken this week and last'], ['court', 'Trade Court', 'Cases you haven’t voted on'], ['inj', 'Injury brief', d ? `Week ${week} · ${shortMd(d.from)}–${shortMd(d.to)}${oppId ? ` · vs ${teamName(oppId, season)}` : ''}` : 'No regular-season week right now']];
-  // ---- Notes (owner, Nov 15 2026: "add a notes section ... design it to your taste"): a sticky-note pad per team, synced with
-  // the account (gm-desk-notes-{owner} via 'gm-desk-'): { at, n: [{ id, t (text), c (made), u (edited), pin, done, dn (done at) }] }.
-  // Pinned first, then newest; ticking one done moves it to a Done fold (kept until deleted). Ctrl/⌘ + Enter adds.
-  const NOTES_KEY = `gm-desk-notes-${me}`;
-  const NOTE_MAX = 600;
-  const notesNow = () => { const v = gmLoad(NOTES_KEY, null); return Array.isArray(v?.n) ? v.n : []; };
-  const notesSave = n => gmSave(NOTES_KEY, { at: Date.now(), n });
-  const noteWhen = ms => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' });
-  const noteText = t => esc(t).replace(/\n/g, '<br>');
-  const noteHtml = x => (DESK_OPEN.edit === x.id
-    ? `<li class="desk-note editing" data-note="${esc(x.id)}"><textarea class="desk-note-in" maxlength="${NOTE_MAX}" rows="3" aria-label="Edit note">${esc(x.t)}</textarea>
-        <div class="desk-note-acts"><button type="button" class="desk-nbtn on" data-nsave>Save</button><button type="button" class="desk-nbtn" data-ncancel>Cancel</button></div></li>`
-    : `<li class="desk-note${x.pin ? ' pinned' : ''}${x.done ? ' done' : ''}" data-note="${esc(x.id)}">
-        <label class="desk-ncheck" title="${x.done ? 'Not done' : 'Done'}"><input type="checkbox" data-ndone aria-label="Done"${x.done ? ' checked' : ''}></label>
-        <div class="desk-ntext"><p>${noteText(x.t)}</p><small>${x.pin ? '📌 Pinned · ' : ''}${esc(noteWhen(x.c))}${x.u ? ` · edited ${esc(noteWhen(x.u))}` : ''}</small></div>
-        <div class="desk-note-acts">${x.done ? '' : `<button type="button" class="desk-nbtn${x.pin ? ' on' : ''}" data-npin aria-pressed="${Boolean(x.pin)}">${x.pin ? 'Unpin' : 'Pin'}</button><button type="button" class="desk-nbtn" data-nedit>Edit</button>`}<button type="button" class="desk-nbtn del" data-ndel aria-label="Delete note">×</button></div></li>`);
-  const notesHtml = () => {
-    const n = notesNow();
-    const open = n.filter(x => !x.done).sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || b.c - a.c);
-    const doneN = n.filter(x => x.done).sort((a, b) => (b.dn ?? b.c) - (a.dn ?? a.c));
-    return betaCard('Notes', `<form class="desk-nadd"><textarea class="desk-note-in" name="t" maxlength="${NOTE_MAX}" rows="2" placeholder="Jot something down: a trade idea, a waiver target, who to watch…" aria-label="New note">${esc(DESK_OPEN.draft ?? '')}</textarea>
-        <button type="submit" class="desk-nbtn on">Add note</button></form>
-      ${open.length ? `<ul class="desk-notes">${open.map(noteHtml).join('')}</ul>` : '<p class="desk-clear">No notes yet.</p>'}
-      ${doneN.length ? `<details class="desk-ndone"${DESK_OPEN.ndone ? ' open' : ''}><summary>Done <small>${doneN.length}</small></summary><ul class="desk-notes">${doneN.map(noteHtml).join('')}</ul>
-        <button type="button" class="desk-all" data-nclear>Delete all ${doneN.length} done</button></details>` : ''}
-      <p class="desk-fine">Only you see these. Signed in with Google, they follow you to your other devices.</p>`, { sub: `${open.length} note${open.length === 1 ? '' : 's'}${doneN.length ? ` · ${doneN.length} done` : ''}`, cls: 'desk-sec desk-notecard', id: 'desk-notes' });
-  };
   const draw = () => {
     const acks = deskAcks();
     const isAck = it => it.ack && acks[it.id]?.s === it.sig;
@@ -5686,56 +5668,16 @@ async function renderDesk(body, params) {
         ${ackable.length > 1 ? `<button type="button" class="desk-all" data-ackall="${id}">Acknowledge all ${ackable.length}</button>` : ''}`, { sub, cls: `desk-sec desk-${id}` });
     };
     $('#desk-body', body).innerHTML = `
-      ${betaCard('My Desk', `<p class="desk-sum">${open.length ? `<b>${open.length}</b> thing${open.length === 1 ? '' : 's'} on your desk` : '<b>Your desk is clear.</b>'}${done.length ? ` · ${done.length} acknowledged` : ''}${(() => { const k = notesNow().filter(x => !x.done).length; return k ? ` · <button type="button" class="desk-njump" data-njump>${k} note${k === 1 ? '' : 's'}</button>` : ''; })()}.</p>
+      ${betaCard('My Desk', `<p class="desk-sum">${open.length ? `<b>${open.length}</b> thing${open.length === 1 ? '' : 's'} on your desk` : '<b>Your desk is clear.</b>'}${done.length ? ` · ${done.length} acknowledged` : ''}${(() => { const k = deskNotes(me).filter(x => !x.done).length; return k ? ` · <a class="desk-njump" href="${deskViewHash('notes')}">${k} note${k === 1 ? '' : 's'}</a>` : ''; })()}.</p>
         <p class="desk-fine">Tick <b>Acknowledged</b> to clear an item; it comes back if its news changes. Items marked “clears when …” go away on their own once they’re done.${notes.length ? ` Couldn’t read: ${notes.map(esc).join('; ')}.` : ''}</p>`, { cls: 'desk-head', sub: teamName(me, season) })}
       ${SECS.map(secHtml).join('')}
-      ${notesHtml()}
       ${done.length ? `<details class="card desk-acked"${DESK_OPEN.acked ? ' open' : ''}><summary>Acknowledged <small>${done.length}</small></summary>
         ${done.map(it => `<div class="desk-arow"><span>${it.title}</span><button type="button" data-unack="${esc(it.id)}">Undo</button></div>`).join('')}</details>` : ''}`;
   };
   body.innerHTML = `${sub}<div id="desk-body" class="desk-page"></div>`;
   bindTeamPick(body);
   draw();
-  // Notes: add / edit / pin / done / delete (all redraw the desk; the draft survives redraws in DESK_OPEN.draft).
-  const noteEdit = (id, fn) => { notesSave(notesNow().map(x => (x.id === id ? fn({ ...x }) : x)).filter(Boolean)); draw(); };
-  const addNote = form => {
-    const t = form.t.value.trim().slice(0, NOTE_MAX);
-    if (!t) return;
-    notesSave([...notesNow(), { id: `n${Date.now().toString(36)}`, t, c: Date.now() }]);
-    DESK_OPEN.draft = '';
-    draw();
-    $('.desk-nadd textarea', body)?.focus();
-  };
-  const saveEdit = li => {
-    const t = $('textarea', li).value.trim().slice(0, NOTE_MAX);
-    DESK_OPEN.edit = null;
-    noteEdit(li.dataset.note, x => (t ? { ...x, t, u: Date.now() } : x));
-  };
-  $('#desk-body', body).addEventListener('submit', e => { if (e.target.matches('.desk-nadd')) { e.preventDefault(); addNote(e.target); } });
-  $('#desk-body', body).addEventListener('input', e => { if (e.target.closest('.desk-nadd')) DESK_OPEN.draft = e.target.value; });
-  $('#desk-body', body).addEventListener('keydown', e => {
-    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || !e.target.matches('.desk-note-in')) return;
-    e.preventDefault();
-    const li = e.target.closest('.desk-note.editing');
-    if (li) saveEdit(li); else addNote(e.target.form);
-  });
-  $('#desk-body', body).addEventListener('click', e => {
-    if (e.target.closest('[data-njump]')) { $('#desk-notes', body)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
-    const b = e.target.closest('[data-npin], [data-nedit], [data-nsave], [data-ncancel], [data-ndel], [data-nclear]');
-    if (!b) return;
-    const li = b.closest('[data-note]');
-    if ('nclear' in b.dataset) { if (confirm('Delete every done note?')) { notesSave(notesNow().filter(x => !x.done)); draw(); } return; }
-    if (!li) return;
-    if ('npin' in b.dataset) noteEdit(li.dataset.note, x => ({ ...x, pin: !x.pin }));
-    else if ('nedit' in b.dataset) { DESK_OPEN.edit = li.dataset.note; draw(); const ta = $(`[data-note="${CSS.escape(li.dataset.note)}"] textarea`, body); ta?.focus(); ta?.setSelectionRange(ta.value.length, ta.value.length); }
-    else if ('nsave' in b.dataset) saveEdit(li);
-    else if ('ncancel' in b.dataset) { DESK_OPEN.edit = null; draw(); }
-    else if ('ndel' in b.dataset && confirm('Delete this note?')) noteEdit(li.dataset.note, () => null);
-  });
-  $('#desk-body', body).addEventListener('toggle', e => { if (e.target.matches('.desk-ndone')) DESK_OPEN.ndone = e.target.open; }, true);
   $('#desk-body', body).addEventListener('change', e => {
-    const nd = e.target.closest('[data-ndone]');
-    if (nd) { const li = nd.closest('[data-note]'); noteEdit(li.dataset.note, x => ({ ...x, done: nd.checked, dn: Date.now() })); return; }
     const box = e.target.closest('[data-ack]');
     if (!box) return;
     const it = items.find(x => x.id === box.dataset.ack);
@@ -5754,6 +5696,79 @@ async function renderDesk(body, params) {
   $('#desk-body', body).addEventListener('toggle', e => { if (e.target.matches('.desk-acked')) DESK_OPEN.acked = e.target.open; }, true);
 }
 const DESK_OPEN = { acked: false, ndone: false, edit: null, draft: '' };
+
+// ---------- Notes (My Desk sub-tab ?view=notes; owner, Nov 15 2026: "add a notes section ... design it to your taste", then
+// "make notes its own section like injury report") ----------
+// A sticky-note pad per team, synced with the account (gm-desk-notes-{owner} via 'gm-desk-'): { at, n: [{ id, t (text), c (made),
+// u (edited), pin, done, dn (done at) }] }. Pinned first, then newest; ticking one done moves it to a Done fold (kept until
+// deleted). Ctrl/⌘ + Enter adds / saves.
+const NOTE_MAX = 600;
+const deskNotes = owner => { const v = gmLoad(`gm-desk-notes-${owner}`, null); return Array.isArray(v?.n) ? v.n : []; };
+function renderNotes(box, me) {
+  const NOTES_KEY = `gm-desk-notes-${me}`;
+  const notesNow = () => deskNotes(me);
+  const notesSave = n => gmSave(NOTES_KEY, { at: Date.now(), n });
+  const noteWhen = ms => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Chicago' });
+  const noteText = t => esc(t).replace(/\n/g, '<br>');
+  const noteHtml = x => (DESK_OPEN.edit === x.id
+    ? `<li class="desk-note editing" data-note="${esc(x.id)}"><textarea class="desk-note-in" maxlength="${NOTE_MAX}" rows="3" aria-label="Edit note">${esc(x.t)}</textarea>
+        <div class="desk-note-acts"><button type="button" class="desk-nbtn on" data-nsave>Save</button><button type="button" class="desk-nbtn" data-ncancel>Cancel</button></div></li>`
+    : `<li class="desk-note${x.pin ? ' pinned' : ''}${x.done ? ' done' : ''}" data-note="${esc(x.id)}">
+        <label class="desk-ncheck" title="${x.done ? 'Not done' : 'Done'}"><input type="checkbox" data-ndone aria-label="Done"${x.done ? ' checked' : ''}></label>
+        <div class="desk-ntext"><p>${noteText(x.t)}</p><small>${x.pin ? '📌 Pinned · ' : ''}${esc(noteWhen(x.c))}${x.u ? ` · edited ${esc(noteWhen(x.u))}` : ''}</small></div>
+        <div class="desk-note-acts">${x.done ? '' : `<button type="button" class="desk-nbtn${x.pin ? ' on' : ''}" data-npin aria-pressed="${Boolean(x.pin)}">${x.pin ? 'Unpin' : 'Pin'}</button><button type="button" class="desk-nbtn" data-nedit>Edit</button>`}<button type="button" class="desk-nbtn del" data-ndel aria-label="Delete note">×</button></div></li>`);
+  const draw = () => {
+    const n = notesNow();
+    const open = n.filter(x => !x.done).sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || b.c - a.c);
+    const doneN = n.filter(x => x.done).sort((a, b) => (b.dn ?? b.c) - (a.dn ?? a.c));
+    box.innerHTML = betaCard('Notes', `<form class="desk-nadd"><textarea class="desk-note-in" name="t" maxlength="${NOTE_MAX}" rows="3" placeholder="Jot something down: a trade idea, a waiver target, who to watch…" aria-label="New note">${esc(DESK_OPEN.draft ?? '')}</textarea>
+        <button type="submit" class="desk-nbtn on">Add note</button></form>
+      ${open.length ? `<ul class="desk-notes">${open.map(noteHtml).join('')}</ul>` : '<p class="desk-clear">No notes yet.</p>'}
+      ${doneN.length ? `<details class="desk-ndone"${DESK_OPEN.ndone ? ' open' : ''}><summary>Done <small>${doneN.length}</small></summary><ul class="desk-notes">${doneN.map(noteHtml).join('')}</ul>
+        <button type="button" class="desk-all" data-nclear>Delete all ${doneN.length} done</button></details>` : ''}
+      <p class="desk-fine">Only you see these. Signed in with Google, they follow you to your other devices.</p>`, { sub: `${esc(teamName(me, DATA.seasons.at(-1).season))} · ${open.length} note${open.length === 1 ? '' : 's'}${doneN.length ? ` · ${doneN.length} done` : ''}`, cls: 'desk-sec desk-notecard', id: 'desk-notes' });
+  };
+  const noteEdit = (id, fn) => { notesSave(notesNow().map(x => (x.id === id ? fn({ ...x }) : x)).filter(Boolean)); draw(); };
+  const addNote = form => {
+    const t = form.t.value.trim().slice(0, NOTE_MAX);
+    if (!t) return;
+    notesSave([...notesNow(), { id: `n${Date.now().toString(36)}`, t, c: Date.now() }]);
+    DESK_OPEN.draft = '';
+    draw();
+    $('.desk-nadd textarea', box)?.focus();
+  };
+  const saveEdit = li => {
+    const t = $('textarea', li).value.trim().slice(0, NOTE_MAX);
+    DESK_OPEN.edit = null;
+    noteEdit(li.dataset.note, x => (t ? { ...x, t, u: Date.now() } : x));
+  };
+  draw();
+  box.addEventListener('submit', e => { if (e.target.matches('.desk-nadd')) { e.preventDefault(); addNote(e.target); } });
+  box.addEventListener('input', e => { if (e.target.closest('.desk-nadd')) DESK_OPEN.draft = e.target.value; });
+  box.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || !e.target.matches('.desk-note-in')) return;
+    e.preventDefault();
+    const li = e.target.closest('.desk-note.editing');
+    if (li) saveEdit(li); else addNote(e.target.form);
+  });
+  box.addEventListener('click', e => {
+    const b = e.target.closest('[data-npin], [data-nedit], [data-nsave], [data-ncancel], [data-ndel], [data-nclear]');
+    if (!b) return;
+    const li = b.closest('[data-note]');
+    if ('nclear' in b.dataset) { if (confirm('Delete every done note?')) { notesSave(notesNow().filter(x => !x.done)); draw(); } return; }
+    if (!li) return;
+    if ('npin' in b.dataset) noteEdit(li.dataset.note, x => ({ ...x, pin: !x.pin }));
+    else if ('nedit' in b.dataset) { DESK_OPEN.edit = li.dataset.note; draw(); const ta = $(`[data-note="${CSS.escape(li.dataset.note)}"] textarea`, box); ta?.focus(); ta?.setSelectionRange(ta.value.length, ta.value.length); }
+    else if ('nsave' in b.dataset) saveEdit(li);
+    else if ('ncancel' in b.dataset) { DESK_OPEN.edit = null; draw(); }
+    else if ('ndel' in b.dataset && confirm('Delete this note?')) noteEdit(li.dataset.note, () => null);
+  });
+  box.addEventListener('change', e => {
+    const nd = e.target.closest('[data-ndone]');
+    if (nd) { const li = nd.closest('[data-note]'); noteEdit(li.dataset.note, x => ({ ...x, done: nd.checked, dn: Date.now() })); }
+  });
+  box.addEventListener('toggle', e => { if (e.target.matches('.desk-ndone')) DESK_OPEN.ndone = e.target.open; }, true);
+}
 
 // Injury Report (Test features Oct 26 2026; moved into MyGM's My Desk Nov 12 2026, ?view=injuries): ?team= picks "you".
 function renderInjuryReport(body, params) {

@@ -5047,3 +5047,55 @@ rect.as-sel, .as-pbar.as-sel, .as-sbar.as-sel { outline: 2px solid var(--ink); o
   .desk-nadd { grid-template-columns: minmax(0, 1fr); }
   .desk-nadd .desk-nbtn { justify-self: end; }
 }
+
+/* Trophy Room sections (owner, Nov 15 2026: "make the different sections ... different from each other, they just blend"):
+   each card has its own accent (--tr-ac) on a thick top edge + an icon chip, and its own inner look. The trophy case is a navy hero. */
+.tr-sec { --tr-ac: var(--navy-700); position: relative; overflow: hidden; padding-top: 21px; }
+.tr-sec::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: var(--tr-ac); }
+.tr-sec .card-head h2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tr-ic { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--tr-ac); flex: none; }
+.tr-sec .card-head h2 .tr-ic .ic { width: 16px; height: 16px; margin: 0; vertical-align: 0; color: #fff; }
+.tr-seasons { --tr-ac: #2f5aa8; }
+.tr-mgr { --tr-ac: #7b4bb7; }
+.tr-rivs { --tr-ac: #c0392b; }
+.tr-held { --tr-ac: #c99a2e; }
+.tr-pb { --tr-ac: #1f8a8a; }
+.tr-honors { --tr-ac: #2f7d4f; }
+/* Trophy case: solid navy hero, gold numbers. */
+.tr-case { --tr-ac: var(--gold); background: var(--navy-800); color: #fff; border-color: var(--navy-800); }
+.tr-case .card-head h2 { color: #fff; }
+.tr-case .card-head h2 small { color: rgba(255, 255, 255, .65); }
+.tr-case .card-sub { color: var(--gold); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.tr-case .tr-ic .ic { color: var(--navy-800) !important; }
+.tr-case .tr-stat { background: rgba(255, 255, 255, .07); border-color: rgba(255, 255, 255, .14); }
+.tr-case .tr-stat b { color: var(--gold); }
+.tr-case .tr-stat b small, .tr-case .tr-stat small { color: rgba(255, 255, 255, .6); }
+.tr-case .tr-stat span { color: #fff; }
+.tr-case .cm-rule { color: rgba(255, 255, 255, .6); }
+/* Season by season: navy header row, zebra rows. */
+.tr-seasons .tr-table th { background: #2f5aa8; color: #fff; border-bottom: 0; }
+.tr-seasons .tr-table tbody tr:nth-child(even) td { background: #f3f6fc; }
+/* Manager awards: purple pills. */
+.tr-mgr .tr-aw.indiv { border-color: #7b4bb7; background: #f1eaf9; color: #5a2f93; }
+.tr-mgr .tr-list li { padding: 8px 10px; margin-top: 6px; border: 1px solid #e2d6f2; border-radius: 10px; background: #faf7fd; }
+.tr-mgr .tr-list li:first-child { border-top: 1px solid #e2d6f2; }
+/* Rivalry trophies: red-edged cards. */
+.tr-rivs .tr-riv { display: grid; gap: 8px; }
+.tr-rivs .tr-riv li { position: relative; padding: 8px 10px 8px 14px; border: 1px solid #f0d2ce; border-radius: 10px; background: #fdf6f5; }
+.tr-rivs .tr-riv li:first-child { border-top: 1px solid #f0d2ce; }
+/* Records held: gold cards. */
+.tr-held .tr-rh { color: #8a6516; }
+.tr-held .tr-recs li { background: #fdf6e6; border-color: #ecd9a6; }
+/* Personal records: teal left edge, plain white. */
+.tr-pb .tr-rh { color: #1f6f6f; }
+.tr-pb .tr-recs li { position: relative; padding-left: 14px; }
+.tr-pb .tr-recs li .tr-rv { color: #1f6f6f; }
+/* Player honors: green-edged player tiles in a grid. */
+.tr-honors .tr-players { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 8px; }
+.tr-honors .tr-players li { padding: 8px 10px; border: 1px solid #d3e8da; border-radius: 10px; background: #f5faf6; }
+.tr-honors .tr-players li:first-child { border-top: 1px solid #d3e8da; }
+.tr-sec .card-head { flex-wrap: wrap; align-items: center; row-gap: 2px; }
+.tr-sec .card-head .card-sub { flex-basis: 100%; padding-left: 36px; }
+/* Accent edges as backgrounds (dark mode converts border colors but keeps bright backgrounds). */
+.tr-rivs .tr-riv li::before, .tr-pb .tr-recs li::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; border-radius: 10px 0 0 10px; background: var(--tr-ac); }
+.tr-case::before { background: var(--gold); }
