@@ -32,13 +32,14 @@ import { taxiAppearances } from './taxiweek.js';
 import { MIN_JURORS, loadVotes, sameRuling, tally, tradeCases, voteId } from './court.js';
 import { playerTrades, tradeTree } from './tradetree.js';
 import { benchDates, chicagoDate, hintsFor, lawFor, lawMarks, lawPoints, lineupGames, loadLockDocs, lockDocId, weekBoxes } from './locks.js';
+import { planWeek } from './wsp.js';
 import { betaCard, isMyGMPlus, isTestTab, mygmBase, testTabs } from './test-features.js';
 import { dvpChips, renderDefense } from './defense-ui.js';
 import { renderAdvanced } from './advstats-ui.js';
 import { renderContracts } from './contracts-ui.js';
 import { renderSleeperInsider } from './sleeperpriv-ui.js';
 import { DAYS, MIN_LOCKS, managerCards, seasonStarts } from './lockcard.js';
-import { DEPTH_POS, espnDepthChart, fpgRanks, leagueTradeBlock, loadLgs, lgsCounts, liveLocks, liveTeamScores, withLiveWeeks, withLiveLgs, withLockLgs, lgsSettled, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, injuryNow, injuryDiff, INJ_LOG_VERSION, INJ_LOG_DAYS, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
+import { DEPTH_POS, espnDepthChart, fpgRanks, leagueTradeBlock, loadLgs, lgsCounts, liveLocks, weekLegs, liveTeamScores, withLiveWeeks, withLiveLgs, withLockLgs, lgsSettled, AUTO_TAGS, DYN_MOVE, FORM, TRADE_TALK_DAYS, espnTrades, loadTradeTalk, recentForm, recentPickups, recentTrades, teamOptions, trendingAdds, weekSlate, NBA_TEAM_CODES, averages, championshipRings, espnInjuries, playerNews, returnEstimate, injuryNow, injuryDiff, INJ_LOG_VERSION, INJ_LOG_DAYS, gameLog, leagueDraftOf, loadBreakdown, loadNbaDraft, lockedTotals, playerAwards, leagueRanks, nbaDraftText, nbaTeamName, ownerAtWeek, teamLogo, totalOf, seasonTable as bkSeasonTable, fantasy as bkFantasy } from './breakdown.js';
 
 // ---------- Navigation ----------
 
@@ -7112,13 +7113,31 @@ function bindTeamPick(body) {
 }
 
 // Everything both GM tabs need for this week, or null when the season is over.
-async function gmWeek(params) {
-  const at = await scoutWeek();
-  if (!at) return null;
+// The season's regular weeks (DATA.schedule = regular season only), for the Assistant Coach's week arrows.
+const regularWeeks = season => [...new Set((DATA.schedule ?? []).filter(g => g.s === season).map(g => g.w))].sort((a, b) => a - b);
+// WEEK SCROLLING (owner, Nov 15 2026: "Past final, future projected"): opts.week (Assistant Coach ?week=) picks another regular
+// week. Past weeks -> { view: 'past', ... } (final lineups, locks, scores; no coach run); future weeks -> the coach run on that
+// week's schedule + projections with nothing played (no marks, no what-ifs); the week under way = exactly as before.
+async function gmWeek(params, opts = {}) {
+  const base = await scoutWeek();
+  if (!base) return null;
   const cur = DATA.seasons.at(-1);
   const me = cur.teams.some(t => t.owner === params.get('team')) ? params.get('team') : COMMISH;
+  const weeks = regularWeeks(base.season);
+  const want = Number(opts.week) || 0;
+  const view = want && want !== base.week && weeks.includes(want) ? (want < base.week ? 'past' : 'future') : 'now';
+  if (view === 'past') return { ...base, week: want, curWeek: base.week, weeks, view, me, ...await pastWeek(base.season, want) };
+  const at = view === 'future' ? { ...base, week: want, started: false } : base;
   const ctx = await loadWeek(DATA, at.season, at.week);
-  const [boxes, slate] = await Promise.all([loadBoxes(at.season, at.week, ctx.scoring), loadSlate(at.season, at.week)]);
+  const [boxes, slate] = await Promise.all([view === 'future' ? {} : loadBoxes(at.season, at.week, ctx.scoring), loadSlate(at.season, at.week)]);
+  if (view === 'future') {
+    const pairs = weekPairs(DATA, at.season, at.week);
+    const mode = GM_MODES.some(([id]) => id === gmLoad('gm-mode')) ? gmLoad('gm-mode') : 'balanced';
+    const medianOn = Boolean(DATA.seasons.find(s => s.season === at.season)?.medianGame);
+    setMatchups(await loadMatchups().catch(() => null));
+    const coach = gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode, marks: {}, whatifs: {}, medianOn });
+    return { ...at, curWeek: base.week, weeks, view, me, ctx, boxes, slate, pairs, mode, marksKey: `gm-locks-${at.season}-${at.week}`, marks: {}, whatKey: `gm-whatif-${at.season}-${at.week}`, whatifs: {}, medianOn, coach };
+  }
   let pairs = weekPairs(DATA, at.season, at.week);
   if (!pairs.length) pairs = (await liveWeek(at.season, at.week).catch(() => null))?.pairs ?? [];
   // Balanced is the default (owner, Oct 2026) until Play to win is recalibrated; new key so an old saved choice doesn't carry over.
@@ -7138,7 +7157,22 @@ async function gmWeek(params) {
   // Matchup factors per game (data/matchup.json, owner Nov 4 2026); none yet = no adjustment.
   setMatchups(await loadMatchups().catch(() => null));
   const coach = gameCoach(DATA, ctx, boxes, slate, me, pairs, { mode, marks, whatifs, medianOn });
-  return { ...at, me, ctx, boxes, slate, pairs, mode, marksKey, marks, whatKey, whatifs, medianOn, coach };
+  return { ...at, curWeek: at.week, weeks, view, me, ctx, boxes, slate, pairs, mode, marksKey, marks, whatKey, whatifs, medianOn, coach };
+}
+// A finished week, read-only (owner, Nov 15 2026): finals from DATA.games / medianGames, each starter's locked points from
+// DATA.playerWeeks (the real ones: Sleeper's old matchup feed drops locks), the lineup order + which game was locked from
+// Sleeper's lock data (weekLegs; null = playerWeeks order, "locked or last game" unknown), box-score lines from that week.
+async function pastWeek(season, week) {
+  const s = DATA.seasons.find(x => x.season === season);
+  const [league, legs, slate] = await Promise.all([get(`/v1/league/${s.leagueId}`, {}), withTimeout(weekLegs(DATA, season, week), 9000).catch(() => null), loadSlate(season, week)]);
+  const scoring = league.scoring_settings ?? {};
+  const slots = (league.roster_positions ?? []).filter(p => p !== 'BN' && p !== 'IR' && p !== 'TAXI');
+  const boxes = await loadBoxes(season, week, scoring).catch(() => ({}));
+  const pairs = weekPairs(DATA, season, week).filter(p => p.t === 'R');
+  const medianOn = Boolean(s.medianGame);
+  const pw = DATA.playerWeeks.filter(r => r.s === season && r.w === week && r.t === 'R');
+  const med = Object.fromEntries((DATA.medianGames ?? []).filter(m => m.s === season && m.w === week).map(m => [m.o, m]));
+  return { past: true, slots, legs, slate, boxes, pairs, pw, med, medianOn, settled: pairs.some(p => p.final) };
 }
 // Banner while what-if locks are on: they change the coach's math on this device only.
 function whatIfBanner(w) {
@@ -7577,13 +7611,243 @@ async function fillTrack(body, w) {
   });
 }
 
+// Box-score lines under a player's game chips (Assistant Coach, owner Nov 15 2026): one line per game played or being
+// played; isLocked(g) marks the game his week counted.
+function boxLines(games, isLocked = () => false) {
+  const rows = (games ?? []).filter(g => g.st && (g.done || g.playing));
+  if (!rows.length) return '';
+  const sh = (m, a) => `${m}-${a}`;
+  return `<ul class="gm-box">${rows.map(g => {
+    const s = g.st;
+    const live = g.playing && !g.done;
+    const locked = isLocked(g);
+    const main = [`${s.pts} PTS`, `${s.reb} REB`, `${s.ast} AST`, s.stl ? `${s.stl} STL` : '', s.blk ? `${s.blk} BLK` : '', s.to ? `${s.to} TO` : ''].filter(Boolean).join(' · ');
+    const shoot = [s.fga ? `${sh(s.fgm, s.fga)} FG` : '', s.tpa ? `${sh(s.tpm, s.tpa)} 3P` : '', s.fta ? `${sh(s.ftm, s.fta)} FT` : '', `${s.min} MIN`].filter(Boolean).join(' · ');
+    const clock = live ? `<span class="gm-box-live">● ${esc(g.clock || 'Live')}</span>${g.score ? ` <span class="gm-box-sc">${g.score.us}–${g.score.them}</span>` : ''}` : '';
+    return `<li class="${live ? 'live' : ''}${locked ? ' locked' : ''}">
+      <div class="gm-box-top"><b>${esc(shortDay(g.date))} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</b>${clock}${locked ? `<span class="gm-box-lk">${locked === 'last' ? '✓ Counted' : '🔒 Locked'}</span>` : ''}<span class="gm-box-fp">${num(g.pts ?? 0)} FP</span></div>
+      <div class="gm-box-line">${esc(main)}</div><div class="gm-box-line sub">${esc(shoot)}</div></li>`;
+  }).join('')}</ul>`;
+}
+
+// Week arrows on the Assistant Coach (owner, Nov 15 2026): ‹ Week N ›, kept in the URL (?week=; the week under way drops it).
+function coachWeekHash(params, wk, cur) {
+  const q = new URLSearchParams(params);
+  q.set('tab', 'coach');
+  if (wk === cur) q.delete('week'); else q.set('week', String(wk));
+  return `${route().page === 'commish' ? '#/commish' : mygmBase()}?${q}`;
+}
+function coachWeekNav(w, params, sub) {
+  const i = w.weeks.indexOf(w.week);
+  const prev = i > 0 ? w.weeks[i - 1] : null;
+  const next = i >= 0 && i < w.weeks.length - 1 ? w.weeks[i + 1] : null;
+  const kind = w.view === 'past' ? 'Final' : w.view === 'future' ? 'Projected' : 'This week';
+  const arrow = (wk, dir) => (wk == null ? `<span class="mb-arrow cw-off" aria-hidden="true">${dir < 0 ? '‹' : '›'}</span>`
+    : `<a class="mb-arrow" href="${coachWeekHash(params, wk, w.curWeek)}" aria-label="Week ${wk}">${dir < 0 ? '‹' : '›'}</a>`);
+  return `<div class="cw-nav">
+    ${arrow(prev, -1)}
+    <div class="cw-mid"><h2>Week ${w.week} <span class="cw-kind cw-${w.view}">${kind}</span></h2><small>${sub}</small>${w.view === 'now' ? '' : `<a class="cw-back" href="${coachWeekHash(params, w.curWeek, w.curWeek)}">Back to this week (${w.curWeek})</a>`}</div>
+    ${arrow(next, 1)}
+  </div>`;
+}
+
+// WEEKLY START PLANNER card (owner, Nov 15 2026; logic assets/wsp.js). MyGM: replaces Starting pipeline + Bench players to
+// start; MyGM+: added after them. dg = this team's Depth Chart designations (Current chart), cats = this login's categories.
+let WSP_DAY = null;
+// A card that throws (a feed shaped differently than expected) leaves the rest of the page standing.
+const safeCard = f => { try { return f(); } catch (e) { console.error(e); return ''; } };
+function wspCard(w, dg, cats) {
+  const c = w.coach;
+  const team = c.team;
+  const order = cats.filter(k => k.id !== 'ir');
+  const catIdx = id => { const i = order.findIndex(k => k.id === id); return i < 0 ? Infinity : i; };
+  const rowBy = Object.fromEntries(c.rows.filter(r => !r.empty).map(r => [r.pid, r]));
+  const today = w.ctx.today;
+  const mk = (p, start) => {
+    const r = rowBy[p.pid];
+    const played = (w.boxes[p.pid] ?? []).filter(b => b.date < today || (r?.sched ?? []).some(g => g.date === b.date && g.done));
+    const last = played.at(-1);
+    return {
+      pid: p.pid, name: p.name, elig: p.elig, team: p.team, pos: p.pos, injury: p.injury, missDates: p.missDates ?? [],
+      fpg: p.fpg ?? p.fpgLast ?? p.perPlay ?? p.perGame ?? 0, catId: dg?.[p.pid] ?? null, cat: catIdx(dg?.[p.pid]), start,
+      locked: Boolean(r && r.call === 'locked' && !r.whatIf), lockScore: r?.score ?? null, lockDate: r?.lockDate ?? null,
+      // An unlocked starter holding an earlier score this week: another lineup game replaces it.
+      held: start >= 0 && r && !r.whatIf && r.call !== 'locked' && last ? { pts: last.pts, date: last.date } : null,
+    };
+  };
+  const players = [
+    ...team.starters.map((p, i) => (p.empty ? null : mk(p, i))).filter(Boolean),
+    ...team.bench.map(p => mk(p, -1)),
+  ].filter(p => p.catId !== 'ir' || p.locked); // the IR category never starts (a locked one keeps his slot)
+  const days = planWeek({ slots: c.rows.map(r => r.slot), players, slate: w.slate, today, bestFit });
+  if (!days.length) return betaCard('Weekly Start Planner', '<p class="empty">No games left to plan this week.</p>', { cls: 'wsp-card' });
+  const pick = days.some(d => d.date === WSP_DAY) ? WSP_DAY : days[0].date;
+  const tip = g => (g ? tipShort(g) : '');
+  const tag = p => (p.catId && dcCatOf(p.catId, cats) ? dsgTag(p.catId) : '<span class="wsp-nocat" title="No Depth Chart category">–</span>');
+  const gameTxt = (p, g) => `${esc(p.team)} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}${tip(g) ? ` · ${tip(g)}` : ''}`;
+  const heldTxt = p => (p.held ? `<small class="wsp-held">Holds ${num(p.held.pts)} from ${esc(shortDay(p.held.date))}, not locked: a game in the lineup today replaces it</small>` : '');
+  const who = (p, g, extra = '') => `<span class="wsp-who"><b>${esc(p.name)}</b> ${tag(p)} ${injuryTag(p)}<small>${posTxt(p.elig)} · ${gameTxt(p, g)}${extra}</small>${heldTxt(p)}</span>`;
+  const endAt = ms => (ms ? tipShort({ tip: new Date(ms).toISOString() }) : '');
+  const row = r => {
+    const slot = `<span class="wsp-slot${pcCls(r.slot)}">${esc(r.slot)}</span>`;
+    if (r.kind === 'locked') return `<li class="wsp-row wsp-locked">${slot}<span class="wsp-who"><b>${esc(r.p.name)}</b> ${tag(r.p)}<small>🔒 Locked${r.p.lockDate ? ` ${esc(shortDay(r.p.lockDate))}` : ''}${r.p.lockScore != null ? ` at ${num(r.p.lockScore)}` : ''}: keeps this spot all week</small></span></li>`;
+    if (r.kind === 'open') return `<li class="wsp-row wsp-open">${slot}<span class="wsp-who"><b>Open</b><small>Nobody left who fits ${esc(r.slot)} plays this day</small></span></li>`;
+    const base = r.kind === 'tipped'
+      ? who(r.p, r.g, ` · <b class="wsp-now">${r.g.status === 'complete' ? 'played' : 'playing'}</b>`)
+      : who(r.p, r.g);
+    let dbl = '';
+    if (r.dbl) {
+      const { early, late } = r.dbl;
+      dbl = `<div class="wsp-dbl"><span class="wsp-call">Sub or keep</span>
+        <p><b>${esc(early.p.name)}</b> ${tag(early.p)} plays first (${tip(early.g) || shortDay(early.g.date)}), <b>${esc(late.p.name)}</b> ${tag(late.p)} tips at ${tip(late.g)}${late.p !== r.p ? ` (${posTxt(late.p.elig)} · ${gameTxt(late.p, late.g)})` : ''}.
+        After ${esc(early.p.name.split(' ').slice(-1)[0])}’s game (about ${endAt(r.dbl.ends)}): sub in ${esc(late.p.name.split(' ').slice(-1)[0])} for his game, or keep the early score. Your call.</p></div>`;
+      if (early.p !== r.p) { // the extra player plays first in this spot: say so on the row
+        return `<li class="wsp-row wsp-has-dbl">${slot}<span class="wsp-stack">${who(early.p, early.g, ' · <b class="wsp-first">first</b>')}${who(r.p, r.g, ' · <b class="wsp-first">later</b>')}${dbl}</span></li>`;
+      }
+    }
+    return `<li class="wsp-row${r.dbl ? ' wsp-has-dbl' : ''}${r.kind === 'tipped' ? ' wsp-tipped' : ''}">${slot}<span class="wsp-stack">${base}${dbl}</span></li>`;
+  };
+  const list = (label, xs, why) => (xs.length ? `<p class="wsp-more"><b>${label}</b> ${xs.map(({ p, g }) => `${esc(p.name)}${p.catId && dcCatOf(p.catId, cats) ? ` ${dsgTag(p.catId)}` : ''}${g && tip(g) ? ` <small>${tip(g)}</small>` : ''}${why ? ` <small>${esc(why(p))}</small>` : ''}`).join(', ')}</p>` : '');
+  const panel = d => {
+    const playing = d.rows.filter(r => r.p && r.kind !== 'locked').length + d.bench.length + d.lateBench.length + d.rows.filter(r => r.dbl && r.dbl.added).length;
+    const filled = d.rows.filter(r => r.kind !== 'open').length;
+    const openSlots = d.rows.filter(r => r.kind === 'open').map(r => r.slot);
+    return `<div class="wsp-day" data-day="${d.date}"${d.date === pick ? '' : ' hidden'}>
+      <p class="cm-rule">${esc(longDay(d.date))}${d.date === today ? ' (today)' : ''}: ${playing} of your players play · ${filled} of ${d.rows.length} spots filled${d.closed ? ` (${d.closed} locked)` : ''}. Times are Central.</p>
+      ${d.open ? `<p class="wsp-flag-box">⚑ Slim day: ${d.open} open spot${d.open === 1 ? '' : 's'} (${openSlots.map(esc).join(', ')}). Nobody on your roster who fits plays this day: worth a look for a streamer.</p>` : ''}
+      <ol class="wsp-rows">${d.rows.map(row).join('')}</ol>
+      ${list('On the bench (his game won’t count):', d.bench, p => (p.cat === Infinity ? 'no category' : ''))}
+      ${list('Tipped on the bench (too late to move in):', d.lateBench)}
+      ${list('Not expected to play:', d.out, p => p.injury || 'projected to sit')}
+    </div>`;
+  };
+  const chip = d => {
+    const flag = d.open ? `<i class="wsp-f open">${d.open} open</i>` : d.doubles ? `<i class="wsp-f dbl">${d.doubles} call${d.doubles === 1 ? '' : 's'}</i>` : '';
+    return `<button type="button" role="tab" data-wday="${d.date}" class="${d.date === pick ? 'on' : ''}${d.open ? ' slim' : ''}" aria-selected="${d.date === pick}">${d.date === today ? 'Today' : esc(shortDay(d.date))} ${Number(d.date.slice(8))}${flag}</button>`;
+  };
+  const slim = days.filter(d => d.open).length;
+  return betaCard('Weekly Start Planner', `
+    <p class="cm-rule">Each day’s lineup from your Depth Chart: ${order.map(k => esc(k.name)).join(' → ')}, best FP/G first inside each (players with no category last). IR and taxi never start. Only players with a game that day; a locked starter keeps his spot all week, bench games never count, and a player can only be moved in before his game tips. Two players whose games tip 90+ minutes apart can share a spot: the early one plays, then it’s your call.</p>
+    ${slim ? `<p class="wsp-flag-box">⚑ ${slim} slim day${slim === 1 ? '' : 's'} this week: ${days.filter(d => d.open).map(d => esc(shortDay(d.date))).join(', ')}.</p>` : ''}
+    <div class="gm-days wsp-days" role="tablist" aria-label="Days">${days.map(chip).join('')}</div>
+    ${days.map(panel).join('')}
+    <p class="cm-rule wsp-foot">Uses today’s roster, lineup and Depth Chart designations for every day. Change a designation or the order on the Depth Chart and the plan follows.</p>`,
+  { cls: 'wsp-card', sub: w.view === 'future' ? `Week ${w.week} · projected` : `Week ${w.week}` });
+}
+function bindWsp(body) {
+  body.querySelectorAll('.wsp-days button').forEach(b => b.addEventListener('click', () => {
+    WSP_DAY = b.dataset.wday;
+    body.querySelectorAll('.wsp-days button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-selected', x === b); });
+    body.querySelectorAll('.wsp-day').forEach(p => { p.hidden = p.dataset.day !== WSP_DAY; });
+  }));
+}
+
+// A FINISHED week on the Assistant Coach (owner, Nov 15 2026: "past final"): read-only, every matchup in the same swipe
+// strip. Starter points = DATA.playerWeeks (the real locked points); lineup order + locked game = Sleeper's lock data.
+function renderCoachPast(body, params, w) {
+  const season = w.season;
+  const pts = {};
+  for (const r of w.pw) (pts[r.o] ??= {})[r.pid] = r.p;
+  const info = pid => DATA.players?.[pid] ?? {};
+  const games = pid => (w.boxes[pid] ?? []).map(b => {
+    const s = (w.slate[b.team] ?? []).find(g => g.date === b.date);
+    return { ...b, opp: b.opp ?? s?.opp, home: s?.home ?? false, done: true };
+  });
+  const startersOf = o => {
+    const leg = w.legs?.[o]?.starters ?? [];
+    const ids = leg.length ? [...leg] : [];
+    for (const pid of Object.keys(pts[o] ?? {})) if (!ids.includes(pid)) ids.push(pid);
+    return ids.map((pid, i) => {
+      const g = games(pid);
+      const p = pts[o]?.[pid] ?? 0;
+      const lockDate = w.legs?.[o]?.locks?.[pid] ?? null;
+      // The counted game: Sleeper's lock, else the game whose score = his locked points (latest of equals).
+      const counted = lockDate ?? [...g].reverse().find(x => Math.abs(x.pts - p) < 0.05)?.date ?? null;
+      return { pid, slot: leg.length && i < leg.length ? w.slots[i] ?? '' : '', name: info(pid).n ?? `Player ${pid}`, pos: info(pid).pos ?? '', team: g[0]?.team ?? info(pid).t ?? '', pts: p, lockDate, counted, games: g };
+    });
+  };
+  const owners = w.pairs.flatMap(p => [p.a, p.b]);
+  const S = Object.fromEntries(owners.map(o => [o, startersOf(o)]));
+  const panels = [...w.pairs.filter(p => p.a === w.me || p.b === w.me).map(p => (p.a === w.me ? p : { ...p, a: p.b, b: p.a, final: p.final ? { ap: p.final.bp, bp: p.final.ap, win: p.final.win } : null })), ...w.pairs.filter(p => p.a !== w.me && p.b !== w.me)];
+  const score = (p, side) => (p.final ? (side === 'a' ? p.final.ap : p.final.bp) : null);
+  const tagOf = r => (r.lockDate ? `🔒 Locked ${shortDay(r.lockDate)}` : r.counted ? `Not locked · counted ${shortDay(r.counted)}` : r.games.length ? 'Benched before his last game' : 'No games');
+  const who = (r, side, o) => {
+    if (!r) return `<div class="mb-p mb-${side}"></div>`;
+    const key = `p${side}-${o}-${r.pid}`;
+    return `<div class="mb-p mb-${side} mb-locked" role="button" tabindex="0" data-key="${esc(key)}" aria-expanded="${MB_OPEN.has(key)}">
+      <span class="mb-name"><b><span class="mb-full">${esc(r.name)}</span><span class="mb-short">${esc(r.name.replace(/^(\S)\S*\s+/, '$1. '))}</span></b><small>${esc([r.pos, r.team, tagOf(r)].filter(Boolean).join(' · '))}</small></span>
+      <span class="mb-pts mb-locked">${num(r.pts)}</span></div>`;
+  };
+  const card = r => `<div class="gm-call gm-locked"><div class="gm-call-top"><span class="cm-slot">${esc(r.slot || '–')}</span>
+      <div class="gm-who"><b>${esc(r.name)}</b><small>${esc([r.pos, r.team].filter(Boolean).join(' · '))}</small></div><span class="gm-badge">${num(r.pts)}</span></div>
+    ${r.games.length ? `<div class="gm-games">${r.games.map(g => `<span class="gm-game done${g.date === r.counted ? ' locked' : ''}"><small>${shortDay(g.date)}</small><span>${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</span><b>${num(g.pts)}</b></span>`).join('')}</div>${boxLines(r.games, g => (g.date === r.counted ? (r.lockDate ? 'lock' : 'last') : false))}` : ''}
+    <p class="gm-text">${esc(r.lockDate ? `Locked on ${longDay(r.lockDate)}: ${num(r.pts)} counted.` : r.counted ? `Not locked: his last lineup game (${longDay(r.counted)}) counted, ${num(r.pts)}.` : r.games.length ? `${num(r.pts)} counted (he sat on the bench for his games, or his last game wasn’t in the lineup).` : 'No games this week: 0.')}</p></div>`;
+  const detail = (key, side, o, html) => `<div class="mb-detail mb-d${side}" data-for="${esc(key)}"${MB_OPEN.has(key) ? '' : ' hidden'}><p class="mb-whose">${esc(teamName(o, season))}</p>${html}</div>`;
+  const res = (p, side) => {
+    const o = side === 'a' ? p.a : p.b;
+    const a = score(p, side), b = score(p, side === 'a' ? 'b' : 'a');
+    const h2h = a == null || b == null ? '' : a > b ? 'W' : a < b ? 'L' : 'T';
+    const m = w.med[o];
+    return `<div class="mb-team"><small>${esc(teamName(o, season))}</small><b>${a == null ? '–' : num(a)}</b><em>${[h2h ? `${h2h === 'W' ? 'Won' : h2h === 'L' ? 'Lost' : 'Tied'}` : '', w.medianOn && m ? `${m.res === 'W' ? 'beat' : m.res === 'L' ? 'under' : 'tied'} the median` : ''].filter(Boolean).join(' · ')}</em></div>`;
+  };
+  const panelHtml = (p, idx) => {
+    const A = S[p.a] ?? [], B = S[p.b] ?? [];
+    const n = Math.max(A.length, B.length);
+    const med = Object.values(w.med)[0]?.median;
+    return `<div class="mb-panel${idx === 0 ? ' mb-mine' : ''}" data-panel="${idx}" role="group" aria-roledescription="matchup" aria-label="${esc(`${teamName(p.a, season)} vs ${teamName(p.b, season)}`)}">
+      <div class="mb-head">${res(p, 'a')}<span class="mb-mid"><span class="mb-vs">Final</span></span>${res(p, 'b')}</div>
+      ${w.medianOn && med != null ? `<p class="mb-key">League median <b>${num(med)}</b></p>` : ''}
+      <div class="mb-rows">${Array.from({ length: n }, (_, i) => {
+        const x = A[i], y = B[i];
+        const slot = x?.slot || y?.slot || '';
+        return `<div class="mb-row">${who(x, 'l', p.a)}<span class="mb-slot${pcCls(slot)}">${esc(slot)}</span>${who(y, 'r', p.b)}</div>
+          ${x ? detail(`pl-${p.a}-${x.pid}`, 'l', p.a, card(x)) : ''}${y ? detail(`pr-${p.b}-${y.pid}`, 'r', p.b, card(y)) : ''}`;
+      }).join('')}</div>
+    </div>`;
+  };
+  const navLabel = i => (i === 0 ? 'Your matchup' : `${teamName(panels[i].a, season)} vs ${teamName(panels[i].b, season)}`);
+  const multi = panels.length > 1;
+  const sub = w.settled ? 'Final lineups, locks and scores' : 'Not settled yet: scores may still change';
+  body.innerHTML = `<div class="gm-page">
+    <div class="cm-pickers gm-tools">${gmTeamPick(w.me, season, 'coach')}</div>
+    <section class="card gm-head">
+      ${coachWeekNav(w, params, sub)}
+      <p class="mb-key">Locked points that counted · tap a player for his games${w.legs ? '' : '<br>Sleeper’s lock data didn’t load: the counted game is the one whose score matches'}</p>
+      ${panels.length ? `${multi ? `<div class="mb-nav">
+        <button type="button" class="mb-arrow" data-mbgo="-1" aria-label="Previous matchup">‹</button>
+        <div class="mb-navmid"><b class="mb-navlbl" aria-live="polite">${esc(navLabel(0))}</b>
+          <span class="mb-dots">${panels.map((_, i) => `<button type="button" class="${i ? '' : 'on'}" data-mbdot="${i}" aria-label="Matchup ${i + 1} of ${panels.length}"></button>`).join('')}</span>
+          <small class="mb-navsub">1 of ${panels.length} · swipe for the other games</small></div>
+        <button type="button" class="mb-arrow" data-mbgo="1" aria-label="Next matchup">›</button>
+      </div>` : ''}
+      <div class="mb-strip${multi ? '' : ' mb-one'}" tabindex="${multi ? 0 : -1}">${panels.map(panelHtml).join('')}</div>` : '<p class="empty">No games saved for this week.</p>'}
+      <p class="cm-rule">Bench players aren’t shown: Sleeper keeps no lineup history for past weeks.</p>
+    </section></div>`;
+  bindTeamPick(body);
+  const toggle = el => {
+    const key = el.dataset.key;
+    const box = [...body.querySelectorAll('.mb-detail')].find(d => d.dataset.for === key);
+    if (!box) return;
+    const open = box.hidden;
+    box.hidden = !open;
+    el.setAttribute('aria-expanded', String(open));
+    if (open) MB_OPEN.add(key); else MB_OPEN.delete(key);
+  };
+  body.querySelectorAll('.mb-p[data-key]').forEach(el => {
+    el.addEventListener('click', () => toggle(el));
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(el); } });
+  });
+  bindMatchupStrip(body, panels.map(p => p.a), navLabel);
+}
+
 async function renderCoach(body, params) {
-  const [w, dyn, dvp] = await Promise.all([gmWeek(params), coachDynasty(), dvpChips(DATA, gmLoad, esc)]);
+  const [w, dyn, dvp] = await Promise.all([gmWeek(params, { week: params.get('week') }), coachDynasty(), dvpChips(DATA, gmLoad, esc)]);
   if (!w) {
     body.innerHTML = '<section class="card soon-card"><p>The season is over. The Assistant Coach returns when next season’s schedule is set.</p></section>';
     return;
   }
   if (!inOffice()) return;
+  if (w.view === 'past') { clearInterval(GM_TIMER); renderCoachPast(body, params, w); return; }
   const coach = w.coach;
   if (!coach) {
     body.innerHTML = `${gmTeamPick(w.me, w.season, 'coach')}<section class="card soon-card"><p>No roster found for this team.</p></section>`;
@@ -7627,22 +7891,7 @@ async function renderCoach(body, params) {
   // BOX SCORES (owner, Nov 15 2026: "the stats each player has for each game ... include the live games too"): one line per game
   // he played or is playing, under the game chips: day + opponent, fantasy points, the box score (gm.js statLine), and for a game
   // going on ESPN's clock + score. Sleeper's feed updates during games (a minute or two behind TV); the page refreshes every 2 min.
-  const statRows = (sched, r = null) => {
-    const rows = (sched ?? []).filter(g => g.st && (g.done || g.playing));
-    if (!rows.length) return '';
-    const sh = (m, a) => `${m}-${a}`;
-    return `<ul class="gm-box">${rows.map(g => {
-      const s = g.st;
-      const live = g.playing && !g.done;
-      const locked = r && r.call === 'locked' && !r.whatIf && (r.lockDate ? r.lockDate === g.date : g.pts != null && Math.abs(g.pts - r.score) < 0.05);
-      const main = [`${s.pts} PTS`, `${s.reb} REB`, `${s.ast} AST`, s.stl ? `${s.stl} STL` : '', s.blk ? `${s.blk} BLK` : '', s.to ? `${s.to} TO` : ''].filter(Boolean).join(' · ');
-      const shoot = [s.fga ? `${sh(s.fgm, s.fga)} FG` : '', s.tpa ? `${sh(s.tpm, s.tpa)} 3P` : '', s.fta ? `${sh(s.ftm, s.fta)} FT` : '', `${s.min} MIN`].filter(Boolean).join(' · ');
-      const clock = live ? `<span class="gm-box-live">● ${esc(g.clock || 'Live')}</span>${g.score ? ` <span class="gm-box-sc">${g.score.us}–${g.score.them}</span>` : ''}` : '';
-      return `<li class="${live ? 'live' : ''}${locked ? ' locked' : ''}">
-        <div class="gm-box-top"><b>${esc(shortDay(g.date))} ${g.home ? 'vs' : '@'} ${esc(g.opp ?? '')}</b>${clock}${locked ? '<span class="gm-box-lk">🔒 Locked</span>' : ''}<span class="gm-box-fp">${num(g.pts ?? 0)} FP</span></div>
-        <div class="gm-box-line">${esc(main)}</div><div class="gm-box-line sub">${esc(shoot)}</div></li>`;
-    }).join('')}</ul>`;
-  };
+  const statRows = (sched, r = null) => boxLines(sched, g => Boolean(r && r.call === 'locked' && !r.whatIf && (r.lockDate ? r.lockDate === g.date : g.pts != null && Math.abs(g.pts - r.score) < 0.05)));
   // Soft lock (owner, Nov 8 2026): his last game of the week has tipped, he isn't locked: counts as locked (score in the
   // locked total) but can still be moved off the lineup. r.soft from gm.js coachCall (calls 'held', or 'live' on his last game).
   const label = r => (r.whatIf ? 'What-if' : r.soft ? 'Soft lock' : advice(r) ? 'Not locked' : trim && r.call === 'plan' ? 'Not started' : CALL_LABEL[r.call]);
@@ -7921,33 +8170,36 @@ async function renderCoach(body, params) {
     </div>` : ''}
     <div class="mb-strip${multi ? '' : ' mb-one'}" tabindex="${multi ? 0 : -1}">${panels.map(panelHtml).join('')}</div>`;
 
+  const wsp = safeCard(() => wspCard(w, dgMe, dgCats));
   body.innerHTML = `<div class="gm-page">
     <div class="cm-pickers gm-tools">
       ${gmTeamPick(w.me, w.season, 'coach')}
       ${trim ? '' : `<div class="st-stage gm-risk" role="group" aria-label="Coach mode">${riskBtns}</div>`}
     </div>
     <section class="card gm-head">
-      <div class="card-head"><h2>Week ${w.week}</h2><span class="card-sub">${w.started ? `updated ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'before tip-off'}</span></div>
+      ${coachWeekNav(w, params, w.view === 'future' ? `projected · starts ${esc(longDay(Object.values(w.slate).flat().map(g => g.date).sort()[0] ?? ''))}` : w.started ? `updated ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : 'before tip-off')}
       <div class="gm-counts">${summary.map(([n, t]) => `<span><b>${n}</b> ${t}</span>`).join('')}</div>
       ${coach.calls.length && !trim ? `<p class="gm-alert">Lock now: ${coach.calls.map(r => `<b>${esc(r.name)}</b> (${num(r.score)}${r.lockSlot ? ` in ${esc(r.lockSlot)}` : ''})`).join(', ')}.</p>` : ''}
       ${whatIfBanner(w)}
       ${board}
     </section>
-    ${pipelineCard(w)}
-    <div class="cm-races">
+    ${trim ? '' : safeCard(() => pipelineCard(w))}
+    ${trim ? wsp : ''}
+    ${trim ? '' : `<div class="cm-races">
       <section class="card">
         <div class="card-head"><h2>Bench players to start</h2></div>
         <p class="cm-rule">Only his games after you move him in count, and a locked starter can’t come out. Benching a starter loses his score.</p>
         ${swapList(w, coach.swaps)}
       </section>
-      ${opp && !trim ? `<section class="card">
+      ${opp ? `<section class="card">
         <div class="card-head"><h2>Their best lineup</h2><span class="card-sub">${esc(teamName(opp, w.season))}</span></div>
         <p class="cm-rule">The coach assumes they’ll play smart: their best healthy players from here on, not just today’s lineup. Locked players stay, anyone listed Out or Doubtful keeps only what he already has, and healthy bench players with games left move in. In the simulation they also lock with the same spot-aware bars as yours, and their games score like real managers’ did in past seasons.</p>
         <ol class="aw-race">${coach.oppBest.lineup.map(oppRow).join('')}</ol>
         ${benchedOpp.length ? `<p class="cm-rule">Assumed out of their lineup: ${benchedOpp.map(r => `${esc(r.name)}${r.injury ? ` (${esc(r.injury)})` : ''}`).join(', ')}.</p>` : ''}
       </section>` : ''}
-    </div>
-    ${trim ? '' : ctCard()}
+    </div>`}
+    ${trim ? '' : wsp}
+    ${trim || w.view !== 'now' ? '' : ctCard()}
     ${trim ? '' : `<section class="card">
       <div class="card-head"><h2>How the coach decides</h2></div>
       <p class="cm-rule">Each starter counts one game a week: the one you lock, or else his last game. <b>Play to win</b> (Beta, recalibrated Oct 2026: see the test below) plays out the rest of the week a few thousand times, every team’s remaining games, both ways (lock his score now, or keep playing), and picks whichever gives the better chance of beating your opponent plus the chance of beating the league median. It knows which of their players are already locked or done, and assumes every other team plays smart too: its best healthy players from here on (not just today’s lineup), planned the same way as yours. Ahead, it locks more to protect the lead; behind, it waits for a bigger night.</p>
@@ -8000,6 +8252,7 @@ async function renderCoach(body, params) {
   body.querySelectorAll('.gm-mark').forEach(b => b.addEventListener('click', () => setMark(b.dataset.pid, b.dataset.act, b.dataset.date)));
   body.querySelectorAll('.gm-pick').forEach(b => b.addEventListener('click', () => setMark(b.dataset.pid, 'pick', b.dataset.date)));
   bindWhatIfs(body, w, () => renderCoach(body, params).catch(() => {}));
+  bindWsp(body);
   // Starting pipeline day buttons.
   body.querySelectorAll('.sp-days button').forEach(b => b.addEventListener('click', () => {
     PIPE_DAY = b.dataset.day;

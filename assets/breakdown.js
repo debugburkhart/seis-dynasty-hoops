@@ -893,6 +893,28 @@ export async function liveLocks(DATA) {
   LIVE = { at: Date.now(), v };
   return v;
 }
+// Sleeper's lineup + locks for ANY regular week (Assistant Coach past weeks, owner Nov 15 2026; matchup_legs_raw, no login):
+// { owner: { starters: [pid] (lineup order), locks: { pid: date } } } | null. A finished week doesn't change: kept for the visit.
+const WEEK_LEGS = {};
+export function weekLegs(DATA, season, week) {
+  const key = `${season}-${week}`;
+  WEEK_LEGS[key] ??= (async () => {
+    const s = DATA.seasons.find(x => String(x.season) === String(season));
+    if (!s) return null;
+    const [res, schedule] = await Promise.all([gql(LOCKS_QUERY, { leagueId: s.leagueId, round: Number(week) }), get(`/schedule/nba/regular/${season}`, [])]);
+    const legs = res.data?.matchup_legs_raw;
+    if (!Array.isArray(legs) || !legs.length) return null;
+    const ownerOf = Object.fromEntries(s.teams.map(t => [t.rosterId, t.owner]));
+    const out = {};
+    for (const [rid, t] of Object.entries(locksFromLegs(legs, schedule))) {
+      const o = ownerOf[rid];
+      if (o) out[o] = { starters: t.starters, locks: Object.fromEntries(Object.entries(t.locks).map(([pid, l]) => [pid, l.date])) };
+    }
+    return out;
+  })().catch(() => null).then(v => { if (!v) delete WEEK_LEGS[key]; return v; });
+  return WEEK_LEGS[key];
+}
+
 // LIVE LOCKED SCORES (owner, Nov 8 2026: Home + Matchup Hype "currently locked scores as the big number ... 100%
 // accurate"). Per team, the points that are CERTAIN to count: every starter Sleeper shows locked (that game's box score)
 // + every unlocked starter whose LAST game of the week has tipped (in progress or final: his last game counts, so it's

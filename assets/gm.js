@@ -86,7 +86,7 @@ export async function loadBoxes(season, week, scoring) {
   const out = {};
   for (const g of rows ?? []) {
     if (!/^\d+$/.test(g.player_id) || !g.stats || !(g.stats.gp || g.stats.sp) || exhibitionRow(g)) continue; // no All-Star Game
-    (out[g.player_id] ??= []).push({ date: g.date, pts: r1(fantasy(g.stats, scoring)), st: statLine(g.stats) });
+    (out[g.player_id] ??= []).push({ date: g.date, pts: r1(fantasy(g.stats, scoring)), st: statLine(g.stats), team: g.team, opp: g.opponent });
   }
   for (const list of Object.values(out)) list.sort((a, b) => (a.date < b.date ? -1 : 1));
   return out;

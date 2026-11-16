@@ -1486,6 +1486,39 @@ dynasty). Static site on GitHub Pages; a GitHub Action rebuilds the data nightly
   following the coach), others from oddsFor; the old gmOdds + "Expected final" lines under the board are gone (gmOdds still used by
   the Briefing). Checked: 4 panels, MyGM trim (other panels S9 strips only, 0 what-if, 0 Wait), 320 / 402 / desktop no overflow,
   dark mode.
+- COACH WEEK SCROLLING (owner, Nov 15 2026, "Past final, future projected"; both pages): the coach card's head is now ‹ Week N ›
+  (coachWeekNav / coachWeekHash in app.js, .cw-* in styles.css; ?week= in the URL, dropped for the week under way; "Back to this
+  week (N)" link; chip This week / Final / Projected). Weeks = regularWeeks(season) = DATA.schedule weeks. gmWeek(params, { week })
+  -> view 'now' (unchanged: strip, odds, box scores, live clock), 'future' (loadWeek + loadSlate for that week, NO box scores,
+  marks / what-ifs / Sleeper locks empty, gameCoach as usual = projected odds with nothing played; Sleeper has per-game
+  projections for future weeks, empty stats = projected out), 'past' (pastWeek(): no coach run; DATA.games finals via weekPairs,
+  DATA.medianGames, DATA.playerWeeks = each starter's real locked points, breakdown.js weekLegs(DATA, s, w) = Sleeper's
+  matchup_legs_raw for that round (lineup order + locked game; no login; cached for the visit), loadBoxes + loadSlate for box-score
+  lines). renderCoachPast(): read-only swipe strip of the 4 matchups (bindMatchupStrip), head = final scores + Won / Lost + beat /
+  under the median + league median, rows = starters with "🔒 Locked Tue" or "Not locked · counted Sun" (= the game whose score =
+  his playerWeeks points), tap = game chips + box-score lines (boxLines, now module-level and shared with the live coach; '✓
+  Counted' on the counted unlocked game). Bench not shown (Sleeper keeps no lineup history). gm.js loadBoxes rows also carry team +
+  opp now. Future weeks hide "How the coach is doing" (ctCard); Briefing still calls gmWeek(params) = always the week under way.
+  Checked Nov 15 2026 (week 4 live): week 3 Parma 329 = sum of its 9 rows, My D Rose 399, 4 panels; week 5 / 6 projected odds +
+  planner; MyGM trim; 320 dark, 402, desktop; no script errors.
+- WEEKLY START PLANNER (WSP; owner, Nov 15 2026; Beta): logic `assets/wsp.js` (no DOM, in the import map; planWeek / planDay),
+  card wspCard + bindWsp in app.js (.wsp-* at the end of styles.css). MyGM: REPLACES the Starting pipeline + Bench players to start
+  cards; MyGM+: keeps both and adds the WSP after them (safeCard wraps each so a throw can't blank the page). Current week (days
+  left, today only while a game hasn't tipped) and future weeks; none for past weeks. Per day: players = your starters + bench
+  (IR spots, taxi and the IR CATEGORY never start; a locked starter keeps his slot all week = closed), only those with a game that
+  day; out = injury Out / IR / Suspension / Inactive or Sleeper projecting 0 that date (missDates) -> "Not expected to play". Fill
+  order (owner's choice) = dcCats() order minus IR (Starting 9 -> Rotation -> Stream -> Development -> Hold, custom categories in
+  their saved order, no category last), then FP/G; picked greedily with an augmenting-path matching (a higher-ranked player is
+  never left out for a lower one), laid out with gm.js bestFit preferring exact slots (4) > G / F (2) > UTIL (0), +1 his current
+  slot, so open spots end up the flexible ones. Today: a starter whose game has tipped stays put ("playing / played"), a bench player
+  whose game tipped is "Tipped on the bench (too late)". DOUBLE UP: anyone left over may share a slot whose player's game tips
+  DOUBLE_GAP 90+ min apart (either order; a tipped starter can only be the early one), weakest occupant first, one per slot ->
+  gold "Sub or keep" box (early plays, after his game ~2h15m: sub in the late one or keep the early score; never automatic).
+  SLIM DAYS (owner: "just flag the day"): open spots -> red "⚑ Slim day" box + red day chip "N open", top line lists the slim days;
+  no free agents listed. Day chips also show "N calls" (doubles). Rows show the category chip (dsgTag), positions, game + tip,
+  and for an unlocked starter holding an earlier score "Holds 40 from Tue, not locked: a game in the lineup today replaces it".
+  Uses TODAY's roster + designations for every day. Checked week 5 (Parma): Mon 9 / 9 + Eason (ROT 6:30p) then Booker (S9 8:00p)
+  sub-or-keep; Thu 4 / 9, 5 open; Fox / VanVleet / Murray Out listed.
 - PLAN FOR MANAGER LOGINS (owner, Nov 9 2026; agreed in talk; STEPS 1-3 BUILT the same day, see MYGM LOGIN below): MyGM becomes the
   managers' page: Google sign-in REQUIRED + an approved claim (members/{uid}, same as Props / Trade Court), locked to their own
   team; each manager's settings private in users/{uid}/prefs (already); fix the shared-device bleed (localStorage is per
