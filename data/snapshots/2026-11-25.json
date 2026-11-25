@@ -1,0 +1,78 @@
+{
+ "date": "2026-11-25",
+ "season": "2026",
+ "standings": [
+  {
+   "rank": 1,
+   "owner": "1035744206368657408",
+   "team": "Larry Bird’s Bush",
+   "w": 10,
+   "l": 0,
+   "t": 0,
+   "pf": 1950
+  },
+  {
+   "rank": 2,
+   "owner": "986665284570279936",
+   "team": "Terance Mann Crowbars",
+   "w": 8,
+   "l": 2,
+   "t": 0,
+   "pf": 2002
+  },
+  {
+   "rank": 3,
+   "owner": "1035995054579617792",
+   "team": "My D Rose",
+   "w": 8,
+   "l": 2,
+   "t": 0,
+   "pf": 1952
+  },
+  {
+   "rank": 4,
+   "owner": "1036083466980458496",
+   "team": "Victor Oladeepthroats",
+   "w": 6,
+   "l": 4,
+   "t": 0,
+   "pf": 1929
+  },
+  {
+   "rank": 5,
+   "owner": "1035475215997906944",
+   "team": "Parma John Wall",
+   "w": 4,
+   "l": 6,
+   "t": 0,
+   "pf": 1828
+  },
+  {
+   "rank": 6,
+   "owner": "866760756052537344",
+   "team": " Murray’s Meat Market",
+   "w": 3,
+   "l": 7,
+   "t": 0,
+   "pf": 1747
+  },
+  {
+   "rank": 7,
+   "owner": "1035999704737259520",
+   "team": "LeBron’s Hairline Heroes",
+   "w": 1,
+   "l": 9,
+   "t": 0,
+   "pf": 1596
+  },
+  {
+   "rank": 8,
+   "owner": "1038192436067016704",
+   "team": "The Bronny Bunch",
+   "w": 0,
+   "l": 10,
+   "t": 0,
+   "pf": 1513
+  }
+ ]
+}
